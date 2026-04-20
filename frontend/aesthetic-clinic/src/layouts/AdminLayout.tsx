@@ -79,7 +79,7 @@ export function AdminLayout() {
           <div className="topbar__right">
             <div className="search-pill">Buscar pacientes, pagos o operaciones</div>
             <div className="profile-chip">
-              <span className="profile-chip__avatar">FL</span>
+              <span className="profile-chip__avatar">FR</span>
               <div>
                 <strong>Fabián Rivero</strong>
                 <span>Administrador principal</span>

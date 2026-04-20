@@ -68,9 +68,6 @@ export function AdminStaffPage() {
                           : 'Sin pendientes'}
                       </StatusBadge>
                     </div>
-                    <div className="progress-bar">
-                      <span style={{ width: `${item.load}%` }} />
-                    </div>
                   </article>
                 ))}
               </div>

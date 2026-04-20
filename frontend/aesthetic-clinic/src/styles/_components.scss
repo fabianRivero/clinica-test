@@ -390,16 +390,3 @@
   }
 }
 
-.progress-bar {
-  height: 0.8rem;
-  border-radius: 999px;
-  background: #dcecee;
-  overflow: hidden;
-
-  span {
-    display: block;
-    height: 100%;
-    border-radius: inherit;
-    background: linear-gradient(135deg, var(--color-primary), #6bd1d8);
-  }
-}

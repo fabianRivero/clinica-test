@@ -134,34 +134,6 @@ export function AdminDashboardPage() {
             </SectionCard>
 
             <SectionCard
-              eyebrow="Atencion comercial"
-              title="Pipeline de prospectos"
-              description="Prospectos registrados internamente por el equipo y listos para seguimiento."
-            >
-              {data.prospects.length ? (
-                <div className="pipeline-list">
-                  {data.prospects.map((lead) => (
-                    <article className="pipeline-item" key={lead.id}>
-                      <div>
-                        <strong>{lead.name}</strong>
-                        <p>{lead.interest}</p>
-                      </div>
-                      <div className="pipeline-item__meta">
-                        <span>{lead.phone}</span>
-                        <StatusBadge tone="primary">{lead.stage}</StatusBadge>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <DataState
-                  title="Sin prospectos"
-                  message="Todavia no hay registros comerciales disponibles para seguimiento."
-                />
-              )}
-            </SectionCard>
-
-            <SectionCard
               eyebrow="Monitoreo"
               title="Alertas criticas"
               description="Elementos que requieren intervencion administrativa."
@@ -183,46 +155,6 @@ export function AdminDashboardPage() {
           </section>
 
           <section className="dashboard-grid dashboard-grid--secondary">
-            <SectionCard
-              eyebrow="Operaciones activas"
-              title="Tratamientos destacados"
-              description="Pacientes con tratamiento en curso y seguimiento operativo visible."
-            >
-              {data.operations.length ? (
-                <div className="operation-grid">
-                  {data.operations.map((operation) => (
-                    <article className="operation-card" key={operation.id}>
-                      <header>
-                        <div>
-                          <strong>{operation.patient}</strong>
-                          <p>{operation.procedure}</p>
-                        </div>
-                        <StatusBadge tone="primary">{operation.quotaStatus}</StatusBadge>
-                      </header>
-                      <dl>
-                        <div>
-                          <dt>Especialista</dt>
-                          <dd>{operation.specialist}</dd>
-                        </div>
-                        <div>
-                          <dt>Sesiones</dt>
-                          <dd>{operation.sessions}</dd>
-                        </div>
-                        <div>
-                          <dt>Proxima cita</dt>
-                          <dd>{operation.nextAppointment}</dd>
-                        </div>
-                      </dl>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <DataState
-                  title="Sin operaciones activas"
-                  message="No se encontraron tratamientos vigentes para destacar en el resumen."
-                />
-              )}
-            </SectionCard>
 
             <SectionCard
               eyebrow="Configuracion"
@@ -260,9 +192,6 @@ export function AdminDashboardPage() {
                           ? `${item.pendingValidations} pendientes`
                           : 'Sin pendientes'}
                       </StatusBadge>
-                    </div>
-                    <div className="progress-bar">
-                      <span style={{ width: `${item.load}%` }} />
                     </div>
                   </article>
                 ))}
