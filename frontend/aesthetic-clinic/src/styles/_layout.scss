@@ -233,6 +233,11 @@
   }
 }
 
+.profile-chip__meta {
+  display: grid;
+  gap: 0.1rem;
+}
+
 .page-stack {
   display: grid;
   gap: var(--spacing-6);
@@ -298,4 +303,168 @@
   @include respond(lg) {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+}
+
+.auth-shell,
+.role-shell,
+.app-state-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--spacing-6);
+}
+
+.auth-shell {
+  gap: var(--spacing-6);
+
+  @include respond(lg) {
+    grid-template-columns: minmax(0, 1.1fr) minmax(360px, 430px);
+    align-items: stretch;
+  }
+}
+
+.auth-shell__panel,
+.auth-card,
+.role-card,
+.app-state-screen__card {
+  @include panel;
+}
+
+.auth-shell__panel {
+  display: grid;
+  gap: var(--spacing-6);
+  padding: clamp(2rem, 4vw, 3.5rem);
+  background:
+    radial-gradient(circle at top right, rgba(107, 207, 215, 0.22), transparent 18rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(240, 249, 250, 0.96));
+}
+
+.auth-shell__eyebrow,
+.auth-card__eyebrow,
+.role-card__eyebrow {
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+
+.auth-shell__intro {
+  display: grid;
+  gap: var(--spacing-4);
+
+  h1 {
+    margin: 0;
+    font-size: clamp(2.2rem, 4vw, 4rem);
+    line-height: 0.95;
+  }
+
+  p {
+    max-width: 40rem;
+    font-size: 1rem;
+    line-height: 1.8;
+  }
+}
+
+.auth-shell__highlights {
+  display: grid;
+  gap: var(--spacing-4);
+
+  @include respond(md) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.auth-highlight {
+  padding: 1.1rem 1.2rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(217, 232, 236, 0.9);
+}
+
+.auth-card,
+.role-card,
+.app-state-screen__card {
+  width: min(100%, 430px);
+  padding: clamp(1.6rem, 3vw, 2.4rem);
+}
+
+.auth-card {
+  display: grid;
+  gap: var(--spacing-5);
+}
+
+.auth-card__header,
+.auth-form,
+.demo-credentials,
+.role-card {
+  display: grid;
+  gap: var(--spacing-4);
+}
+
+.auth-card__header h2,
+.role-card h1 {
+  margin: 0;
+}
+
+.auth-form__submit {
+  width: 100%;
+}
+
+.demo-credentials {
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-sm);
+  background: rgba(239, 247, 249, 0.92);
+  border: 1px solid rgba(217, 232, 236, 0.9);
+
+  ul {
+    display: grid;
+    gap: var(--spacing-2);
+    margin: 0;
+    padding-left: 1.1rem;
+    color: var(--color-text-soft);
+  }
+}
+
+.role-card {
+  width: min(100%, 620px);
+}
+
+.role-card__summary {
+  display: grid;
+  gap: var(--spacing-4);
+
+  @include respond(md) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  div {
+    padding: 1rem 1.1rem;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(217, 232, 236, 0.9);
+  }
+
+  span,
+  strong {
+    display: block;
+  }
+
+  span {
+    margin-bottom: 0.25rem;
+    color: var(--color-text-soft);
+    font-size: 0.9rem;
+  }
+}
+
+.role-card__actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.app-state-screen__card {
+  display: grid;
+  gap: var(--spacing-3);
+  text-align: center;
 }

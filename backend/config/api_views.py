@@ -1,4 +1,5 @@
 from datetime import timedelta
+from functools import wraps
 
 from django.db.models import Prefetch
 from django.http import JsonResponse
@@ -19,8 +20,21 @@ from operations.models import CitaMedica, FichaCampo, Operacion
 from staff.models import Especialidad, Especialista
 
 
-def _json(data):
-    return JsonResponse(data, json_dumps_params={"ensure_ascii": False})
+def _json(data, status=200):
+    return JsonResponse(data, status=status, json_dumps_params={"ensure_ascii": False})
+
+
+def _admin_required(view_func):
+    @wraps(view_func)
+    def wrapped(request, *args, **kwargs):
+        user = request.user
+        if not user.is_authenticated:
+            return _json({"detail": "Autenticacion requerida."}, status=401)
+        if not (user.is_superuser or user.es_administrador):
+            return _json({"detail": "No tienes permisos para acceder a esta vista."}, status=403)
+        return view_func(request, *args, **kwargs)
+
+    return wrapped
 
 
 def _currency(amount):
@@ -323,6 +337,7 @@ def _dashboard_alerts():
 
 
 @require_GET
+@_admin_required
 def admin_dashboard(request):
     today = timezone.localdate()
     pending_payments_qs = (
@@ -481,6 +496,7 @@ def admin_dashboard(request):
 
 
 @require_GET
+@_admin_required
 def admin_prospectos(request):
     prospectos_qs = Prospecto.objects.select_related("registrado_por").order_by("-created_at")
     clientes_qs = (
@@ -527,6 +543,7 @@ def admin_prospectos(request):
 
 
 @require_GET
+@_admin_required
 def admin_operaciones(request):
     operaciones_qs = (
         Operacion.objects.select_related(
@@ -589,6 +606,7 @@ def admin_operaciones(request):
 
 
 @require_GET
+@_admin_required
 def admin_pagos(request):
     pagos_qs = (
         PagoRealizado.objects.select_related(
@@ -641,6 +659,7 @@ def admin_pagos(request):
 
 
 @require_GET
+@_admin_required
 def admin_catalogos(request):
     active_services = ServicioConfig.objects.filter(activo=True).count()
     active_service_types = TipoServicio.objects.filter(activo=True).count()
@@ -721,6 +740,7 @@ def admin_catalogos(request):
 
 
 @require_GET
+@_admin_required
 def admin_equipo(request):
     staff_qs = (
         Especialista.objects.select_related("usuario")

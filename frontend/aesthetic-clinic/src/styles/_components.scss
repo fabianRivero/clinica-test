@@ -29,6 +29,17 @@
   border: 1px solid rgba(217, 232, 236, 0.95);
 }
 
+.button--compact {
+  min-height: 2.4rem;
+  padding: 0.6rem 1rem;
+}
+
+.button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+  transform: none;
+}
+
 .section-card {
   @include panel;
 
@@ -186,6 +197,43 @@
 .data-state--danger {
   background: linear-gradient(180deg, rgba(255, 236, 238, 0.92), rgba(255, 248, 249, 0.92));
   border-color: rgba(200, 95, 100, 0.2);
+}
+
+.field {
+  display: grid;
+  gap: var(--spacing-2);
+
+  span {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+}
+
+.input {
+  min-height: 3rem;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(217, 232, 236, 0.95);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--color-text);
+  transition:
+    border-color var(--transition-base),
+    box-shadow var(--transition-base);
+
+  &:focus {
+    outline: none;
+    border-color: rgba(47, 138, 146, 0.45);
+    box-shadow: 0 0 0 4px rgba(47, 138, 146, 0.08);
+  }
+}
+
+.form-error {
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 236, 238, 0.92), rgba(255, 248, 249, 0.92));
+  color: var(--color-danger);
+  border: 1px solid rgba(200, 95, 100, 0.2);
 }
 
 .table-card {

@@ -1,23 +1,20 @@
-import { useMemo, useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useState } from 'react'
+import { NavLink, Outlet } from 'react-router-dom'
+
+import { useAuth } from '../providers/AuthProvider'
 
 const navigation = [
   { to: '/admin', label: 'Resumen', shortLabel: 'Dashboard' },
   { to: '/admin/prospectos', label: 'Prospectos y clientes', shortLabel: 'Prospectos' },
   { to: '/admin/operaciones', label: 'Operaciones', shortLabel: 'Operaciones' },
   { to: '/admin/pagos', label: 'Pagos', shortLabel: 'Pagos' },
-  { to: '/admin/catalogos', label: 'Catálogos', shortLabel: 'Catálogos' },
+  { to: '/admin/catalogos', label: 'Catalogos', shortLabel: 'Catalogos' },
   { to: '/admin/equipo', label: 'Equipo', shortLabel: 'Equipo' },
 ] as const
 
 export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const location = useLocation()
-
-  const activeSection = useMemo(
-    () => navigation.find((item) => item.to === location.pathname)?.shortLabel ?? 'Resumen',
-    [location.pathname],
-  )
+  const { user, logout } = useAuth()
 
   return (
     <div className="admin-shell">
@@ -25,10 +22,10 @@ export function AdminLayout() {
         <div className="brand-card">
           <span className="brand-card__eyebrow">Panel administrativo</span>
           <strong>Nataly Ferrufino Estetic & Academy</strong>
-          <p>Operación clínica, pagos y catálogos en una sola vista.</p>
+          <p>Operacion clinica, pagos y catalogos en una sola vista.</p>
         </div>
 
-        <nav className="side-nav" aria-label="Navegación principal de administración">
+        <nav className="side-nav" aria-label="Navegacion principal de administracion">
           {navigation.map((item) => (
             <NavLink
               key={item.to}
@@ -45,13 +42,13 @@ export function AdminLayout() {
 
         <div className="sidebar-note">
           <h2>Rol activo</h2>
-          <p>Administrador con permisos para pagos, operaciones, clientes y configuración.</p>
+          <p>Administrador con permisos para pagos, operaciones, clientes y configuracion.</p>
         </div>
       </aside>
 
       {sidebarOpen ? (
         <button
-          aria-label="Cerrar navegación"
+          aria-label="Cerrar navegacion"
           className="admin-shell__backdrop"
           onClick={() => setSidebarOpen(false)}
           type="button"
@@ -71,19 +68,21 @@ export function AdminLayout() {
               <span />
             </button>
             <div>
-              <span className="topbar__eyebrow">Administración clínica</span>
-              <strong>{activeSection}</strong>
+              <span className="topbar__eyebrow">Administracion clinica</span>
+              <strong>{user?.fullName || 'Administrador'}</strong>
             </div>
           </div>
 
           <div className="topbar__right">
-            <div className="search-pill">Buscar pacientes, pagos o operaciones</div>
+            <div className="search-pill">Buscar pacientes, pagos u operaciones</div>
             <div className="profile-chip">
-              <span className="profile-chip__avatar">FR</span>
-              <div>
-                <strong>Fabián Rivero</strong>
-                <span>Administrador principal</span>
+              <div className="profile-chip__meta">
+                <strong>{user?.fullName}</strong>
+                <span>{user?.role || 'ADMINISTRADOR'}</span>
               </div>
+              <button className="button button--ghost button--compact" type="button" onClick={() => void logout()}>
+                Cerrar sesion
+              </button>
             </div>
           </div>
         </header>

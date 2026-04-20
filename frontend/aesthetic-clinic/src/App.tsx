@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 
 import { AdminLayout } from './layouts/AdminLayout'
 import { AdminCatalogsPage } from './pages/admin/AdminCatalogsPage'
@@ -7,19 +7,113 @@ import { AdminOperationsPage } from './pages/admin/AdminOperationsPage'
 import { AdminPaymentsPage } from './pages/admin/AdminPaymentsPage'
 import { AdminProspectsPage } from './pages/admin/AdminProspectsPage'
 import { AdminStaffPage } from './pages/admin/AdminStaffPage'
+import { LoginPage } from './pages/auth/LoginPage'
+import { RoleHomePage } from './pages/shared/RoleHomePage'
+import { useAuth } from './providers/AuthProvider'
+import type { RoleKey } from './types/auth'
+
+function AppLoadingScreen() {
+  return (
+    <div className="app-state-screen">
+      <div className="app-state-screen__card">
+        <strong>Validando sesion</strong>
+        <p>Estamos comprobando tu acceso y preparando la interfaz adecuada para tu rol.</p>
+      </div>
+    </div>
+  )
+}
+
+function RootRedirect() {
+  const { user, isLoading } = useAuth()
+
+  if (isLoading) {
+    return <AppLoadingScreen />
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  return <Navigate to={user.dashboardPath} replace />
+}
+
+function LoginRoute() {
+  const { user, isLoading } = useAuth()
+
+  if (isLoading) {
+    return <AppLoadingScreen />
+  }
+
+  if (user) {
+    return <Navigate to={user.dashboardPath} replace />
+  }
+
+  return <LoginPage />
+}
+
+function RequireRole({ allowedRoles }: { allowedRoles: RoleKey[] }) {
+  const { user, isLoading } = useAuth()
+  const location = useLocation()
+
+  if (isLoading) {
+    return <AppLoadingScreen />
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  }
+
+  if (!allowedRoles.includes(user.role)) {
+    return <Navigate to={user.dashboardPath} replace />
+  }
+
+  return <Outlet />
+}
 
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/admin" replace />} />
-      <Route path="/admin" element={<AdminLayout />}>
-        <Route index element={<AdminDashboardPage />} />
-        <Route path="prospectos" element={<AdminProspectsPage />} />
-        <Route path="operaciones" element={<AdminOperationsPage />} />
-        <Route path="pagos" element={<AdminPaymentsPage />} />
-        <Route path="catalogos" element={<AdminCatalogsPage />} />
-        <Route path="equipo" element={<AdminStaffPage />} />
+      <Route path="/" element={<RootRedirect />} />
+      <Route path="/login" element={<LoginRoute />} />
+
+      <Route element={<RequireRole allowedRoles={['ADMINISTRADOR']} />}>
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<AdminDashboardPage />} />
+          <Route path="prospectos" element={<AdminProspectsPage />} />
+          <Route path="operaciones" element={<AdminOperationsPage />} />
+          <Route path="pagos" element={<AdminPaymentsPage />} />
+          <Route path="catalogos" element={<AdminCatalogsPage />} />
+          <Route path="equipo" element={<AdminStaffPage />} />
+        </Route>
       </Route>
+
+      <Route element={<RequireRole allowedRoles={['TRABAJADOR']} />}>
+        <Route
+          path="/trabajador"
+          element={
+            <RoleHomePage
+              eyebrow="Portal del trabajador"
+              title="Interfaz operativa en construccion"
+              description="El login ya esta activo y el siguiente paso sera conectar aqui agenda, citas y seguimiento clinico."
+            />
+          }
+        />
+      </Route>
+
+      <Route element={<RequireRole allowedRoles={['CLIENTE']} />}>
+        <Route
+          path="/cliente"
+          element={
+            <RoleHomePage
+              eyebrow="Portal del cliente"
+              title="Portal del paciente en construccion"
+              description="El acceso ya esta listo y el siguiente paso sera conectar pagos, cuotas, reservas e historial."
+            />
+          }
+        />
+      </Route>
+
+      <Route path="*" element={<RootRedirect />} />
     </Routes>
   )
 }
