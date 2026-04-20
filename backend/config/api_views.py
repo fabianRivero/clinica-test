@@ -318,16 +318,6 @@ def _dashboard_alerts():
                 "action": "Completar catalogos",
             }
         )
-    else:
-        alerts.append(
-            {
-                "id": "alert-catalogs-ok",
-                "title": "Catalogos clinicos consistentes",
-                "description": "Los procedimientos activos ya tienen ficha configurable asociada.",
-                "severity": "low",
-                "action": "Revisar catalogos",
-            }
-        )
 
     return alerts
 
