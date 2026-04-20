@@ -22,6 +22,11 @@ export type VerificationPayment = {
   submittedAt: string
   bank: string
   status: 'pendiente' | 'observado' | 'aprobado'
+  quota?: string
+  dueDate?: string
+  verifier?: string
+  receiptUrl?: string
+  note?: string
 }
 
 export type AgendaItem = {
@@ -40,6 +45,9 @@ export type ProspectLead = {
   interest: string
   registeredBy: string
   stage: 'nuevo' | 'seguimiento' | 'propuesta' | 'convertido'
+  state?: string
+  createdAt?: string
+  convertedAt?: string
 }
 
 export type OperationCardData = {
@@ -50,6 +58,8 @@ export type OperationCardData = {
   sessions: string
   nextAppointment: string
   quotaStatus: string
+  status?: string
+  price?: string
 }
 
 export type CatalogHealthItem = {
@@ -65,4 +75,54 @@ export type StaffCapacityItem = {
   specialty: string
   load: number
   pendingValidations: number
+  phone?: string
+  activeOperations?: number
+  upcomingAppointments?: number
+}
+
+export type ClientSnapshot = {
+  id: string
+  name: string
+  phone: string
+  status: string
+  activeOperations: number
+  totalOperations: number
+  lastAnalysis: string
+}
+
+export type DashboardResponse = {
+  metrics: AdminMetric[]
+  payments: VerificationPayment[]
+  agenda: AgendaItem[]
+  prospects: ProspectLead[]
+  alerts: AdminAlert[]
+  operations: OperationCardData[]
+  catalogHealth: CatalogHealthItem[]
+  staffCapacity: StaffCapacityItem[]
+}
+
+export type ProspectsResponse = {
+  metrics: AdminMetric[]
+  prospects: ProspectLead[]
+  clients: ClientSnapshot[]
+}
+
+export type OperationsResponse = {
+  metrics: AdminMetric[]
+  operations: OperationCardData[]
+}
+
+export type PaymentsResponse = {
+  metrics: AdminMetric[]
+  payments: VerificationPayment[]
+}
+
+export type CatalogsResponse = {
+  metrics: AdminMetric[]
+  catalogs: CatalogHealthItem[]
+}
+
+export type StaffResponse = {
+  metrics: AdminMetric[]
+  staff: StaffCapacityItem[]
 }

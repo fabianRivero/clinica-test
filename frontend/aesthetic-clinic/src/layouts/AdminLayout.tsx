@@ -24,7 +24,7 @@ export function AdminLayout() {
       <aside className={`admin-shell__sidebar ${sidebarOpen ? 'is-open' : ''}`}>
         <div className="brand-card">
           <span className="brand-card__eyebrow">Panel administrativo</span>
-          <strong>Clínica Lumière</strong>
+          <strong>Nataly Ferrufino Estetic & Academy</strong>
           <p>Operación clínica, pagos y catálogos en una sola vista.</p>
         </div>
 
@@ -81,7 +81,7 @@ export function AdminLayout() {
             <div className="profile-chip">
               <span className="profile-chip__avatar">FL</span>
               <div>
-                <strong>Fabián López</strong>
+                <strong>Fabián Rivero</strong>
                 <span>Administrador principal</span>
               </div>
             </div>
