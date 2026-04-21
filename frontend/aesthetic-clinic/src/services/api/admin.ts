@@ -1,13 +1,24 @@
 import type {
   CatalogsResponse,
+  CreateAdminProspectPayload,
+  CreateAdminProspectResponse,
   DashboardResponse,
   OperationsResponse,
   PaymentsResponse,
   ProspectsResponse,
   StaffResponse,
 } from '../../types/admin'
+import { ensureCsrfCookie } from './auth'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+
+function getCookie(name: string) {
+  const cookie = document.cookie
+    .split('; ')
+    .find((item) => item.startsWith(`${name}=`))
+
+  return cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : ''
+}
 
 async function requestJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -22,6 +33,38 @@ async function requestJson<T>(path: string): Promise<T> {
   }
 
   return (await response.json()) as T
+}
+
+async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
+  await ensureCsrfCookie()
+  const csrfToken = getCookie('csrftoken')
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrfToken,
+    },
+    body: JSON.stringify(body),
+  })
+
+  const responseBody = (await response.json().catch(() => null)) as
+    | { detail?: string; errors?: Record<string, string> }
+    | null
+
+  if (!response.ok) {
+    const error = new Error(responseBody?.detail || `No se pudo completar ${path} (${response.status})`) as Error & {
+      fieldErrors?: Record<string, string>
+    }
+    if (responseBody?.errors) {
+      error.fieldErrors = responseBody.errors
+    }
+    throw error
+  }
+
+  return responseBody as T
 }
 
 export function getAdminDashboard() {
@@ -46,4 +89,8 @@ export function getAdminCatalogs() {
 
 export function getAdminStaff() {
   return requestJson<StaffResponse>('/api/admin/equipo/')
+}
+
+export function createAdminProspect(payload: CreateAdminProspectPayload) {
+  return requestJsonWithBody<CreateAdminProspectResponse>('/api/admin/prospectos/crear/', payload)
 }

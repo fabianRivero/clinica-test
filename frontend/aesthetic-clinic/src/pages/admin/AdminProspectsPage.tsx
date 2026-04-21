@@ -5,9 +5,15 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { getAdminProspects } from '../../services/api/admin'
+import { useLocation } from 'react-router-dom'
 
 export function AdminProspectsPage() {
+  const location = useLocation()
   const { data, isLoading, error } = useApiResource(getAdminProspects)
+  const flashMessage =
+    typeof location.state === 'object' && location.state && 'flashMessage' in location.state
+      ? String(location.state.flashMessage)
+      : null
 
   return (
     <div className="page-stack">
@@ -16,10 +22,12 @@ export function AdminProspectsPage() {
         title="Prospectos y clientes"
         description="Administra prospectos pasajeros, su avance comercial y el momento en que pasan a clientes formales."
         actions={[
-          { label: 'Registrar prospecto', variant: 'primary' },
+          { label: 'Registrar prospecto', variant: 'primary', to: '/admin/prospectos/nuevo' },
           { label: 'Importar contactos', variant: 'ghost' },
         ]}
       />
+
+      {flashMessage ? <DataState title="Registro actualizado" message={flashMessage} /> : null}
 
       {isLoading && !data ? (
         <SectionCard title="Cargando relacion comercial">

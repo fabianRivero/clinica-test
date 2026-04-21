@@ -126,3 +126,16 @@ export type StaffResponse = {
   metrics: AdminMetric[]
   staff: StaffCapacityItem[]
 }
+
+export type CreateAdminProspectPayload = {
+  nombres: string
+  apellidos: string
+  telefono: string
+  estado: 'PASAJERO' | 'DESCARTADO'
+  observaciones: string
+}
+
+export type CreateAdminProspectResponse = {
+  detail: string
+  prospect: ProspectLead
+}

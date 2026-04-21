@@ -19,7 +19,7 @@ export function ClientLayout() {
       <aside className={`client-shell__sidebar ${sidebarOpen ? 'is-open' : ''}`}>
         <div className="brand-card brand-card--client">
           <span className="brand-card__eyebrow">Portal del paciente</span>
-          <strong>Mi espacio clinico</strong>
+          <strong>Nataly Ferrufino Estetic & Academy</strong>
           <p>Consulta tratamientos, pagos, cuotas y el estado de tus reservas en un solo lugar.</p>
         </div>
 

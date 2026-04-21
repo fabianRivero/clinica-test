@@ -1,10 +1,11 @@
+import json
 from datetime import timedelta
 from functools import wraps
 
 from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.utils import timezone
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 
 from billing.models import CuotaPlanPago, PagoRealizado
 from catalogs.models import (
@@ -540,6 +541,49 @@ def admin_prospectos(request):
         "clients": [_client_item(cliente) for cliente in clientes_qs],
     }
     return _json(data)
+
+
+@require_POST
+@_admin_required
+def admin_crear_prospecto(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    nombres = (payload.get("nombres") or "").strip()
+    apellidos = (payload.get("apellidos") or "").strip()
+    telefono = (payload.get("telefono") or "").strip()
+    observaciones = (payload.get("observaciones") or "").strip()
+    estado = (payload.get("estado") or Prospecto.Estado.PASAJERO).strip()
+
+    errors = {}
+    if not nombres:
+        errors["nombres"] = "Los nombres son obligatorios."
+    if not apellidos:
+        errors["apellidos"] = "Los apellidos son obligatorios."
+    if estado not in {Prospecto.Estado.PASAJERO, Prospecto.Estado.DESCARTADO}:
+        errors["estado"] = "Solo puedes crear prospectos en estado pasajero o descartado."
+
+    if errors:
+        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+
+    prospecto = Prospecto.objects.create(
+        nombres=nombres,
+        apellidos=apellidos,
+        telefono=telefono,
+        estado=estado,
+        observaciones=observaciones,
+        registrado_por=request.user,
+    )
+
+    return _json(
+        {
+            "detail": "Prospecto registrado correctamente.",
+            "prospect": _prospect_item(prospecto),
+        },
+        status=201,
+    )
 
 
 @require_GET

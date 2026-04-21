@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 type PageHeaderProps = {
   eyebrow: string
   title: string
@@ -5,6 +7,8 @@ type PageHeaderProps = {
   actions?: Array<{
     label: string
     variant?: 'primary' | 'ghost'
+    to?: string
+    onClick?: () => void
   }>
 }
 
@@ -24,13 +28,24 @@ export function PageHeader({
       {actions?.length ? (
         <div className="page-header__actions">
           {actions.map((action) => (
-            <button
-              key={action.label}
-              className={`button ${action.variant === 'ghost' ? 'button--ghost' : ''}`}
-              type="button"
-            >
-              {action.label}
-            </button>
+            action.to ? (
+              <Link
+                key={action.label}
+                className={`button ${action.variant === 'ghost' ? 'button--ghost' : ''}`}
+                to={action.to}
+              >
+                {action.label}
+              </Link>
+            ) : (
+              <button
+                key={action.label}
+                className={`button ${action.variant === 'ghost' ? 'button--ghost' : ''}`}
+                type="button"
+                onClick={action.onClick}
+              >
+                {action.label}
+              </button>
+            )
           ))}
         </div>
       ) : null}

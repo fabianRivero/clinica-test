@@ -22,7 +22,7 @@ export function AdminDashboardPage() {
         title="Centro de control administrativo"
         description="Una lectura rapida del estado financiero, operativo y clinico de la clinica."
         actions={[
-          { label: 'Nueva operacion', variant: 'primary' },
+          { label: 'Registrar prospecto', variant: 'primary', to: '/admin/prospectos/nuevo' },
           { label: 'Exportar resumen', variant: 'ghost' },
         ]}
       />
