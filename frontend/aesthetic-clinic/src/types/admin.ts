@@ -1,0 +1,128 @@
+export type AdminMetric = {
+  id: string
+  label: string
+  value: string
+  delta: string
+  tone: 'primary' | 'success' | 'warning' | 'danger'
+}
+
+export type AdminAlert = {
+  id: string
+  title: string
+  description: string
+  severity: 'high' | 'medium' | 'low'
+  action: string
+}
+
+export type VerificationPayment = {
+  id: string
+  patient: string
+  operation: string
+  amount: string
+  submittedAt: string
+  bank: string
+  status: 'pendiente' | 'observado' | 'aprobado'
+  quota?: string
+  dueDate?: string
+  verifier?: string
+  receiptUrl?: string
+  note?: string
+}
+
+export type AgendaItem = {
+  id: string
+  time: string
+  patient: string
+  procedure: string
+  specialist: string
+  status: 'programada' | 'biometria' | 'confirmada'
+}
+
+export type ProspectLead = {
+  id: string
+  name: string
+  phone: string
+  interest: string
+  registeredBy: string
+  stage: 'nuevo' | 'seguimiento' | 'propuesta' | 'convertido'
+  state?: string
+  createdAt?: string
+  convertedAt?: string
+}
+
+export type OperationCardData = {
+  id: string
+  patient: string
+  procedure: string
+  specialist: string
+  sessions: string
+  nextAppointment: string
+  quotaStatus: string
+  status?: string
+  price?: string
+}
+
+export type CatalogHealthItem = {
+  id: string
+  name: string
+  count: number
+  note: string
+}
+
+export type StaffCapacityItem = {
+  id: string
+  specialist: string
+  specialty: string
+  load: number
+  pendingValidations: number
+  phone?: string
+  activeOperations?: number
+  upcomingAppointments?: number
+}
+
+export type ClientSnapshot = {
+  id: string
+  name: string
+  phone: string
+  status: string
+  activeOperations: number
+  totalOperations: number
+  lastAnalysis: string
+}
+
+export type DashboardResponse = {
+  metrics: AdminMetric[]
+  payments: VerificationPayment[]
+  agenda: AgendaItem[]
+  prospects: ProspectLead[]
+  alerts: AdminAlert[]
+  operations: OperationCardData[]
+  catalogHealth: CatalogHealthItem[]
+  staffCapacity: StaffCapacityItem[]
+}
+
+export type ProspectsResponse = {
+  metrics: AdminMetric[]
+  prospects: ProspectLead[]
+  clients: ClientSnapshot[]
+}
+
+export type OperationsResponse = {
+  metrics: AdminMetric[]
+  operations: OperationCardData[]
+}
+
+export type PaymentsResponse = {
+  metrics: AdminMetric[]
+  payments: VerificationPayment[]
+}
+
+export type CatalogsResponse = {
+  metrics: AdminMetric[]
+  catalogs: CatalogHealthItem[]
+}
+
+export type StaffResponse = {
+  metrics: AdminMetric[]
+  staff: StaffCapacityItem[]
+}

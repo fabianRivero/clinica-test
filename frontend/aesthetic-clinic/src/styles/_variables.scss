@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+:root {
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+
+  --color-bg: #f4f9fb;
+  --color-surface: #ffffff;
+  --color-surface-alt: #eef6f8;
+  --color-border: #d9e8ec;
+  --color-text: #15323a;
+  --color-text-soft: #56727b;
+  --color-primary: #2f8a92;
+  --color-primary-dark: #246e74;
+  --color-primary-soft: #dff3f4;
+  --color-success: #2f8e66;
+  --color-success-soft: #dff5eb;
+  --color-warning: #c4872d;
+  --color-warning-soft: #fff3dd;
+  --color-danger: #c85f64;
+  --color-danger-soft: #ffe8ea;
+  --color-shadow: rgba(18, 50, 58, 0.08);
+  --color-shadow-strong: rgba(33, 101, 108, 0.18);
+
+  --radius-xs: 12px;
+  --radius-sm: 18px;
+  --radius-md: 24px;
+  --radius-lg: 32px;
+
+  --shadow-soft: 0 18px 40px -28px var(--color-shadow);
+  --shadow-card: 0 12px 30px -18px var(--color-shadow);
+  --shadow-accent: 0 18px 38px -24px var(--color-shadow-strong);
+
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-5: 1.25rem;
+  --spacing-6: 1.5rem;
+  --spacing-8: 2rem;
+  --spacing-10: 2.5rem;
+  --spacing-12: 3rem;
+
+  --transition-base: 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
