@@ -1,6 +1,7 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 
 import { AdminLayout } from './layouts/AdminLayout'
+import { ClientLayout } from './layouts/ClientLayout'
 import { AdminCatalogsPage } from './pages/admin/AdminCatalogsPage'
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
 import { AdminOperationsPage } from './pages/admin/AdminOperationsPage'
@@ -8,6 +9,10 @@ import { AdminPaymentsPage } from './pages/admin/AdminPaymentsPage'
 import { AdminProspectsPage } from './pages/admin/AdminProspectsPage'
 import { AdminStaffPage } from './pages/admin/AdminStaffPage'
 import { LoginPage } from './pages/auth/LoginPage'
+import { ClientDashboardPage } from './pages/client/ClientDashboardPage'
+import { ClientPaymentsPage } from './pages/client/ClientPaymentsPage'
+import { ClientReservationsPage } from './pages/client/ClientReservationsPage'
+import { ClientTreatmentsPage } from './pages/client/ClientTreatmentsPage'
 import { RoleHomePage } from './pages/shared/RoleHomePage'
 import { useAuth } from './providers/AuthProvider'
 import type { RoleKey } from './types/auth'
@@ -101,16 +106,12 @@ function App() {
       </Route>
 
       <Route element={<RequireRole allowedRoles={['CLIENTE']} />}>
-        <Route
-          path="/cliente"
-          element={
-            <RoleHomePage
-              eyebrow="Portal del cliente"
-              title="Portal del paciente en construccion"
-              description="El acceso ya esta listo y el siguiente paso sera conectar pagos, cuotas, reservas e historial."
-            />
-          }
-        />
+        <Route path="/cliente" element={<ClientLayout />}>
+          <Route index element={<ClientDashboardPage />} />
+          <Route path="tratamientos" element={<ClientTreatmentsPage />} />
+          <Route path="pagos" element={<ClientPaymentsPage />} />
+          <Route path="reservas" element={<ClientReservationsPage />} />
+        </Route>
       </Route>
 
       <Route path="*" element={<RootRedirect />} />

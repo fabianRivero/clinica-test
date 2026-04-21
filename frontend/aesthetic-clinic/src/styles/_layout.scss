@@ -9,6 +9,15 @@
   }
 }
 
+.client-shell {
+  min-height: 100vh;
+
+  @include respond(lg) {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+}
+
 .admin-shell__sidebar {
   position: fixed;
   inset: 0 auto 0 0;
@@ -34,6 +43,34 @@
   }
 }
 
+.client-shell__sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: min(300px, 86vw);
+  padding: var(--spacing-6);
+  background:
+    linear-gradient(180deg, rgba(235, 249, 250, 0.98), rgba(246, 252, 252, 0.98)),
+    #fff;
+  color: var(--color-text);
+  transform: translateX(-100%);
+  transition: transform var(--transition-base);
+  z-index: 30;
+  overflow-y: auto;
+  border-right: 1px solid rgba(217, 232, 236, 0.92);
+
+  &.is-open {
+    transform: translateX(0);
+  }
+
+  @include respond(lg) {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    transform: none;
+    width: auto;
+  }
+}
+
 .admin-shell__backdrop {
   position: fixed;
   inset: 0;
@@ -45,7 +82,31 @@
   }
 }
 
+.client-shell__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 26, 30, 0.24);
+  z-index: 20;
+
+  @include respond(lg) {
+    display: none;
+  }
+}
+
 .admin-shell__main {
+  min-width: 0;
+  padding: var(--spacing-4);
+
+  @include respond(md) {
+    padding: var(--spacing-6);
+  }
+
+  @include respond(lg) {
+    padding: var(--spacing-8);
+  }
+}
+
+.client-shell__main {
   min-width: 0;
   padding: var(--spacing-4);
 
@@ -93,6 +154,22 @@
 
 .brand-card__eyebrow {
   color: #8fe1e6;
+}
+
+.brand-card--client {
+  background:
+    radial-gradient(circle at top right, rgba(107, 207, 215, 0.18), transparent 10rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 250, 251, 0.96));
+  border-color: rgba(217, 232, 236, 0.95);
+  color: var(--color-text);
+
+  strong {
+    color: var(--color-text);
+  }
+
+  p {
+    color: var(--color-text-soft);
+  }
 }
 
 .side-nav {
@@ -145,6 +222,15 @@
     margin: 0 0 var(--spacing-2);
     font-size: 1rem;
     color: #fff;
+  }
+}
+
+.sidebar-note--client {
+  background: rgba(244, 250, 251, 0.96);
+  border-color: rgba(217, 232, 236, 0.92);
+
+  h2 {
+    color: var(--color-text);
   }
 }
 
@@ -205,12 +291,22 @@
   font-size: 1.1rem;
 }
 
+.topbar--client {
+  background:
+    radial-gradient(circle at top right, rgba(107, 207, 215, 0.14), transparent 11rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 250, 251, 0.96));
+}
+
 .search-pill {
   min-width: min(100%, 18rem);
   padding: 0.95rem 1.1rem;
   border-radius: 999px;
   background: var(--color-surface-alt);
   color: var(--color-text-soft);
+}
+
+.search-pill--client {
+  background: rgba(242, 249, 250, 0.96);
 }
 
 .profile-chip {
@@ -231,6 +327,10 @@
     font-size: 0.85rem;
     color: var(--color-text-soft);
   }
+}
+
+.profile-chip--client {
+  background: rgba(255, 255, 255, 0.98);
 }
 
 .profile-chip__meta {
@@ -289,6 +389,68 @@
 .dashboard-grid--secondary {
   @include respond(lg) {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.client-summary-card {
+  @include panel;
+
+  display: grid;
+  gap: var(--spacing-5);
+  padding: clamp(1.4rem, 3vw, 2rem);
+  background:
+    radial-gradient(circle at top right, rgba(107, 207, 215, 0.2), transparent 11rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 250, 251, 0.96));
+
+  h2 {
+    margin: var(--spacing-2) 0;
+    font-size: clamp(1.8rem, 3vw, 2.7rem);
+    line-height: 1.05;
+  }
+
+  p {
+    margin: 0;
+    color: var(--color-text-soft);
+  }
+
+  @include respond(md) {
+    grid-template-columns: minmax(0, 1.4fr) minmax(240px, 0.8fr);
+    align-items: end;
+  }
+}
+
+.client-summary-card__eyebrow {
+  display: inline-flex;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+
+.client-summary-card__grid {
+  display: grid;
+  gap: var(--spacing-4);
+
+  article {
+    padding: 1rem 1.1rem;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(217, 232, 236, 0.92);
+  }
+
+  span,
+  strong {
+    display: block;
+  }
+
+  span {
+    color: var(--color-text-soft);
+    margin-bottom: 0.25rem;
+  }
+
+  strong {
+    font-size: 1.6rem;
   }
 }
 
