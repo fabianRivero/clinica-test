@@ -58,6 +58,42 @@ class Prospecto(TimeStampedModel):
         return f"{self.nombres} {self.apellidos}".strip()
 
 
+class ProspectoConversionBorrador(TimeStampedModel):
+    class Paso(models.IntegerChoices):
+        DATOS_USUARIO = 1, "Datos de usuario"
+        OPERACION = 2, "Operacion"
+        FICHA_MEDICA = 3, "Ficha medica"
+
+    prospecto = models.OneToOneField(
+        "customers.Prospecto",
+        on_delete=models.CASCADE,
+        related_name="borrador_conversion",
+    )
+    iniciado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="conversiones_prospecto_iniciadas",
+        null=True,
+        blank=True,
+    )
+    paso_actual = models.PositiveSmallIntegerField(
+        choices=Paso.choices,
+        default=Paso.DATOS_USUARIO,
+    )
+    paso_usuario_completado = models.BooleanField(default=False)
+    paso_operacion_completado = models.BooleanField(default=False)
+    paso_ficha_completado = models.BooleanField(default=False)
+    datos_usuario = models.JSONField(default=dict, blank=True)
+    datos_operacion = models.JSONField(default=dict, blank=True)
+    datos_ficha = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = "prospectos_conversion_borrador"
+
+    def __str__(self):
+        return f"Borrador conversion - {self.prospecto}"
+
+
 class Cliente(TimeStampedModel):
     class Estado(models.TextChoices):
         ACTIVO = "ACTIVO", "Activo"

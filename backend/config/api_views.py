@@ -173,6 +173,7 @@ def _operation_card(operacion):
 def _prospect_item(prospecto):
     return {
         "id": f"PRO-{prospecto.pk:04d}",
+        "rawId": prospecto.pk,
         "name": str(prospecto),
         "phone": prospecto.telefono or "Sin telefono",
         "interest": _prospect_interest(prospecto),

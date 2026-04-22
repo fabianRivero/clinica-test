@@ -8,6 +8,13 @@ import type {
   ProspectsResponse,
   StaffResponse,
 } from '../../types/admin'
+import type {
+  ProspectConversionFinalizeResponse,
+  ProspectConversionMedicalData,
+  ProspectConversionOperationData,
+  ProspectConversionResponse,
+  ProspectConversionUserData,
+} from '../../types/prospectConversion'
 import { ensureCsrfCookie } from './auth'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
@@ -93,4 +100,43 @@ export function getAdminStaff() {
 
 export function createAdminProspect(payload: CreateAdminProspectPayload) {
   return requestJsonWithBody<CreateAdminProspectResponse>('/api/admin/prospectos/crear/', payload)
+}
+
+export function getAdminProspectConversion(prospectId: string) {
+  return requestJson<ProspectConversionResponse>(`/api/admin/prospectos/${prospectId}/conversion/`)
+}
+
+export function cancelAdminProspectConversion(prospectId: string) {
+  return requestJsonWithBody<{ detail: string }>(
+    `/api/admin/prospectos/${prospectId}/conversion/cancelar/`,
+    {},
+  )
+}
+
+export function saveAdminProspectConversionUserStep(prospectId: string, payload: ProspectConversionUserData & { password?: string }) {
+  return requestJsonWithBody<ProspectConversionResponse>(
+    `/api/admin/prospectos/${prospectId}/conversion/paso-1/`,
+    payload,
+  )
+}
+
+export function saveAdminProspectConversionOperationStep(prospectId: string, payload: ProspectConversionOperationData) {
+  return requestJsonWithBody<ProspectConversionResponse>(
+    `/api/admin/prospectos/${prospectId}/conversion/paso-2/`,
+    payload,
+  )
+}
+
+export function saveAdminProspectConversionMedicalStep(prospectId: string, payload: ProspectConversionMedicalData) {
+  return requestJsonWithBody<ProspectConversionResponse>(
+    `/api/admin/prospectos/${prospectId}/conversion/paso-3/`,
+    payload,
+  )
+}
+
+export function finalizeAdminProspectConversion(prospectId: string) {
+  return requestJsonWithBody<ProspectConversionFinalizeResponse>(
+    `/api/admin/prospectos/${prospectId}/conversion/finalizar/`,
+    {},
+  )
 }

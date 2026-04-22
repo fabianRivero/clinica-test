@@ -6,6 +6,7 @@ import { AdminCatalogsPage } from './pages/admin/AdminCatalogsPage'
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
 import { AdminOperationsPage } from './pages/admin/AdminOperationsPage'
 import { AdminPaymentsPage } from './pages/admin/AdminPaymentsPage'
+import { AdminProspectConvertPage } from './pages/admin/AdminProspectConvertPage'
 import { AdminProspectCreatePage } from './pages/admin/AdminProspectCreatePage'
 import { AdminProspectsPage } from './pages/admin/AdminProspectsPage'
 import { AdminStaffPage } from './pages/admin/AdminStaffPage'
@@ -87,6 +88,7 @@ function App() {
           <Route index element={<AdminDashboardPage />} />
           <Route path="prospectos" element={<AdminProspectsPage />} />
           <Route path="prospectos/nuevo" element={<AdminProspectCreatePage />} />
+          <Route path="prospectos/:prospectId/convertir" element={<AdminProspectConvertPage />} />
           <Route path="operaciones" element={<AdminOperationsPage />} />
           <Route path="pagos" element={<AdminPaymentsPage />} />
           <Route path="catalogos" element={<AdminCatalogsPage />} />

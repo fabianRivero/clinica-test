@@ -728,6 +728,13 @@ class Command(BaseCommand):
         return catalogs
 
     def _seed_form_configuration(self, catalogs):
+        removed_depilation_codes = (
+            "ULTIMA_EXPOSICION_SOL",
+            "AUTORIZA_FOTOGRAFIAS",
+            "REACCIONES_PREVIAS",
+            "FRECUENCIA_EXPOSICION_SOL",
+        )
+
         def sync_field(seccion, codigo, etiqueta, tipo_campo, orden, grupo=None, es_multiple=False):
             return FichaCampo.objects.update_or_create(
                 seccion=seccion,
@@ -765,25 +772,7 @@ class Command(BaseCommand):
             sync_field(section, "TIPO_VELLO", "Tipo de vello", FichaCampo.TipoCampo.TEXTO, 10)
             sync_field(section, "COLOR_VELLO", "Color de vello", FichaCampo.TipoCampo.TEXTO, 11)
             sync_field(section, "GROSOR_VELLO", "Grosor de vello", FichaCampo.TipoCampo.TEXTO, 12)
-            sync_field(section, "ULTIMA_EXPOSICION_SOL", "Ultima exposicion solar", FichaCampo.TipoCampo.FECHA, 13)
-            sync_field(section, "AUTORIZA_FOTOGRAFIAS", "Autoriza fotografias", FichaCampo.TipoCampo.BOOLEANO, 14)
-            sync_field(
-                section,
-                "REACCIONES_PREVIAS",
-                "Reacciones previas",
-                FichaCampo.TipoCampo.MULTISELECCION,
-                15,
-                catalogs["grupo"]["REACCIONES_PIEL"],
-                es_multiple=True,
-            )
-            sync_field(
-                section,
-                "FRECUENCIA_EXPOSICION_SOL",
-                "Frecuencia de exposicion solar",
-                FichaCampo.TipoCampo.SELECCION,
-                16,
-                catalogs["grupo"]["FRECUENCIA_SOL"],
-            )
+            FichaCampo.objects.filter(seccion=section, codigo__in=removed_depilation_codes).update(activo=False)
 
         tattoo_section = sync_section("tatuajes", "PUNTO_E", "Borrado de tatuajes", 1)
         sync_field(tattoo_section, "MESES_ANTIGUEDAD", "Meses de antiguedad", FichaCampo.TipoCampo.NUMERO, 1)
@@ -1177,6 +1166,7 @@ class Command(BaseCommand):
         campo = FichaCampo.objects.get(
             codigo=codigo,
             seccion__proc_estetico=ficha.operacion.servicio_config.proc_estetico,
+            activo=True,
         )
         respuesta, _ = FichaRespuestaCampo.objects.update_or_create(
             ficha=ficha,
@@ -1446,15 +1436,6 @@ class Command(BaseCommand):
         self._set_field_response(ficha, "TIPO_VELLO", valor_texto="Terminal")
         self._set_field_response(ficha, "COLOR_VELLO", valor_texto="Oscuro")
         self._set_field_response(ficha, "GROSOR_VELLO", valor_texto="Medio")
-        self._set_field_response(ficha, "ULTIMA_EXPOSICION_SOL", valor_fecha=today - timedelta(days=10))
-        self._set_field_response(ficha, "AUTORIZA_FOTOGRAFIAS", valor_booleano=True)
-        self._set_field_response(
-            ficha,
-            "REACCIONES_PREVIAS",
-            option_codes=["ENROJECIMIENTO", "PICAZON"],
-            detalle="Reacciones leves despues de rasurado frecuente.",
-        )
-        self._set_field_response(ficha, "FRECUENCIA_EXPOSICION_SOL", option_codes=["MEDIA"])
 
         self._add_cita(
             operation,
@@ -1650,15 +1631,6 @@ class Command(BaseCommand):
         self._set_field_response(ficha, "TIPO_VELLO", valor_texto="Fino")
         self._set_field_response(ficha, "COLOR_VELLO", valor_texto="Castano")
         self._set_field_response(ficha, "GROSOR_VELLO", valor_texto="Fino")
-        self._set_field_response(ficha, "ULTIMA_EXPOSICION_SOL", valor_fecha=today - timedelta(days=21))
-        self._set_field_response(ficha, "AUTORIZA_FOTOGRAFIAS", valor_booleano=False)
-        self._set_field_response(
-            ficha,
-            "REACCIONES_PREVIAS",
-            option_codes=["DESCAMACION"],
-            detalle="Descamacion leve en primeras sesiones.",
-        )
-        self._set_field_response(ficha, "FRECUENCIA_EXPOSICION_SOL", option_codes=["BAJA"])
 
         for offset in (150, 120, 90, 60):
             self._add_cita(
@@ -1735,15 +1707,6 @@ class Command(BaseCommand):
         self._set_field_response(ficha, "TIPO_VELLO", valor_texto="Grueso")
         self._set_field_response(ficha, "COLOR_VELLO", valor_texto="Negro")
         self._set_field_response(ficha, "GROSOR_VELLO", valor_texto="Grueso")
-        self._set_field_response(ficha, "ULTIMA_EXPOSICION_SOL", valor_fecha=today - timedelta(days=2))
-        self._set_field_response(ficha, "AUTORIZA_FOTOGRAFIAS", valor_booleano=False)
-        self._set_field_response(
-            ficha,
-            "REACCIONES_PREVIAS",
-            option_codes=["ARDOR", "ENROJECIMIENTO"],
-            detalle="La paciente refiere ardor prolongado posterior a una prueba externa.",
-        )
-        self._set_field_response(ficha, "FRECUENCIA_EXPOSICION_SOL", option_codes=["ALTA"])
 
         self._add_cita(
             operation,

@@ -40,6 +40,7 @@ export type AgendaItem = {
 
 export type ProspectLead = {
   id: string
+  rawId?: number
   name: string
   phone: string
   interest: string

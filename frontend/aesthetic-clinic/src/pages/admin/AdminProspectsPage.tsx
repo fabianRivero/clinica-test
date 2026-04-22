@@ -5,7 +5,7 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { getAdminProspects } from '../../services/api/admin'
-import { useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 
 export function AdminProspectsPage() {
   const location = useLocation()
@@ -68,6 +68,7 @@ export function AdminProspectsPage() {
                       <th>Registrado por</th>
                       <th>Etapa</th>
                       <th>Estado</th>
+                      <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -84,6 +85,15 @@ export function AdminProspectsPage() {
                           <StatusBadge tone="primary">{lead.stage}</StatusBadge>
                         </td>
                         <td>{lead.state}</td>
+                        <td>
+                          {lead.state === 'Pasajero' ? (
+                            <Link className="button button--ghost button--compact" to={`/admin/prospectos/${lead.rawId}/convertir`}>
+                              Convertir
+                            </Link>
+                          ) : (
+                            <span>-</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
