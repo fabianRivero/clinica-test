@@ -1,5 +1,4 @@
 import json
-from calendar import monthrange
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -110,14 +109,6 @@ def _parse_bool(value):
     return bool(value)
 
 
-def _add_months(base_date, months):
-    month_index = base_date.month - 1 + months
-    year = base_date.year + month_index // 12
-    month = month_index % 12 + 1
-    day = min(base_date.day, monthrange(year, month)[1])
-    return date(year, month, day)
-
-
 def _build_initial_user_data(prospecto):
     return {
         "primerNombre": prospecto.nombres,
@@ -176,6 +167,13 @@ def _serialize_draft(draft):
     user_data["hasPassword"] = bool((draft.datos_usuario or {}).get("passwordHash"))
     default_medical_data = _blank_medical_data()
     saved_medical_data = dict(draft.datos_ficha or {})
+    saved_operation_data = dict(draft.datos_operacion or {})
+    cuotas_totales = int(saved_operation_data.get("cuotasTotales") or 1)
+    due_dates = saved_operation_data.get("fechasVencimientoCuotas")
+    if due_dates is None:
+        legacy_due_date = saved_operation_data.get("primeraFechaVencimiento") or ""
+        due_dates = [legacy_due_date] + [""] * max(cuotas_totales - 1, 0)
+
     medical_data = {
         **default_medical_data,
         **saved_medical_data,
@@ -191,7 +189,7 @@ def _serialize_draft(draft):
         "stepOperationCompleted": draft.paso_operacion_completado,
         "stepMedicalCompleted": draft.paso_ficha_completado,
         "userData": user_data or _build_initial_user_data(draft.prospecto),
-        "operationData": draft.datos_operacion or {
+        "operationData": {
             "serviceConfigId": "",
             "zonaGeneral": "",
             "zonaEspecifica": "",
@@ -203,7 +201,9 @@ def _serialize_draft(draft):
             "estado": Operacion.Estado.EN_PROCESO,
             "detallesOperacion": "",
             "recomendaciones": "",
-            "primeraFechaVencimiento": "",
+            "fechasVencimientoCuotas": [""],
+            **saved_operation_data,
+            "fechasVencimientoCuotas": due_dates,
         },
         "medicalData": medical_data,
     }
@@ -419,12 +419,6 @@ def _validate_operation_step(payload):
     sesiones_totales = _parse_positive_int(payload.get("sesionesTotales"), "sesionesTotales", errors, min_value=1)
     fecha_inicio = _parse_date(payload.get("fechaInicio"), "fechaInicio", errors, required=True)
     fecha_final = _parse_date(payload.get("fechaFinal"), "fechaFinal", errors, required=False)
-    primera_fecha_vencimiento = _parse_date(
-        payload.get("primeraFechaVencimiento"),
-        "primeraFechaVencimiento",
-        errors,
-        required=True,
-    )
     estado = (payload.get("estado") or Operacion.Estado.EN_PROCESO).strip()
     if estado not in {choice[0] for choice in Operacion.Estado.choices}:
         errors["estado"] = "El estado seleccionado no es valido."
@@ -442,6 +436,33 @@ def _validate_operation_step(payload):
     if fecha_inicio and fecha_final and fecha_final < fecha_inicio:
         errors["fechaFinal"] = "La fecha final no puede ser anterior a la fecha de inicio."
 
+    raw_due_dates = payload.get("fechasVencimientoCuotas") or []
+    due_dates = []
+    seen_due_dates = set()
+    if cuotas_totales:
+        if len(raw_due_dates) != cuotas_totales:
+            errors["fechasVencimientoCuotas"] = (
+                "Debes indicar una fecha de vencimiento para cada cuota."
+            )
+
+        for index in range(cuotas_totales):
+            raw_value = raw_due_dates[index] if index < len(raw_due_dates) else ""
+            parsed_due_date = _parse_date(
+                raw_value,
+                f"fechasVencimientoCuotas.{index}",
+                errors,
+                required=True,
+            )
+            if not parsed_due_date:
+                continue
+            if parsed_due_date in seen_due_dates:
+                errors[f"fechasVencimientoCuotas.{index}"] = (
+                    "Las fechas de vencimiento no pueden repetirse."
+                )
+                continue
+            seen_due_dates.add(parsed_due_date)
+            due_dates.append(parsed_due_date)
+
     if errors:
         return None, None, errors
 
@@ -458,7 +479,7 @@ def _validate_operation_step(payload):
             "estado": estado,
             "detallesOperacion": (payload.get("detallesOperacion") or "").strip(),
             "recomendaciones": (payload.get("recomendaciones") or "").strip(),
-            "primeraFechaVencimiento": primera_fecha_vencimiento.isoformat() if primera_fecha_vencimiento else "",
+            "fechasVencimientoCuotas": [item.isoformat() for item in due_dates],
         },
         service_config,
         None,
@@ -894,12 +915,11 @@ def admin_prospect_conversion_finalize(request, prospecto_id):
         recomendaciones=operation_data.get("recomendaciones", ""),
     )
 
-    primera_fecha_vencimiento = date.fromisoformat(operation_data["primeraFechaVencimiento"])
-    for cuota_index in range(int(operation_data["cuotasTotales"])):
+    for cuota_index, fecha_vencimiento in enumerate(operation_data.get("fechasVencimientoCuotas") or []):
         CuotaPlanPago.objects.create(
             operacion=operacion,
             nro_cuota=cuota_index + 1,
-            fecha_vencimiento=_add_months(primera_fecha_vencimiento, cuota_index),
+            fecha_vencimiento=date.fromisoformat(fecha_vencimiento),
         )
 
     ficha = FichaClinica.objects.create(

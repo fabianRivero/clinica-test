@@ -32,7 +32,7 @@ export type ProspectConversionOperationData = {
   estado: string
   detallesOperacion: string
   recomendaciones: string
-  primeraFechaVencimiento: string
+  fechasVencimientoCuotas: string[]
 }
 
 export type ProspectConversionAntecedente = {

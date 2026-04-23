@@ -74,6 +74,10 @@ function blankCirugia(): ProspectConversionCirugia {
   }
 }
 
+function buildDueDateList(count: number, currentValues: string[]) {
+  return Array.from({ length: count }, (_, index) => currentValues[index] || '')
+}
+
 export function AdminProspectConvertPage() {
   const navigate = useNavigate()
   const { prospectId = '' } = useParams()
@@ -158,12 +162,21 @@ export function AdminProspectConvertPage() {
   const handleOperationChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     if (!operationForm) return
     const { name, value } = event.target
-    const nextForm = {
+    const nextValue =
+      name === 'cuotasTotales' || name === 'sesionesTotales'
+        ? Number(value || 0)
+        : value
+
+    const nextForm: ProspectConversionOperationData = {
       ...operationForm,
-      [name]:
-        name === 'cuotasTotales' || name === 'sesionesTotales'
-          ? Number(value || 0)
-          : value,
+      [name]: nextValue,
+    }
+
+    if (name === 'cuotasTotales') {
+      nextForm.fechasVencimientoCuotas = buildDueDateList(
+        Number(value || 0),
+        operationForm.fechasVencimientoCuotas,
+      )
     }
 
     if (name === 'serviceConfigId' && data) {
@@ -175,6 +188,22 @@ export function AdminProspectConvertPage() {
 
     setOperationForm(nextForm)
     setFieldErrors((current) => ({ ...current, [name]: '' }))
+    setSubmitError(null)
+  }
+
+  const updateDueDate = (index: number, value: string) => {
+    if (!operationForm) return
+    const nextDueDates = [...operationForm.fechasVencimientoCuotas]
+    nextDueDates[index] = value
+    setOperationForm({
+      ...operationForm,
+      fechasVencimientoCuotas: nextDueDates,
+    })
+    setFieldErrors((current) => ({
+      ...current,
+      [`fechasVencimientoCuotas.${index}`]: '',
+      fechasVencimientoCuotas: '',
+    }))
     setSubmitError(null)
   }
 
@@ -784,14 +813,33 @@ export function AdminProspectConvertPage() {
               {fieldErrors.fechaFinal ? <small className="field__error">{fieldErrors.fechaFinal}</small> : null}
             </label>
             <label className="field">
-              <span>Primera fecha de vencimiento</span>
-              <input className="input" name="primeraFechaVencimiento" type="date" value={operationForm.primeraFechaVencimiento} onChange={handleOperationChange} />
-              {fieldErrors.primeraFechaVencimiento ? <small className="field__error">{fieldErrors.primeraFechaVencimiento}</small> : null}
-            </label>
-            <label className="field">
               <span>Zona general</span>
               <input className="input" name="zonaGeneral" value={operationForm.zonaGeneral} onChange={handleOperationChange} />
             </label>
+            <div className="field field--full">
+              <span>Fechas de vencimiento por cuota</span>
+              <div className="wizard-list">
+                {buildDueDateList(operationForm.cuotasTotales, operationForm.fechasVencimientoCuotas).map((dueDate, index) => (
+                  <div className="wizard-list__item" key={`cuota-vencimiento-${index}`}>
+                    <label className="field">
+                      <span>{`Cuota ${index + 1}`}</span>
+                      <input
+                        className="input"
+                        type="date"
+                        value={dueDate}
+                        onChange={(event) => updateDueDate(index, event.target.value)}
+                      />
+                      {fieldErrors[`fechasVencimientoCuotas.${index}`] ? (
+                        <small className="field__error">{fieldErrors[`fechasVencimientoCuotas.${index}`]}</small>
+                      ) : null}
+                    </label>
+                  </div>
+                ))}
+              </div>
+              {fieldErrors.fechasVencimientoCuotas ? (
+                <small className="field__error">{fieldErrors.fechasVencimientoCuotas}</small>
+              ) : null}
+            </div>
             <label className="field field--full">
               <span>Zona especifica</span>
               <input className="input" name="zonaEspecifica" value={operationForm.zonaEspecifica} onChange={handleOperationChange} />
