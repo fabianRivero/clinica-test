@@ -1,5 +1,8 @@
 import type {
+  AdminAvailabilityResponse,
   CatalogsResponse,
+  CreateAdminAvailabilityPayload,
+  CreateAdminAvailabilityResponse,
   CreateAdminProspectPayload,
   CreateAdminProspectResponse,
   DashboardResponse,
@@ -86,6 +89,10 @@ export function getAdminOperations() {
   return requestJson<OperationsResponse>('/api/admin/operaciones/')
 }
 
+export function getAdminAvailability() {
+  return requestJson<AdminAvailabilityResponse>('/api/admin/disponibilidad/')
+}
+
 export function getAdminPayments() {
   return requestJson<PaymentsResponse>('/api/admin/pagos/')
 }
@@ -100,6 +107,10 @@ export function getAdminStaff() {
 
 export function createAdminProspect(payload: CreateAdminProspectPayload) {
   return requestJsonWithBody<CreateAdminProspectResponse>('/api/admin/prospectos/crear/', payload)
+}
+
+export function createAdminAvailability(payload: CreateAdminAvailabilityPayload) {
+  return requestJsonWithBody<CreateAdminAvailabilityResponse>('/api/admin/disponibilidad/crear/', payload)
 }
 
 export function getAdminProspectConversion(prospectId: string) {

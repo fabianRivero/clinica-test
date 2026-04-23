@@ -16,11 +16,10 @@ export function ClientLayout() {
 
   return (
     <div className="client-shell">
-      <aside className={`client-shell__sidebar ${sidebarOpen ? 'is-open' : ''}`}>
-        <div className="brand-card brand-card--client">
+      <aside className={`sidebar ${sidebarOpen ? 'is-open' : ''}`}>
+        <div className="brand-card">
           <span className="brand-card__eyebrow">Portal del paciente</span>
           <strong>Nataly Ferrufino Estetic & Academy</strong>
-          <p>Consulta tratamientos, pagos, cuotas y el estado de tus reservas en un solo lugar.</p>
         </div>
 
         <nav className="side-nav side-nav--client" aria-label="Navegacion principal del cliente">
@@ -38,7 +37,7 @@ export function ClientLayout() {
           ))}
         </nav>
 
-        <div className="sidebar-note sidebar-note--client">
+        <div className="sidebar-note">
           <h2>Acciones disponibles</h2>
           <p>Revisa tus pagos, verifica tus cuotas y confirma si tus tratamientos aun tienen sesiones para reservar.</p>
         </div>

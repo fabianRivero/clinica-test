@@ -1,5 +1,6 @@
 from django.urls import path
 
+from config.admin_availability_views import admin_availability, admin_create_availability
 from config.api_views import (
     admin_catalogos,
     admin_crear_prospecto,
@@ -54,6 +55,8 @@ urlpatterns = [
         name="admin-prospect-conversion-finalize-api",
     ),
     path("operaciones/", admin_operaciones, name="admin-operaciones-api"),
+    path("disponibilidad/", admin_availability, name="admin-availability-api"),
+    path("disponibilidad/crear/", admin_create_availability, name="admin-availability-create-api"),
     path("pagos/", admin_pagos, name="admin-pagos-api"),
     path("catalogos/", admin_catalogos, name="admin-catalogos-api"),
     path("equipo/", admin_equipo, name="admin-equipo-api"),

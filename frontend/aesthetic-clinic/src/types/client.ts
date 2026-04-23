@@ -18,6 +18,7 @@ export type ClientSessionSummary = {
 
 export type ClientOperation = {
   id: string
+  rawId: number
   procedure: string
   serviceType: string
   specialist: string
@@ -65,6 +66,7 @@ export type ClientPayment = {
 
 export type ClientAppointment = {
   id: string
+  rawId: number
   operation: string
   specialist: string
   dateTime: string
@@ -109,4 +111,42 @@ export type ClientReservationsResponse = {
   metrics: AdminMetric[]
   appointments: ClientAppointment[]
   operations: ClientOperation[]
+}
+
+export type ClientReservationSlot = {
+  slotId: number
+  specialistId: number
+  specialist: string
+  date: string
+  time: string
+  dateTimeLabel: string
+}
+
+export type ClientReservationCalendarDay = {
+  date: string
+  label: string
+  slotCount: number
+  weekday: string
+}
+
+export type ClientReservationAvailabilityResponse = {
+  operation: ClientOperation
+  calendar: {
+    windowStart: string | null
+    windowEnd: string | null
+    monthLabel: string
+    availableDates: ClientReservationCalendarDay[]
+    slotsByDate: Record<string, ClientReservationSlot[]>
+    slotCount: number
+  }
+}
+
+export type CreateClientReservationPayload = {
+  slotId: number
+}
+
+export type CreateClientReservationResponse = {
+  detail: string
+  appointment: ClientAppointment
+  operation: ClientOperation
 }

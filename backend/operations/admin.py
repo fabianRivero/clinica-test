@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from operations.models import (
     CitaMedica,
+    DisponibilidadCita,
     FichaAntecedenteMedico,
     FichaCampo,
     FichaCirugiaEstetica,
@@ -45,6 +46,23 @@ class CitaMedicaAdmin(admin.ModelAdmin):
         "operacion__paciente__usuario__primer_nombre",
         "operacion__paciente__usuario__apellido_paterno",
         "medico__usuario__primer_nombre",
+    )
+
+
+@admin.register(DisponibilidadCita)
+class DisponibilidadCitaAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "especialista",
+        "fecha_hora",
+        "activo",
+        "estado_resumen",
+    )
+    list_filter = ("activo", "especialista")
+    search_fields = (
+        "especialista__usuario__primer_nombre",
+        "especialista__usuario__apellido_paterno",
+        "detalle",
     )
 
 

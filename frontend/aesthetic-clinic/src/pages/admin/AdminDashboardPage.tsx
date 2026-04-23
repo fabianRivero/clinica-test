@@ -23,7 +23,7 @@ export function AdminDashboardPage() {
         description="Una lectura rapida del estado financiero, operativo y clinico de la clinica."
         actions={[
           { label: 'Registrar prospecto', variant: 'primary', to: '/admin/prospectos/nuevo' },
-          { label: 'Exportar resumen', variant: 'ghost' },
+          { label: 'Configurar citas', variant: 'ghost', to: '/admin/disponibilidad' },
         ]}
       />
 

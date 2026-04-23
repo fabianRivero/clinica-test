@@ -18,7 +18,7 @@
   }
 }
 
-.admin-shell__sidebar {
+.sidebar {
   position: fixed;
   inset: 0 auto 0 0;
   width: min(320px, 88vw);
@@ -29,34 +29,6 @@
   transition: transform var(--transition-base);
   z-index: 30;
   overflow-y: auto;
-
-  &.is-open {
-    transform: translateX(0);
-  }
-
-  @include respond(lg) {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    transform: none;
-    width: auto;
-  }
-}
-
-.client-shell__sidebar {
-  position: fixed;
-  inset: 0 auto 0 0;
-  width: min(300px, 86vw);
-  padding: var(--spacing-6);
-  background:
-    linear-gradient(180deg, rgba(235, 249, 250, 0.98), rgba(246, 252, 252, 0.98)),
-    #fff;
-  color: var(--color-text);
-  transform: translateX(-100%);
-  transition: transform var(--transition-base);
-  z-index: 30;
-  overflow-y: auto;
-  border-right: 1px solid rgba(217, 232, 236, 0.92);
 
   &.is-open {
     transform: translateX(0);
@@ -156,22 +128,6 @@
   color: #8fe1e6;
 }
 
-.brand-card--client {
-  background:
-    radial-gradient(circle at top right, rgba(107, 207, 215, 0.18), transparent 10rem),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(241, 250, 251, 0.96));
-  border-color: rgba(217, 232, 236, 0.95);
-  color: var(--color-text);
-
-  strong {
-    color: var(--color-text);
-  }
-
-  p {
-    color: var(--color-text-soft);
-  }
-}
-
 .side-nav {
   display: grid;
   gap: var(--spacing-2);
@@ -223,14 +179,9 @@
     font-size: 1rem;
     color: #fff;
   }
-}
 
-.sidebar-note--client {
-  background: rgba(244, 250, 251, 0.96);
-  border-color: rgba(217, 232, 236, 0.92);
-
-  h2 {
-    color: var(--color-text);
+  p { 
+    color: #fff;
   }
 }
 

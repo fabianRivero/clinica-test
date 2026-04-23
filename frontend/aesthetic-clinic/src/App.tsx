@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AdminLayout } from './layouts/AdminLayout'
 import { ClientLayout } from './layouts/ClientLayout'
 import { AdminCatalogsPage } from './pages/admin/AdminCatalogsPage'
+import { AdminAvailabilityPage } from './pages/admin/AdminAvailabilityPage'
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
 import { AdminOperationsPage } from './pages/admin/AdminOperationsPage'
 import { AdminPaymentsPage } from './pages/admin/AdminPaymentsPage'
@@ -13,6 +14,7 @@ import { AdminStaffPage } from './pages/admin/AdminStaffPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { ClientDashboardPage } from './pages/client/ClientDashboardPage'
 import { ClientPaymentsPage } from './pages/client/ClientPaymentsPage'
+import { ClientReservationCreatePage } from './pages/client/ClientReservationCreatePage'
 import { ClientReservationsPage } from './pages/client/ClientReservationsPage'
 import { ClientTreatmentsPage } from './pages/client/ClientTreatmentsPage'
 import { RoleHomePage } from './pages/shared/RoleHomePage'
@@ -90,6 +92,7 @@ function App() {
           <Route path="prospectos/nuevo" element={<AdminProspectCreatePage />} />
           <Route path="prospectos/:prospectId/convertir" element={<AdminProspectConvertPage />} />
           <Route path="operaciones" element={<AdminOperationsPage />} />
+          <Route path="disponibilidad" element={<AdminAvailabilityPage />} />
           <Route path="pagos" element={<AdminPaymentsPage />} />
           <Route path="catalogos" element={<AdminCatalogsPage />} />
           <Route path="equipo" element={<AdminStaffPage />} />
@@ -115,6 +118,7 @@ function App() {
           <Route path="tratamientos" element={<ClientTreatmentsPage />} />
           <Route path="pagos" element={<ClientPaymentsPage />} />
           <Route path="reservas" element={<ClientReservationsPage />} />
+          <Route path="reservas/:operationId/nueva" element={<ClientReservationCreatePage />} />
         </Route>
       </Route>
 

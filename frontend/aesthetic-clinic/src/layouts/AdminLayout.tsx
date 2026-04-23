@@ -7,6 +7,7 @@ const navigation = [
   { to: '/admin', label: 'Resumen', shortLabel: 'Dashboard' },
   { to: '/admin/prospectos', label: 'Prospectos y clientes', shortLabel: 'Prospectos' },
   { to: '/admin/operaciones', label: 'Operaciones', shortLabel: 'Operaciones' },
+  { to: '/admin/disponibilidad', label: 'Disponibilidad', shortLabel: 'Disponibilidad' },
   { to: '/admin/pagos', label: 'Pagos', shortLabel: 'Pagos' },
   { to: '/admin/catalogos', label: 'Catalogos', shortLabel: 'Catalogos' },
   { to: '/admin/equipo', label: 'Equipo', shortLabel: 'Equipo' },
@@ -18,7 +19,7 @@ export function AdminLayout() {
 
   return (
     <div className="admin-shell">
-      <aside className={`admin-shell__sidebar ${sidebarOpen ? 'is-open' : ''}`}>
+      <aside className={`sidebar ${sidebarOpen ? 'is-open' : ''}`}>
         <div className="brand-card">
           <span className="brand-card__eyebrow">Panel administrativo</span>
           <strong>Nataly Ferrufino Estetic & Academy</strong>

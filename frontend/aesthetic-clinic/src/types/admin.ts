@@ -140,3 +140,51 @@ export type CreateAdminProspectResponse = {
   detail: string
   prospect: ProspectLead
 }
+
+export type AdminAvailabilityOption = {
+  id: number
+  label: string
+  secondaryLabel?: string
+}
+
+export type AdminAvailabilitySlot = {
+  id: string
+  rawId: number
+  specialist: string
+  dateTime: string
+  date: string
+  time: string
+  status: 'disponible' | 'reservado' | 'expirado' | 'inactivo'
+  coverage: string[]
+  patient: string
+  operation: string
+  reservationState: string
+  active: boolean
+}
+
+export type AdminAvailabilityResponse = {
+  metrics: AdminMetric[]
+  filters: {
+    specialists: AdminAvailabilityOption[]
+    serviceTypes: AdminAvailabilityOption[]
+    procedureTypes: AdminAvailabilityOption[]
+    procedures: AdminAvailabilityOption[]
+  }
+  slots: AdminAvailabilitySlot[]
+}
+
+export type CreateAdminAvailabilityPayload = {
+  specialistId: number | null
+  dates: string[]
+  times: string[]
+  serviceTypeIds: number[]
+  procedureTypeIds: number[]
+  procedureIds: number[]
+}
+
+export type CreateAdminAvailabilityResponse = {
+  detail: string
+  createdCount: number
+  updatedCount: number
+  conflictCount: number
+}

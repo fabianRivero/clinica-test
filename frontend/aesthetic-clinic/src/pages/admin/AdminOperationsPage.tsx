@@ -16,7 +16,7 @@ export function AdminOperationsPage() {
         title="Operaciones"
         description="Vista administrativa de tratamientos vigentes, sesiones pactadas, cuotas y citas asociadas."
         actions={[
-          { label: 'Nueva operacion', variant: 'primary' },
+          { label: 'Configurar disponibilidad', variant: 'primary', to: '/admin/disponibilidad' },
           { label: 'Filtrar por estado', variant: 'ghost' },
         ]}
       />

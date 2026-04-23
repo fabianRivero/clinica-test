@@ -1,19 +1,37 @@
+import json
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
 
-from django.db.models import Prefetch
+from django.db import transaction
+from django.db.models import Prefetch, Q
 from django.http import JsonResponse
 from django.utils import timezone
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 
 from billing.models import CuotaPlanPago, PagoRealizado
 from clinical.models import AnalisisEstetico
 from customers.models import Cliente
-from operations.models import CitaMedica, Operacion
+from operations.models import CitaMedica, DisponibilidadCita, Operacion
+
+
+RESERVATION_WINDOW_DAYS = 35
+BLOCKING_RESERVATION_STATES = {
+    CitaMedica.Estado.PROGRAMADA,
+    CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+    CitaMedica.Estado.CONFIRMADA,
+}
 
 
 def _json(data, status=200):
     return JsonResponse(data, status=status, json_dumps_params={"ensure_ascii": False})
+
+
+def _load_payload(request):
+    try:
+        return json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return None
 
 
 def _client_required(view_func):
@@ -47,6 +65,12 @@ def _datetime_label(value):
     if not value:
         return "Sin fecha"
     return timezone.localtime(value).strftime("%d/%m/%Y %H:%M")
+
+
+def _month_label(value):
+    if not value:
+        return "Sin mes"
+    return value.strftime("%B %Y").capitalize()
 
 
 def _full_name(user):
@@ -142,6 +166,7 @@ def _operation_item(operacion):
     next_appointment = _next_appointment(operacion)
     return {
         "id": f"OP-{operacion.pk:04d}",
+        "rawId": operacion.pk,
         "procedure": _procedure_name(operacion),
         "serviceType": operacion.servicio_config.tipo_servicio.tipo,
         "specialist": _operation_specialist(operacion),
@@ -181,6 +206,122 @@ def _operation_item(operacion):
     }
 
 
+def _reservation_window_for_operation(operacion):
+    today = timezone.localdate()
+    window_start = max(today, operacion.fecha_inicio or today)
+    window_end = window_start + timedelta(days=RESERVATION_WINDOW_DAYS - 1)
+    if operacion.fecha_final:
+        window_end = min(window_end, operacion.fecha_final)
+    return window_start, window_end
+
+
+def _build_operation_slot_map(operacion):
+    if not operacion.puede_reservar:
+        return {
+            "windowStart": None,
+            "windowEnd": None,
+            "monthLabel": "",
+            "availableDates": [],
+            "slotsByDate": {},
+            "slotCount": 0,
+        }
+
+    window_start, window_end = _reservation_window_for_operation(operacion)
+    if window_end < window_start:
+        return {
+            "windowStart": window_start.isoformat(),
+            "windowEnd": window_end.isoformat(),
+            "monthLabel": _month_label(window_start),
+            "availableDates": [],
+            "slotsByDate": {},
+            "slotCount": 0,
+        }
+
+    servicio_config = operacion.servicio_config
+    procedimiento = servicio_config.proc_estetico
+    availability_scope = Q(tipos_servicio=servicio_config.tipo_servicio)
+    if procedimiento:
+        availability_scope |= Q(tipos_proc_estetico=procedimiento.tipo_p_estetico)
+        availability_scope |= Q(procedimientos_esteticos=procedimiento)
+
+    slots_qs = (
+        DisponibilidadCita.objects.select_related("especialista__usuario")
+        .prefetch_related(
+            Prefetch(
+                "citas_origen",
+                queryset=CitaMedica.objects.only("id", "estado", "disponibilidad_id").order_by("-created_at"),
+            )
+        )
+        .filter(
+            activo=True,
+            especialista__usuario__is_active=True,
+            fecha_hora__date__gte=window_start,
+            fecha_hora__date__lte=window_end,
+            fecha_hora__gt=timezone.now(),
+        )
+        .filter(availability_scope)
+        .distinct()
+        .order_by("fecha_hora", "especialista__usuario__primer_nombre", "especialista__usuario__apellido_paterno")
+    )
+
+    slots_by_date = {}
+    available_dates = []
+    for slot in slots_qs:
+        if any(cita.estado in BLOCKING_RESERVATION_STATES for cita in slot.citas_origen.all()):
+            continue
+
+        local_dt = timezone.localtime(slot.fecha_hora)
+        date_key = local_dt.date().isoformat()
+        slot_item = {
+            "slotId": slot.pk,
+            "specialistId": slot.especialista_id,
+            "specialist": _full_name(slot.especialista.usuario),
+            "date": date_key,
+            "time": local_dt.strftime("%H:%M"),
+            "dateTimeLabel": _datetime_label(slot.fecha_hora),
+        }
+        slots_by_date.setdefault(date_key, []).append(slot_item)
+
+    for date_key, day_slots in sorted(slots_by_date.items()):
+        day_slots.sort(key=lambda item: (item["time"], item["specialist"]))
+        day_date = date.fromisoformat(date_key)
+        available_dates.append(
+            {
+                "date": date_key,
+                "label": day_date.strftime("%d/%m"),
+                "slotCount": len(day_slots),
+                "weekday": day_date.strftime("%A").capitalize(),
+            }
+        )
+
+    return {
+        "windowStart": window_start.isoformat(),
+        "windowEnd": window_end.isoformat(),
+        "monthLabel": _month_label(window_start),
+        "availableDates": available_dates,
+        "slotsByDate": slots_by_date,
+        "slotCount": sum(item["slotCount"] for item in available_dates),
+    }
+
+
+def _get_client_operation(cliente, operation_id):
+    return (
+        Operacion.objects.filter(paciente=cliente, pk=operation_id)
+        .select_related("servicio_config__tipo_servicio", "servicio_config__proc_estetico")
+        .prefetch_related(
+            Prefetch(
+                "citas_medicas",
+                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+            ),
+            Prefetch(
+                "cuotas_plan_pagos",
+                queryset=CuotaPlanPago.objects.order_by("nro_cuota"),
+            ),
+        )
+        .first()
+    )
+
+
 def _quota_item(cuota):
     latest_payment = cuota.pagos_realizados.order_by("-created_at").first()
     return {
@@ -216,6 +357,7 @@ def _payment_item(payment):
 def _appointment_item(cita):
     return {
         "id": f"CIT-{cita.pk:04d}",
+        "rawId": cita.pk,
         "operation": _procedure_name(cita.operacion),
         "specialist": _full_name(cita.medico.usuario),
         "dateTime": _datetime_label(cita.fecha_hora),
@@ -542,3 +684,74 @@ def client_reservations(request):
         "operations": [_operation_item(operacion) for operacion in reservable_operations],
     }
     return _json(data)
+
+
+@require_GET
+@_client_required
+def client_reservation_availability(request, operation_id):
+    operacion = _get_client_operation(request.cliente, operation_id)
+    if not operacion:
+        return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
+    if operacion.estado != Operacion.Estado.EN_PROCESO:
+        return _json({"detail": "Solo puedes reservar citas para tratamientos en proceso."}, status=400)
+
+    data = {
+        "operation": _operation_item(operacion),
+        "calendar": _build_operation_slot_map(operacion),
+    }
+    return _json(data)
+
+
+@require_POST
+@_client_required
+@transaction.atomic
+def client_create_reservation(request, operation_id):
+    operacion = _get_client_operation(request.cliente, operation_id)
+    if not operacion:
+        return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
+    if not operacion.puede_reservar:
+        return _json({"detail": "Esta operacion ya no tiene sesiones disponibles para nuevas reservas."}, status=400)
+
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    slot_id = payload.get("slotId")
+    if not slot_id:
+        return _json({"detail": "Debes seleccionar un horario disponible antes de confirmar la reserva."}, status=400)
+
+    slot = (
+        DisponibilidadCita.objects.select_for_update()
+        .select_related("especialista__usuario")
+        .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
+        .first()
+    )
+    if not slot or not slot.coincide_con_operacion(operacion):
+        return _json(
+            {"detail": "El horario seleccionado ya no esta disponible para este tratamiento."},
+            status=409,
+        )
+
+    if slot.citas_origen.filter(estado__in=BLOCKING_RESERVATION_STATES).exists():
+        return _json(
+            {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
+            status=409,
+        )
+
+    cita = CitaMedica.objects.create(
+        operacion=operacion,
+        medico=slot.especialista,
+        disponibilidad=slot,
+        fecha_hora=slot.fecha_hora,
+        estado=CitaMedica.Estado.PROGRAMADA,
+        detalles_cita="Reserva web creada por el cliente desde el portal.",
+    )
+
+    return _json(
+        {
+            "detail": "La cita fue reservada correctamente.",
+            "appointment": _appointment_item(cita),
+            "operation": _operation_item(operacion),
+        },
+        status=201,
+    )

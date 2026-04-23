@@ -29,6 +29,7 @@ from clinical.models import AnalisisEstetico, AnalisisEsteticoAlergia, Patologia
 from customers.models import Cliente, Prospecto
 from operations.models import (
     CitaMedica,
+    DisponibilidadCita,
     FichaAntecedenteMedico,
     FichaCampo,
     FichaCirugiaEstetica,
@@ -58,6 +59,7 @@ class Command(BaseCommand):
         clients = self._seed_clients(users)
         self._seed_prospects(today, users, clients)
         operations = self._seed_operations(today, now, clients, specialists, catalogs, users)
+        self._seed_availability(today, specialists, catalogs, operations)
         self._seed_analyses(today, clients, catalogs)
 
         for client in clients.values():
@@ -1222,6 +1224,31 @@ class Command(BaseCommand):
             detalles_cita=detalles,
         )
 
+    def _upsert_availability_slot(
+        self,
+        specialist,
+        dt,
+        *,
+        service_types=None,
+        procedure_types=None,
+        procedures=None,
+        active=True,
+        detail="",
+        appointment=None,
+    ):
+        slot, _ = DisponibilidadCita.objects.update_or_create(
+            especialista=specialist,
+            fecha_hora=dt,
+            defaults={"activo": active, "detalle": detail},
+        )
+        slot.tipos_servicio.set(service_types or [])
+        slot.tipos_proc_estetico.set(procedure_types or [])
+        slot.procedimientos_esteticos.set(procedures or [])
+        if appointment and appointment.disponibilidad_id != slot.pk:
+            appointment.disponibilidad = slot
+            appointment.save(update_fields=["disponibilidad"])
+        return slot
+
     def _add_cuota(self, operation, nro_cuota, fecha_vencimiento, payments):
         cuota = CuotaPlanPago.objects.create(
             operacion=operation,
@@ -1897,6 +1924,93 @@ class Command(BaseCommand):
                     "created_at": now - timedelta(days=22),
                 }
             ],
+        )
+
+    def _seed_availability(self, today, specialists, catalogs, operations):
+        treatment_service = catalogs["tipo_servicio"]["tratamiento"]
+        laser_type = catalogs["tipo_procedimiento"]["laser"]
+        facial_type = catalogs["tipo_procedimiento"]["facial"]
+        depilacion = catalogs["procedimiento"]["depilacion"]
+        manchas = catalogs["procedimiento"]["manchas"]
+        tatuajes = catalogs["procedimiento"]["tatuajes"]
+        limpieza = catalogs["procedimiento"]["limpieza"]
+
+        depilacion_cita = operations["depilacion_activa"].citas_medicas.filter(
+            estado=CitaMedica.Estado.PROGRAMADA
+        ).order_by("fecha_hora").first()
+        limpieza_cita = operations["limpieza_activa"].citas_medicas.filter(
+            estado=CitaMedica.Estado.PROGRAMADA
+        ).order_by("fecha_hora").first()
+
+        self._upsert_availability_slot(
+            specialists["lucia"],
+            self._aware_datetime(today + timedelta(days=7), 16, 0),
+            procedure_types=[laser_type],
+            procedures=[depilacion],
+            detail="Horario reservado para la siguiente sesion de depilacion demo.",
+            appointment=depilacion_cita,
+        )
+        self._upsert_availability_slot(
+            specialists["lucia"],
+            self._aware_datetime(today + timedelta(days=9), 10, 30),
+            procedure_types=[laser_type],
+            detail="Cupo abierto para cualquier procedimiento laser.",
+        )
+        self._upsert_availability_slot(
+            specialists["lucia"],
+            self._aware_datetime(today + timedelta(days=12), 18, 0),
+            service_types=[treatment_service],
+            procedures=[depilacion, manchas],
+            detail="Bloque de tratamiento para depilacion o manchas.",
+        )
+        self._upsert_availability_slot(
+            specialists["diego"],
+            self._aware_datetime(today + timedelta(days=6), 11, 0),
+            procedures=[tatuajes],
+            detail="Horario exclusivo para borrado de tatuajes.",
+        )
+        self._upsert_availability_slot(
+            specialists["diego"],
+            self._aware_datetime(today + timedelta(days=8), 15, 30),
+            procedure_types=[laser_type],
+            procedures=[tatuajes],
+            detail="Cupo laser enfocado a sesiones de tatuaje.",
+        )
+        self._upsert_availability_slot(
+            specialists["sofia"],
+            self._aware_datetime(today + timedelta(days=4), 14, 30),
+            procedures=[limpieza],
+            detail="Horario ya tomado para limpieza profunda demo.",
+            appointment=limpieza_cita,
+        )
+        self._upsert_availability_slot(
+            specialists["sofia"],
+            self._aware_datetime(today + timedelta(days=5), 9, 30),
+            procedure_types=[laser_type],
+            procedures=[manchas],
+            detail="Horario disponible para tratamiento de manchas.",
+        )
+        self._upsert_availability_slot(
+            specialists["sofia"],
+            self._aware_datetime(today + timedelta(days=11), 13, 30),
+            procedure_types=[facial_type],
+            procedures=[limpieza],
+            detail="Horario cosmetologico facial de apoyo.",
+        )
+        self._upsert_availability_slot(
+            specialists["lucia"],
+            self._aware_datetime(today - timedelta(days=2), 9, 0),
+            procedure_types=[laser_type],
+            procedures=[depilacion],
+            detail="Horario pasado para exponer estados expirados.",
+        )
+        self._upsert_availability_slot(
+            specialists["diego"],
+            self._aware_datetime(today + timedelta(days=13), 17, 0),
+            procedure_types=[laser_type],
+            procedures=[tatuajes],
+            active=False,
+            detail="Horario pausado manualmente por administracion.",
         )
 
     def _seed_analyses(self, today, clients, catalogs):

@@ -5,9 +5,15 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { getClientReservations } from '../../services/api/client'
+import { Link, useLocation } from 'react-router-dom'
 
 export function ClientReservationsPage() {
+  const location = useLocation()
   const { data, isLoading, error } = useApiResource(getClientReservations)
+  const flashMessage =
+    typeof location.state === 'object' && location.state && 'flashMessage' in location.state
+      ? String(location.state.flashMessage)
+      : null
 
   return (
     <div className="page-stack">
@@ -16,6 +22,8 @@ export function ClientReservationsPage() {
         title="Mis reservas"
         description="Consulta citas registradas, estado biometrico y si tus tratamientos aun tienen sesiones disponibles."
       />
+
+      {flashMessage ? <DataState title="Reserva registrada" message={flashMessage} /> : null}
 
       {isLoading && !data ? (
         <SectionCard title="Cargando reservas">
@@ -114,9 +122,15 @@ export function ClientReservationsPage() {
                           <strong>{operation.sessions.available}</strong>
                         </article>
                       </div>
-                      <button className="button button--ghost" type="button" disabled={!operation.canReserve}>
-                        {operation.canReserve ? 'Reserva web disponible pronto' : 'No disponible'}
-                      </button>
+                      {operation.canReserve ? (
+                        <Link className="button button--ghost" to={`/cliente/reservas/${operation.rawId}/nueva`}>
+                          Reservar
+                        </Link>
+                      ) : (
+                        <button className="button button--ghost" type="button" disabled>
+                          No disponible
+                        </button>
+                      )}
                     </article>
                   ))}
                 </div>
