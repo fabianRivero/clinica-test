@@ -44,9 +44,11 @@ INSTALLED_APPS = [
     "operations",
     "billing",
     "clinical",
+    "corsheaders",
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -118,3 +120,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.Usuario"
 
 LOGIN_URL = "/admin/login/"
+
+CORS_ALLOWED_ORIGINS = [
+    "https://clinicatest1.netlify.app",
+]
+
+CORS_ALLOW_CREDENTIALS = True
