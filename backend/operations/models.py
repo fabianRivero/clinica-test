@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models.signals import post_delete, post_save
@@ -257,6 +258,12 @@ class FichaClinica(TimeStampedModel):
     observaciones = models.TextField(blank=True)
     firma_paciente_ci = models.CharField(max_length=120, blank=True)
     firma_paciente_url = models.CharField(max_length=255, blank=True)
+    documento_escaneado_pdf = models.FileField(
+        upload_to="fichas_clinicas/%Y/%m/",
+        blank=True,
+        null=True,
+        validators=[FileExtensionValidator(["pdf"])],
+    )
     consentimiento_aceptado = models.BooleanField(default=False)
 
     class Meta:

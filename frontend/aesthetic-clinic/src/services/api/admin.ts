@@ -6,6 +6,7 @@ import type {
   CreateAdminProspectPayload,
   CreateAdminProspectResponse,
   DashboardResponse,
+  OperationDetailResponse,
   OperationsResponse,
   PaymentsResponse,
   ProspectsResponse,
@@ -77,6 +78,37 @@ async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
   return responseBody as T
 }
 
+async function requestFormDataWithBody<T>(path: string, body: FormData): Promise<T> {
+  await ensureCsrfCookie()
+  const csrfToken = getCookie('csrftoken')
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'X-CSRFToken': csrfToken,
+    },
+    body,
+  })
+
+  const responseBody = (await response.json().catch(() => null)) as
+    | { detail?: string; errors?: Record<string, string> }
+    | null
+
+  if (!response.ok) {
+    const error = new Error(responseBody?.detail || `No se pudo completar ${path} (${response.status})`) as Error & {
+      fieldErrors?: Record<string, string>
+    }
+    if (responseBody?.errors) {
+      error.fieldErrors = responseBody.errors
+    }
+    throw error
+  }
+
+  return responseBody as T
+}
+
 export function getAdminDashboard() {
   return requestJson<DashboardResponse>('/api/admin/dashboard/')
 }
@@ -87,6 +119,10 @@ export function getAdminProspects() {
 
 export function getAdminOperations() {
   return requestJson<OperationsResponse>('/api/admin/operaciones/')
+}
+
+export function getAdminOperationDetail(operationId: string) {
+  return requestJson<OperationDetailResponse>(`/api/admin/operaciones/${operationId}/`)
 }
 
 export function getAdminAvailability() {
@@ -145,9 +181,12 @@ export function saveAdminProspectConversionMedicalStep(prospectId: string, paylo
   )
 }
 
-export function finalizeAdminProspectConversion(prospectId: string) {
-  return requestJsonWithBody<ProspectConversionFinalizeResponse>(
+export function finalizeAdminProspectConversion(prospectId: string, documentFile: File) {
+  const formData = new FormData()
+  formData.append('documentoFichaPdf', documentFile)
+
+  return requestFormDataWithBody<ProspectConversionFinalizeResponse>(
     `/api/admin/prospectos/${prospectId}/conversion/finalizar/`,
-    {},
+    formData,
   )
 }

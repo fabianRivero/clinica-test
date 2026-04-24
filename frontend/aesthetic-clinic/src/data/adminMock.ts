@@ -154,6 +154,7 @@ export const prospectPipeline: ProspectLead[] = [
 export const highlightedOperations: OperationCardData[] = [
   {
     id: 'OP-553',
+    rawId: 553,
     patient: 'María Fernanda Rojas',
     procedure: 'Depilación láser full body',
     specialist: 'Dra. Lucía Suárez',
@@ -163,6 +164,7 @@ export const highlightedOperations: OperationCardData[] = [
   },
   {
     id: 'OP-547',
+    rawId: 547,
     patient: 'Luciana Arteaga',
     procedure: 'Borrado de tatuaje antebrazo',
     specialist: 'Dr. Diego Roca',

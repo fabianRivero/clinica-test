@@ -92,6 +92,7 @@ export function AdminProspectConvertPage() {
   const [activeStep, setActiveStep] = useState<ConversionStep>(1)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [medicalDocumentFile, setMedicalDocumentFile] = useState<File | null>(null)
   const [userForm, setUserForm] = useState<ProspectConversionUserData | null>(null)
   const [operationForm, setOperationForm] = useState<ProspectConversionOperationData | null>(null)
   const [medicalForm, setMedicalForm] = useState<ProspectConversionMedicalData | null>(null)
@@ -109,6 +110,7 @@ export function AdminProspectConvertPage() {
         setUserForm(response.draft.userData)
         setOperationForm(response.draft.operationData)
         setMedicalForm(response.draft.medicalData)
+        setMedicalDocumentFile(null)
         setActiveStep(getInitialStep(response.draft))
       } catch (requestError) {
         if (!cancelled) {
@@ -214,6 +216,16 @@ export function AdminProspectConvertPage() {
       ...medicalForm,
       [name]: type === 'checkbox' ? (event.target as HTMLInputElement).checked : value,
     })
+    setSubmitError(null)
+  }
+
+  const handleMedicalDocumentChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextFile = event.target.files?.[0] || null
+    setMedicalDocumentFile(nextFile)
+    setFieldErrors((current) => ({
+      ...current,
+      documentoFichaPdf: '',
+    }))
     setSubmitError(null)
   }
 
@@ -354,11 +366,18 @@ export function AdminProspectConvertPage() {
     if (!medicalForm) return
 
     resetFeedback()
+    if (!medicalDocumentFile) {
+      setFieldErrors({
+        documentoFichaPdf: 'Debes adjuntar el PDF escaneado de la ficha medica para finalizar la conversion.',
+      })
+      return
+    }
+
     setIsSaving(true)
     try {
       const saveResponse = await saveAdminProspectConversionMedicalStep(prospectId, medicalForm)
       applyResponse(saveResponse)
-      const finalizeResponse = await finalizeAdminProspectConversion(prospectId)
+      const finalizeResponse = await finalizeAdminProspectConversion(prospectId, medicalDocumentFile)
       navigate('/admin/prospectos', {
         replace: true,
         state: {
@@ -1002,6 +1021,32 @@ export function AdminProspectConvertPage() {
               <label className="field field--full">
                 <span>Observaciones</span>
                 <textarea className="input textarea" name="observaciones" rows={4} value={medicalForm.observaciones} onChange={handleMedicalChange} />
+              </label>
+            </div>
+
+            <div className="wizard-block field--full">
+              <div className="wizard-block__header">
+                <div>
+                  <strong>Documento escaneado de la ficha</strong>
+                  <p>Adjunta el PDF final escaneado. Este archivo se guardara junto a la ficha clinica de la operacion.</p>
+                </div>
+              </div>
+              <label className="field field--full">
+                <span>PDF de la ficha medica</span>
+                <input
+                  accept=".pdf,application/pdf"
+                  className="input input--file"
+                  type="file"
+                  onChange={handleMedicalDocumentChange}
+                />
+                <small className="field__hint">
+                  {medicalDocumentFile
+                    ? `Archivo seleccionado: ${medicalDocumentFile.name}`
+                    : 'Debes subir un archivo PDF antes de convertir el prospecto.'}
+                </small>
+                {fieldErrors.documentoFichaPdf ? (
+                  <small className="field__error">{fieldErrors.documentoFichaPdf}</small>
+                ) : null}
               </label>
             </div>
 

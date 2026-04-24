@@ -53,6 +53,7 @@ export type ProspectLead = {
 
 export type OperationCardData = {
   id: string
+  rawId: number
   patient: string
   procedure: string
   specialist: string
@@ -111,6 +112,55 @@ export type ProspectsResponse = {
 export type OperationsResponse = {
   metrics: AdminMetric[]
   operations: OperationCardData[]
+}
+
+export type OperationDetailAppointment = {
+  id: string
+  dateTime: string
+  specialist: string
+  status: string
+  biometricStatus: string
+}
+
+export type OperationDetailQuota = {
+  id: string
+  number: number
+  dueDate: string
+  status: string
+  paymentsCount: number
+}
+
+export type OperationDetailData = {
+  id: string
+  rawId: number
+  patient: string
+  procedure: string
+  serviceType: string
+  procedureType: string
+  specialist: string
+  sessions: string
+  nextAppointment: string
+  quotaStatus: string
+  status: string
+  price: string
+  startDate: string
+  endDate: string
+  zonaGeneral: string
+  zonaEspecifica: string
+  detallesOperacion: string
+  recomendaciones: string
+  medicalRecordDate: string
+  medicalRecordReason: string
+  medicalRecordNotes: string
+  consentAccepted: boolean
+  documentPdfUrl: string
+  documentPdfName: string
+  appointments: OperationDetailAppointment[]
+  quotas: OperationDetailQuota[]
+}
+
+export type OperationDetailResponse = {
+  operation: OperationDetailData
 }
 
 export type PaymentsResponse = {

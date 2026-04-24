@@ -5,6 +5,7 @@ import { ClientLayout } from './layouts/ClientLayout'
 import { AdminCatalogsPage } from './pages/admin/AdminCatalogsPage'
 import { AdminAvailabilityPage } from './pages/admin/AdminAvailabilityPage'
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
+import { AdminOperationDetailPage } from './pages/admin/AdminOperationDetailPage'
 import { AdminOperationsPage } from './pages/admin/AdminOperationsPage'
 import { AdminPaymentsPage } from './pages/admin/AdminPaymentsPage'
 import { AdminProspectConvertPage } from './pages/admin/AdminProspectConvertPage'
@@ -92,6 +93,7 @@ function App() {
           <Route path="prospectos/nuevo" element={<AdminProspectCreatePage />} />
           <Route path="prospectos/:prospectId/convertir" element={<AdminProspectConvertPage />} />
           <Route path="operaciones" element={<AdminOperationsPage />} />
+          <Route path="operaciones/:operationId" element={<AdminOperationDetailPage />} />
           <Route path="disponibilidad" element={<AdminAvailabilityPage />} />
           <Route path="pagos" element={<AdminPaymentsPage />} />
           <Route path="catalogos" element={<AdminCatalogsPage />} />

@@ -1,4 +1,5 @@
 import json
+from pathlib import PurePosixPath
 from datetime import timedelta
 from functools import wraps
 
@@ -154,6 +155,7 @@ def _operation_next_appointment(operacion):
 def _operation_card(operacion):
     return {
         "id": f"OP-{operacion.pk:04d}",
+        "rawId": operacion.pk,
         "patient": _full_name(operacion.paciente.usuario),
         "procedure": _procedure_name(operacion),
         "specialist": _operation_specialist(operacion),
@@ -167,6 +169,66 @@ def _operation_card(operacion):
         "quotaStatus": _quota_status(operacion),
         "status": operacion.get_estado_display(),
         "price": _currency(operacion.precio_total),
+    }
+
+
+def _operation_detail(operacion):
+    ficha = getattr(operacion, "ficha_clinica", None)
+    procedure = operacion.servicio_config.proc_estetico
+    document_field = ficha.documento_escaneado_pdf if ficha else None
+    document_url = document_field.url if document_field else ""
+    document_name = PurePosixPath(document_field.name).name if document_field else ""
+
+    return {
+        "id": f"OP-{operacion.pk:04d}",
+        "rawId": operacion.pk,
+        "patient": _full_name(operacion.paciente.usuario),
+        "procedure": _procedure_name(operacion),
+        "serviceType": operacion.servicio_config.tipo_servicio.tipo,
+        "procedureType": procedure.tipo_p_estetico.tipo if procedure else "Sin tipo",
+        "specialist": _operation_specialist(operacion),
+        "sessions": (
+            f"{operacion.sesiones_totales} total | "
+            f"{operacion.sesiones_confirmadas} confirmadas | "
+            f"{operacion.reservas_activas} reservadas | "
+            f"{operacion.sesiones_disponibles} libres"
+        ),
+        "nextAppointment": _operation_next_appointment(operacion),
+        "quotaStatus": _quota_status(operacion),
+        "status": operacion.get_estado_display(),
+        "price": _currency(operacion.precio_total),
+        "startDate": _date_label(operacion.fecha_inicio),
+        "endDate": _date_label(operacion.fecha_final),
+        "zonaGeneral": operacion.zona_general or "Sin especificar",
+        "zonaEspecifica": operacion.zona_especifica or "Sin especificar",
+        "detallesOperacion": operacion.detalles_op or "Sin detalles registrados.",
+        "recomendaciones": operacion.recomendaciones or "Sin recomendaciones registradas.",
+        "medicalRecordDate": _date_label(ficha.fecha_ficha) if ficha else "Sin ficha registrada",
+        "medicalRecordReason": ficha.motivo_consulta if ficha and ficha.motivo_consulta else "Sin motivo registrado.",
+        "medicalRecordNotes": ficha.observaciones if ficha and ficha.observaciones else "Sin observaciones registradas.",
+        "consentAccepted": bool(ficha and ficha.consentimiento_aceptado),
+        "documentPdfUrl": document_url,
+        "documentPdfName": document_name,
+        "appointments": [
+            {
+                "id": f"CIT-{cita.pk:04d}",
+                "dateTime": _datetime_label(cita.fecha_hora),
+                "specialist": _full_name(cita.medico.usuario),
+                "status": cita.get_estado_display(),
+                "biometricStatus": "Validada" if cita.verif_biometria else "Pendiente",
+            }
+            for cita in operacion.citas_medicas.all()
+        ],
+        "quotas": [
+            {
+                "id": f"CUO-{cuota.pk:04d}",
+                "number": cuota.nro_cuota,
+                "dueDate": _date_label(cuota.fecha_vencimiento),
+                "status": cuota.get_estado_display(),
+                "paymentsCount": cuota.pagos_realizados.count(),
+            }
+            for cuota in operacion.cuotas_plan_pagos.all()
+        ],
     }
 
 
@@ -648,6 +710,36 @@ def admin_operaciones(request):
         "operations": [_operation_card(operacion) for operacion in operaciones_qs],
     }
     return _json(data)
+
+
+@require_GET
+@_admin_required
+def admin_operacion_detalle(request, operacion_id):
+    operacion = (
+        Operacion.objects.select_related(
+            "paciente__usuario",
+            "servicio_config__tipo_servicio",
+            "servicio_config__proc_estetico__tipo_p_estetico",
+            "ficha_clinica",
+        )
+        .prefetch_related(
+            Prefetch(
+                "citas_medicas",
+                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+            ),
+            Prefetch(
+                "cuotas_plan_pagos",
+                queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados").order_by("nro_cuota"),
+            ),
+        )
+        .filter(pk=operacion_id)
+        .first()
+    )
+
+    if not operacion:
+        return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
+
+    return _json({"operation": _operation_detail(operacion)})
 
 
 @require_GET

@@ -47,6 +47,18 @@ def _load_payload(request):
         return None
 
 
+def _get_required_pdf_file(request):
+    document = request.FILES.get("documentoFichaPdf")
+    if not document:
+        return None, _json({"detail": "Debes adjuntar el PDF escaneado de la ficha medica."}, status=400)
+
+    filename = (document.name or "").lower()
+    if not filename.endswith(".pdf"):
+        return None, _json({"detail": "El documento adjunto debe estar en formato PDF."}, status=400)
+
+    return document, None
+
+
 def _parse_date(value, field_name, errors, *, required=False):
     raw = (value or "").strip() if isinstance(value, str) else value
     if not raw:
@@ -830,6 +842,10 @@ def admin_prospect_conversion_finalize(request, prospecto_id):
     if error_response:
         return error_response
 
+    document_file, document_error = _get_required_pdf_file(request)
+    if document_error:
+        return document_error
+
     draft = ProspectoConversionBorrador.objects.select_for_update().filter(prospecto=prospecto).first()
     if not draft:
         return _json({"detail": "No existe un borrador de conversion para este prospecto."}, status=400)
@@ -928,6 +944,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id):
         motivo_consulta=medical_data.get("motivoConsulta", ""),
         observaciones=medical_data.get("observaciones", ""),
         firma_paciente_ci=medical_data.get("firmaPacienteCi") or user_data.get("ci", ""),
+        documento_escaneado_pdf=document_file,
         consentimiento_aceptado=bool(medical_data.get("consentimientoAceptado")),
     )
 

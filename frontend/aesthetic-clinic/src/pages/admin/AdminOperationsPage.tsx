@@ -5,6 +5,7 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { getAdminOperations } from '../../services/api/admin'
+import { Link } from 'react-router-dom'
 
 export function AdminOperationsPage() {
   const { data, isLoading, error } = useApiResource(getAdminOperations)
@@ -82,6 +83,11 @@ export function AdminOperationsPage() {
                         <dd>{operation.price}</dd>
                       </div>
                     </dl>
+                    <div className="operation-card__actions">
+                      <Link className="button button--ghost button--compact" to={`/admin/operaciones/${operation.rawId}`}>
+                        Ver detalle
+                      </Link>
+                    </div>
                   </article>
                 ))}
               </div>
