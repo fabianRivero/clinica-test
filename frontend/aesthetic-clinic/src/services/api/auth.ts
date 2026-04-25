@@ -2,14 +2,6 @@ import type { AuthResponse, LoginPayload } from '../../types/auth'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
-function getCookie(name: string) {
-  const cookie = document.cookie
-    .split('; ')
-    .find((item) => item.startsWith(`${name}=`))
-
-  return cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : ''
-}
-
 async function parseResponse<T>(response: Response): Promise<T> {
   const data = (await response.json().catch(() => null)) as T | { detail?: string } | null
 
@@ -32,7 +24,8 @@ export async function ensureCsrfCookie() {
     },
   })
 
-  await parseResponse<{ detail: string }>(response)
+  const data = await parseResponse<{ detail: string; csrfToken: string }>(response)
+  return data.csrfToken
 }
 
 export async function getSessionUser() {
@@ -52,8 +45,7 @@ export async function getSessionUser() {
 }
 
 export async function loginUser(payload: LoginPayload) {
-  await ensureCsrfCookie()
-  const csrfToken = getCookie('csrftoken')
+  const csrfToken = await ensureCsrfCookie()
 
   const response = await fetch(`${API_BASE_URL}/api/auth/login/`, {
     method: 'POST',
@@ -70,8 +62,7 @@ export async function loginUser(payload: LoginPayload) {
 }
 
 export async function logoutUser() {
-  await ensureCsrfCookie()
-  const csrfToken = getCookie('csrftoken')
+  const csrfToken = await ensureCsrfCookie()
 
   const response = await fetch(`${API_BASE_URL}/api/auth/logout/`, {
     method: 'POST',

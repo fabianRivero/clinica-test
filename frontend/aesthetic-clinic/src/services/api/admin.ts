@@ -23,14 +23,6 @@ import { ensureCsrfCookie } from './auth'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
-function getCookie(name: string) {
-  const cookie = document.cookie
-    .split('; ')
-    .find((item) => item.startsWith(`${name}=`))
-
-  return cookie ? decodeURIComponent(cookie.split('=').slice(1).join('=')) : ''
-}
-
 async function requestJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     credentials: 'include',
@@ -47,8 +39,7 @@ async function requestJson<T>(path: string): Promise<T> {
 }
 
 async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
-  await ensureCsrfCookie()
-  const csrfToken = getCookie('csrftoken')
+  const csrfToken = await ensureCsrfCookie()
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
@@ -79,8 +70,7 @@ async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function requestFormDataWithBody<T>(path: string, body: FormData): Promise<T> {
-  await ensureCsrfCookie()
-  const csrfToken = getCookie('csrftoken')
+  const csrfToken = await ensureCsrfCookie()
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',

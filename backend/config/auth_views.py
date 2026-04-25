@@ -2,6 +2,7 @@ import json
 
 from django.contrib.auth import authenticate, login as django_login, logout as django_logout
 from django.http import JsonResponse
+from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
@@ -38,7 +39,7 @@ def _serialize_user(user):
 @ensure_csrf_cookie
 @require_GET
 def auth_csrf(request):
-    return _json({"detail": "CSRF cookie establecida."})
+    return _json({"detail": "CSRF cookie establecida.", "csrfToken": get_token(request)})
 
 
 @require_GET
