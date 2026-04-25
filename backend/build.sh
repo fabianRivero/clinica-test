@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+echo "=== Running database migrations ==="
+python manage.py migrate --noinput
+
 echo "=== Installing frontend dependencies ==="
 cd ../frontend/aesthetic-clinic
 npm install
