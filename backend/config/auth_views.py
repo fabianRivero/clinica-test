@@ -1,10 +1,13 @@
 import json
+import logging
 
 from django.contrib.auth import authenticate, login as django_login, logout as django_logout
 from django.http import JsonResponse
 from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
+
+logger = logging.getLogger(__name__)
 
 
 def _json(data, status=200):
@@ -68,8 +71,12 @@ def auth_login(request):
     if not user.is_active:
         return _json({"detail": "La cuenta esta inactiva."}, status=403)
 
-    django_login(request, user)
-    return _json({"user": _serialize_user(user)})
+    try:
+        django_login(request, user)
+        return _json({"user": _serialize_user(user)})
+    except Exception:
+        logger.exception("Fallo el login para el usuario '%s'.", username)
+        return _json({"detail": "Ocurrio un error interno al iniciar sesion."}, status=500)
 
 
 @require_POST
