@@ -25,11 +25,13 @@ Usa un `.env` con una conexion PostgreSQL valida para Supabase. Si necesitas una
 Desde `D:\proyecto C\backend`:
 
 ```powershell
-..\env\Scripts\pip.exe install -r requirements.txt
-..\env\Scripts\python.exe manage.py migrate
-..\env\Scripts\python.exe manage.py seed_demo_data
-..\env\Scripts\python.exe manage.py runserver
+.\env\Scripts\pip.exe install -r requirements.txt
+.\env\Scripts\python.exe manage.py migrate
+.\env\Scripts\python.exe manage.py seed_demo_data
+.\env\Scripts\python.exe manage.py runserver
 ```
+
+En Windows usamos `psycopg[binary]` para que PostgreSQL funcione sin instalar `libpq` manualmente en el sistema.
 
 ## Vaciar datos y conservar administrador
 
