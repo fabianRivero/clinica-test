@@ -49,6 +49,22 @@ Por defecto preserva `admin`. Si quieres preservar otros usuarios:
 
 Importante: este script actua sobre la base configurada en `backend/.env`. Si `.env` apunta a Supabase, la limpieza se hace en Supabase.
 
+## Base minima segun la ficha PDF
+
+Si quieres dejar la base con solo el admin preservado, 5 especialistas sin horarios establecidos,
+los catalogos de ficha medica del PDF y unicamente los servicios de consulta + los 3 procedimientos
+de la ficha:
+
+```powershell
+.\scripts\reset_pdf_baseline.ps1 -Force
+```
+
+Por defecto preserva `admin`. Si necesitas preservar otro administrador:
+
+```powershell
+.\scripts\reset_pdf_baseline.ps1 -Username admin,otro_admin -Force
+```
+
 ## Accesos demo
 
 - Admin Django: `admin / admin123456`
