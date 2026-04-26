@@ -47,10 +47,12 @@ export type ClientQuota = {
   amountValue: string
   dueDate: string
   status: string
-  statusTone: 'approved' | 'pending' | 'danger'
+  statusTone: 'approved' | 'pending' | 'danger' | 'observed'
   latestPaymentStatus: string
   latestPaymentTone: 'approved' | 'observed' | 'pending' | 'neutral'
   canUploadReceipt: boolean
+  canReplaceReceipt: boolean
+  uploadActionLabel: string
 }
 
 export type ClientPayment = {

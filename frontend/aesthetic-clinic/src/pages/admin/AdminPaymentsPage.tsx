@@ -6,17 +6,18 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useNotifications } from '../../providers/NotificationProvider'
 import { getAdminPayments, updateAdminPaymentQrConfig } from '../../services/api/admin'
 
 export function AdminPaymentsPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [instructions, setInstructions] = useState('')
   const [qrFile, setQrFile] = useState<File | null>(null)
-  const [submitMessage, setSubmitMessage] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const loader = useMemo(() => () => getAdminPayments(), [refreshKey])
   const { data, isLoading, error } = useApiResource(loader)
+  const { showNotification } = useNotifications()
 
   useEffect(() => {
     if (data) {
@@ -27,7 +28,6 @@ export function AdminPaymentsPage() {
   const handleQrFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     setQrFile(event.target.files?.[0] || null)
     setSubmitError(null)
-    setSubmitMessage(null)
   }
 
   const handleSubmitQrConfig = async (event: FormEvent) => {
@@ -39,10 +39,13 @@ export function AdminPaymentsPage() {
 
     setIsSubmitting(true)
     setSubmitError(null)
-    setSubmitMessage(null)
     try {
       const response = await updateAdminPaymentQrConfig(qrFile, instructions)
-      setSubmitMessage(response.detail)
+      showNotification({
+        title: 'QR actualizado',
+        message: response.detail,
+        tone: 'success',
+      })
       setQrFile(null)
       setRefreshKey((current) => current + 1)
     } catch (requestError) {
@@ -150,9 +153,6 @@ export function AdminPaymentsPage() {
 
                 {submitError ? (
                   <div className="form-error">{submitError}</div>
-                ) : null}
-                {submitMessage ? (
-                  <DataState title="Configuracion actualizada" message={submitMessage} />
                 ) : null}
 
                 <div className="form-actions">

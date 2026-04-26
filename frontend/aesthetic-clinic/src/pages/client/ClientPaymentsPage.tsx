@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useNotifications } from '../../providers/NotificationProvider'
 import { getClientPayments, uploadClientPaymentReceipt } from '../../services/api/client'
 
 export function ClientPaymentsPage() {
@@ -14,11 +15,11 @@ export function ClientPaymentsPage() {
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentDetails, setPaymentDetails] = useState('')
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
-  const [submitMessage, setSubmitMessage] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { data, isLoading, error } = useApiResource(getClientPayments)
   const [pageData, setPageData] = useState(data)
+  const { showNotification } = useNotifications()
 
   useEffect(() => {
     if (data) {
@@ -32,7 +33,6 @@ export function ClientPaymentsPage() {
     setPaymentDetails('')
     setReceiptFile(null)
     setSubmitError(null)
-    setSubmitMessage(null)
   }
 
   const closeQuotaPayment = () => {
@@ -46,7 +46,6 @@ export function ClientPaymentsPage() {
   const handleReceiptFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     setReceiptFile(event.target.files?.[0] || null)
     setSubmitError(null)
-    setSubmitMessage(null)
   }
 
   const handleUploadReceipt = async (event: FormEvent) => {
@@ -59,7 +58,6 @@ export function ClientPaymentsPage() {
 
     setIsSubmitting(true)
     setSubmitError(null)
-    setSubmitMessage(null)
     try {
       const response = await uploadClientPaymentReceipt(selectedQuotaId, {
         amount: paymentAmount,
@@ -77,7 +75,11 @@ export function ClientPaymentsPage() {
           payments: [response.payment, ...current.payments],
         }
       })
-      setSubmitMessage(response.detail)
+      showNotification({
+        title: 'Comprobante enviado',
+        message: response.detail,
+        tone: 'success',
+      })
       closeQuotaPayment()
     } catch (requestError) {
       setSubmitError(
@@ -201,7 +203,7 @@ export function ClientPaymentsPage() {
                     >
                       {quota.canUploadReceipt
                         ? pageData.paymentQrConfig.hasQr
-                          ? 'Pagar por QR y subir comprobante'
+                          ? quota.uploadActionLabel
                           : 'QR no disponible'
                         : 'Cuota cerrada'}
                     </button>
@@ -276,9 +278,6 @@ export function ClientPaymentsPage() {
             title="Historial de pagos"
             description="Incluye pagos pendientes, aprobados y observados, con comentarios de administracion."
           >
-            {submitMessage ? (
-              <DataState title="Comprobante enviado" message={submitMessage} />
-            ) : null}
             {pageData.payments.length ? (
               <div className="table-card">
                 <table>

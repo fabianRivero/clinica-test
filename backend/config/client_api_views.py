@@ -324,7 +324,45 @@ def _get_client_operation(cliente, operation_id):
 
 def _quota_item(cuota):
     latest_payment = cuota.pagos_realizados.order_by("-created_at").first()
-    amount_value = _quota_amount(cuota)
+    amount_value = (
+        latest_payment.monto_pagado
+        if latest_payment and latest_payment.estado_verificacion in {
+            PagoRealizado.EstadoVerificacion.PENDIENTE,
+            PagoRealizado.EstadoVerificacion.RECHAZADO,
+        }
+        else _quota_amount(cuota)
+    )
+    if cuota.estado == CuotaPlanPago.Estado.PAGADO:
+        status = cuota.get_estado_display()
+        status_tone = "approved"
+    elif latest_payment and latest_payment.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE:
+        status = "Pendiente de revision"
+        status_tone = "pending"
+    elif latest_payment and latest_payment.estado_verificacion == PagoRealizado.EstadoVerificacion.RECHAZADO:
+        status = "Comprobante observado"
+        status_tone = "observed"
+    else:
+        status = cuota.get_estado_display()
+        status_tone = _quota_tone(cuota)
+
+    latest_payment_status = (
+        "Pendiente de revision"
+        if latest_payment and latest_payment.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE
+        else "Comprobante observado"
+        if latest_payment and latest_payment.estado_verificacion == PagoRealizado.EstadoVerificacion.RECHAZADO
+        else latest_payment.get_estado_verificacion_display()
+        if latest_payment
+        else "Sin comprobante"
+    )
+    can_replace_receipt = bool(
+        latest_payment
+        and latest_payment.estado_verificacion
+        in {
+            PagoRealizado.EstadoVerificacion.PENDIENTE,
+            PagoRealizado.EstadoVerificacion.RECHAZADO,
+        }
+    )
+
     return {
         "id": f"CUO-{cuota.pk:04d}",
         "rawId": cuota.pk,
@@ -333,11 +371,17 @@ def _quota_item(cuota):
         "amount": _currency(amount_value),
         "amountValue": f"{amount_value:.2f}",
         "dueDate": _date_label(cuota.fecha_vencimiento),
-        "status": cuota.get_estado_display(),
-        "statusTone": _quota_tone(cuota),
-        "latestPaymentStatus": latest_payment.get_estado_verificacion_display() if latest_payment else "Sin comprobante",
+        "status": status,
+        "statusTone": status_tone,
+        "latestPaymentStatus": latest_payment_status,
         "latestPaymentTone": _payment_tone(latest_payment) if latest_payment else "neutral",
         "canUploadReceipt": cuota.estado != CuotaPlanPago.Estado.PAGADO,
+        "canReplaceReceipt": can_replace_receipt,
+        "uploadActionLabel": (
+            "Cambiar comprobante subido"
+            if can_replace_receipt
+            else "Pagar por QR y subir comprobante"
+        ),
     }
 
 
@@ -676,8 +720,6 @@ def client_upload_payment_receipt(request, quota_id):
         return _json({"detail": "No encontramos la cuota solicitada."}, status=404)
     if cuota.estado == CuotaPlanPago.Estado.PAGADO:
         return _json({"detail": "Esta cuota ya fue pagada y no admite nuevos comprobantes."}, status=400)
-    if cuota.pagos_realizados.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE).exists():
-        return _json({"detail": "Ya tienes un comprobante pendiente de revision para esta cuota."}, status=400)
 
     receipt_file = request.FILES.get("receiptFile")
     if not receipt_file:
@@ -690,18 +732,39 @@ def client_upload_payment_receipt(request, quota_id):
     except Exception:
         return _json({"detail": "Debes indicar un monto valido para registrar el pago."}, status=400)
 
-    payment = PagoRealizado.objects.create(
-        cuota=cuota,
-        monto_pagado=amount_value,
-        comprobante_url=receipt_file,
-        detalles_pago=details or "Comprobante enviado por el cliente desde el portal.",
-    )
+    editable_payment = cuota.pagos_realizados.filter(
+        estado_verificacion__in=[
+            PagoRealizado.EstadoVerificacion.PENDIENTE,
+            PagoRealizado.EstadoVerificacion.RECHAZADO,
+        ]
+    ).order_by("-created_at").first()
+
+    if editable_payment:
+        editable_payment.monto_pagado = amount_value
+        editable_payment.comprobante_url = receipt_file
+        editable_payment.detalles_pago = details or "Comprobante actualizado por el cliente desde el portal."
+        editable_payment.estado_verificacion = PagoRealizado.EstadoVerificacion.PENDIENTE
+        editable_payment.verificado = False
+        editable_payment.verificado_por = None
+        editable_payment.fecha_verificacion = None
+        editable_payment.observacion_verificacion = ""
+        editable_payment.save()
+        payment = editable_payment
+        detail = "El comprobante fue actualizado correctamente y quedo pendiente de revision."
+    else:
+        payment = PagoRealizado.objects.create(
+            cuota=cuota,
+            monto_pagado=amount_value,
+            comprobante_url=receipt_file,
+            detalles_pago=details or "Comprobante enviado por el cliente desde el portal.",
+        )
+        detail = "El comprobante fue enviado correctamente y quedo pendiente de revision."
 
     cuota.refresh_from_db(fields=["estado"])
 
     return _json(
         {
-            "detail": "El comprobante fue enviado correctamente y quedo pendiente de revision.",
+            "detail": detail,
             "payment": _payment_item(payment),
             "quota": _quota_item(cuota),
         },
