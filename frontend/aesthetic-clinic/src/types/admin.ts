@@ -209,19 +209,93 @@ export type AdminAvailabilityOption = {
   secondaryLabel?: string
 }
 
+export type AdminWeekdayOption = {
+  value: number
+  label: string
+}
+
+export type AdminTimeSlot = {
+  id: number
+  label: string
+  startTime: string
+  endTime: string
+  detail: string
+  active: boolean
+  futureSlots: number
+  reservedFutureSlots: number
+}
+
+export type AdminSpecialistAvailabilitySummary = {
+  id: number
+  label: string
+  secondaryLabel: string
+  futureSlots: number
+  nextSlot: string
+  habitualRules: number
+  exceptions: number
+}
+
+export type AdminHabitualSchedule = {
+  id: number
+  specialistId: number
+  specialist: string
+  startDate: string
+  endDate: string
+  weekdayCodes: number[]
+  weekdayLabels: string[]
+  timeSlotIds: number[]
+  timeSlotLabels: string[]
+  scope: string[]
+  serviceTypeIds: number[]
+  procedureTypeIds: number[]
+  procedureIds: number[]
+  active: boolean
+  detail: string
+}
+
+export type AdminSpecialistAvailabilityException = {
+  id: number
+  specialistId: number
+  specialist: string
+  date: string
+  dateLabel: string
+  type: 'AGREGAR' | 'BLOQUEAR'
+  typeLabel: string
+  timeSlotIds: number[]
+  timeSlotLabels: string[]
+  scope: string[]
+  serviceTypeIds: number[]
+  procedureTypeIds: number[]
+  procedureIds: number[]
+  active: boolean
+  detail: string
+}
+
+export type AdminGlobalAvailabilityBlock = {
+  id: number
+  date: string
+  dateLabel: string
+  active: boolean
+  detail: string
+}
+
 export type AdminAvailabilitySlot = {
   id: string
   rawId: number
+  specialistId: number
   specialist: string
   dateTime: string
   date: string
   time: string
+  timeRange: string
+  timeSlotId: number | null
   status: 'disponible' | 'reservado' | 'expirado' | 'inactivo'
   coverage: string[]
   patient: string
   operation: string
   reservationState: string
   active: boolean
+  detail: string
 }
 
 export type AdminAvailabilityResponse = {
@@ -231,22 +305,61 @@ export type AdminAvailabilityResponse = {
     serviceTypes: AdminAvailabilityOption[]
     procedureTypes: AdminAvailabilityOption[]
     procedures: AdminAvailabilityOption[]
+    timeSlots: AdminTimeSlot[]
+    weekdayOptions: AdminWeekdayOption[]
   }
+  specialistSummaries: AdminSpecialistAvailabilitySummary[]
+  habitualRules: AdminHabitualSchedule[]
+  exceptions: AdminSpecialistAvailabilityException[]
+  globalBlocks: AdminGlobalAvailabilityBlock[]
   slots: AdminAvailabilitySlot[]
 }
 
-export type CreateAdminAvailabilityPayload = {
+export type CreateAdminTimeSlotPayload = {
+  startTime: string
+  endTime: string
+  detail: string
+  order?: number
+}
+
+export type UpdateAdminTimeSlotPayload = CreateAdminTimeSlotPayload & {
+  active: boolean
+}
+
+export type UpsertAdminHabitualSchedulePayload = {
   specialistId: number | null
-  dates: string[]
-  times: string[]
+  startDate: string
+  endDate: string
+  weekdayCodes: number[]
+  timeSlotIds: number[]
   serviceTypeIds: number[]
   procedureTypeIds: number[]
   procedureIds: number[]
+  detail: string
 }
 
-export type CreateAdminAvailabilityResponse = {
+export type CreateAdminAvailabilityExceptionPayload = {
+  specialistId: number | null
+  type: 'AGREGAR' | 'BLOQUEAR'
+  dates: string[]
+  timeSlotIds: number[]
+  serviceTypeIds: number[]
+  procedureTypeIds: number[]
+  procedureIds: number[]
   detail: string
-  createdCount: number
-  updatedCount: number
-  conflictCount: number
+}
+
+export type ManageAdminGlobalAvailabilityPayload = {
+  action: 'BLOQUEAR' | 'RESTAURAR'
+  date: string
+  detail: string
+}
+
+export type AdminAvailabilityMutationResponse = {
+  detail: string
+  syncSummary: {
+    created: number
+    updated: number
+    deactivated: number
+  }
 }

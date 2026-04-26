@@ -11,6 +11,15 @@ from django.utils import timezone
 from common.models import TimeStampedModel
 
 
+def _safe_delete_file(file_name):
+    if not file_name:
+        return
+    try:
+        default_storage.delete(file_name)
+    except (FileNotFoundError, PermissionError, OSError):
+        pass
+
+
 class CuotaPlanPago(TimeStampedModel):
     class Estado(models.TextChoices):
         PAGADO = "PAGADO", "Pagado"
@@ -146,7 +155,7 @@ class PagoRealizado(TimeStampedModel):
         self.full_clean()
         super().save(*args, **kwargs)
         if previous_file_name and previous_file_name != self.comprobante_url.name:
-            default_storage.delete(previous_file_name)
+            _safe_delete_file(previous_file_name)
         self.cuota.actualizar_estado_por_pagos()
 
     def __str__(self):
@@ -184,7 +193,7 @@ class ConfiguracionPagoQR(TimeStampedModel):
 
         super().save(*args, **kwargs)
         if previous_file_name and previous_file_name != self.imagen_qr.name:
-            default_storage.delete(previous_file_name)
+            _safe_delete_file(previous_file_name)
 
     def __str__(self):
         return "Configuracion QR de pagos"
@@ -193,13 +202,13 @@ class ConfiguracionPagoQR(TimeStampedModel):
 @receiver(post_delete, sender=PagoRealizado)
 def actualizar_cuota_tras_eliminar_pago(sender, instance, **kwargs):
     if instance.comprobante_url:
-        default_storage.delete(instance.comprobante_url.name)
+        _safe_delete_file(instance.comprobante_url.name)
     instance.cuota.actualizar_estado_por_pagos()
 
 
 @receiver(post_delete, sender=ConfiguracionPagoQR)
 def eliminar_archivo_qr_al_borrar_configuracion(sender, instance, **kwargs):
     if instance.imagen_qr:
-        default_storage.delete(instance.imagen_qr.name)
+        _safe_delete_file(instance.imagen_qr.name)
 
 # Create your models here.

@@ -245,7 +245,7 @@ def _build_operation_slot_map(operacion):
         availability_scope |= Q(procedimientos_esteticos=procedimiento)
 
     slots_qs = (
-        DisponibilidadCita.objects.select_related("especialista__usuario")
+        DisponibilidadCita.objects.select_related("especialista__usuario", "horario_base")
         .prefetch_related(
             Prefetch(
                 "citas_origen",
@@ -278,6 +278,7 @@ def _build_operation_slot_map(operacion):
             "specialist": _full_name(slot.especialista.usuario),
             "date": date_key,
             "time": local_dt.strftime("%H:%M"),
+            "timeRange": slot.rango_horario,
             "dateTimeLabel": _datetime_label(slot.fecha_hora),
         }
         slots_by_date.setdefault(date_key, []).append(slot_item)

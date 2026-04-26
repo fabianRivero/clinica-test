@@ -125,6 +125,7 @@ export type ClientReservationSlot = {
   specialist: string
   date: string
   time: string
+  timeRange: string
   dateTimeLabel: string
 }
 

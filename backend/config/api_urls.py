@@ -1,6 +1,17 @@
 from django.urls import path
 
-from config.admin_availability_views import admin_availability, admin_create_availability
+from config.admin_availability_views import (
+    admin_availability,
+    admin_create_habitual_schedule,
+    admin_create_specialist_exception,
+    admin_create_time_slot,
+    admin_delete_habitual_schedule,
+    admin_delete_specialist_exception,
+    admin_delete_time_slot,
+    admin_manage_global_day,
+    admin_update_habitual_schedule,
+    admin_update_time_slot,
+)
 from config.api_views import (
     admin_catalogos,
     admin_crear_prospecto,
@@ -59,7 +70,47 @@ urlpatterns = [
     path("operaciones/", admin_operaciones, name="admin-operaciones-api"),
     path("operaciones/<int:operacion_id>/", admin_operacion_detalle, name="admin-operacion-detail-api"),
     path("disponibilidad/", admin_availability, name="admin-availability-api"),
-    path("disponibilidad/crear/", admin_create_availability, name="admin-availability-create-api"),
+    path("disponibilidad/horarios/crear/", admin_create_time_slot, name="admin-availability-time-slot-create-api"),
+    path(
+        "disponibilidad/horarios/<int:slot_id>/actualizar/",
+        admin_update_time_slot,
+        name="admin-availability-time-slot-update-api",
+    ),
+    path(
+        "disponibilidad/horarios/<int:slot_id>/eliminar/",
+        admin_delete_time_slot,
+        name="admin-availability-time-slot-delete-api",
+    ),
+    path(
+        "disponibilidad/habitual/crear/",
+        admin_create_habitual_schedule,
+        name="admin-availability-habitual-create-api",
+    ),
+    path(
+        "disponibilidad/habitual/<int:rule_id>/actualizar/",
+        admin_update_habitual_schedule,
+        name="admin-availability-habitual-update-api",
+    ),
+    path(
+        "disponibilidad/habitual/<int:rule_id>/eliminar/",
+        admin_delete_habitual_schedule,
+        name="admin-availability-habitual-delete-api",
+    ),
+    path(
+        "disponibilidad/excepciones/crear/",
+        admin_create_specialist_exception,
+        name="admin-availability-exception-create-api",
+    ),
+    path(
+        "disponibilidad/excepciones/<int:exception_id>/eliminar/",
+        admin_delete_specialist_exception,
+        name="admin-availability-exception-delete-api",
+    ),
+    path(
+        "disponibilidad/global/gestionar/",
+        admin_manage_global_day,
+        name="admin-availability-global-manage-api",
+    ),
     path("pagos/", admin_pagos, name="admin-pagos-api"),
     path("pagos/configuracion-qr/", admin_update_payment_qr_config, name="admin-pagos-qr-config-api"),
     path("catalogos/", admin_catalogos, name="admin-catalogos-api"),

@@ -6,7 +6,17 @@ from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
-from common.models import TimeStampedModel
+from common.models import CatalogoEditableModel, TimeStampedModel
+
+
+class DiaSemana(models.IntegerChoices):
+    DOMINGO = 0, "Domingo"
+    LUNES = 1, "Lunes"
+    MARTES = 2, "Martes"
+    MIERCOLES = 3, "Miercoles"
+    JUEVES = 4, "Jueves"
+    VIERNES = 5, "Viernes"
+    SABADO = 6, "Sabado"
 
 
 class Operacion(TimeStampedModel):
@@ -176,11 +186,173 @@ class CitaMedica(TimeStampedModel):
         return f"Cita #{self.pk} - {self.operacion}"
 
 
+class HorarioDisponibilidad(CatalogoEditableModel):
+    hora_inicio = models.TimeField()
+    hora_fin = models.TimeField()
+
+    class Meta:
+        db_table = "horarios_disponibilidad"
+        ordering = ("hora_inicio", "hora_fin", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("hora_inicio", "hora_fin"),
+                name="uniq_horario_disponibilidad_rango",
+            )
+        ]
+
+    @property
+    def etiqueta(self):
+        return f"{self.hora_inicio.strftime('%H:%M')} - {self.hora_fin.strftime('%H:%M')}"
+
+    def clean(self):
+        if self.hora_fin <= self.hora_inicio:
+            raise ValidationError(
+                {"hora_fin": "La hora de fin debe ser posterior a la hora de inicio."}
+            )
+
+    def __str__(self):
+        return self.etiqueta
+
+
+class AgendaHabitualEspecialista(TimeStampedModel):
+    especialista = models.ForeignKey(
+        "staff.Especialista",
+        on_delete=models.CASCADE,
+        related_name="agendas_habituales",
+    )
+    fecha_inicio = models.DateField()
+    fecha_fin = models.DateField()
+    activo = models.BooleanField(default=True)
+    detalle = models.CharField(max_length=255, blank=True)
+    horarios = models.ManyToManyField(
+        "operations.HorarioDisponibilidad",
+        blank=True,
+        related_name="agendas_habituales",
+    )
+    tipos_servicio = models.ManyToManyField(
+        "catalogs.TipoServicio",
+        blank=True,
+        related_name="agendas_habituales",
+    )
+    tipos_proc_estetico = models.ManyToManyField(
+        "catalogs.ProcEsteticosTipo",
+        blank=True,
+        related_name="agendas_habituales",
+    )
+    procedimientos_esteticos = models.ManyToManyField(
+        "catalogs.ProcEstetico",
+        blank=True,
+        related_name="agendas_habituales",
+    )
+
+    class Meta:
+        db_table = "agendas_habituales_especialista"
+        ordering = ("especialista__usuario__primer_nombre", "fecha_inicio", "id")
+
+    @property
+    def dias_semana(self):
+        return list(self.dias.values_list("dia_semana", flat=True).order_by("dia_semana"))
+
+    def clean(self):
+        if self.fecha_fin < self.fecha_inicio:
+            raise ValidationError(
+                {"fecha_fin": "La fecha final no puede ser anterior a la fecha inicial."}
+            )
+
+    def __str__(self):
+        return f"Agenda habitual #{self.pk} - {self.especialista}"
+
+
+class AgendaHabitualDia(TimeStampedModel):
+    agenda = models.ForeignKey(
+        "operations.AgendaHabitualEspecialista",
+        on_delete=models.CASCADE,
+        related_name="dias",
+    )
+    dia_semana = models.PositiveSmallIntegerField(choices=DiaSemana.choices)
+
+    class Meta:
+        db_table = "agendas_habituales_dias"
+        ordering = ("agenda", "dia_semana")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("agenda", "dia_semana"),
+                name="uniq_agenda_habitual_dia_semana",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.agenda} - {self.get_dia_semana_display()}"
+
+
+class AgendaExcepcionEspecialista(TimeStampedModel):
+    class TipoExcepcion(models.TextChoices):
+        AGREGAR = "AGREGAR", "Agregar disponibilidad"
+        BLOQUEAR = "BLOQUEAR", "Bloquear disponibilidad"
+
+    especialista = models.ForeignKey(
+        "staff.Especialista",
+        on_delete=models.CASCADE,
+        related_name="excepciones_agenda",
+    )
+    fecha = models.DateField()
+    tipo_excepcion = models.CharField(max_length=10, choices=TipoExcepcion.choices)
+    activo = models.BooleanField(default=True)
+    detalle = models.CharField(max_length=255, blank=True)
+    horarios = models.ManyToManyField(
+        "operations.HorarioDisponibilidad",
+        blank=True,
+        related_name="excepciones_agenda",
+    )
+    tipos_servicio = models.ManyToManyField(
+        "catalogs.TipoServicio",
+        blank=True,
+        related_name="excepciones_agenda",
+    )
+    tipos_proc_estetico = models.ManyToManyField(
+        "catalogs.ProcEsteticosTipo",
+        blank=True,
+        related_name="excepciones_agenda",
+    )
+    procedimientos_esteticos = models.ManyToManyField(
+        "catalogs.ProcEstetico",
+        blank=True,
+        related_name="excepciones_agenda",
+    )
+
+    class Meta:
+        db_table = "agendas_excepciones_especialista"
+        ordering = ("-fecha", "especialista__usuario__primer_nombre", "id")
+
+    def __str__(self):
+        return f"{self.get_tipo_excepcion_display()} - {self.especialista} - {self.fecha}"
+
+
+class DiaBloqueadoAgendaGlobal(TimeStampedModel):
+    fecha = models.DateField(unique=True)
+    activo = models.BooleanField(default=True)
+    detalle = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        db_table = "agenda_global_dias_bloqueados"
+        ordering = ("fecha",)
+
+    def __str__(self):
+        return f"{self.fecha} - {'Activo' if self.activo else 'Inactivo'}"
+
+
 class DisponibilidadCita(TimeStampedModel):
     especialista = models.ForeignKey(
         "staff.Especialista",
         on_delete=models.PROTECT,
         related_name="disponibilidades_cita",
+    )
+    horario_base = models.ForeignKey(
+        "operations.HorarioDisponibilidad",
+        on_delete=models.PROTECT,
+        related_name="disponibilidades_cita",
+        null=True,
+        blank=True,
     )
     fecha_hora = models.DateTimeField()
     activo = models.BooleanField(default=True)
@@ -231,6 +403,13 @@ class DisponibilidadCita(TimeStampedModel):
             return "RESERVADO"
         return "DISPONIBLE"
 
+    @property
+    def rango_horario(self):
+        if self.horario_base_id:
+            return self.horario_base.etiqueta
+        local_dt = timezone.localtime(self.fecha_hora)
+        return f"{local_dt.strftime('%H:%M')} - {local_dt.strftime('%H:%M')}"
+
     def coincide_con_operacion(self, operacion):
         servicio_config = operacion.servicio_config
         procedimiento = servicio_config.proc_estetico
@@ -244,7 +423,10 @@ class DisponibilidadCita(TimeStampedModel):
         return False
 
     def __str__(self):
-        return f"{self.especialista} - {timezone.localtime(self.fecha_hora).strftime('%d/%m/%Y %H:%M')}"
+        return (
+            f"{self.especialista} - "
+            f"{timezone.localtime(self.fecha_hora).strftime('%d/%m/%Y %H:%M')}"
+        )
 
 
 class FichaClinica(TimeStampedModel):

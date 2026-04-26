@@ -708,6 +708,189 @@
   }
 }
 
+.field--inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+
+  input {
+    width: auto;
+  }
+
+  span {
+    margin: 0;
+  }
+}
+
+.availability-admin-form {
+  display: grid;
+  gap: var(--spacing-4);
+}
+
+.availability-admin-list {
+  display: grid;
+  gap: var(--spacing-3);
+}
+
+.availability-admin-card {
+  display: grid;
+  gap: var(--spacing-3);
+  padding: 1rem 1.05rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(217, 232, 236, 0.9);
+  background:
+    radial-gradient(circle at top right, rgba(107, 207, 215, 0.12), transparent 9rem),
+    rgba(255, 255, 255, 0.95);
+
+  @include respond(md) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  p,
+  small {
+    margin: 0.2rem 0 0;
+  }
+}
+
+.availability-admin-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+  justify-content: flex-start;
+
+  @include respond(md) {
+    justify-content: flex-end;
+  }
+}
+
+.specialist-agenda {
+  display: grid;
+  gap: var(--spacing-4);
+
+  @include respond(lg) {
+    grid-template-columns: 18rem minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.specialist-agenda__sidebar {
+  display: grid;
+  gap: var(--spacing-3);
+}
+
+.specialist-agenda__summary {
+  display: grid;
+  gap: var(--spacing-2);
+  padding: 1rem 1.05rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(217, 232, 236, 0.9);
+  background: rgba(255, 255, 255, 0.92);
+  text-align: left;
+  transition:
+    border-color var(--transition-base),
+    transform var(--transition-base),
+    box-shadow var(--transition-base);
+
+  &:hover {
+    transform: translateY(-1px);
+  }
+
+  &.is-active {
+    border-color: rgba(47, 138, 146, 0.32);
+    box-shadow: var(--shadow-card);
+    background:
+      radial-gradient(circle at top right, rgba(107, 207, 215, 0.15), transparent 8rem),
+      rgba(255, 255, 255, 0.96);
+  }
+
+  p,
+  small {
+    margin: 0;
+  }
+}
+
+.specialist-agenda__summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+
+  span {
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    background: rgba(47, 138, 146, 0.1);
+    color: var(--color-primary-dark);
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+}
+
+.specialist-agenda__content {
+  display: grid;
+  gap: var(--spacing-4);
+}
+
+.specialist-agenda__hero {
+  display: grid;
+  gap: var(--spacing-4);
+  padding: 1.15rem 1.2rem;
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at top right, rgba(107, 207, 215, 0.18), transparent 10rem),
+    rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(217, 232, 236, 0.9);
+
+  @include respond(md) {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    align-items: center;
+  }
+
+  h3,
+  p {
+    margin: 0;
+  }
+}
+
+.specialist-agenda__eyebrow {
+  color: var(--color-primary);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.specialist-agenda__hero-metrics {
+  display: grid;
+  gap: var(--spacing-3);
+
+  @include respond(md) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  article {
+    padding: 0.95rem 1rem;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(217, 232, 236, 0.9);
+  }
+
+  span,
+  strong {
+    display: block;
+  }
+
+  span {
+    color: var(--color-text-soft);
+    font-size: 0.82rem;
+  }
+
+  strong {
+    margin-top: 0.3rem;
+    font-size: 1rem;
+  }
+}
+
 .operation-card {
   padding: var(--spacing-5);
   border-radius: var(--radius-sm);

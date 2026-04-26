@@ -1,16 +1,20 @@
 import type {
   AdminAvailabilityResponse,
+  AdminAvailabilityMutationResponse,
   CatalogsResponse,
-  CreateAdminAvailabilityPayload,
-  CreateAdminAvailabilityResponse,
+  CreateAdminAvailabilityExceptionPayload,
   CreateAdminProspectPayload,
   CreateAdminProspectResponse,
+  CreateAdminTimeSlotPayload,
   DashboardResponse,
+  ManageAdminGlobalAvailabilityPayload,
   OperationDetailResponse,
   OperationsResponse,
   PaymentsResponse,
   ProspectsResponse,
   StaffResponse,
+  UpdateAdminTimeSlotPayload,
+  UpsertAdminHabitualSchedulePayload,
   UpdateAdminPaymentQrConfigResponse,
 } from '../../types/admin'
 import type {
@@ -147,8 +151,81 @@ export function createAdminProspect(payload: CreateAdminProspectPayload) {
   return requestJsonWithBody<CreateAdminProspectResponse>('/api/admin/prospectos/crear/', payload)
 }
 
-export function createAdminAvailability(payload: CreateAdminAvailabilityPayload) {
-  return requestJsonWithBody<CreateAdminAvailabilityResponse>('/api/admin/disponibilidad/crear/', payload)
+export function createAdminTimeSlot(payload: CreateAdminTimeSlotPayload) {
+  console.log('[adminApi] createAdminTimeSlot:request', {
+    path: '/api/admin/disponibilidad/horarios/crear/',
+    payload,
+    at: new Date().toISOString(),
+  })
+  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
+    '/api/admin/disponibilidad/horarios/crear/',
+    payload,
+  ).then((response) => {
+    console.log('[adminApi] createAdminTimeSlot:response', {
+      response,
+      at: new Date().toISOString(),
+    })
+    return response
+  })
+}
+
+export function updateAdminTimeSlot(slotId: number, payload: UpdateAdminTimeSlotPayload) {
+  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
+    `/api/admin/disponibilidad/horarios/${slotId}/actualizar/`,
+    payload,
+  )
+}
+
+export function deleteAdminTimeSlot(slotId: number) {
+  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
+    `/api/admin/disponibilidad/horarios/${slotId}/eliminar/`,
+    {},
+  )
+}
+
+export function createAdminHabitualSchedule(payload: UpsertAdminHabitualSchedulePayload) {
+  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
+    '/api/admin/disponibilidad/habitual/crear/',
+    payload,
+  )
+}
+
+export function updateAdminHabitualSchedule(
+  ruleId: number,
+  payload: UpsertAdminHabitualSchedulePayload,
+) {
+  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
+    `/api/admin/disponibilidad/habitual/${ruleId}/actualizar/`,
+    payload,
+  )
+}
+
+export function deleteAdminHabitualSchedule(ruleId: number) {
+  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
+    `/api/admin/disponibilidad/habitual/${ruleId}/eliminar/`,
+    {},
+  )
+}
+
+export function createAdminAvailabilityException(payload: CreateAdminAvailabilityExceptionPayload) {
+  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
+    '/api/admin/disponibilidad/excepciones/crear/',
+    payload,
+  )
+}
+
+export function deleteAdminAvailabilityException(exceptionId: number) {
+  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
+    `/api/admin/disponibilidad/excepciones/${exceptionId}/eliminar/`,
+    {},
+  )
+}
+
+export function manageAdminGlobalAvailability(payload: ManageAdminGlobalAvailabilityPayload) {
+  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
+    '/api/admin/disponibilidad/global/gestionar/',
+    payload,
+  )
 }
 
 export function getAdminProspectConversion(prospectId: string) {

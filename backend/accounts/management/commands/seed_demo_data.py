@@ -28,7 +28,12 @@ from catalogs.models import (
 from clinical.models import AnalisisEstetico, AnalisisEsteticoAlergia, PatologiaPorAnalisis
 from customers.models import Cliente, Prospecto
 from operations.models import (
+    AgendaExcepcionEspecialista,
+    AgendaHabitualDia,
+    AgendaHabitualEspecialista,
     CitaMedica,
+    DiaBloqueadoAgendaGlobal,
+    DiaSemana,
     DisponibilidadCita,
     FichaAntecedenteMedico,
     FichaCampo,
@@ -38,8 +43,10 @@ from operations.models import (
     FichaRespuestaCampo,
     FichaRespuestaOpcion,
     FichaSeccion,
+    HorarioDisponibilidad,
     Operacion,
 )
+from operations.scheduling import sync_disponibilidad_citas
 from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
 
 
@@ -1224,27 +1231,91 @@ class Command(BaseCommand):
             detalles_cita=detalles,
         )
 
-    def _upsert_availability_slot(
+    def _get_or_create_time_slot(
+        self,
+        label,
+        hour_start,
+        minute_start,
+        hour_end,
+        minute_end=0,
+        *,
+        active=True,
+        detail="",
+    ):
+        slot, _ = HorarioDisponibilidad.objects.update_or_create(
+            hora_inicio=time(hour=hour_start, minute=minute_start),
+            hora_fin=time(hour=hour_end, minute=minute_end),
+            defaults={
+                "descripcion": detail or label,
+                "activo": active,
+            },
+        )
+        return slot
+
+    def _create_habitual_schedule(
         self,
         specialist,
-        dt,
         *,
+        start_date,
+        end_date,
+        weekdays,
+        time_slots,
         service_types=None,
         procedure_types=None,
         procedures=None,
-        active=True,
         detail="",
-        appointment=None,
     ):
-        slot, _ = DisponibilidadCita.objects.update_or_create(
+        schedule = AgendaHabitualEspecialista.objects.create(
             especialista=specialist,
-            fecha_hora=dt,
-            defaults={"activo": active, "detalle": detail},
+            fecha_inicio=start_date,
+            fecha_fin=end_date,
+            activo=True,
+            detalle=detail,
         )
-        slot.tipos_servicio.set(service_types or [])
-        slot.tipos_proc_estetico.set(procedure_types or [])
-        slot.procedimientos_esteticos.set(procedures or [])
-        if appointment and appointment.disponibilidad_id != slot.pk:
+        schedule.horarios.set(time_slots)
+        schedule.tipos_servicio.set(service_types or [])
+        schedule.tipos_proc_estetico.set(procedure_types or [])
+        schedule.procedimientos_esteticos.set(procedures or [])
+        AgendaHabitualDia.objects.bulk_create(
+            [AgendaHabitualDia(agenda=schedule, dia_semana=day) for day in weekdays]
+        )
+        return schedule
+
+    def _create_specialist_exception(
+        self,
+        specialist,
+        *,
+        target_date,
+        exception_type,
+        time_slots,
+        service_types=None,
+        procedure_types=None,
+        procedures=None,
+        detail="",
+    ):
+        exception = AgendaExcepcionEspecialista.objects.create(
+            especialista=specialist,
+            fecha=target_date,
+            tipo_excepcion=exception_type,
+            activo=True,
+            detalle=detail,
+        )
+        exception.horarios.set(time_slots)
+        exception.tipos_servicio.set(service_types or [])
+        exception.tipos_proc_estetico.set(procedure_types or [])
+        exception.procedimientos_esteticos.set(procedures or [])
+        return exception
+
+    def _link_appointment_to_slot(self, appointment):
+        slot = (
+            DisponibilidadCita.objects.filter(
+                especialista=appointment.medico,
+                fecha_hora=appointment.fecha_hora,
+            )
+            .order_by("-activo", "-created_at")
+            .first()
+        )
+        if slot and appointment.disponibilidad_id != slot.pk:
             appointment.disponibilidad = slot
             appointment.save(update_fields=["disponibilidad"])
         return slot
@@ -1927,6 +1998,13 @@ class Command(BaseCommand):
         )
 
     def _seed_availability(self, today, specialists, catalogs, operations):
+        DisponibilidadCita.objects.all().delete()
+        AgendaExcepcionEspecialista.objects.all().delete()
+        AgendaHabitualDia.objects.all().delete()
+        AgendaHabitualEspecialista.objects.all().delete()
+        DiaBloqueadoAgendaGlobal.objects.all().delete()
+        HorarioDisponibilidad.objects.all().delete()
+
         treatment_service = catalogs["tipo_servicio"]["tratamiento"]
         laser_type = catalogs["tipo_procedimiento"]["laser"]
         facial_type = catalogs["tipo_procedimiento"]["facial"]
@@ -1935,6 +2013,41 @@ class Command(BaseCommand):
         tatuajes = catalogs["procedimiento"]["tatuajes"]
         limpieza = catalogs["procedimiento"]["limpieza"]
 
+        time_slots = {
+            "09_00": self._get_or_create_time_slot("09:00 - 10:00", 9, 0, 10, 0, detail="Bloque matutino."),
+            "09_30": self._get_or_create_time_slot("09:30 - 10:30", 9, 30, 10, 30, detail="Bloque matutino extendido."),
+            "10_30": self._get_or_create_time_slot("10:30 - 11:30", 10, 30, 11, 30, detail="Bloque intermedio."),
+            "11_00": self._get_or_create_time_slot("11:00 - 12:00", 11, 0, 12, 0, detail="Bloque intermedio."),
+            "13_30": self._get_or_create_time_slot("13:30 - 14:30", 13, 30, 14, 30, detail="Bloque de mediodia."),
+            "14_30": self._get_or_create_time_slot("14:30 - 15:30", 14, 30, 15, 30, detail="Bloque de mediodia."),
+            "15_30": self._get_or_create_time_slot("15:30 - 16:30", 15, 30, 16, 30, detail="Bloque de la tarde."),
+            "16_00": self._get_or_create_time_slot("16:00 - 17:00", 16, 0, 17, 0, detail="Bloque de la tarde."),
+            "17_00": self._get_or_create_time_slot("17:00 - 18:00", 17, 0, 18, 0, detail="Bloque de cierre."),
+            "18_00": self._get_or_create_time_slot("18:00 - 19:00", 18, 0, 19, 0, detail="Bloque nocturno."),
+        }
+
+        full_week = [
+            DiaSemana.DOMINGO,
+            DiaSemana.LUNES,
+            DiaSemana.MARTES,
+            DiaSemana.MIERCOLES,
+            DiaSemana.JUEVES,
+            DiaSemana.VIERNES,
+            DiaSemana.SABADO,
+        ]
+        weekdays = [
+            DiaSemana.LUNES,
+            DiaSemana.MARTES,
+            DiaSemana.MIERCOLES,
+            DiaSemana.JUEVES,
+            DiaSemana.VIERNES,
+        ]
+        mon_wed_fri = [
+            DiaSemana.LUNES,
+            DiaSemana.MIERCOLES,
+            DiaSemana.VIERNES,
+        ]
+
         depilacion_cita = operations["depilacion_activa"].citas_medicas.filter(
             estado=CitaMedica.Estado.PROGRAMADA
         ).order_by("fecha_hora").first()
@@ -1942,76 +2055,86 @@ class Command(BaseCommand):
             estado=CitaMedica.Estado.PROGRAMADA
         ).order_by("fecha_hora").first()
 
-        self._upsert_availability_slot(
+        self._create_habitual_schedule(
             specialists["lucia"],
-            self._aware_datetime(today + timedelta(days=7), 16, 0),
-            procedure_types=[laser_type],
-            procedures=[depilacion],
-            detail="Horario reservado para la siguiente sesion de depilacion demo.",
-            appointment=depilacion_cita,
-        )
-        self._upsert_availability_slot(
-            specialists["lucia"],
-            self._aware_datetime(today + timedelta(days=9), 10, 30),
-            procedure_types=[laser_type],
-            detail="Cupo abierto para cualquier procedimiento laser.",
-        )
-        self._upsert_availability_slot(
-            specialists["lucia"],
-            self._aware_datetime(today + timedelta(days=12), 18, 0),
+            start_date=today,
+            end_date=today + timedelta(days=45),
+            weekdays=full_week,
+            time_slots=[time_slots["10_30"], time_slots["16_00"], time_slots["18_00"]],
             service_types=[treatment_service],
+            procedure_types=[laser_type],
             procedures=[depilacion, manchas],
-            detail="Bloque de tratamiento para depilacion o manchas.",
+            detail="Horario habitual laser de Lucia.",
         )
-        self._upsert_availability_slot(
+        self._create_habitual_schedule(
             specialists["diego"],
-            self._aware_datetime(today + timedelta(days=6), 11, 0),
-            procedures=[tatuajes],
-            detail="Horario exclusivo para borrado de tatuajes.",
-        )
-        self._upsert_availability_slot(
-            specialists["diego"],
-            self._aware_datetime(today + timedelta(days=8), 15, 30),
+            start_date=today,
+            end_date=today + timedelta(days=45),
+            weekdays=mon_wed_fri,
+            time_slots=[time_slots["11_00"], time_slots["15_30"], time_slots["17_00"]],
             procedure_types=[laser_type],
             procedures=[tatuajes],
-            detail="Cupo laser enfocado a sesiones de tatuaje.",
+            detail="Horario habitual de tatuajes para Diego.",
         )
-        self._upsert_availability_slot(
+        self._create_habitual_schedule(
             specialists["sofia"],
-            self._aware_datetime(today + timedelta(days=4), 14, 30),
-            procedures=[limpieza],
-            detail="Horario ya tomado para limpieza profunda demo.",
-            appointment=limpieza_cita,
-        )
-        self._upsert_availability_slot(
-            specialists["sofia"],
-            self._aware_datetime(today + timedelta(days=5), 9, 30),
+            start_date=today,
+            end_date=today + timedelta(days=45),
+            weekdays=weekdays,
+            time_slots=[time_slots["09_30"]],
             procedure_types=[laser_type],
             procedures=[manchas],
-            detail="Horario disponible para tratamiento de manchas.",
+            detail="Horario habitual para manchas con Sofia.",
         )
-        self._upsert_availability_slot(
+        self._create_habitual_schedule(
             specialists["sofia"],
-            self._aware_datetime(today + timedelta(days=11), 13, 30),
+            start_date=today,
+            end_date=today + timedelta(days=45),
+            weekdays=weekdays,
+            time_slots=[time_slots["13_30"], time_slots["14_30"]],
             procedure_types=[facial_type],
             procedures=[limpieza],
-            detail="Horario cosmetologico facial de apoyo.",
+            detail="Horario habitual facial de Sofia.",
         )
-        self._upsert_availability_slot(
+
+        self._create_specialist_exception(
             specialists["lucia"],
-            self._aware_datetime(today - timedelta(days=2), 9, 0),
-            procedure_types=[laser_type],
-            procedures=[depilacion],
-            detail="Horario pasado para exponer estados expirados.",
+            target_date=today + timedelta(days=8),
+            exception_type=AgendaExcepcionEspecialista.TipoExcepcion.AGREGAR,
+            time_slots=[time_slots["11_00"]],
+            service_types=[treatment_service],
+            procedure_types=[facial_type],
+            procedures=[limpieza],
+            detail="Lucia cubre un bloque extraordinario de apoyo facial.",
         )
-        self._upsert_availability_slot(
+        self._create_specialist_exception(
             specialists["diego"],
-            self._aware_datetime(today + timedelta(days=13), 17, 0),
-            procedure_types=[laser_type],
-            procedures=[tatuajes],
-            active=False,
-            detail="Horario pausado manualmente por administracion.",
+            target_date=today + timedelta(days=13),
+            exception_type=AgendaExcepcionEspecialista.TipoExcepcion.BLOQUEAR,
+            time_slots=[time_slots["17_00"]],
+            detail="Bloque suspendido por un imprevisto del especialista.",
         )
+        DiaBloqueadoAgendaGlobal.objects.create(
+            fecha=today + timedelta(days=15),
+            activo=True,
+            detalle="Dia libre general de ejemplo para todos los especialistas.",
+        )
+
+        sync_disponibilidad_citas()
+        if depilacion_cita:
+            self._link_appointment_to_slot(depilacion_cita)
+        if limpieza_cita:
+            self._link_appointment_to_slot(limpieza_cita)
+
+        expired_slot = DisponibilidadCita.objects.create(
+            especialista=specialists["lucia"],
+            horario_base=time_slots["09_00"],
+            fecha_hora=self._aware_datetime(today - timedelta(days=2), 9, 0),
+            activo=True,
+            detalle="Horario pasado para exponer estados expirados.",
+        )
+        expired_slot.tipos_proc_estetico.set([laser_type])
+        expired_slot.procedimientos_esteticos.set([depilacion])
 
     def _seed_analyses(self, today, clients, catalogs):
         analysis_specs = [

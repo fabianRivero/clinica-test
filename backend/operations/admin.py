@@ -1,7 +1,11 @@
 from django.contrib import admin
 
 from operations.models import (
+    AgendaExcepcionEspecialista,
+    AgendaHabitualDia,
+    AgendaHabitualEspecialista,
     CitaMedica,
+    DiaBloqueadoAgendaGlobal,
     DisponibilidadCita,
     FichaAntecedenteMedico,
     FichaCampo,
@@ -11,6 +15,7 @@ from operations.models import (
     FichaRespuestaCampo,
     FichaRespuestaOpcion,
     FichaSeccion,
+    HorarioDisponibilidad,
     Operacion,
 )
 
@@ -54,6 +59,7 @@ class DisponibilidadCitaAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "especialista",
+        "horario_base",
         "fecha_hora",
         "activo",
         "estado_resumen",
@@ -64,6 +70,30 @@ class DisponibilidadCitaAdmin(admin.ModelAdmin):
         "especialista__usuario__apellido_paterno",
         "detalle",
     )
+
+
+@admin.register(HorarioDisponibilidad)
+class HorarioDisponibilidadAdmin(admin.ModelAdmin):
+    list_display = ("id", "hora_inicio", "hora_fin", "activo")
+    list_filter = ("activo",)
+
+
+@admin.register(AgendaHabitualEspecialista)
+class AgendaHabitualEspecialistaAdmin(admin.ModelAdmin):
+    list_display = ("id", "especialista", "fecha_inicio", "fecha_fin", "activo")
+    list_filter = ("activo", "especialista")
+
+
+@admin.register(AgendaExcepcionEspecialista)
+class AgendaExcepcionEspecialistaAdmin(admin.ModelAdmin):
+    list_display = ("id", "especialista", "fecha", "tipo_excepcion", "activo")
+    list_filter = ("activo", "tipo_excepcion", "especialista")
+
+
+@admin.register(DiaBloqueadoAgendaGlobal)
+class DiaBloqueadoAgendaGlobalAdmin(admin.ModelAdmin):
+    list_display = ("id", "fecha", "activo", "detalle")
+    list_filter = ("activo",)
 
 
 @admin.register(FichaClinica)
@@ -80,6 +110,7 @@ for model in (
     FichaCampo,
     FichaRespuestaCampo,
     FichaRespuestaOpcion,
+    AgendaHabitualDia,
 ):
     admin.site.register(model)
 

@@ -304,7 +304,7 @@ export function ClientReservationCreatePage() {
                   return (
                     <article className="reservation-slot-card" key={bookingKey}>
                       <div>
-                        <strong>{slot.time}</strong>
+                        <strong>{slot.timeRange}</strong>
                         <p>{slot.specialist}</p>
                         <span>{slot.dateTimeLabel}</span>
                       </div>
