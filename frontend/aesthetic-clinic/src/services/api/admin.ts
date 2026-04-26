@@ -11,6 +11,7 @@ import type {
   PaymentsResponse,
   ProspectsResponse,
   StaffResponse,
+  UpdateAdminPaymentQrConfigResponse,
 } from '../../types/admin'
 import type {
   ProspectConversionFinalizeResponse,
@@ -121,6 +122,17 @@ export function getAdminAvailability() {
 
 export function getAdminPayments() {
   return requestJson<PaymentsResponse>('/api/admin/pagos/')
+}
+
+export function updateAdminPaymentQrConfig(file: File, instructions: string) {
+  const formData = new FormData()
+  formData.append('qrImage', file)
+  formData.append('instructions', instructions)
+
+  return requestFormDataWithBody<UpdateAdminPaymentQrConfigResponse>(
+    '/api/admin/pagos/configuracion-qr/',
+    formData,
+  )
 }
 
 export function getAdminCatalogs() {

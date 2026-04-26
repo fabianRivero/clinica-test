@@ -1,4 +1,5 @@
 import type { AdminMetric } from './admin'
+import type { PaymentQrConfig } from './admin'
 
 export type ClientAlert = {
   id: string
@@ -39,9 +40,11 @@ export type ClientOperation = {
 
 export type ClientQuota = {
   id: string
+  rawId: number
   operation: string
   quotaLabel: string
   amount: string
+  amountValue: string
   dueDate: string
   status: string
   statusTone: 'approved' | 'pending' | 'danger'
@@ -103,6 +106,7 @@ export type ClientTreatmentsResponse = {
 
 export type ClientPaymentsResponse = {
   metrics: AdminMetric[]
+  paymentQrConfig: PaymentQrConfig
   activeQuotas: ClientQuota[]
   payments: ClientPayment[]
 }
@@ -149,4 +153,16 @@ export type CreateClientReservationResponse = {
   detail: string
   appointment: ClientAppointment
   operation: ClientOperation
+}
+
+export type UploadClientPaymentReceiptPayload = {
+  amount: string
+  details: string
+  receiptFile: File
+}
+
+export type UploadClientPaymentReceiptResponse = {
+  detail: string
+  payment: ClientPayment
+  quota: ClientQuota
 }

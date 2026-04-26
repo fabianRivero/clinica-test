@@ -1,5 +1,7 @@
 from django.conf import settings
+from django.core.files.storage import default_storage
 from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models.signals import post_delete
@@ -74,7 +76,11 @@ class PagoRealizado(TimeStampedModel):
         decimal_places=2,
         validators=[MinValueValidator(0)],
     )
-    comprobante_url = models.CharField(max_length=255, blank=True)
+    comprobante_url = models.FileField(
+        upload_to="comprobantes_pagos/%Y/%m/",
+        blank=True,
+        validators=[FileExtensionValidator(["png", "jpg", "jpeg", "webp", "pdf"])],
+    )
     estado_verificacion = models.CharField(
         max_length=20,
         choices=EstadoVerificacion.choices,
@@ -115,6 +121,14 @@ class PagoRealizado(TimeStampedModel):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        previous_file_name = None
+        if self.pk:
+            previous_file_name = (
+                PagoRealizado.objects.filter(pk=self.pk)
+                .values_list("comprobante_url", flat=True)
+                .first()
+            )
+
         if self.estado_verificacion == self.EstadoVerificacion.APROBADO:
             self.verificado = True
             if self.verificado_por_id and not self.fecha_verificacion:
@@ -131,14 +145,61 @@ class PagoRealizado(TimeStampedModel):
 
         self.full_clean()
         super().save(*args, **kwargs)
+        if previous_file_name and previous_file_name != self.comprobante_url.name:
+            default_storage.delete(previous_file_name)
         self.cuota.actualizar_estado_por_pagos()
 
     def __str__(self):
         return f"Pago #{self.pk} - Cuota #{self.cuota_id}"
 
 
+class ConfiguracionPagoQR(TimeStampedModel):
+    instrucciones = models.TextField(
+        blank=True,
+        default=(
+            "Escanea este QR para pagar a la cuenta bancaria de la clinica. "
+            "Luego adjunta el comprobante para que administracion valide tu pago."
+        ),
+    )
+    imagen_qr = models.FileField(
+        upload_to="pagos_qr/%Y/%m/",
+        blank=True,
+        null=True,
+        validators=[FileExtensionValidator(["png", "jpg", "jpeg", "webp"])],
+    )
+
+    class Meta:
+        db_table = "configuracion_pago_qr"
+        verbose_name = "Configuracion de pago QR"
+        verbose_name_plural = "Configuracion de pago QR"
+
+    def save(self, *args, **kwargs):
+        previous_file_name = None
+        if self.pk:
+            previous_file_name = (
+                ConfiguracionPagoQR.objects.filter(pk=self.pk)
+                .values_list("imagen_qr", flat=True)
+                .first()
+            )
+
+        super().save(*args, **kwargs)
+        if previous_file_name and previous_file_name != self.imagen_qr.name:
+            default_storage.delete(previous_file_name)
+
+    def __str__(self):
+        return "Configuracion QR de pagos"
+
+
 @receiver(post_delete, sender=PagoRealizado)
 def actualizar_cuota_tras_eliminar_pago(sender, instance, **kwargs):
+    if instance.comprobante_url:
+        default_storage.delete(instance.comprobante_url.name)
     instance.cuota.actualizar_estado_por_pagos()
+
+
+@receiver(post_delete, sender=ConfiguracionPagoQR)
+def eliminar_archivo_qr_al_borrar_configuracion(sender, instance, **kwargs):
+    if instance.imagen_qr:
+        default_storage.delete(instance.imagen_qr.name)
 
 # Create your models here.

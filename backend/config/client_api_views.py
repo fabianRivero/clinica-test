@@ -9,7 +9,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from billing.models import CuotaPlanPago, PagoRealizado
+from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
 from clinical.models import AnalisisEstetico
 from customers.models import Cliente
 from operations.models import CitaMedica, DisponibilidadCita, Operacion
@@ -324,11 +324,14 @@ def _get_client_operation(cliente, operation_id):
 
 def _quota_item(cuota):
     latest_payment = cuota.pagos_realizados.order_by("-created_at").first()
+    amount_value = _quota_amount(cuota)
     return {
         "id": f"CUO-{cuota.pk:04d}",
+        "rawId": cuota.pk,
         "operation": _procedure_name(cuota.operacion),
         "quotaLabel": f"Cuota {cuota.nro_cuota}",
-        "amount": _currency(_quota_amount(cuota)),
+        "amount": _currency(amount_value),
+        "amountValue": f"{amount_value:.2f}",
         "dueDate": _date_label(cuota.fecha_vencimiento),
         "status": cuota.get_estado_display(),
         "statusTone": _quota_tone(cuota),
@@ -348,9 +351,21 @@ def _payment_item(payment):
         "status": payment.get_estado_verificacion_display(),
         "statusTone": _payment_tone(payment),
         "dueDate": _date_label(payment.cuota.fecha_vencimiento),
-        "receiptUrl": payment.comprobante_url or "",
+        "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
         "verifier": _full_name(payment.verificado_por) if payment.verificado_por else "Pendiente de revision",
         "note": payment.observacion_verificacion or payment.detalles_pago or "Sin observaciones.",
+    }
+
+
+def _payment_qr_config_item(config):
+    return {
+        "hasQr": bool(config and config.imagen_qr),
+        "qrImageUrl": config.imagen_qr.url if config and config.imagen_qr else "",
+        "instructions": (
+            config.instrucciones
+            if config
+            else "Escanea el QR de pago y luego adjunta tu comprobante para revision administrativa."
+        ),
     }
 
 
@@ -636,10 +651,62 @@ def client_payments(request):
                 "primary",
             ),
         ],
+        "paymentQrConfig": _payment_qr_config_item(ConfiguracionPagoQR.objects.order_by("-updated_at").first()),
         "activeQuotas": [_quota_item(cuota) for cuota in quotas_qs.exclude(estado=CuotaPlanPago.Estado.PAGADO)],
         "payments": [_payment_item(payment) for payment in payments_qs],
     }
     return _json(data)
+
+
+@require_POST
+@_client_required
+@transaction.atomic
+def client_upload_payment_receipt(request, quota_id):
+    cuota = (
+        CuotaPlanPago.objects.select_for_update(of=("self",))
+        .select_related(
+            "operacion__paciente",
+            "operacion__servicio_config__tipo_servicio",
+        )
+        .prefetch_related("pagos_realizados")
+        .filter(pk=quota_id, operacion__paciente=request.cliente)
+        .first()
+    )
+    if not cuota:
+        return _json({"detail": "No encontramos la cuota solicitada."}, status=404)
+    if cuota.estado == CuotaPlanPago.Estado.PAGADO:
+        return _json({"detail": "Esta cuota ya fue pagada y no admite nuevos comprobantes."}, status=400)
+    if cuota.pagos_realizados.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE).exists():
+        return _json({"detail": "Ya tienes un comprobante pendiente de revision para esta cuota."}, status=400)
+
+    receipt_file = request.FILES.get("receiptFile")
+    if not receipt_file:
+        return _json({"detail": "Debes adjuntar el comprobante del pago."}, status=400)
+
+    amount = (request.POST.get("amount") or "").strip()
+    details = (request.POST.get("details") or "").strip()
+    try:
+        amount_value = Decimal(amount)
+    except Exception:
+        return _json({"detail": "Debes indicar un monto valido para registrar el pago."}, status=400)
+
+    payment = PagoRealizado.objects.create(
+        cuota=cuota,
+        monto_pagado=amount_value,
+        comprobante_url=receipt_file,
+        detalles_pago=details or "Comprobante enviado por el cliente desde el portal.",
+    )
+
+    cuota.refresh_from_db(fields=["estado"])
+
+    return _json(
+        {
+            "detail": "El comprobante fue enviado correctamente y quedo pendiente de revision.",
+            "payment": _payment_item(payment),
+            "quota": _quota_item(cuota),
+        },
+        status=201,
+    )
 
 
 @require_GET

@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from billing.models import CuotaPlanPago, PagoRealizado
+from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
 from catalogs.models import (
     GrupoOpciones,
     OpcionCatalogo,
@@ -273,8 +273,20 @@ def _payment_item(payment):
         "quota": f"Cuota {payment.cuota.nro_cuota}",
         "dueDate": _date_label(payment.cuota.fecha_vencimiento),
         "verifier": _full_name(payment.verificado_por) if payment.verificado_por else "Sin revisar",
-        "receiptUrl": payment.comprobante_url or "",
+        "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
         "note": payment.observacion_verificacion or payment.detalles_pago or "",
+    }
+
+
+def _payment_qr_config_item(config):
+    return {
+        "hasQr": bool(config and config.imagen_qr),
+        "qrImageUrl": config.imagen_qr.url if config and config.imagen_qr else "",
+        "instructions": (
+            config.instrucciones
+            if config
+            else "Escanea el QR de pago y luego adjunta tu comprobante para revision administrativa."
+        ),
     }
 
 
@@ -790,9 +802,39 @@ def admin_pagos(request):
                 "primary",
             ),
         ],
+        "paymentQrConfig": _payment_qr_config_item(ConfiguracionPagoQR.objects.order_by("-updated_at").first()),
         "payments": [_payment_item(payment) for payment in pagos_qs],
     }
     return _json(data)
+
+
+@require_POST
+@_admin_required
+def admin_update_payment_qr_config(request):
+    qr_file = request.FILES.get("qrImage")
+    instructions = (request.POST.get("instructions") or "").strip()
+
+    config = ConfiguracionPagoQR.objects.order_by("-updated_at").first()
+    if not config:
+        config = ConfiguracionPagoQR()
+
+    if qr_file:
+        config.imagen_qr = qr_file
+    elif not config.imagen_qr:
+        return _json({"detail": "Debes adjuntar una imagen QR para guardar la configuracion."}, status=400)
+
+    if instructions:
+        config.instrucciones = instructions
+
+    config.full_clean()
+    config.save()
+
+    return _json(
+        {
+            "detail": "El QR de pago fue actualizado correctamente.",
+            "paymentQrConfig": _payment_qr_config_item(config),
+        }
+    )
 
 
 @require_GET

@@ -7,6 +7,7 @@ from config.client_api_views import (
     client_reservation_availability,
     client_reservations,
     client_treatments,
+    client_upload_payment_receipt,
 )
 
 
@@ -14,6 +15,7 @@ urlpatterns = [
     path("dashboard/", client_dashboard, name="client-dashboard-api"),
     path("tratamientos/", client_treatments, name="client-treatments-api"),
     path("pagos/", client_payments, name="client-payments-api"),
+    path("pagos/cuotas/<int:quota_id>/comprobante/", client_upload_payment_receipt, name="client-payment-receipt-upload-api"),
     path("reservas/", client_reservations, name="client-reservations-api"),
     path(
         "reservas/<int:operation_id>/disponibilidad/",

@@ -29,6 +29,12 @@ export type VerificationPayment = {
   note?: string
 }
 
+export type PaymentQrConfig = {
+  hasQr: boolean
+  qrImageUrl: string
+  instructions: string
+}
+
 export type AgendaItem = {
   id: string
   time: string
@@ -165,7 +171,13 @@ export type OperationDetailResponse = {
 
 export type PaymentsResponse = {
   metrics: AdminMetric[]
+  paymentQrConfig: PaymentQrConfig
   payments: VerificationPayment[]
+}
+
+export type UpdateAdminPaymentQrConfigResponse = {
+  detail: string
+  paymentQrConfig: PaymentQrConfig
 }
 
 export type CatalogsResponse = {

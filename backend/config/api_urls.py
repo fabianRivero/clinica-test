@@ -10,6 +10,7 @@ from config.api_views import (
     admin_operaciones,
     admin_pagos,
     admin_prospectos,
+    admin_update_payment_qr_config,
 )
 from config.prospect_conversion_views import (
     admin_prospect_conversion_cancel,
@@ -60,6 +61,7 @@ urlpatterns = [
     path("disponibilidad/", admin_availability, name="admin-availability-api"),
     path("disponibilidad/crear/", admin_create_availability, name="admin-availability-create-api"),
     path("pagos/", admin_pagos, name="admin-pagos-api"),
+    path("pagos/configuracion-qr/", admin_update_payment_qr_config, name="admin-pagos-qr-config-api"),
     path("catalogos/", admin_catalogos, name="admin-catalogos-api"),
     path("equipo/", admin_equipo, name="admin-equipo-api"),
 ]

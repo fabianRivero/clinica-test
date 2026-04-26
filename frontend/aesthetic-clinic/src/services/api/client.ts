@@ -6,6 +6,8 @@ import type {
   ClientTreatmentsResponse,
   CreateClientReservationPayload,
   CreateClientReservationResponse,
+  UploadClientPaymentReceiptPayload,
+  UploadClientPaymentReceiptResponse,
 } from '../../types/client'
 import { ensureCsrfCookie } from './auth'
 
@@ -49,6 +51,28 @@ async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
   return responseBody as T
 }
 
+async function requestFormDataWithBody<T>(path: string, body: FormData): Promise<T> {
+  const csrfToken = await ensureCsrfCookie()
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'X-CSRFToken': csrfToken,
+    },
+    body,
+  })
+
+  const responseBody = (await response.json().catch(() => null)) as { detail?: string } | null
+
+  if (!response.ok) {
+    throw new Error(responseBody?.detail || `No se pudo completar ${path} (${response.status})`)
+  }
+
+  return responseBody as T
+}
+
 export function getClientDashboard() {
   return requestJson<ClientDashboardResponse>('/api/client/dashboard/')
 }
@@ -78,5 +102,20 @@ export function createClientReservation(
   return requestJsonWithBody<CreateClientReservationResponse>(
     `/api/client/reservas/${operationId}/crear/`,
     payload,
+  )
+}
+
+export function uploadClientPaymentReceipt(
+  quotaId: number,
+  payload: UploadClientPaymentReceiptPayload,
+) {
+  const formData = new FormData()
+  formData.append('amount', payload.amount)
+  formData.append('details', payload.details)
+  formData.append('receiptFile', payload.receiptFile)
+
+  return requestFormDataWithBody<UploadClientPaymentReceiptResponse>(
+    `/api/client/pagos/cuotas/${quotaId}/comprobante/`,
+    formData,
   )
 }
