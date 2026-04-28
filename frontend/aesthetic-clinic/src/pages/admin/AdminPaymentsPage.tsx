@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 
 import { DataState } from '../../components/admin/DataState'
 import { MetricCard } from '../../components/admin/MetricCard'
@@ -7,16 +7,21 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
-import { getAdminPayments, updateAdminPaymentQrConfig } from '../../services/api/admin'
+import {
+  getAdminPayments,
+  updateAdminPaymentQrConfig,
+  updateAdminPaymentStatus,
+} from '../../services/api/admin'
+import type { UpdateAdminPaymentStatusPayload } from '../../types/admin'
 
 export function AdminPaymentsPage() {
-  const [refreshKey, setRefreshKey] = useState(0)
   const [instructions, setInstructions] = useState('')
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const loader = useMemo(() => () => getAdminPayments(), [refreshKey])
-  const { data, isLoading, error } = useApiResource(loader)
+  const [paymentNotes, setPaymentNotes] = useState<Record<number, string>>({})
+  const [paymentActionId, setPaymentActionId] = useState<number | null>(null)
+  const { data, isLoading, error, reload } = useApiResource(getAdminPayments)
   const { showNotification } = useNotifications()
 
   useEffect(() => {
@@ -47,7 +52,7 @@ export function AdminPaymentsPage() {
         tone: 'success',
       })
       setQrFile(null)
-      setRefreshKey((current) => current + 1)
+      reload()
     } catch (requestError) {
       setSubmitError(
         requestError instanceof Error
@@ -56,6 +61,52 @@ export function AdminPaymentsPage() {
       )
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const getPaymentNote = (paymentId: number, fallbackNote?: string) =>
+    paymentNotes[paymentId] ?? fallbackNote ?? ''
+
+  const handlePaymentNoteChange = (paymentId: number, note: string) => {
+    setPaymentNotes((current) => ({
+      ...current,
+      [paymentId]: note,
+    }))
+  }
+
+  const handlePaymentStatusUpdate = async (
+    paymentId: number,
+    status: UpdateAdminPaymentStatusPayload['status'],
+    fallbackNote?: string,
+  ) => {
+    setPaymentActionId(paymentId)
+    try {
+      const note = status === 'PENDIENTE' ? '' : getPaymentNote(paymentId, fallbackNote)
+      const response = await updateAdminPaymentStatus(paymentId, {
+        status,
+        note,
+      })
+      showNotification({
+        title: 'Pago actualizado',
+        message: response.detail,
+        tone: status === 'APROBADO' ? 'success' : status === 'RECHAZADO' ? 'warning' : 'info',
+      })
+      setPaymentNotes((current) => ({
+        ...current,
+        [paymentId]: response.payment.note || '',
+      }))
+      reload()
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo actualizar el pago',
+        message:
+          requestError instanceof Error
+            ? requestError.message
+            : 'Ocurrio un error al cambiar el estado del pago.',
+        tone: 'danger',
+      })
+    } finally {
+      setPaymentActionId(null)
     }
   }
 
@@ -181,7 +232,9 @@ export function AdminPaymentsPage() {
                       <th>Monto</th>
                       <th>Vencimiento</th>
                       <th>Estado</th>
+                      <th>Comprobante / nota</th>
                       <th>Verificador</th>
+                      <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -209,7 +262,84 @@ export function AdminPaymentsPage() {
                             {payment.status}
                           </StatusBadge>
                         </td>
+                        <td>
+                          <div className="table-cell-stack">
+                            {payment.receiptUrl ? (
+                              <a
+                                className="button button--ghost button--compact"
+                                href={payment.receiptUrl}
+                                rel="noreferrer"
+                                target="_blank"
+                              >
+                                Ver comprobante
+                              </a>
+                            ) : (
+                              <span className="table-muted">Sin comprobante</span>
+                            )}
+                            <textarea
+                              className="input textarea textarea--compact"
+                              placeholder="Nota para aprobacion u observacion"
+                              rows={3}
+                              value={getPaymentNote(payment.rawId, payment.note)}
+                              onChange={(event) =>
+                                handlePaymentNoteChange(payment.rawId, event.target.value)
+                              }
+                            />
+                          </div>
+                        </td>
                         <td>{payment.verifier}</td>
+                        <td>
+                          <div className="table-actions">
+                            <button
+                              className="button button--success button--compact"
+                              disabled={
+                                paymentActionId === payment.rawId || payment.status === 'aprobado'
+                              }
+                              type="button"
+                              onClick={() =>
+                                handlePaymentStatusUpdate(
+                                  payment.rawId,
+                                  'APROBADO',
+                                  payment.note,
+                                )
+                              }
+                            >
+                              Aprobar
+                            </button>
+                            <button
+                              className="button button--warning button--compact"
+                              disabled={
+                                paymentActionId === payment.rawId || payment.status === 'observado'
+                              }
+                              type="button"
+                              onClick={() =>
+                                handlePaymentStatusUpdate(
+                                  payment.rawId,
+                                  'RECHAZADO',
+                                  payment.note,
+                                )
+                              }
+                            >
+                              Observar
+                            </button>
+                            <button
+                              className="button button--ghost button--compact"
+                              disabled={
+                                paymentActionId === payment.rawId || payment.status === 'pendiente'
+                              }
+                              type="button"
+                              onClick={() =>
+                                handlePaymentStatusUpdate(
+                                  payment.rawId,
+                                  'PENDIENTE',
+                                  payment.note,
+                                )
+                              }
+                            >
+                              Pendiente
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

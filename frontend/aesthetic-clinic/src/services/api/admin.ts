@@ -16,6 +16,8 @@ import type {
   UpdateAdminTimeSlotPayload,
   UpsertAdminHabitualSchedulePayload,
   UpdateAdminPaymentQrConfigResponse,
+  UpdateAdminPaymentStatusPayload,
+  UpdateAdminPaymentStatusResponse,
 } from '../../types/admin'
 import type {
   ProspectConversionFinalizeResponse,
@@ -136,6 +138,16 @@ export function updateAdminPaymentQrConfig(file: File, instructions: string) {
   return requestFormDataWithBody<UpdateAdminPaymentQrConfigResponse>(
     '/api/admin/pagos/configuracion-qr/',
     formData,
+  )
+}
+
+export function updateAdminPaymentStatus(
+  paymentId: number,
+  payload: UpdateAdminPaymentStatusPayload,
+) {
+  return requestJsonWithBody<UpdateAdminPaymentStatusResponse>(
+    `/api/admin/pagos/${paymentId}/estado/`,
+    payload,
   )
 }
 

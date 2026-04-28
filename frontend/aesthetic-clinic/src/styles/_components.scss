@@ -29,6 +29,16 @@
   border: 1px solid rgba(217, 232, 236, 0.95);
 }
 
+.button--success {
+  background: linear-gradient(135deg, var(--color-success), #66c896);
+  box-shadow: 0 18px 32px rgba(47, 150, 102, 0.22);
+}
+
+.button--warning {
+  background: linear-gradient(135deg, var(--color-warning), #f0bd63);
+  box-shadow: 0 18px 32px rgba(196, 135, 45, 0.2);
+}
+
 .button--compact {
   min-height: 2.4rem;
   padding: 0.6rem 1rem;
@@ -334,6 +344,10 @@
   resize: vertical;
 }
 
+.textarea--compact {
+  min-height: 5.4rem;
+}
+
 .form-grid {
   display: grid;
   gap: var(--spacing-4);
@@ -567,6 +581,11 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+}
+
+.table-cell-stack {
+  display: grid;
+  gap: 0.65rem;
 }
 
 .table-muted {

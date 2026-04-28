@@ -16,6 +16,7 @@ export type AdminAlert = {
 
 export type VerificationPayment = {
   id: string
+  rawId: number
   patient: string
   operation: string
   amount: string
@@ -178,6 +179,16 @@ export type PaymentsResponse = {
 export type UpdateAdminPaymentQrConfigResponse = {
   detail: string
   paymentQrConfig: PaymentQrConfig
+}
+
+export type UpdateAdminPaymentStatusPayload = {
+  status: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO'
+  note: string
+}
+
+export type UpdateAdminPaymentStatusResponse = {
+  detail: string
+  payment: VerificationPayment
 }
 
 export type CatalogsResponse = {

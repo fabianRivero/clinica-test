@@ -264,6 +264,7 @@ def _payment_item(payment):
     operacion = payment.cuota.operacion
     return {
         "id": f"PAY-{payment.pk:04d}",
+        "rawId": payment.pk,
         "patient": _full_name(operacion.paciente.usuario),
         "operation": _procedure_name(operacion),
         "amount": _currency(payment.monto_pagado),
@@ -833,6 +834,68 @@ def admin_update_payment_qr_config(request):
         {
             "detail": "El QR de pago fue actualizado correctamente.",
             "paymentQrConfig": _payment_qr_config_item(config),
+        }
+    )
+
+
+@require_POST
+@_admin_required
+def admin_update_payment_status(request, payment_id):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    payment = (
+        PagoRealizado.objects.select_related(
+            "cuota__operacion__paciente__usuario",
+            "cuota__operacion__servicio_config__proc_estetico",
+            "verificado_por",
+        )
+        .filter(pk=payment_id)
+        .first()
+    )
+    if not payment:
+        return _json({"detail": "No encontramos el pago solicitado."}, status=404)
+
+    status_value = (payload.get("status") or "").strip().upper()
+    note = (payload.get("note") or "").strip()
+    valid_statuses = {
+        PagoRealizado.EstadoVerificacion.PENDIENTE,
+        PagoRealizado.EstadoVerificacion.APROBADO,
+        PagoRealizado.EstadoVerificacion.RECHAZADO,
+    }
+    if status_value not in valid_statuses:
+        return _json({"detail": "El estado solicitado no es valido."}, status=400)
+
+    payment.estado_verificacion = status_value
+    if status_value == PagoRealizado.EstadoVerificacion.PENDIENTE:
+        payment.observacion_verificacion = ""
+    else:
+        payment.verificado_por = request.user
+        payment.fecha_verificacion = timezone.now()
+        payment.observacion_verificacion = note
+
+    payment.save()
+    payment = (
+        PagoRealizado.objects.select_related(
+            "cuota__operacion__paciente__usuario",
+            "cuota__operacion__servicio_config__proc_estetico",
+            "verificado_por",
+        )
+        .get(pk=payment.pk)
+    )
+
+    detail_map = {
+        PagoRealizado.EstadoVerificacion.PENDIENTE: "El pago volvio a estado pendiente.",
+        PagoRealizado.EstadoVerificacion.APROBADO: "El pago fue aprobado correctamente.",
+        PagoRealizado.EstadoVerificacion.RECHAZADO: "El pago fue observado correctamente.",
+    }
+
+    return _json(
+        {
+            "detail": detail_map[status_value],
+            "payment": _payment_item(payment),
         }
     )
 
