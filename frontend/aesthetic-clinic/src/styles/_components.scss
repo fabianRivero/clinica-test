@@ -563,6 +563,17 @@
   }
 }
 
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.table-muted {
+  color: var(--color-text-soft);
+  font-size: 0.86rem;
+}
+
 .agenda-list,
 .pipeline-list,
 .alert-list,
@@ -720,6 +731,12 @@
   span {
     margin: 0;
   }
+}
+
+.client-inline-meta--stack {
+  display: grid;
+  gap: 0.4rem;
+  justify-items: start;
 }
 
 .availability-admin-form {

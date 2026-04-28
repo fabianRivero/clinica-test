@@ -34,6 +34,7 @@ export type ClientOperation = {
   details: string
   sessions: ClientSessionSummary
   canReserve: boolean
+  firstPaymentVerified: boolean
   reserveMessage: string
   quotaSummary: string
 }
@@ -72,6 +73,7 @@ export type ClientPayment = {
 export type ClientAppointment = {
   id: string
   rawId: number
+  operationRawId: number
   operation: string
   specialist: string
   dateTime: string
@@ -79,6 +81,7 @@ export type ClientAppointment = {
   statusTone: 'approved' | 'warning' | 'danger' | 'observed' | 'pending'
   biometric: string
   details: string
+  canManage: boolean
 }
 
 export type ClientWelcome = {
@@ -127,6 +130,7 @@ export type ClientReservationSlot = {
   time: string
   timeRange: string
   dateTimeLabel: string
+  isCurrentSelection: boolean
 }
 
 export type ClientReservationCalendarDay = {
@@ -138,6 +142,8 @@ export type ClientReservationCalendarDay = {
 
 export type ClientReservationAvailabilityResponse = {
   operation: ClientOperation
+  appointment?: ClientAppointment
+  currentSlotId?: number | null
   calendar: {
     windowStart: string | null
     windowEnd: string | null
@@ -153,6 +159,22 @@ export type CreateClientReservationPayload = {
 }
 
 export type CreateClientReservationResponse = {
+  detail: string
+  appointment: ClientAppointment
+  operation: ClientOperation
+}
+
+export type UpdateClientReservationPayload = {
+  slotId: number
+}
+
+export type UpdateClientReservationResponse = {
+  detail: string
+  appointment: ClientAppointment
+  operation: ClientOperation
+}
+
+export type CancelClientReservationResponse = {
   detail: string
   appointment: ClientAppointment
   operation: ClientOperation

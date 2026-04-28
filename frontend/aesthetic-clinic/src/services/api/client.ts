@@ -1,4 +1,5 @@
 import type {
+  CancelClientReservationResponse,
   ClientReservationAvailabilityResponse,
   ClientDashboardResponse,
   ClientReservationsResponse,
@@ -6,6 +7,8 @@ import type {
   ClientTreatmentsResponse,
   CreateClientReservationPayload,
   CreateClientReservationResponse,
+  UpdateClientReservationPayload,
+  UpdateClientReservationResponse,
   UploadClientPaymentReceiptPayload,
   UploadClientPaymentReceiptResponse,
 } from '../../types/client'
@@ -95,6 +98,12 @@ export function getClientReservationAvailability(operationId: string) {
   )
 }
 
+export function getClientEditReservationAvailability(appointmentId: string) {
+  return requestJson<ClientReservationAvailabilityResponse>(
+    `/api/client/reservas/citas/${appointmentId}/disponibilidad/`,
+  )
+}
+
 export function createClientReservation(
   operationId: string,
   payload: CreateClientReservationPayload,
@@ -102,6 +111,23 @@ export function createClientReservation(
   return requestJsonWithBody<CreateClientReservationResponse>(
     `/api/client/reservas/${operationId}/crear/`,
     payload,
+  )
+}
+
+export function updateClientReservation(
+  appointmentId: string,
+  payload: UpdateClientReservationPayload,
+) {
+  return requestJsonWithBody<UpdateClientReservationResponse>(
+    `/api/client/reservas/citas/${appointmentId}/actualizar/`,
+    payload,
+  )
+}
+
+export function cancelClientReservation(appointmentId: number) {
+  return requestJsonWithBody<CancelClientReservationResponse>(
+    `/api/client/reservas/citas/${appointmentId}/cancelar/`,
+    {},
   )
 }
 

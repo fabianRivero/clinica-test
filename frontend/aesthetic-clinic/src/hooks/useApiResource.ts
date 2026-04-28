@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 type ApiState<T> = {
   data: T | null
@@ -12,6 +12,11 @@ export function useApiResource<T>(loader: () => Promise<T>) {
     isLoading: true,
     error: null,
   })
+  const [reloadKey, setReloadKey] = useState(0)
+
+  const reload = useCallback(() => {
+    setReloadKey((current) => current + 1)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -45,7 +50,10 @@ export function useApiResource<T>(loader: () => Promise<T>) {
     return () => {
       cancelled = true
     }
-  }, [loader])
+  }, [loader, reloadKey])
 
-  return state
+  return {
+    ...state,
+    reload,
+  }
 }

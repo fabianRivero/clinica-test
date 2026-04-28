@@ -220,11 +220,6 @@ export function AdminOperationDetailPage() {
                     Descargar PDF
                   </a>
                 </div>
-                <iframe
-                  className="document-viewer__frame"
-                  src={operation.documentPdfUrl}
-                  title={`Documento escaneado de ${operation.id}`}
-                />
               </div>
             ) : (
               <DataState

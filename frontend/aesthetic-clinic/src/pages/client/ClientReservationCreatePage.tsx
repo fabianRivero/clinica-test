@@ -5,9 +5,12 @@ import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
+import { useNotifications } from '../../providers/NotificationProvider'
 import {
   createClientReservation,
+  getClientEditReservationAvailability,
   getClientReservationAvailability,
+  updateClientReservation,
 } from '../../services/api/client'
 import type { ClientReservationAvailabilityResponse } from '../../types/client'
 
@@ -60,7 +63,9 @@ function longDateLabel(value: string) {
 
 export function ClientReservationCreatePage() {
   const navigate = useNavigate()
-  const { operationId = '' } = useParams()
+  const { operationId = '', appointmentId = '' } = useParams()
+  const { showNotification } = useNotifications()
+  const isEditMode = Boolean(appointmentId)
 
   const [data, setData] = useState<ClientReservationAvailabilityResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -77,10 +82,15 @@ export function ClientReservationCreatePage() {
       setIsLoading(true)
       setError(null)
       try {
-        const response = await getClientReservationAvailability(operationId)
+        const response = isEditMode
+          ? await getClientEditReservationAvailability(appointmentId)
+          : await getClientReservationAvailability(operationId)
         if (cancelled) return
         setData(response)
-        const firstAvailableDate = response.calendar.availableDates[0]?.date ?? ''
+        const currentSlot = Object.values(response.calendar.slotsByDate)
+          .flat()
+          .find((item) => item.isCurrentSelection)
+        const firstAvailableDate = currentSlot?.date ?? response.calendar.availableDates[0]?.date ?? ''
         setSelectedDate(firstAvailableDate)
         const monthSeed = firstAvailableDate ? new Date(`${firstAvailableDate}T00:00:00`) : new Date()
         setVisibleMonth(monthStart(monthSeed))
@@ -103,7 +113,7 @@ export function ClientReservationCreatePage() {
     return () => {
       cancelled = true
     }
-  }, [operationId])
+  }, [appointmentId, isEditMode, operationId])
 
   const availableDateSet = useMemo(
     () => new Set(data?.calendar.availableDates.map((item) => item.date) ?? []),
@@ -132,7 +142,14 @@ export function ClientReservationCreatePage() {
     setIsBookingKey(bookingKey)
 
     try {
-      const response = await createClientReservation(operationId, { slotId })
+      const response = isEditMode
+        ? await updateClientReservation(appointmentId, { slotId })
+        : await createClientReservation(operationId, { slotId })
+      showNotification({
+        title: isEditMode ? 'Reserva actualizada' : 'Reserva registrada',
+        message: response.detail,
+        tone: 'success',
+      })
       navigate('/cliente/reservas', {
         replace: true,
         state: {
@@ -153,7 +170,7 @@ export function ClientReservationCreatePage() {
     return (
       <div className="page-stack">
         <PageHeader
-          eyebrow="Nueva reserva"
+          eyebrow={isEditMode ? 'Editar reserva' : 'Nueva reserva'}
           title="Preparando calendario"
           description="Estamos consultando dias disponibles y horarios libres para tu tratamiento."
           actions={[{ label: 'Volver a reservas', variant: 'ghost', to: '/cliente/reservas' }]}
@@ -172,7 +189,7 @@ export function ClientReservationCreatePage() {
     return (
       <div className="page-stack">
         <PageHeader
-          eyebrow="Nueva reserva"
+          eyebrow={isEditMode ? 'Editar reserva' : 'Nueva reserva'}
           title="No pudimos cargar el calendario"
           description="Puede que el tratamiento ya no tenga cupo o que el horario disponible haya cambiado."
           actions={[{ label: 'Volver a reservas', variant: 'ghost', to: '/cliente/reservas' }]}
@@ -191,9 +208,13 @@ export function ClientReservationCreatePage() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Nueva reserva"
-        title={`Reservar cita para ${data.operation.procedure}`}
-        description="Selecciona un dia destacado en el calendario y luego confirma uno de los horarios disponibles."
+        eyebrow={isEditMode ? 'Editar reserva' : 'Nueva reserva'}
+        title={`${isEditMode ? 'Cambiar cita de' : 'Reservar cita para'} ${data.operation.procedure}`}
+        description={
+          isEditMode
+            ? 'Selecciona otro horario libre para tu reserva programada.'
+            : 'Selecciona un dia destacado en el calendario y luego confirma uno de los horarios disponibles.'
+        }
         actions={[{ label: 'Volver a reservas', variant: 'ghost', to: '/cliente/reservas' }]}
       />
 
@@ -212,6 +233,10 @@ export function ClientReservationCreatePage() {
             <strong>{data.operation.sessions.available}</strong>
           </article>
           <article>
+            <span>1er pago</span>
+            <strong>{data.operation.firstPaymentVerified ? 'Verificado' : 'Pendiente'}</strong>
+          </article>
+          <article>
             <span>Horarios publicados</span>
             <strong>{data.calendar.slotCount}</strong>
           </article>
@@ -224,6 +249,20 @@ export function ClientReservationCreatePage() {
           message={submitError}
           tone="danger"
         />
+      ) : null}
+
+      {isEditMode && data.appointment ? (
+        <SectionCard
+          eyebrow="Reserva actual"
+          title="Cita programada"
+          description="Este es el horario que ya tienes reservado y que puedes mover a otro cupo libre."
+        >
+          <div className="client-inline-meta client-inline-meta--stack">
+            <StatusBadge tone={data.appointment.statusTone}>{data.appointment.status}</StatusBadge>
+            <span>{data.appointment.dateTime}</span>
+            <span>{data.appointment.specialist}</span>
+          </div>
+        </SectionCard>
       ) : null}
 
       <section className="dashboard-grid">
@@ -307,6 +346,7 @@ export function ClientReservationCreatePage() {
                         <strong>{slot.timeRange}</strong>
                         <p>{slot.specialist}</p>
                         <span>{slot.dateTimeLabel}</span>
+                        {slot.isCurrentSelection ? <small>Horario actual</small> : null}
                       </div>
                       <button
                         className="button"
@@ -314,7 +354,13 @@ export function ClientReservationCreatePage() {
                         type="button"
                         onClick={() => handleReserve(slot.slotId)}
                       >
-                        {isBooking ? 'Reservando...' : 'Confirmar reserva'}
+                        {isBooking
+                          ? isEditMode
+                            ? 'Guardando...'
+                            : 'Reservando...'
+                          : isEditMode
+                            ? 'Guardar cambio'
+                            : 'Confirmar reserva'}
                       </button>
                     </article>
                   )
@@ -342,6 +388,10 @@ export function ClientReservationCreatePage() {
       >
         <div className="operation-card__stats">
           <article>
+            <span>Totales</span>
+            <strong>{data.operation.sessions.total}</strong>
+          </article>
+          <article>
             <span>Confirmadas</span>
             <strong>{data.operation.sessions.confirmed}</strong>
           </article>
@@ -360,7 +410,7 @@ export function ClientReservationCreatePage() {
         </div>
         <div className="client-inline-meta">
           <StatusBadge tone={data.operation.canReserve ? 'success' : 'warning'}>
-            {data.operation.canReserve ? 'Con cupo' : 'Sin cupo'}
+            {data.operation.canReserve ? 'Con cupo' : 'Bloqueado'}
           </StatusBadge>
           <span>{data.operation.reserveMessage}</span>
         </div>

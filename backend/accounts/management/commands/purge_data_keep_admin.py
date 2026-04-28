@@ -72,9 +72,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Base de datos vaciada correctamente."))
         self.stdout.write(f"Usuarios preservados: {preserved_names}")
         self.stdout.write(f"Usuarios eliminados: {deleted_users}")
-        self.stdout.write(
-            "Tablas limpiadas: " + ", ".join(sorted(tables_to_clear))
-        )
+        self.stdout.write(f"Tablas limpiadas: {len(tables_to_clear)}")
+        if options.get("verbosity", 1) >= 2:
+            self.stdout.write(
+                "Detalle de tablas limpiadas: " + ", ".join(sorted(tables_to_clear))
+            )
 
     def _get_tables_to_clear(self):
         tables = set()

@@ -1,19 +1,52 @@
+import { useState } from 'react'
 import { DataState } from '../../components/admin/DataState'
 import { MetricCard } from '../../components/admin/MetricCard'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
-import { getClientReservations } from '../../services/api/client'
+import { useNotifications } from '../../providers/NotificationProvider'
+import { cancelClientReservation, getClientReservations } from '../../services/api/client'
 import { Link, useLocation } from 'react-router-dom'
 
 export function ClientReservationsPage() {
   const location = useLocation()
-  const { data, isLoading, error } = useApiResource(getClientReservations)
+  const { showNotification } = useNotifications()
+  const { data, isLoading, error, reload } = useApiResource(getClientReservations)
+  const [isCancellingId, setIsCancellingId] = useState<number | null>(null)
   const flashMessage =
     typeof location.state === 'object' && location.state && 'flashMessage' in location.state
       ? String(location.state.flashMessage)
       : null
+
+  async function handleCancelReservation(appointmentId: number) {
+    const confirmed = window.confirm(
+      'Esta reserva se cancelará y liberará ese espacio. ¿Deseas continuar?',
+    )
+    if (!confirmed) return
+
+    setIsCancellingId(appointmentId)
+    try {
+      const response = await cancelClientReservation(appointmentId)
+      showNotification({
+        title: 'Reserva cancelada',
+        message: response.detail,
+        tone: 'success',
+      })
+      reload()
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo cancelar',
+        message:
+          requestError instanceof Error
+            ? requestError.message
+            : 'No pudimos cancelar la reserva seleccionada.',
+        tone: 'danger',
+      })
+    } finally {
+      setIsCancellingId(null)
+    }
+  }
 
   return (
     <div className="page-stack">
@@ -61,6 +94,7 @@ export function ClientReservationsPage() {
                         <th>Fecha</th>
                         <th>Estado</th>
                         <th>Biometria</th>
+                        <th>Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -76,6 +110,28 @@ export function ClientReservationsPage() {
                             <StatusBadge tone={appointment.statusTone}>{appointment.status}</StatusBadge>
                           </td>
                           <td>{appointment.biometric}</td>
+                          <td>
+                            {appointment.canManage ? (
+                              <div className="table-actions">
+                                <Link
+                                  className="button button--ghost button--compact"
+                                  to={`/cliente/reservas/citas/${appointment.rawId}/editar`}
+                                >
+                                  Editar
+                                </Link>
+                                <button
+                                  className="button button--ghost button--compact"
+                                  disabled={isCancellingId === appointment.rawId}
+                                  type="button"
+                                  onClick={() => void handleCancelReservation(appointment.rawId)}
+                                >
+                                  {isCancellingId === appointment.rawId ? 'Cancelando...' : 'Cancelar'}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="table-muted">Sin cambios</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -101,10 +157,14 @@ export function ClientReservationsPage() {
                           <p>{operation.reserveMessage}</p>
                         </div>
                         <StatusBadge tone={operation.canReserve ? 'success' : 'warning'}>
-                          {operation.canReserve ? 'Con cupo' : 'Sin cupo'}
+                          {operation.canReserve ? 'Con cupo' : 'Bloqueado'}
                         </StatusBadge>
                       </div>
                       <div className="operation-card__stats">
+                        <article>
+                          <span>1er pago</span>
+                          <strong>{operation.firstPaymentVerified ? 'Verificado' : 'Pendiente'}</strong>
+                        </article>
                         <article>
                           <span>Confirmadas</span>
                           <strong>{operation.sessions.confirmed}</strong>
@@ -128,7 +188,7 @@ export function ClientReservationsPage() {
                         </Link>
                       ) : (
                         <button className="button button--ghost" type="button" disabled>
-                          No disponible
+                          1er pago pendiente
                         </button>
                       )}
                     </article>

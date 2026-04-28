@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime
 
+from django.db import IntegrityError
 from django.db.models import Count, Prefetch
 from django.utils import timezone
 
@@ -227,17 +228,45 @@ def sync_disponibilidad_citas():
         deactivated_count += 1
 
     for desired in desired_map.values():
-        slot = DisponibilidadCita.objects.create(
-            especialista_id=desired["specialist_id"],
-            horario_base_id=desired["horario_base_id"],
-            fecha_hora=desired["datetime"],
-            activo=True,
-            detalle=desired["detail"],
-        )
+        defaults = {
+            "horario_base_id": desired["horario_base_id"],
+            "activo": True,
+            "detalle": desired["detail"],
+        }
+        try:
+            slot, created = DisponibilidadCita.objects.get_or_create(
+                especialista_id=desired["specialist_id"],
+                fecha_hora=desired["datetime"],
+                defaults=defaults,
+            )
+        except IntegrityError:
+            slot = DisponibilidadCita.objects.get(
+                especialista_id=desired["specialist_id"],
+                fecha_hora=desired["datetime"],
+            )
+            created = False
+
+        changed_fields = []
+        if slot.horario_base_id != desired["horario_base_id"]:
+            slot.horario_base_id = desired["horario_base_id"]
+            changed_fields.append("horario_base")
+        if not slot.activo:
+            slot.activo = True
+            changed_fields.append("activo")
+        if slot.detalle != desired["detail"]:
+            slot.detalle = desired["detail"]
+            changed_fields.append("detalle")
+        if changed_fields:
+            changed_fields.append("updated_at")
+            slot.save(update_fields=changed_fields)
+
         slot.tipos_servicio.set(sorted(desired["scope"]["service_type_ids"]))
         slot.tipos_proc_estetico.set(sorted(desired["scope"]["procedure_type_ids"]))
         slot.procedimientos_esteticos.set(sorted(desired["scope"]["procedure_ids"]))
-        created_count += 1
+        if created:
+            created_count += 1
+        else:
+            updated_count += 1
 
     summary = {
         "created": created_count,

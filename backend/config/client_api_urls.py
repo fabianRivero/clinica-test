@@ -1,12 +1,15 @@
 from django.urls import path
 
 from config.client_api_views import (
+    client_cancel_reservation,
     client_create_reservation,
     client_dashboard,
+    client_edit_reservation_availability,
     client_payments,
     client_reservation_availability,
     client_reservations,
     client_treatments,
+    client_update_reservation,
     client_upload_payment_receipt,
 )
 
@@ -26,5 +29,20 @@ urlpatterns = [
         "reservas/<int:operation_id>/crear/",
         client_create_reservation,
         name="client-reservation-create-api",
+    ),
+    path(
+        "reservas/citas/<int:appointment_id>/disponibilidad/",
+        client_edit_reservation_availability,
+        name="client-reservation-edit-availability-api",
+    ),
+    path(
+        "reservas/citas/<int:appointment_id>/actualizar/",
+        client_update_reservation,
+        name="client-reservation-update-api",
+    ),
+    path(
+        "reservas/citas/<int:appointment_id>/cancelar/",
+        client_cancel_reservation,
+        name="client-reservation-cancel-api",
     ),
 ]

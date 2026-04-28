@@ -77,6 +77,15 @@ class Operacion(TimeStampedModel):
         return self.citas_medicas.filter(estado=CitaMedica.Estado.PROGRAMADA).count()
 
     @property
+    def primer_pago_verificado(self):
+        primera_cuota = self.cuotas_plan_pagos.order_by("nro_cuota", "fecha_vencimiento").first()
+        if not primera_cuota:
+            return False
+        return primera_cuota.pagos_realizados.filter(
+            estado_verificacion="APROBADO"
+        ).exists()
+
+    @property
     def sesiones_disponibles(self):
         disponibles = (
             self.sesiones_totales
@@ -88,7 +97,11 @@ class Operacion(TimeStampedModel):
 
     @property
     def puede_reservar(self):
-        return self.estado == self.Estado.EN_PROCESO and self.sesiones_disponibles > 0
+        return (
+            self.estado == self.Estado.EN_PROCESO
+            and self.primer_pago_verificado
+            and self.sesiones_disponibles > 0
+        )
 
     def __str__(self):
         return f"Operacion #{self.pk} - {self.paciente}"

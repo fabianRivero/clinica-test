@@ -121,6 +121,7 @@ function App() {
           <Route path="pagos" element={<ClientPaymentsPage />} />
           <Route path="reservas" element={<ClientReservationsPage />} />
           <Route path="reservas/:operationId/nueva" element={<ClientReservationCreatePage />} />
+          <Route path="reservas/citas/:appointmentId/editar" element={<ClientReservationCreatePage />} />
         </Route>
       </Route>
 

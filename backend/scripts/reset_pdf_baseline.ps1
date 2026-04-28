@@ -14,6 +14,7 @@ if (-not (Test-Path $python)) {
 
 Push-Location $backendRoot
 try {
+    Write-Host "[reset_pdf_baseline] Iniciando purge conservando administradores..." -ForegroundColor Cyan
     $purgeArgs = @("manage.py", "purge_data_keep_admin")
     foreach ($name in $Username) {
         $purgeArgs += "--username"
@@ -28,7 +29,11 @@ try {
         exit $LASTEXITCODE
     }
 
+    Write-Host "[reset_pdf_baseline] Purge completado. Iniciando seed base PDF..." -ForegroundColor Green
     & $python manage.py seed_pdf_baseline
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[reset_pdf_baseline] Seed completado correctamente." -ForegroundColor Green
+    }
     exit $LASTEXITCODE
 }
 finally {

@@ -147,6 +147,8 @@ def _appointment_tone(cita):
 def _reserve_message(operacion):
     if operacion.estado != Operacion.Estado.EN_PROCESO:
         return "Solo los tratamientos en proceso pueden reservar nuevas citas."
+    if not operacion.primer_pago_verificado:
+        return "Necesitas tener el primer pago verificado para poder hacer reservas."
     if operacion.puede_reservar:
         return f"Tienes {operacion.sesiones_disponibles} sesion(es) disponible(s) para reservar."
     return "Tu tratamiento ya no tiene sesiones disponibles para nuevas reservas."
@@ -198,6 +200,7 @@ def _operation_item(operacion):
             "available": operacion.sesiones_disponibles,
         },
         "canReserve": operacion.puede_reservar,
+        "firstPaymentVerified": operacion.primer_pago_verificado,
         "reserveMessage": _reserve_message(operacion),
         "quotaSummary": (
             f"{operacion.cuotas_plan_pagos.filter(estado=CuotaPlanPago.Estado.PAGADO).count()}"
@@ -215,8 +218,8 @@ def _reservation_window_for_operation(operacion):
     return window_start, window_end
 
 
-def _build_operation_slot_map(operacion):
-    if not operacion.puede_reservar:
+def _build_operation_slot_map(operacion, editing_appointment=None):
+    if not operacion.puede_reservar and editing_appointment is None:
         return {
             "windowStart": None,
             "windowEnd": None,
@@ -267,7 +270,11 @@ def _build_operation_slot_map(operacion):
     slots_by_date = {}
     available_dates = []
     for slot in slots_qs:
-        if any(cita.estado in BLOCKING_RESERVATION_STATES for cita in slot.citas_origen.all()):
+        if any(
+            cita.estado in BLOCKING_RESERVATION_STATES
+            and (editing_appointment is None or cita.pk != editing_appointment.pk)
+            for cita in slot.citas_origen.all()
+        ):
             continue
 
         local_dt = timezone.localtime(slot.fecha_hora)
@@ -280,6 +287,9 @@ def _build_operation_slot_map(operacion):
             "time": local_dt.strftime("%H:%M"),
             "timeRange": slot.rango_horario,
             "dateTimeLabel": _datetime_label(slot.fecha_hora),
+            "isCurrentSelection": bool(
+                editing_appointment and slot.pk == editing_appointment.disponibilidad_id
+            ),
         }
         slots_by_date.setdefault(date_key, []).append(slot_item)
 
@@ -319,6 +329,20 @@ def _get_client_operation(cliente, operation_id):
                 queryset=CuotaPlanPago.objects.order_by("nro_cuota"),
             ),
         )
+        .first()
+    )
+
+
+def _get_client_appointment(cliente, appointment_id):
+    return (
+        CitaMedica.objects.filter(operacion__paciente=cliente, pk=appointment_id)
+        .select_related(
+            "operacion__servicio_config__tipo_servicio",
+            "operacion__servicio_config__proc_estetico",
+            "medico__usuario",
+            "disponibilidad",
+        )
+        .prefetch_related("disponibilidad__citas_origen")
         .first()
     )
 
@@ -415,9 +439,11 @@ def _payment_qr_config_item(config):
 
 
 def _appointment_item(cita):
+    can_manage = cita.estado == CitaMedica.Estado.PROGRAMADA and cita.fecha_hora > timezone.now()
     return {
         "id": f"CIT-{cita.pk:04d}",
         "rawId": cita.pk,
+        "operationRawId": cita.operacion_id,
         "operation": _procedure_name(cita.operacion),
         "specialist": _full_name(cita.medico.usuario),
         "dateTime": _datetime_label(cita.fecha_hora),
@@ -425,6 +451,7 @@ def _appointment_item(cita):
         "statusTone": _appointment_tone(cita),
         "biometric": "Confirmada" if cita.verif_biometria else "Pendiente",
         "details": cita.detalles_cita or "Sin notas adicionales.",
+        "canManage": can_manage,
     }
 
 
@@ -833,6 +860,27 @@ def client_reservation_availability(request, operation_id):
     return _json(data)
 
 
+@require_GET
+@_client_required
+def client_edit_reservation_availability(request, appointment_id):
+    cita = _get_client_appointment(request.cliente, appointment_id)
+    if not cita:
+        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+    if cita.estado != CitaMedica.Estado.PROGRAMADA or cita.fecha_hora <= timezone.now():
+        return _json(
+            {"detail": "Solo puedes editar reservas futuras que sigan programadas."},
+            status=400,
+        )
+
+    data = {
+        "operation": _operation_item(cita.operacion),
+        "calendar": _build_operation_slot_map(cita.operacion, editing_appointment=cita),
+        "appointment": _appointment_item(cita),
+        "currentSlotId": cita.disponibilidad_id,
+    }
+    return _json(data)
+
+
 @require_POST
 @_client_required
 @transaction.atomic
@@ -885,4 +933,106 @@ def client_create_reservation(request, operation_id):
             "operation": _operation_item(operacion),
         },
         status=201,
+    )
+
+
+@require_POST
+@_client_required
+@transaction.atomic
+def client_update_reservation(request, appointment_id):
+    cita = (
+        CitaMedica.objects.select_for_update()
+        .select_related(
+            "operacion__servicio_config__tipo_servicio",
+            "operacion__servicio_config__proc_estetico",
+            "medico__usuario",
+            "disponibilidad",
+        )
+        .prefetch_related("disponibilidad__citas_origen")
+        .filter(operacion__paciente=request.cliente, pk=appointment_id)
+        .first()
+    )
+    if not cita:
+        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+    if cita.estado != CitaMedica.Estado.PROGRAMADA or cita.fecha_hora <= timezone.now():
+        return _json(
+            {"detail": "Solo puedes editar reservas futuras que sigan programadas."},
+            status=400,
+        )
+
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    slot_id = payload.get("slotId")
+    if not slot_id:
+        return _json({"detail": "Debes seleccionar un horario disponible antes de guardar."}, status=400)
+
+    slot = (
+        DisponibilidadCita.objects.select_for_update()
+        .select_related("especialista__usuario")
+        .prefetch_related("citas_origen")
+        .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
+        .first()
+    )
+    if not slot or not slot.coincide_con_operacion(cita.operacion):
+        return _json(
+            {"detail": "El horario seleccionado ya no esta disponible para este tratamiento."},
+            status=409,
+        )
+
+    if slot.citas_origen.exclude(pk=cita.pk).filter(estado__in=BLOCKING_RESERVATION_STATES).exists():
+        return _json(
+            {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
+            status=409,
+        )
+
+    cita.medico = slot.especialista
+    cita.disponibilidad = slot
+    cita.fecha_hora = slot.fecha_hora
+    cita.detalles_cita = "Reserva web actualizada por el cliente desde el portal."
+    cita.save(update_fields=["medico", "disponibilidad", "fecha_hora", "detalles_cita", "updated_at"])
+
+    return _json(
+        {
+            "detail": "La reserva fue actualizada correctamente.",
+            "appointment": _appointment_item(cita),
+            "operation": _operation_item(cita.operacion),
+        },
+        status=200,
+    )
+
+
+@require_POST
+@_client_required
+@transaction.atomic
+def client_cancel_reservation(request, appointment_id):
+    cita = (
+        CitaMedica.objects.select_for_update()
+        .select_related(
+            "operacion__servicio_config__tipo_servicio",
+            "operacion__servicio_config__proc_estetico",
+        )
+        .filter(operacion__paciente=request.cliente, pk=appointment_id)
+        .first()
+    )
+    if not cita:
+        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+    if cita.estado != CitaMedica.Estado.PROGRAMADA or cita.fecha_hora <= timezone.now():
+        return _json(
+            {"detail": "Solo puedes cancelar reservas futuras que sigan programadas."},
+            status=400,
+        )
+
+    cita.estado = CitaMedica.Estado.CANCELADA
+    cita.detalles_cita = "Reserva cancelada por el cliente desde el portal."
+    cita.save(update_fields=["estado", "detalles_cita", "updated_at"])
+
+    return _json(
+        {
+            "detail": "La reserva fue cancelada correctamente.",
+            "appointment": _appointment_item(cita),
+            "operation": _operation_item(cita.operacion),
+        },
+        status=200,
     )
