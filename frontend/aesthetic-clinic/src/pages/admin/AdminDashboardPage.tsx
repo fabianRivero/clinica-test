@@ -157,24 +157,6 @@ export function AdminDashboardPage() {
           <section className="dashboard-grid dashboard-grid--secondary">
 
             <SectionCard
-              eyebrow="Configuracion"
-              title="Salud de catalogos"
-              description="Estado general de los catalogos editables que alimentan la operacion clinica."
-            >
-              <div className="catalog-health">
-                {data.catalogHealth.map((item) => (
-                  <article className="catalog-health__item" key={item.id}>
-                    <div>
-                      <strong>{item.name}</strong>
-                      <p>{item.note}</p>
-                    </div>
-                    <span>{item.count}</span>
-                  </article>
-                ))}
-              </div>
-            </SectionCard>
-
-            <SectionCard
               eyebrow="Capacidad"
               title="Carga del equipo"
               description="Lectura rapida de especialistas, especialidades y pendientes de validacion."

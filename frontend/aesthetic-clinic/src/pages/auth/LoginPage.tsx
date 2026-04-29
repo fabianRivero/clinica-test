@@ -52,22 +52,22 @@ export function LoginPage() {
           <span className="auth-shell__eyebrow">Clinica estetica</span>
           <h1>Nataly Ferrufino Estetic & Academy</h1>
           <p>
-            Lorem, ipsum dolor sit amet consectetur adipisicing elit. Iusto sint quaerat voluptas fuga non, minus tenetur eligendi qui dolores excepturi natus magnam porro? Voluptas itaque sequi unde alias ratione in.
+            Plataforma de gestión de operaciones, agenda y pagos. Accede con tus credenciales para comenzar. 
           </p>
         </div>
 
         <div className="auth-shell__highlights">
           <article className="auth-highlight">
-            <strong>Lorem</strong>
-            <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Ab, facere odit dolorem magni doloremque suscipit provident mollitia maiores voluptas. Perferendis quia non dicta voluptates veritatis et consequuntur culpa laboriosam voluptate!</p>
+            <strong>Agenda tus reservas</strong>
+            <p>Realiza reservas para tus tratamientos activos facilmente.</p>
           </article>
           <article className="auth-highlight">
-            <strong>Lorem</strong>
-            <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Dolor obcaecati, aliquam vero aliquid nemo fugiat? Culpa sequi necessitatibus accusamus amet doloremque recusandae sint explicabo consectetur deserunt animi. Repellendus, voluptas modi?</p>
+            <strong>Administra tus pagos</strong>
+            <p>Puedes gestionar y rastrear todos tus pagos desde un solo lugar.</p>
           </article>
           <article className="auth-highlight">
-            <strong>Lorem</strong>
-            <p>Lorem ipsum dolor sit, amet consectetur adipisicing elit. Commodi perferendis numquam quos, deserunt recusandae ut eius ipsa? Vitae dolor sapiente corrupti! Voluptas, officiis dolores? Quis eaque culpa exercitationem ad vel.</p>
+            <strong>Comunícate con nosotros</strong>
+            <p>Puedes comunicarte con nosotros sobre tus dudas o inquietudes. Tambien recibiras notificaciones y mensajes importantes sobre tus pagos o tratamientos.</p>
           </article>
         </div>
       </div>
@@ -76,7 +76,7 @@ export function LoginPage() {
         <div className="auth-card__header">
           <span className="auth-card__eyebrow">Acceso seguro</span>
           <h2>Iniciar sesion</h2>
-          <p>Usa las credenciales que ya existen en la base de pruebas.</p>
+          <p>Ingresa con tu usuario y contraseña para acceder al sistema.</p>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
@@ -116,7 +116,6 @@ export function LoginPage() {
           <strong>Credenciales demo</strong>
           <ul>
             <li>`admin / admin123456`</li>
-            <li>`doctor.laser / doctor123456`</li>
             <li>`paciente.demo / paciente123456`</li>
           </ul>
         </div>

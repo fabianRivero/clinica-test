@@ -36,11 +36,6 @@ export function ClientLayout() {
             </NavLink>
           ))}
         </nav>
-
-        <div className="sidebar-note">
-          <h2>Acciones disponibles</h2>
-          <p>Revisa tus pagos, verifica tus cuotas y confirma si tus tratamientos aun tienen sesiones para reservar.</p>
-        </div>
       </aside>
 
       {sidebarOpen ? (

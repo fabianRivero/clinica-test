@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
 
 import { AdminAvailabilityTabs } from '../../components/admin/AdminAvailabilityTabs'
 import { DataState } from '../../components/admin/DataState'
@@ -21,6 +21,7 @@ import {
   updateAdminTimeSlot,
 } from '../../services/api/admin'
 import type {
+  AdminMetric,
   AdminAvailabilityResponse,
   AdminAvailabilitySlot,
   AdminHabitualSchedule,
@@ -119,29 +120,59 @@ function useAdminAvailabilityController() {
   const [slotSearchTerm, setSlotSearchTerm] = useState('')
   const [activeCoverageFilter, setActiveCoverageFilter] = useState('TODOS')
   const [activeStatusFilter, setActiveStatusFilter] = useState('TODOS')
-  const [visibleSlotsLimit, setVisibleSlotsLimit] = useState(10)
-  const loader = useMemo(() => () => getAdminAvailability(), [refreshKey])
+  const [visibleSlotsState, setVisibleSlotsState] = useState({ key: '', limit: 10 })
+  const loader = useMemo(() => {
+    const requestVersion = refreshKey
+    return () => {
+      void requestVersion
+      return getAdminAvailability()
+    }
+  }, [refreshKey])
   const { data, isLoading, error } = useApiResource(loader)
   const { showNotification } = useNotifications()
 
-  useEffect(() => {
+  const resolvedSelectedSpecialistId = useMemo(() => {
     if (!data?.specialistSummaries.length) {
-      setSelectedSpecialistId(null)
-      return
+      return null
     }
-    if (!selectedSpecialistId || !data.specialistSummaries.some((item) => item.id === selectedSpecialistId)) {
-      const firstSpecialistId = data.specialistSummaries[0]?.id ?? null
-      setSelectedSpecialistId(firstSpecialistId)
-      setHabitualForm((current) => ({ ...current, specialistId: firstSpecialistId }))
-      setExceptionForm((current) => ({ ...current, specialistId: firstSpecialistId }))
+    if (
+      selectedSpecialistId &&
+      data.specialistSummaries.some((item) => item.id === selectedSpecialistId)
+    ) {
+      return selectedSpecialistId
     }
+    return data.specialistSummaries[0]?.id ?? null
   }, [data, selectedSpecialistId])
 
-  const { specialistRules, specialistExceptions } = useSpecialistScopedLists(data, selectedSpecialistId)
+  const { specialistRules, specialistExceptions } = useSpecialistScopedLists(data, resolvedSelectedSpecialistId)
   const selectedSpecialist = useMemo(
-    () => data?.specialistSummaries.find((item) => item.id === selectedSpecialistId) ?? null,
-    [data, selectedSpecialistId],
+    () => data?.specialistSummaries.find((item) => item.id === resolvedSelectedSpecialistId) ?? null,
+    [data, resolvedSelectedSpecialistId],
   )
+  const habitualSpecialistId = useMemo(() => {
+    if (!data?.specialistSummaries.length) {
+      return null
+    }
+    if (
+      habitualForm.specialistId &&
+      data.specialistSummaries.some((item) => item.id === habitualForm.specialistId)
+    ) {
+      return habitualForm.specialistId
+    }
+    return resolvedSelectedSpecialistId
+  }, [data, habitualForm.specialistId, resolvedSelectedSpecialistId])
+  const exceptionSpecialistId = useMemo(() => {
+    if (!data?.specialistSummaries.length) {
+      return null
+    }
+    if (
+      exceptionForm.specialistId &&
+      data.specialistSummaries.some((item) => item.id === exceptionForm.specialistId)
+    ) {
+      return exceptionForm.specialistId
+    }
+    return resolvedSelectedSpecialistId
+  }, [data, exceptionForm.specialistId, resolvedSelectedSpecialistId])
   const coverageOptions = useMemo(() => {
     if (!data) {
       return []
@@ -165,6 +196,18 @@ function useAdminAvailabilityController() {
       left.localeCompare(right),
     )
   }, [data])
+  const resolvedCoverageFilter =
+    activeCoverageFilter !== 'TODOS' && !coverageOptions.includes(activeCoverageFilter)
+      ? 'TODOS'
+      : activeCoverageFilter
+  const resolvedStatusFilter =
+    activeStatusFilter !== 'TODOS' &&
+    !statusOptions.includes(activeStatusFilter as AdminAvailabilitySlot['status'])
+      ? 'TODOS'
+      : activeStatusFilter
+  const visibleSlotsFilterKey = `${slotSearchTerm}::${resolvedCoverageFilter}::${resolvedStatusFilter}`
+  const visibleSlotsLimit =
+    visibleSlotsState.key === visibleSlotsFilterKey ? visibleSlotsState.limit : 10
   const filteredVisibleSlots = useMemo(() => {
     if (!data) {
       return []
@@ -174,8 +217,8 @@ function useAdminAvailabilityController() {
 
     return data.slots.filter((slot) => {
       const matchesCoverage =
-        activeCoverageFilter === 'TODOS' || slot.coverage.includes(activeCoverageFilter)
-      const matchesStatus = activeStatusFilter === 'TODOS' || slot.status === activeStatusFilter
+        resolvedCoverageFilter === 'TODOS' || slot.coverage.includes(resolvedCoverageFilter)
+      const matchesStatus = resolvedStatusFilter === 'TODOS' || slot.status === resolvedStatusFilter
       const haystack = normalizeSearchValue(
         [
           slot.dateTime,
@@ -192,30 +235,30 @@ function useAdminAvailabilityController() {
 
       return matchesCoverage && matchesStatus && matchesSearch
     })
-  }, [activeCoverageFilter, activeStatusFilter, data, slotSearchTerm])
+  }, [data, resolvedCoverageFilter, resolvedStatusFilter, slotSearchTerm])
   const paginatedVisibleSlots = useMemo(
     () => filteredVisibleSlots.slice(0, visibleSlotsLimit),
     [filteredVisibleSlots, visibleSlotsLimit],
   )
 
-  useEffect(() => {
-    setVisibleSlotsLimit(10)
-  }, [slotSearchTerm, activeCoverageFilter, activeStatusFilter])
-
-  useEffect(() => {
-    if (activeCoverageFilter !== 'TODOS' && !coverageOptions.includes(activeCoverageFilter)) {
-      setActiveCoverageFilter('TODOS')
-    }
-  }, [activeCoverageFilter, coverageOptions])
-
-  useEffect(() => {
-    if (activeStatusFilter !== 'TODOS' && !statusOptions.includes(activeStatusFilter as AdminAvailabilitySlot['status'])) {
-      setActiveStatusFilter('TODOS')
-    }
-  }, [activeStatusFilter, statusOptions])
-
   function refreshAvailability() {
     setRefreshKey((current) => current + 1)
+  }
+
+  function handleSelectSpecialist(nextSpecialistId: number | null) {
+    setSelectedSpecialistId(nextSpecialistId)
+    setHabitualForm((current) => ({ ...current, specialistId: nextSpecialistId }))
+    setExceptionForm((current) => ({ ...current, specialistId: nextSpecialistId }))
+  }
+
+  function handleVisibleSlotsLimitChange(nextValue: number | ((current: number) => number)) {
+    setVisibleSlotsState((current) => {
+      const currentLimit = current.key === visibleSlotsFilterKey ? current.limit : 10
+      return {
+        key: visibleSlotsFilterKey,
+        limit: typeof nextValue === 'function' ? nextValue(currentLimit) : nextValue,
+      }
+    })
   }
 
   function resetTimeSlotForm() {
@@ -227,14 +270,14 @@ function useAdminAvailabilityController() {
     setEditingHabitualId(null)
     setHabitualForm({
       ...buildEmptyHabitualForm(),
-      specialistId: selectedSpecialistId,
+      specialistId: resolvedSelectedSpecialistId,
     })
   }
 
   function resetExceptionForm() {
     setExceptionForm({
       ...buildEmptyExceptionForm(),
-      specialistId: selectedSpecialistId,
+      specialistId: resolvedSelectedSpecialistId,
     })
   }
 
@@ -269,7 +312,7 @@ function useAdminAvailabilityController() {
 
   function loadHabitualForEdit(rule: AdminHabitualSchedule) {
     setEditingHabitualId(rule.id)
-    setSelectedSpecialistId(rule.specialistId)
+    handleSelectSpecialist(rule.specialistId)
     setHabitualForm({
       specialistId: rule.specialistId,
       startDate: rule.startDate,
@@ -360,8 +403,14 @@ function useAdminAvailabilityController() {
     setIsSubmitting(true)
     try {
       const response = editingHabitualId
-        ? await updateAdminHabitualSchedule(editingHabitualId, habitualForm)
-        : await createAdminHabitualSchedule(habitualForm)
+        ? await updateAdminHabitualSchedule(editingHabitualId, {
+            ...habitualForm,
+            specialistId: habitualSpecialistId,
+          })
+        : await createAdminHabitualSchedule({
+            ...habitualForm,
+            specialistId: habitualSpecialistId,
+          })
       showNotification({
         title: editingHabitualId ? 'Horario habitual actualizado' : 'Horario habitual creado',
         message: response.detail,
@@ -414,7 +463,7 @@ function useAdminAvailabilityController() {
     setIsSubmitting(true)
     try {
       const response = await createAdminAvailabilityException({
-        specialistId: exceptionForm.specialistId,
+        specialistId: exceptionSpecialistId,
         type: exceptionForm.type,
         dates: exceptionForm.dates,
         timeSlotIds: exceptionForm.timeSlotIds,
@@ -505,7 +554,7 @@ function useAdminAvailabilityController() {
     isLoading,
     submitError,
     isSubmitting,
-    selectedSpecialistId,
+    selectedSpecialistId: resolvedSelectedSpecialistId,
     selectedSpecialist,
     specialistRules,
     specialistExceptions,
@@ -517,13 +566,13 @@ function useAdminAvailabilityController() {
     editingTimeSlotId,
     editingHabitualId,
     slotSearchTerm,
-    activeCoverageFilter,
-    activeStatusFilter,
+    activeCoverageFilter: resolvedCoverageFilter,
+    activeStatusFilter: resolvedStatusFilter,
     coverageOptions,
     statusOptions,
     filteredVisibleSlots,
     paginatedVisibleSlots,
-    setSelectedSpecialistId,
+    setSelectedSpecialistId: handleSelectSpecialist,
     setTimeSlotForm,
     setHabitualForm,
     setExceptionForm,
@@ -532,7 +581,9 @@ function useAdminAvailabilityController() {
     setSlotSearchTerm,
     setActiveCoverageFilter,
     setActiveStatusFilter,
-    setVisibleSlotsLimit,
+    setVisibleSlotsLimit: handleVisibleSlotsLimitChange,
+    habitualSpecialistId,
+    exceptionSpecialistId,
     refreshAvailability,
     resetTimeSlotForm,
     resetHabitualForm,
@@ -557,12 +608,14 @@ function AvailabilityPageShell({
   title,
   description,
   controller,
+  metrics,
   children,
 }: {
   eyebrow: string
   title: string
   description: string
   controller: AvailabilityController
+  metrics?: AdminMetric[]
   children: ReactNode
 }) {
   if (controller.isLoading && !controller.data) {
@@ -615,8 +668,8 @@ function AvailabilityPageShell({
         <DataState title="No pudimos completar el cambio" message={controller.submitError} tone="danger" />
       ) : null}
 
-      <section className="metrics-grid">
-        {controller.data.metrics.map((metric) => (
+      <section className="metrics-grid metrics-grid--compact">
+        {(metrics ?? controller.data.metrics).map((metric) => (
           <MetricCard key={metric.id} metric={metric} />
         ))}
       </section>
@@ -985,11 +1038,7 @@ function SchedulesAvailabilitySection({ controller }: { controller: Availability
               key={item.id}
               className={`specialist-agenda__summary ${controller.selectedSpecialistId === item.id ? 'is-active' : ''}`}
               type="button"
-              onClick={() => {
-                controller.setSelectedSpecialistId(item.id)
-                controller.setHabitualForm((current) => ({ ...current, specialistId: item.id }))
-                controller.setExceptionForm((current) => ({ ...current, specialistId: item.id }))
-              }}
+              onClick={() => controller.setSelectedSpecialistId(item.id)}
             >
               <strong>{item.label}</strong>
               <p>{item.secondaryLabel}</p>
@@ -1040,7 +1089,7 @@ function SchedulesAvailabilitySection({ controller }: { controller: Availability
                         <span>Especialista</span>
                         <select
                           className="input"
-                          value={controller.habitualForm.specialistId ?? ''}
+                          value={controller.habitualSpecialistId ?? ''}
                           onChange={(event) =>
                             controller.setHabitualForm((current) => ({
                               ...current,
@@ -1271,7 +1320,7 @@ function SchedulesAvailabilitySection({ controller }: { controller: Availability
                         <span>Especialista</span>
                         <select
                           className="input"
-                          value={controller.exceptionForm.specialistId ?? ''}
+                          value={controller.exceptionSpecialistId ?? ''}
                           onChange={(event) =>
                             controller.setExceptionForm((current) => ({
                               ...current,
@@ -1515,8 +1564,40 @@ function SchedulesAvailabilitySection({ controller }: { controller: Availability
   )
 }
 
+function useCurrentMonthAvailabilityMetrics(controller: AvailabilityController) {
+  return useMemo(() => {
+    if (!controller.data) {
+      return []
+    }
+
+    const now = new Date()
+    const currentMonthPublishedSlots = controller.data.slots.filter((slot) => {
+      if (!slot.active) {
+        return false
+      }
+
+      const slotDate = new Date(`${slot.date}T00:00:00`)
+      return (
+        slotDate.getFullYear() === now.getFullYear() &&
+        slotDate.getMonth() === now.getMonth()
+      )
+    })
+
+    return controller.data.metrics.map((metric) =>
+      metric.id === 'availability-open'
+        ? {
+            ...metric,
+            value: String(currentMonthPublishedSlots.length),
+            delta: 'Cupos activos del mes actual',
+          }
+        : metric,
+    )
+  }, [controller.data])
+}
+
 export function AdminAvailabilityVisiblePage() {
   const controller = useAdminAvailabilityController()
+  const currentMonthMetrics = useCurrentMonthAvailabilityMetrics(controller)
 
   return (
     <AvailabilityPageShell
@@ -1524,6 +1605,7 @@ export function AdminAvailabilityVisiblePage() {
       title="Dias y horarios visibles"
       description="Revisa la agenda concreta que hoy esta visible para clientes, con buscador por fecha y filtros por servicio."
       controller={controller}
+      metrics={currentMonthMetrics}
     >
       <VisibleAvailabilitySection controller={controller} />
     </AvailabilityPageShell>
@@ -1532,6 +1614,7 @@ export function AdminAvailabilityVisiblePage() {
 
 export function AdminAvailabilityBlocksPage() {
   const controller = useAdminAvailabilityController()
+  const currentMonthMetrics = useCurrentMonthAvailabilityMetrics(controller)
 
   return (
     <AvailabilityPageShell
@@ -1539,6 +1622,7 @@ export function AdminAvailabilityBlocksPage() {
       title="Bloques de horarios"
       description="Crea, edita y borra bloques de horario, y controla fechas globales como dias libres o dias restaurados."
       controller={controller}
+      metrics={currentMonthMetrics}
     >
       <BlocksAvailabilitySection controller={controller} />
     </AvailabilityPageShell>
@@ -1547,6 +1631,7 @@ export function AdminAvailabilityBlocksPage() {
 
 export function AdminAvailabilitySchedulesPage() {
   const controller = useAdminAvailabilityController()
+  const currentMonthMetrics = useCurrentMonthAvailabilityMetrics(controller)
 
   return (
     <AvailabilityPageShell
@@ -1554,6 +1639,7 @@ export function AdminAvailabilitySchedulesPage() {
       title="Gestionar horarios"
       description="Asigna horarios habituales a especialistas y aplica excepciones puntuales cuando haga falta."
       controller={controller}
+      metrics={currentMonthMetrics}
     >
       <SchedulesAvailabilitySection controller={controller} />
     </AvailabilityPageShell>

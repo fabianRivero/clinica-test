@@ -39,7 +39,7 @@ export function AdminOperationsPage() {
 
       {data ? (
         <>
-          <section className="metrics-grid">
+          <section className="metrics-grid metrics-grid--compact">
             {data.metrics.map((metric) => (
               <MetricCard key={metric.id} metric={metric} />
             ))}

@@ -435,13 +435,6 @@ def admin_availability(request):
                 "Reglas recurrentes actualmente activas",
                 "warning",
             ),
-            _metric(
-                "availability-global",
-                "Dias globales libres",
-                blocked_days,
-                "Bloqueos activos para todos los especialistas",
-                "danger",
-            ),
         ],
         "filters": {
             "specialists": [

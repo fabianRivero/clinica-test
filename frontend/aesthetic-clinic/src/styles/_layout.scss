@@ -565,6 +565,9 @@
 }
 
 .auth-highlight {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
   padding: 1.1rem 1.2rem;
   border-radius: var(--radius-sm);
   background: rgba(255, 255, 255, 0.8);
