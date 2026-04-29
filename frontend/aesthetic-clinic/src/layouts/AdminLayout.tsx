@@ -1,21 +1,60 @@
-import { useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import { useAuth } from '../providers/AuthProvider'
 
 const navigation = [
-  { to: '/admin', label: 'Resumen', shortLabel: 'Dashboard' },
-  { to: '/admin/prospectos', label: 'Prospectos y clientes', shortLabel: 'Prospectos' },
-  { to: '/admin/operaciones', label: 'Operaciones', shortLabel: 'Operaciones' },
-  { to: '/admin/disponibilidad', label: 'Disponibilidad', shortLabel: 'Disponibilidad' },
-  { to: '/admin/pagos', label: 'Pagos', shortLabel: 'Pagos' },
-  { to: '/admin/catalogos', label: 'Catalogos', shortLabel: 'Catalogos' },
-  { to: '/admin/equipo', label: 'Equipo', shortLabel: 'Equipo' },
+  { to: '/admin', label: 'Resumen' },
+  {
+    label: 'Prospectos y clientes',
+    children: [
+      { to: '/admin/prospectos', label: 'Prospectos' },
+      { to: '/admin/clientes', label: 'Clientes' },
+    ],
+  },
+  { to: '/admin/operaciones', label: 'Operaciones' },
+  {
+    label: 'Disponibilidad',
+    children: [
+      { to: '/admin/disponibilidad/visibles', label: 'Dias y horarios visibles' },
+      { to: '/admin/disponibilidad/bloques', label: 'Bloques de horarios' },
+      { to: '/admin/disponibilidad/gestionar', label: 'Gestionar horarios' },
+    ],
+  },
+  { to: '/admin/pagos', label: 'Pagos' },
+  {
+    label: 'Catalogos',
+    children: [
+      { to: '/admin/catalogos/todos-los-servicios', label: 'Todos los servicios' },
+      { to: '/admin/catalogos/procedimientos-esteticos', label: 'Procedimientos esteticos' },
+      { to: '/admin/catalogos/tipos-servicio', label: 'Tipos de servicio' },
+      { to: '/admin/catalogos/patologias-cutaneas', label: 'Patologias cutaneas' },
+      { to: '/admin/catalogos/especialidades', label: 'Especialidades' },
+    ],
+  },
+  {
+    label: 'Equipo',
+    children: [
+      { to: '/admin/equipo/crear', label: 'Crear especialista' },
+      { to: '/admin/equipo/gestionar', label: 'Gestionar especialistas' },
+    ],
+  },
 ] as const
 
 export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const location = useLocation()
   const { user, logout } = useAuth()
+  const activePath = location.pathname
+  const openGroups = useMemo(
+    () =>
+      new Set(
+        navigation
+          .filter((item) => 'children' in item && item.children.some((child) => activePath.startsWith(child.to)))
+          .map((item) => item.label),
+      ),
+    [activePath],
+  )
 
   return (
     <div className="admin-shell">
@@ -27,24 +66,46 @@ export function AdminLayout() {
         </div>
 
         <nav className="side-nav" aria-label="Navegacion principal de administracion">
-          {navigation.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/admin'}
-              className={({ isActive }) => `side-nav__link ${isActive ? 'is-active' : ''}`}
-              onClick={() => setSidebarOpen(false)}
-            >
-              <span className="side-nav__marker" />
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
+          {navigation.map((item) =>
+            'children' in item ? (
+              <div
+                key={item.label}
+                className={`side-nav__group ${openGroups.has(item.label) ? 'is-active' : ''}`}
+              >
+                <div className="side-nav__group-label">
+                  <span className="side-nav__marker" />
+                  <span>{item.label}</span>
+                </div>
+                <div className="side-nav__children">
+                  {item.children.map((child) => (
+                    <NavLink
+                      key={child.to}
+                      to={child.to}
+                      className={({ isActive }) =>
+                        `side-nav__link side-nav__link--child ${isActive ? 'is-active' : ''}`
+                      }
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      <span className="side-nav__marker" />
+                      <span>{child.label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === '/admin'}
+                className={({ isActive }) => `side-nav__link ${isActive ? 'is-active' : ''}`}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <span className="side-nav__marker" />
+                <span>{item.label}</span>
+              </NavLink>
+            ),
+          )}
         </nav>
-
-        <div className="sidebar-note">
-          <h2>Rol activo</h2>
-          <p>Administrador con permisos para pagos, operaciones, clientes y configuracion.</p>
-        </div>
       </aside>
 
       {sidebarOpen ? (

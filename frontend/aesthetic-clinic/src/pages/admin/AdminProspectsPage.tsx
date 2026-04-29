@@ -1,4 +1,5 @@
 import { DataState } from '../../components/admin/DataState'
+import { AdminRelationshipTabs } from '../../components/admin/AdminRelationshipTabs'
 import { MetricCard } from '../../components/admin/MetricCard'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
@@ -27,6 +28,8 @@ export function AdminProspectsPage() {
         ]}
       />
 
+      <AdminRelationshipTabs />
+
       {flashMessage ? <DataState title="Registro actualizado" message={flashMessage} /> : null}
 
       {isLoading && !data ? (
@@ -46,8 +49,8 @@ export function AdminProspectsPage() {
 
       {data ? (
         <>
-          <section className="metrics-grid">
-            {data.metrics.map((metric) => (
+          <section className="metrics-grid metrics-grid--compact">
+            {data.metrics.slice(0, 2).map((metric) => (
               <MetricCard key={metric.id} metric={metric} />
             ))}
           </section>
@@ -103,50 +106,6 @@ export function AdminProspectsPage() {
               <DataState
                 title="Sin prospectos cargados"
                 message="Todavia no hay pasajeros o conversiones registradas en la base real."
-              />
-            )}
-          </SectionCard>
-
-          <SectionCard
-            eyebrow="Clientes"
-            title="Clientes con cuenta"
-            description="Clientes activos e inactivos que ya pueden ingresar al portal y revisar su historial."
-          >
-            {data.clients.length ? (
-              <div className="table-card">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Nombre</th>
-                      <th>Estado</th>
-                      <th>Telefono</th>
-                      <th>Operaciones activas</th>
-                      <th>Historial</th>
-                      <th>Ultimo analisis</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.clients.map((client) => (
-                      <tr key={client.id}>
-                        <td>{client.name}</td>
-                        <td>
-                          <StatusBadge tone={client.status === 'Activo' ? 'success' : 'neutral'}>
-                            {client.status}
-                          </StatusBadge>
-                        </td>
-                        <td>{client.phone}</td>
-                        <td>{client.activeOperations}</td>
-                        <td>{client.totalOperations}</td>
-                        <td>{client.lastAnalysis}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <DataState
-                title="Sin clientes con cuenta"
-                message="No se encontraron clientes consolidados en la base conectada."
               />
             )}
           </SectionCard>

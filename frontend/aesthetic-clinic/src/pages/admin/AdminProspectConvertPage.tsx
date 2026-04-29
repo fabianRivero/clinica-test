@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
@@ -129,10 +129,10 @@ export function AdminProspectConvertPage() {
     }
   }, [prospectId])
 
-  const selectedService = useMemo(() => {
-    if (!data || !operationForm?.serviceConfigId) return null
-    return data.serviceConfigs.find((item) => String(item.id) === String(operationForm.serviceConfigId)) || null
-  }, [data, operationForm?.serviceConfigId, operationForm])
+  const selectedService =
+    data && operationForm?.serviceConfigId
+      ? data.serviceConfigs.find((item) => String(item.id) === String(operationForm.serviceConfigId)) || null
+      : null
 
   const canGoToStep = (step: ConversionStep) => {
     if (!data) return false

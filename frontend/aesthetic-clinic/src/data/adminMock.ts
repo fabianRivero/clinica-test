@@ -70,6 +70,7 @@ export const adminAlerts: AdminAlert[] = [
 export const paymentQueue: VerificationPayment[] = [
   {
     id: 'PAY-1042',
+    rawId: 1042,
     patient: 'María Fernanda Rojas',
     operation: 'Depilación láser full body',
     amount: 'Bs 850',
@@ -79,6 +80,7 @@ export const paymentQueue: VerificationPayment[] = [
   },
   {
     id: 'PAY-1038',
+    rawId: 1038,
     patient: 'Luciana Arteaga',
     operation: 'Borrado de tatuaje antebrazo',
     amount: 'Bs 420',
@@ -88,6 +90,7 @@ export const paymentQueue: VerificationPayment[] = [
   },
   {
     id: 'PAY-1035',
+    rawId: 1035,
     patient: 'Valeria Cuéllar',
     operation: 'Tratamiento de manchas faciales',
     amount: 'Bs 600',

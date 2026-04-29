@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 
+import { AdminAvailabilityTabs } from '../../components/admin/AdminAvailabilityTabs'
 import { DataState } from '../../components/admin/DataState'
 import { MetricCard } from '../../components/admin/MetricCard'
 import { PageHeader } from '../../components/admin/PageHeader'
@@ -80,6 +81,10 @@ function normalizeDate(value: string) {
   return value.trim()
 }
 
+function normalizeSearchValue(value: string) {
+  return value.trim().toLowerCase()
+}
+
 function useSpecialistScopedLists(
   data: AdminAvailabilityResponse | null,
   selectedSpecialistId: number | null,
@@ -89,19 +94,17 @@ function useSpecialistScopedLists(
       return {
         specialistRules: [] as AdminHabitualSchedule[],
         specialistExceptions: [] as AdminSpecialistAvailabilityException[],
-        specialistSlots: [] as AdminAvailabilitySlot[],
       }
     }
 
     return {
       specialistRules: data.habitualRules.filter((item) => item.specialistId === selectedSpecialistId),
       specialistExceptions: data.exceptions.filter((item) => item.specialistId === selectedSpecialistId),
-      specialistSlots: data.slots.filter((item) => item.specialistId === selectedSpecialistId),
     }
   }, [data, selectedSpecialistId])
 }
 
-export function AdminAvailabilityPage() {
+function useAdminAvailabilityController() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [selectedSpecialistId, setSelectedSpecialistId] = useState<number | null>(null)
   const [editingTimeSlotId, setEditingTimeSlotId] = useState<number | null>(null)
@@ -113,6 +116,10 @@ export function AdminAvailabilityPage() {
   const [globalDetail, setGlobalDetail] = useState('')
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [slotSearchTerm, setSlotSearchTerm] = useState('')
+  const [activeCoverageFilter, setActiveCoverageFilter] = useState('TODOS')
+  const [activeStatusFilter, setActiveStatusFilter] = useState('TODOS')
+  const [visibleSlotsLimit, setVisibleSlotsLimit] = useState(10)
   const loader = useMemo(() => () => getAdminAvailability(), [refreshKey])
   const { data, isLoading, error } = useApiResource(loader)
   const { showNotification } = useNotifications()
@@ -130,14 +137,86 @@ export function AdminAvailabilityPage() {
     }
   }, [data, selectedSpecialistId])
 
-  const { specialistRules, specialistExceptions, specialistSlots } = useSpecialistScopedLists(
-    data,
-    selectedSpecialistId,
-  )
+  const { specialistRules, specialistExceptions } = useSpecialistScopedLists(data, selectedSpecialistId)
   const selectedSpecialist = useMemo(
     () => data?.specialistSummaries.find((item) => item.id === selectedSpecialistId) ?? null,
     [data, selectedSpecialistId],
   )
+  const coverageOptions = useMemo(() => {
+    if (!data) {
+      return []
+    }
+
+    return Array.from(
+      new Set(
+        data.slots
+          .flatMap((slot) => slot.coverage)
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    ).sort((left, right) => left.localeCompare(right))
+  }, [data])
+  const statusOptions = useMemo(() => {
+    if (!data) {
+      return []
+    }
+
+    return Array.from(new Set(data.slots.map((slot) => slot.status))).sort((left, right) =>
+      left.localeCompare(right),
+    )
+  }, [data])
+  const filteredVisibleSlots = useMemo(() => {
+    if (!data) {
+      return []
+    }
+
+    const normalizedSearch = normalizeSearchValue(slotSearchTerm)
+
+    return data.slots.filter((slot) => {
+      const matchesCoverage =
+        activeCoverageFilter === 'TODOS' || slot.coverage.includes(activeCoverageFilter)
+      const matchesStatus = activeStatusFilter === 'TODOS' || slot.status === activeStatusFilter
+      const haystack = normalizeSearchValue(
+        [
+          slot.dateTime,
+          slot.date,
+          slot.timeRange,
+          slot.specialist,
+          slot.detail,
+          slot.patient,
+          slot.operation,
+          ...slot.coverage,
+        ].join(' '),
+      )
+      const matchesSearch = !normalizedSearch || haystack.includes(normalizedSearch)
+
+      return matchesCoverage && matchesStatus && matchesSearch
+    })
+  }, [activeCoverageFilter, activeStatusFilter, data, slotSearchTerm])
+  const paginatedVisibleSlots = useMemo(
+    () => filteredVisibleSlots.slice(0, visibleSlotsLimit),
+    [filteredVisibleSlots, visibleSlotsLimit],
+  )
+
+  useEffect(() => {
+    setVisibleSlotsLimit(10)
+  }, [slotSearchTerm, activeCoverageFilter, activeStatusFilter])
+
+  useEffect(() => {
+    if (activeCoverageFilter !== 'TODOS' && !coverageOptions.includes(activeCoverageFilter)) {
+      setActiveCoverageFilter('TODOS')
+    }
+  }, [activeCoverageFilter, coverageOptions])
+
+  useEffect(() => {
+    if (activeStatusFilter !== 'TODOS' && !statusOptions.includes(activeStatusFilter as AdminAvailabilitySlot['status'])) {
+      setActiveStatusFilter('TODOS')
+    }
+  }, [activeStatusFilter, statusOptions])
+
+  function refreshAvailability() {
+    setRefreshKey((current) => current + 1)
+  }
 
   function resetTimeSlotForm() {
     setEditingTimeSlotId(null)
@@ -231,7 +310,7 @@ export function AdminAvailabilityPage() {
         tone: 'success',
       })
       resetTimeSlotForm()
-      setRefreshKey((current) => current + 1)
+      refreshAvailability()
     } catch (requestError) {
       console.error('[AdminAvailability] handleTimeSlotSubmit:error', requestError)
       setSubmitError(
@@ -265,7 +344,7 @@ export function AdminAvailabilityPage() {
       if (editingTimeSlotId === slotId) {
         resetTimeSlotForm()
       }
-      setRefreshKey((current) => current + 1)
+      refreshAvailability()
     } catch (requestError) {
       setSubmitError(
         requestError instanceof Error ? requestError.message : 'No se pudo eliminar el horario base.',
@@ -289,7 +368,7 @@ export function AdminAvailabilityPage() {
         tone: 'success',
       })
       resetHabitualForm()
-      setRefreshKey((current) => current + 1)
+      refreshAvailability()
     } catch (requestError) {
       setSubmitError(
         requestError instanceof Error ? requestError.message : 'No se pudo guardar el horario habitual.',
@@ -319,7 +398,7 @@ export function AdminAvailabilityPage() {
       if (editingHabitualId === ruleId) {
         resetHabitualForm()
       }
-      setRefreshKey((current) => current + 1)
+      refreshAvailability()
     } catch (requestError) {
       setSubmitError(
         requestError instanceof Error ? requestError.message : 'No se pudo eliminar el horario habitual.',
@@ -353,7 +432,7 @@ export function AdminAvailabilityPage() {
         tone: 'success',
       })
       resetExceptionForm()
-      setRefreshKey((current) => current + 1)
+      refreshAvailability()
     } catch (requestError) {
       setSubmitError(
         requestError instanceof Error ? requestError.message : 'No se pudo guardar la excepcion.',
@@ -380,7 +459,7 @@ export function AdminAvailabilityPage() {
         message: response.detail,
         tone: 'success',
       })
-      setRefreshKey((current) => current + 1)
+      refreshAvailability()
     } catch (requestError) {
       setSubmitError(
         requestError instanceof Error ? requestError.message : 'No se pudo eliminar la excepcion.',
@@ -410,7 +489,7 @@ export function AdminAvailabilityPage() {
       if (action === 'RESTAURAR') {
         setGlobalDetail('')
       }
-      setRefreshKey((current) => current + 1)
+      refreshAvailability()
     } catch (requestError) {
       setSubmitError(
         requestError instanceof Error ? requestError.message : 'No se pudo aplicar el cambio global.',
@@ -420,14 +499,76 @@ export function AdminAvailabilityPage() {
     }
   }
 
-  if (isLoading && !data) {
+  return {
+    data,
+    error,
+    isLoading,
+    submitError,
+    isSubmitting,
+    selectedSpecialistId,
+    selectedSpecialist,
+    specialistRules,
+    specialistExceptions,
+    timeSlotForm,
+    habitualForm,
+    exceptionForm,
+    globalDate,
+    globalDetail,
+    editingTimeSlotId,
+    editingHabitualId,
+    slotSearchTerm,
+    activeCoverageFilter,
+    activeStatusFilter,
+    coverageOptions,
+    statusOptions,
+    filteredVisibleSlots,
+    paginatedVisibleSlots,
+    setSelectedSpecialistId,
+    setTimeSlotForm,
+    setHabitualForm,
+    setExceptionForm,
+    setGlobalDate,
+    setGlobalDetail,
+    setSlotSearchTerm,
+    setActiveCoverageFilter,
+    setActiveStatusFilter,
+    setVisibleSlotsLimit,
+    refreshAvailability,
+    resetTimeSlotForm,
+    resetHabitualForm,
+    resetExceptionForm,
+    addExceptionDate,
+    loadTimeSlotForEdit,
+    loadHabitualForEdit,
+    handleTimeSlotSubmit,
+    handleDeleteTimeSlot,
+    handleHabitualSubmit,
+    handleDeleteHabitual,
+    handleExceptionSubmit,
+    handleDeleteException,
+    handleGlobalAction,
+  }
+}
+
+type AvailabilityController = ReturnType<typeof useAdminAvailabilityController>
+
+function AvailabilityPageShell({
+  eyebrow,
+  title,
+  description,
+  controller,
+  children,
+}: {
+  eyebrow: string
+  title: string
+  description: string
+  controller: AvailabilityController
+  children: ReactNode
+}) {
+  if (controller.isLoading && !controller.data) {
     return (
       <div className="page-stack">
-        <PageHeader
-          eyebrow="Agenda configurable"
-          title="Disponibilidad de citas"
-          description="Cargando horarios base, especialistas y cupos ya publicados."
-        />
+        <PageHeader eyebrow="Agenda configurable" title={title} description="Cargando configuracion de agenda." />
         <SectionCard title="Cargando agenda">
           <DataState
             title="Sincronizando agenda"
@@ -438,16 +579,16 @@ export function AdminAvailabilityPage() {
     )
   }
 
-  if (error || !data) {
+  if (controller.error || !controller.data) {
     return (
       <div className="page-stack">
-        <PageHeader
-          eyebrow="Agenda configurable"
-          title="Disponibilidad de citas"
-          description="No pudimos cargar la configuracion de agenda."
-        />
+        <PageHeader eyebrow="Agenda configurable" title={title} description="No pudimos cargar la configuracion de agenda." />
         <SectionCard title="Agenda no disponible">
-          <DataState title="Conexion no disponible" message={error || 'No se pudo cargar la agenda.'} tone="danger" />
+          <DataState
+            title="Conexion no disponible"
+            message={controller.error || 'No se pudo cargar la agenda.'}
+            tone="danger"
+          />
         </SectionCard>
       </div>
     )
@@ -456,338 +597,558 @@ export function AdminAvailabilityPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Agenda configurable"
-        title="Disponibilidad de citas"
-        description="Define horarios base para toda la clinica, establece horarios habituales por especialista y aplica cambios puntuales o globales sin rehacer todo el calendario."
+        eyebrow={eyebrow}
+        title={title}
+        description={description}
         actions={[
           {
             label: 'Actualizar vista',
             variant: 'ghost',
-            onClick: () => setRefreshKey((current) => current + 1),
+            onClick: controller.refreshAvailability,
           },
         ]}
       />
 
-      {submitError ? (
-        <DataState title="No pudimos completar el cambio" message={submitError} tone="danger" />
+      <AdminAvailabilityTabs />
+
+      {controller.submitError ? (
+        <DataState title="No pudimos completar el cambio" message={controller.submitError} tone="danger" />
       ) : null}
 
       <section className="metrics-grid">
-        {data.metrics.map((metric) => (
+        {controller.data.metrics.map((metric) => (
           <MetricCard key={metric.id} metric={metric} />
         ))}
       </section>
 
-      <section className="dashboard-grid">
-        <SectionCard
-          eyebrow="Horarios base"
-          title="Bloques reutilizables"
-          description="Estos rangos horarios se aplican a todos los dias. Luego puedes asignarlos a especialistas dentro de sus periodos habituales."
-        >
-          <form className="availability-admin-form" onSubmit={(event) => void handleTimeSlotSubmit(event)}>
-            <div className="form-grid">
-              <label className="field">
-                <span>Hora inicio</span>
-                <input
-                  className="input"
-                  type="time"
-                  value={timeSlotForm.startTime}
-                  onChange={(event) => setTimeSlotForm((current) => ({ ...current, startTime: event.target.value }))}
-                />
-              </label>
-              <label className="field">
-                <span>Hora fin</span>
-                <input
-                  className="input"
-                  type="time"
-                  value={timeSlotForm.endTime}
-                  onChange={(event) => setTimeSlotForm((current) => ({ ...current, endTime: event.target.value }))}
-                />
-              </label>
-              <label className="field field--full">
-                <span>Detalle opcional</span>
-                <input
-                  className="input"
-                  type="text"
-                  value={timeSlotForm.detail}
-                  onChange={(event) => setTimeSlotForm((current) => ({ ...current, detail: event.target.value }))}
-                  placeholder="Ej. Bloque matutino principal"
-                />
-              </label>
-            </div>
+      {children}
+    </div>
+  )
+}
 
-            {editingTimeSlotId ? (
-              <label className="field field--inline">
-                <input
-                  checked={timeSlotForm.active}
-                  type="checkbox"
-                  onChange={(event) => setTimeSlotForm((current) => ({ ...current, active: event.target.checked }))}
-                />
-                <span>Horario base activo</span>
-              </label>
-            ) : null}
+function VisibleAvailabilitySection({ controller }: { controller: AvailabilityController }) {
+  return (
+    <SectionCard
+      eyebrow="Vista publicada"
+      title="Dias y horarios visibles"
+      description="Esta lista muestra la agenda concreta que hoy esta disponible o publicada para reservas. Puedes explorarla por fecha y por servicio."
+    >
+      <div className="availability-visible-toolbar">
+        <label className="field availability-visible-toolbar__search">
+          <span>Buscar por fecha o servicio</span>
+          <input
+            className="input"
+            type="search"
+            value={controller.slotSearchTerm}
+            onChange={(event) => controller.setSlotSearchTerm(event.target.value)}
+            placeholder="Ej. 2026-05-12, Consulta, Laser"
+          />
+        </label>
 
-            <div className="form-actions">
-              <button className="button" disabled={isSubmitting} type="submit">
-                {editingTimeSlotId ? 'Actualizar horario' : 'Crear horario'}
+        <div className="availability-visible-toolbar__filters">
+          <span className="availability-visible-toolbar__label">Filtrar por servicio</span>
+          <div className="filter-chip-row">
+            <button
+              className={`filter-chip ${controller.activeCoverageFilter === 'TODOS' ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => controller.setActiveCoverageFilter('TODOS')}
+            >
+              Todos
+            </button>
+            {controller.coverageOptions.map((coverage) => (
+              <button
+                key={coverage}
+                className={`filter-chip ${controller.activeCoverageFilter === coverage ? 'is-active' : ''}`}
+                type="button"
+                onClick={() => controller.setActiveCoverageFilter(coverage)}
+              >
+                {coverage}
               </button>
-              {editingTimeSlotId ? (
-                <button className="button button--ghost" type="button" onClick={resetTimeSlotForm}>
-                  Cancelar edicion
-                </button>
-              ) : null}
-            </div>
-          </form>
+              ))}
+          </div>
+        </div>
 
-          <div className="availability-admin-list">
-            {data.filters.timeSlots.map((slot) => (
-              <article className="availability-admin-card" key={slot.id}>
-                <div>
-                  <strong>{slot.label}</strong>
-                  <p>
-                    {slot.futureSlots} cupo(s) futuro(s) | {slot.reservedFutureSlots} con reserva
-                  </p>
-                </div>
-                <div className="availability-admin-card__actions">
-                  <StatusBadge tone={slot.active ? 'success' : 'neutral'}>
-                    {slot.active ? 'Activo' : 'Inactivo'}
-                  </StatusBadge>
-                  <button className="button button--ghost button--compact" type="button" onClick={() => loadTimeSlotForEdit(slot.id)}>
-                    Editar
-                  </button>
-                  <button
-                    className="button button--ghost button--compact"
-                    type="button"
-                    onClick={() => void handleDeleteTimeSlot(slot.id)}
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              </article>
+        <div className="availability-visible-toolbar__filters">
+          <span className="availability-visible-toolbar__label">Filtrar por estado</span>
+          <div className="filter-chip-row">
+            <button
+              className={`filter-chip ${controller.activeStatusFilter === 'TODOS' ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => controller.setActiveStatusFilter('TODOS')}
+            >
+              Todos
+            </button>
+            {controller.statusOptions.map((status) => (
+              <button
+                key={status}
+                className={`filter-chip ${controller.activeStatusFilter === status ? 'is-active' : ''}`}
+                type="button"
+                onClick={() => controller.setActiveStatusFilter(status)}
+              >
+                {status}
+              </button>
             ))}
           </div>
-        </SectionCard>
+        </div>
+      </div>
 
-        <SectionCard
-          eyebrow="Cambios globales"
-          title="Dias libres o restaurados para todos"
-          description="Bloquea una fecha completa para todos los especialistas o restáurala para que vuelvan sus horarios habituales."
-        >
-          <form
-            className="availability-admin-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void handleGlobalAction('BLOQUEAR')
-            }}
-          >
-            <div className="form-grid">
-              <label className="field">
-                <span>Fecha</span>
-                <input
-                  className="input"
-                  type="date"
-                  value={globalDate}
-                  onChange={(event) => setGlobalDate(event.target.value)}
-                />
-              </label>
-              <label className="field field--full">
-                <span>Motivo o nota</span>
-                <input
-                  className="input"
-                  type="text"
-                  value={globalDetail}
-                  onChange={(event) => setGlobalDetail(event.target.value)}
-                  placeholder="Ej. Feriado clinico o mantenimiento general"
-                />
-              </label>
-            </div>
-            <div className="form-actions">
-              <button className="button" disabled={isSubmitting} type="submit">
-                Marcar dia libre para todos
-              </button>
+      <div className="availability-visible-summary">
+        <strong>
+          Mostrando {controller.paginatedVisibleSlots.length} de {controller.filteredVisibleSlots.length} horario(s)
+        </strong>
+        <span>
+          {controller.activeCoverageFilter === 'TODOS'
+            ? 'Sin filtro de servicio activo.'
+            : `Servicio filtrado: ${controller.activeCoverageFilter}`}
+        </span>
+        <span>
+          {controller.activeStatusFilter === 'TODOS'
+            ? 'Sin filtro de estado activo.'
+            : `Estado filtrado: ${controller.activeStatusFilter}`}
+        </span>
+      </div>
+
+      {controller.paginatedVisibleSlots.length ? (
+        <>
+          <div className="availability-slot-list">
+            {controller.paginatedVisibleSlots.map((slot) => (
+              <VisibleSlotCard key={slot.id} slot={slot} />
+            ))}
+          </div>
+
+          {controller.filteredVisibleSlots.length > controller.paginatedVisibleSlots.length ? (
+            <div className="form-actions form-actions--start">
               <button
                 className="button button--ghost"
-                disabled={isSubmitting}
                 type="button"
-                onClick={() => void handleGlobalAction('RESTAURAR')}
+                onClick={() => controller.setVisibleSlotsLimit(controller.paginatedVisibleSlots.length + 10)}
               >
-                Restaurar fecha
+                Ver 10 mas
               </button>
             </div>
-          </form>
+          ) : null}
+        </>
+      ) : (
+        <DataState
+          title="Sin horarios visibles"
+          message="No encontramos cupos publicados con los filtros actuales."
+        />
+      )}
+    </SectionCard>
+  )
+}
 
-          <div className="availability-admin-list">
-            {data.globalBlocks.length ? (
-              data.globalBlocks.map((item) => (
-                <article className="availability-admin-card" key={item.id}>
-                  <div>
-                    <strong>{item.dateLabel}</strong>
-                    <p>{item.detail || 'Sin detalle adicional.'}</p>
-                  </div>
-                  <div className="availability-admin-card__actions">
-                    <StatusBadge tone={item.active ? 'warning' : 'neutral'}>
-                      {item.active ? 'Bloqueado' : 'Restaurado'}
-                    </StatusBadge>
-                    {item.active ? (
-                      <button
-                        className="button button--ghost button--compact"
-                        type="button"
-                        onClick={() => {
-                          setGlobalDate(item.date)
-                          setGlobalDetail(item.detail)
-                          void handleGlobalAction('RESTAURAR', {
-                            date: item.date,
-                            detail: item.detail,
-                          })
-                        }}
-                      >
-                        Restaurar
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))
-            ) : (
-              <DataState
-                title="Sin bloqueos globales"
-                message="Todavia no se definieron dias libres para toda la clinica."
+function VisibleSlotCard({ slot }: { slot: AdminAvailabilitySlot }) {
+  return (
+    <article className="availability-slot-card">
+      <header>
+        <div>
+          <strong>{slot.dateTime}</strong>
+          <p>{slot.timeRange}</p>
+        </div>
+        <StatusBadge tone={slotTone[slot.status]}>{slot.status}</StatusBadge>
+      </header>
+      <div className="availability-slot-card__meta">
+        <span>Especialista: {slot.specialist}</span>
+        <p>{slot.detail || 'Sin detalle adicional.'}</p>
+        {slot.patient ? (
+          <p>
+            Reservado por {slot.patient} | {slot.operation} | {slot.reservationState}
+          </p>
+        ) : (
+          <p>{slot.active ? 'Publicado para reserva' : 'Inactivo para clientes'}</p>
+        )}
+      </div>
+      <div className="chip-list chip-list--static">
+        {slot.coverage.length ? (
+          slot.coverage.map((item) => (
+            <span key={`${slot.id}-${item}`} className="chip-list__item chip-list__item--static">
+              {item}
+            </span>
+          ))
+        ) : (
+          <span className="availability-form__empty">Sin alcance configurado.</span>
+        )}
+      </div>
+    </article>
+  )
+}
+
+function BlocksAvailabilitySection({ controller }: { controller: AvailabilityController }) {
+  const { data } = controller
+  if (!data) return null
+
+  return (
+    <div className="availability-workspace-grid">
+      <SectionCard
+        eyebrow="Bloques de horario"
+        title={controller.editingTimeSlotId ? 'Editar bloque de horario' : 'Crear bloque de horario'}
+        description="Estos rangos horarios se aplican a todos los dias y luego se asignan a los especialistas en sus horarios habituales."
+      >
+        <form className="availability-admin-form" onSubmit={(event) => void controller.handleTimeSlotSubmit(event)}>
+          <div className="form-grid">
+            <label className="field">
+              <span>Hora inicio</span>
+              <input
+                className="input"
+                type="time"
+                value={controller.timeSlotForm.startTime}
+                onChange={(event) =>
+                  controller.setTimeSlotForm((current) => ({ ...current, startTime: event.target.value }))
+                }
               />
-            )}
+            </label>
+            <label className="field">
+              <span>Hora fin</span>
+              <input
+                className="input"
+                type="time"
+                value={controller.timeSlotForm.endTime}
+                onChange={(event) =>
+                  controller.setTimeSlotForm((current) => ({ ...current, endTime: event.target.value }))
+                }
+              />
+            </label>
+            <label className="field field--full">
+              <span>Detalle opcional</span>
+              <input
+                className="input"
+                type="text"
+                value={controller.timeSlotForm.detail}
+                onChange={(event) =>
+                  controller.setTimeSlotForm((current) => ({ ...current, detail: event.target.value }))
+                }
+                placeholder="Ej. Bloque matutino principal"
+              />
+            </label>
           </div>
-        </SectionCard>
-      </section>
+
+          {controller.editingTimeSlotId ? (
+            <label className="field field--inline">
+              <input
+                checked={controller.timeSlotForm.active}
+                type="checkbox"
+                onChange={(event) =>
+                  controller.setTimeSlotForm((current) => ({ ...current, active: event.target.checked }))
+                }
+              />
+              <span>Bloque activo</span>
+            </label>
+          ) : null}
+
+          <div className="form-actions">
+            <button className="button" disabled={controller.isSubmitting} type="submit">
+              {controller.editingTimeSlotId ? 'Actualizar bloque' : 'Crear bloque'}
+            </button>
+            {controller.editingTimeSlotId ? (
+              <button className="button button--ghost" type="button" onClick={controller.resetTimeSlotForm}>
+                Cancelar edicion
+              </button>
+            ) : null}
+          </div>
+        </form>
+
+        <div className="availability-admin-list">
+          {data.filters.timeSlots.map((slot) => (
+            <article className="availability-admin-card" key={slot.id}>
+              <div>
+                <strong>{slot.label}</strong>
+                <p>
+                  {slot.futureSlots} cupo(s) futuro(s) | {slot.reservedFutureSlots} con reserva
+                </p>
+              </div>
+              <div className="availability-admin-card__actions">
+                <StatusBadge tone={slot.active ? 'success' : 'neutral'}>
+                  {slot.active ? 'Activo' : 'Inactivo'}
+                </StatusBadge>
+                <button className="button button--ghost button--compact" type="button" onClick={() => controller.loadTimeSlotForEdit(slot.id)}>
+                  Editar
+                </button>
+                <button
+                  className="button button--ghost button--compact"
+                  type="button"
+                  onClick={() => void controller.handleDeleteTimeSlot(slot.id)}
+                >
+                  Eliminar
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </SectionCard>
 
       <SectionCard
-        eyebrow="Especialistas"
-        title="Agenda habitual y ajustes puntuales"
-        description="Selecciona un especialista para ver sus horarios habituales, aplicar excepciones por fecha y revisar los cupos concretos que hoy se publican."
+        eyebrow="Dias globales"
+        title="Restaurar dia activo o dia libre"
+        description="Bloquea una fecha completa para todos los especialistas o restaurala para que vuelvan sus horarios habituales."
       >
-        <div className="specialist-agenda">
-          <aside className="specialist-agenda__sidebar">
-            {data.specialistSummaries.map((item) => (
-              <button
-                key={item.id}
-                className={`specialist-agenda__summary ${selectedSpecialistId === item.id ? 'is-active' : ''}`}
-                type="button"
-                onClick={() => {
-                  setSelectedSpecialistId(item.id)
-                  setHabitualForm((current) => ({ ...current, specialistId: item.id }))
-                  setExceptionForm((current) => ({ ...current, specialistId: item.id }))
-                }}
-              >
-                <strong>{item.label}</strong>
-                <p>{item.secondaryLabel}</p>
-                <div className="specialist-agenda__summary-meta">
-                  <span>{item.futureSlots} cupos</span>
-                  <span>{item.habitualRules} reglas</span>
-                  <span>{item.exceptions} excepciones</span>
-                </div>
-                <small>{item.nextSlot}</small>
-              </button>
-            ))}
-          </aside>
+        <form
+          className="availability-admin-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void controller.handleGlobalAction('BLOQUEAR')
+          }}
+        >
+          <div className="form-grid">
+            <label className="field">
+              <span>Fecha</span>
+              <input
+                className="input"
+                type="date"
+                value={controller.globalDate}
+                onChange={(event) => controller.setGlobalDate(event.target.value)}
+              />
+            </label>
+            <label className="field field--full">
+              <span>Motivo o nota</span>
+              <input
+                className="input"
+                type="text"
+                value={controller.globalDetail}
+                onChange={(event) => controller.setGlobalDetail(event.target.value)}
+                placeholder="Ej. Feriado clinico o mantenimiento general"
+              />
+            </label>
+          </div>
+          <div className="form-actions">
+            <button className="button" disabled={controller.isSubmitting} type="submit">
+              Marcar dia libre para todos
+            </button>
+            <button
+              className="button button--ghost"
+              disabled={controller.isSubmitting}
+              type="button"
+              onClick={() => void controller.handleGlobalAction('RESTAURAR')}
+            >
+              Restaurar fecha
+            </button>
+          </div>
+        </form>
 
-          <div className="specialist-agenda__content">
-            {selectedSpecialist ? (
-              <>
-                <div className="specialist-agenda__hero">
-                  <div>
-                    <span className="specialist-agenda__eyebrow">Especialista seleccionado</span>
-                    <h3>{selectedSpecialist.label}</h3>
-                    <p>{selectedSpecialist.secondaryLabel}</p>
-                  </div>
-                  <div className="specialist-agenda__hero-metrics">
-                    <article>
-                      <span>Proximo cupo</span>
-                      <strong>{selectedSpecialist.nextSlot}</strong>
-                    </article>
-                    <article>
-                      <span>Reglas habituales</span>
-                      <strong>{selectedSpecialist.habitualRules}</strong>
-                    </article>
-                    <article>
-                      <span>Excepciones</span>
-                      <strong>{selectedSpecialist.exceptions}</strong>
-                    </article>
-                  </div>
+        <div className="availability-admin-list">
+          {data.globalBlocks.length ? (
+            data.globalBlocks.map((item) => (
+              <article className="availability-admin-card" key={item.id}>
+                <div>
+                  <strong>{item.dateLabel}</strong>
+                  <p>{item.detail || 'Sin detalle adicional.'}</p>
                 </div>
+                <div className="availability-admin-card__actions">
+                  <StatusBadge tone={item.active ? 'warning' : 'neutral'}>
+                    {item.active ? 'Bloqueado' : 'Restaurado'}
+                  </StatusBadge>
+                  {item.active ? (
+                    <button
+                      className="button button--ghost button--compact"
+                      type="button"
+                      onClick={() => {
+                        controller.setGlobalDate(item.date)
+                        controller.setGlobalDetail(item.detail)
+                        void controller.handleGlobalAction('RESTAURAR', {
+                          date: item.date,
+                          detail: item.detail,
+                        })
+                      }}
+                    >
+                      Restaurar
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            ))
+          ) : (
+            <DataState
+              title="Sin bloqueos globales"
+              message="Todavia no se definieron dias libres para toda la clinica."
+            />
+          )}
+        </div>
+      </SectionCard>
+    </div>
+  )
+}
 
-                <section className="dashboard-grid">
-                  <SectionCard
-                    eyebrow="Horario habitual"
-                    title={editingHabitualId ? 'Editar regla habitual' : 'Crear horario habitual'}
-                    description="Este es el patron base del especialista. Luego puedes quitar dias o agregar otros con excepciones puntuales."
-                  >
-                    <form className="availability-admin-form" onSubmit={(event) => void handleHabitualSubmit(event)}>
-                      <div className="form-grid">
-                        <label className="field">
-                          <span>Especialista</span>
-                          <select
-                            className="input"
-                            value={habitualForm.specialistId ?? ''}
-                            onChange={(event) =>
-                              setHabitualForm((current) => ({
-                                ...current,
-                                specialistId: event.target.value ? Number(event.target.value) : null,
-                              }))
-                            }
-                          >
-                            <option value="">Selecciona un especialista</option>
-                            {data.filters.specialists.map((option) => (
-                              <option key={option.id} value={option.id}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="field">
-                          <span>Desde</span>
-                          <input
-                            className="input"
-                            type="date"
-                            value={habitualForm.startDate}
-                            onChange={(event) =>
-                              setHabitualForm((current) => ({ ...current, startDate: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Hasta</span>
-                          <input
-                            className="input"
-                            type="date"
-                            value={habitualForm.endDate}
-                            onChange={(event) =>
-                              setHabitualForm((current) => ({ ...current, endDate: event.target.value }))
-                            }
-                          />
-                        </label>
-                        <label className="field field--full">
-                          <span>Detalle</span>
-                          <input
-                            className="input"
-                            type="text"
-                            value={habitualForm.detail}
-                            onChange={(event) =>
-                              setHabitualForm((current) => ({ ...current, detail: event.target.value }))
-                            }
-                            placeholder="Ej. Horario habitual de depilacion laser"
-                          />
-                        </label>
+function SchedulesAvailabilitySection({ controller }: { controller: AvailabilityController }) {
+  const { data } = controller
+  if (!data) return null
+
+  return (
+    <SectionCard
+      eyebrow="Especialistas"
+      title="Gestionar horarios"
+      description="Selecciona un especialista para asignarle sus horarios habituales y sus excepciones puntuales."
+    >
+      <div className="specialist-agenda">
+        <aside className="specialist-agenda__sidebar">
+          {data.specialistSummaries.map((item) => (
+            <button
+              key={item.id}
+              className={`specialist-agenda__summary ${controller.selectedSpecialistId === item.id ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => {
+                controller.setSelectedSpecialistId(item.id)
+                controller.setHabitualForm((current) => ({ ...current, specialistId: item.id }))
+                controller.setExceptionForm((current) => ({ ...current, specialistId: item.id }))
+              }}
+            >
+              <strong>{item.label}</strong>
+              <p>{item.secondaryLabel}</p>
+              <div className="specialist-agenda__summary-meta">
+                <span>{item.futureSlots} cupos</span>
+                <span>{item.habitualRules} reglas</span>
+                <span>{item.exceptions} excepciones</span>
+              </div>
+              <small>{item.nextSlot}</small>
+            </button>
+          ))}
+        </aside>
+
+        <div className="specialist-agenda__content">
+          {controller.selectedSpecialist ? (
+            <>
+              <div className="specialist-agenda__hero">
+                <div>
+                  <span className="specialist-agenda__eyebrow">Especialista seleccionado</span>
+                  <h3>{controller.selectedSpecialist.label}</h3>
+                  <p>{controller.selectedSpecialist.secondaryLabel}</p>
+                </div>
+                <div className="specialist-agenda__hero-metrics">
+                  <article>
+                    <span>Proximo cupo</span>
+                    <strong>{controller.selectedSpecialist.nextSlot}</strong>
+                  </article>
+                  <article>
+                    <span>Reglas habituales</span>
+                    <strong>{controller.selectedSpecialist.habitualRules}</strong>
+                  </article>
+                  <article>
+                    <span>Excepciones</span>
+                    <strong>{controller.selectedSpecialist.exceptions}</strong>
+                  </article>
+                </div>
+              </div>
+
+              <section className="dashboard-grid">
+                <SectionCard
+                  eyebrow="Horario habitual"
+                  title={controller.editingHabitualId ? 'Editar regla habitual' : 'Asignar horario habitual'}
+                  description="Este es el patron base del especialista. Luego puedes quitar dias o agregar otros con excepciones puntuales."
+                >
+                  <form className="availability-admin-form" onSubmit={(event) => void controller.handleHabitualSubmit(event)}>
+                    <div className="form-grid">
+                      <label className="field">
+                        <span>Especialista</span>
+                        <select
+                          className="input"
+                          value={controller.habitualForm.specialistId ?? ''}
+                          onChange={(event) =>
+                            controller.setHabitualForm((current) => ({
+                              ...current,
+                              specialistId: event.target.value ? Number(event.target.value) : null,
+                            }))
+                          }
+                        >
+                          <option value="">Selecciona un especialista</option>
+                          {data.filters.specialists.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>Desde</span>
+                        <input
+                          className="input"
+                          type="date"
+                          value={controller.habitualForm.startDate}
+                          onChange={(event) =>
+                            controller.setHabitualForm((current) => ({ ...current, startDate: event.target.value }))
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Hasta</span>
+                        <input
+                          className="input"
+                          type="date"
+                          value={controller.habitualForm.endDate}
+                          onChange={(event) =>
+                            controller.setHabitualForm((current) => ({ ...current, endDate: event.target.value }))
+                          }
+                        />
+                      </label>
+                      <label className="field field--full">
+                        <span>Detalle</span>
+                        <input
+                          className="input"
+                          type="text"
+                          value={controller.habitualForm.detail}
+                          onChange={(event) =>
+                            controller.setHabitualForm((current) => ({ ...current, detail: event.target.value }))
+                          }
+                          placeholder="Ej. Horario habitual de depilacion laser"
+                        />
+                      </label>
+                    </div>
+
+                    <article className="availability-form__panel">
+                      <strong>Dias habituales</strong>
+                      <div className="choice-grid choice-grid--compact">
+                        {data.filters.weekdayOptions.map((option) => (
+                          <label className="choice-card" key={option.value}>
+                            <input
+                              checked={controller.habitualForm.weekdayCodes.includes(option.value)}
+                              type="checkbox"
+                              onChange={() =>
+                                controller.setHabitualForm((current) => ({
+                                  ...current,
+                                  weekdayCodes: toggleSelection(current.weekdayCodes, option.value),
+                                }))
+                              }
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        ))}
                       </div>
+                    </article>
 
-                      <article className="availability-form__panel">
-                        <strong>Dias habituales</strong>
-                        <div className="choice-grid choice-grid--compact">
-                          {data.filters.weekdayOptions.map((option) => (
-                            <label className="choice-card" key={option.value}>
+                    <article className="availability-form__panel">
+                      <strong>Bloques de horario</strong>
+                      <div className="choice-grid">
+                        {data.filters.timeSlots
+                          .filter((slot) => slot.active)
+                          .map((slot) => (
+                            <label className="choice-card" key={slot.id}>
                               <input
-                                checked={habitualForm.weekdayCodes.includes(option.value)}
+                                checked={controller.habitualForm.timeSlotIds.includes(slot.id)}
                                 type="checkbox"
                                 onChange={() =>
-                                  setHabitualForm((current) => ({
+                                  controller.setHabitualForm((current) => ({
                                     ...current,
-                                    weekdayCodes: toggleSelection(current.weekdayCodes, option.value),
+                                    timeSlotIds: toggleSelection(current.timeSlotIds, slot.id),
+                                  }))
+                                }
+                              />
+                              <span>{slot.label}</span>
+                            </label>
+                          ))}
+                      </div>
+                    </article>
+
+                    <div className="availability-form__scope">
+                      <article className="availability-form__panel">
+                        <strong>Tipos de servicio</strong>
+                        <div className="choice-grid">
+                          {data.filters.serviceTypes.map((option) => (
+                            <label className="choice-card" key={option.id}>
+                              <input
+                                checked={controller.habitualForm.serviceTypeIds.includes(option.id)}
+                                type="checkbox"
+                                onChange={() =>
+                                  controller.setHabitualForm((current) => ({
+                                    ...current,
+                                    serviceTypeIds: toggleSelection(current.serviceTypeIds, option.id),
                                   }))
                                 }
                               />
@@ -798,28 +1159,226 @@ export function AdminAvailabilityPage() {
                       </article>
 
                       <article className="availability-form__panel">
-                        <strong>Horarios base</strong>
+                        <strong>Tipos de procedimiento estetico</strong>
                         <div className="choice-grid">
-                          {data.filters.timeSlots
-                            .filter((slot) => slot.active)
-                            .map((slot) => (
-                              <label className="choice-card" key={slot.id}>
-                                <input
-                                  checked={habitualForm.timeSlotIds.includes(slot.id)}
-                                  type="checkbox"
-                                  onChange={() =>
-                                    setHabitualForm((current) => ({
-                                      ...current,
-                                      timeSlotIds: toggleSelection(current.timeSlotIds, slot.id),
-                                    }))
-                                  }
-                                />
-                                <span>{slot.label}</span>
-                              </label>
-                            ))}
+                          {data.filters.procedureTypes.map((option) => (
+                            <label className="choice-card" key={option.id}>
+                              <input
+                                checked={controller.habitualForm.procedureTypeIds.includes(option.id)}
+                                type="checkbox"
+                                onChange={() =>
+                                  controller.setHabitualForm((current) => ({
+                                    ...current,
+                                    procedureTypeIds: toggleSelection(current.procedureTypeIds, option.id),
+                                  }))
+                                }
+                              />
+                              <span>{option.label}</span>
+                            </label>
+                          ))}
                         </div>
                       </article>
 
+                      <article className="availability-form__panel">
+                        <strong>Procedimientos especificos</strong>
+                        <div className="choice-grid">
+                          {data.filters.procedures.map((option) => (
+                            <label className="choice-card" key={option.id}>
+                              <input
+                                checked={controller.habitualForm.procedureIds.includes(option.id)}
+                                type="checkbox"
+                                onChange={() =>
+                                  controller.setHabitualForm((current) => ({
+                                    ...current,
+                                    procedureIds: toggleSelection(current.procedureIds, option.id),
+                                  }))
+                                }
+                              />
+                              <span>{option.label}</span>
+                              {option.secondaryLabel ? <small>{option.secondaryLabel}</small> : null}
+                            </label>
+                          ))}
+                        </div>
+                      </article>
+                    </div>
+
+                    <div className="form-actions">
+                      <button className="button" disabled={controller.isSubmitting} type="submit">
+                        {controller.editingHabitualId ? 'Actualizar horario habitual' : 'Crear horario habitual'}
+                      </button>
+                      {controller.editingHabitualId ? (
+                        <button className="button button--ghost" type="button" onClick={controller.resetHabitualForm}>
+                          Cancelar edicion
+                        </button>
+                      ) : null}
+                    </div>
+                  </form>
+
+                  <div className="availability-admin-list">
+                    {controller.specialistRules.length ? (
+                      controller.specialistRules.map((rule) => (
+                        <article className="availability-admin-card" key={rule.id}>
+                          <div>
+                            <strong>
+                              {rule.weekdayLabels.join(', ')} | {rule.timeSlotLabels.join(', ')}
+                            </strong>
+                            <p>
+                              {rule.startDate} a {rule.endDate}
+                            </p>
+                            <div className="chip-list chip-list--static">
+                              {rule.scope.map((item) => (
+                                <span key={`${rule.id}-${item}`} className="chip-list__item chip-list__item--static">
+                                  {item}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="availability-admin-card__actions">
+                            <button
+                              className="button button--ghost button--compact"
+                              type="button"
+                              onClick={() => controller.loadHabitualForEdit(rule)}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              className="button button--ghost button--compact"
+                              type="button"
+                              onClick={() => void controller.handleDeleteHabitual(rule.id)}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </article>
+                      ))
+                    ) : (
+                      <DataState
+                        title="Sin horarios habituales"
+                        message="Todavia no definiste el patron base de este especialista."
+                      />
+                    )}
+                  </div>
+                </SectionCard>
+
+                <SectionCard
+                  eyebrow="Excepciones"
+                  title="Agregar o quitar dias puntuales"
+                  description="Usa este bloque para cubrir imprevistos: quitar un dia, sumar otro o asignarlo a un alcance distinto solo en una fecha concreta."
+                >
+                  <form className="availability-admin-form" onSubmit={(event) => void controller.handleExceptionSubmit(event)}>
+                    <div className="form-grid">
+                      <label className="field">
+                        <span>Especialista</span>
+                        <select
+                          className="input"
+                          value={controller.exceptionForm.specialistId ?? ''}
+                          onChange={(event) =>
+                            controller.setExceptionForm((current) => ({
+                              ...current,
+                              specialistId: event.target.value ? Number(event.target.value) : null,
+                            }))
+                          }
+                        >
+                          <option value="">Selecciona un especialista</option>
+                          {data.filters.specialists.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>Tipo de cambio</span>
+                        <select
+                          className="input"
+                          value={controller.exceptionForm.type}
+                          onChange={(event) =>
+                            controller.setExceptionForm((current) => ({
+                              ...current,
+                              type: event.target.value as 'AGREGAR' | 'BLOQUEAR',
+                            }))
+                          }
+                        >
+                          <option value="BLOQUEAR">Quitar disponibilidad puntual</option>
+                          <option value="AGREGAR">Agregar disponibilidad puntual</option>
+                        </select>
+                      </label>
+                      <label className="field field--full">
+                        <span>Detalle</span>
+                        <input
+                          className="input"
+                          type="text"
+                          value={controller.exceptionForm.detail}
+                          onChange={(event) =>
+                            controller.setExceptionForm((current) => ({ ...current, detail: event.target.value }))
+                          }
+                          placeholder="Ej. Cambio por incapacidad o cobertura extraordinaria"
+                        />
+                      </label>
+                    </div>
+
+                    <article className="availability-form__panel">
+                      <strong>Fechas puntuales</strong>
+                      <div className="selection-row">
+                        <input
+                          className="input"
+                          type="date"
+                          value={controller.exceptionForm.dateInput}
+                          onChange={(event) =>
+                            controller.setExceptionForm((current) => ({ ...current, dateInput: event.target.value }))
+                          }
+                        />
+                        <button className="button button--ghost button--compact" type="button" onClick={controller.addExceptionDate}>
+                          Agregar fecha
+                        </button>
+                      </div>
+                      <div className="chip-list">
+                        {controller.exceptionForm.dates.length ? (
+                          controller.exceptionForm.dates.map((item) => (
+                            <button
+                              key={item}
+                              className="chip-list__item"
+                              type="button"
+                              onClick={() =>
+                                controller.setExceptionForm((current) => ({
+                                  ...current,
+                                  dates: current.dates.filter((value) => value !== item),
+                                }))
+                              }
+                            >
+                              {item}
+                            </button>
+                          ))
+                        ) : (
+                          <span className="availability-form__empty">Todavia no agregaste fechas.</span>
+                        )}
+                      </div>
+                    </article>
+
+                    <article className="availability-form__panel">
+                      <strong>Horarios afectados</strong>
+                      <div className="choice-grid">
+                        {data.filters.timeSlots
+                          .filter((slot) => slot.active)
+                          .map((slot) => (
+                            <label className="choice-card" key={slot.id}>
+                              <input
+                                checked={controller.exceptionForm.timeSlotIds.includes(slot.id)}
+                                type="checkbox"
+                                onChange={() =>
+                                  controller.setExceptionForm((current) => ({
+                                    ...current,
+                                    timeSlotIds: toggleSelection(current.timeSlotIds, slot.id),
+                                  }))
+                                }
+                              />
+                              <span>{slot.label}</span>
+                            </label>
+                          ))}
+                      </div>
+                    </article>
+
+                    {controller.exceptionForm.type === 'AGREGAR' ? (
                       <div className="availability-form__scope">
                         <article className="availability-form__panel">
                           <strong>Tipos de servicio</strong>
@@ -827,10 +1386,10 @@ export function AdminAvailabilityPage() {
                             {data.filters.serviceTypes.map((option) => (
                               <label className="choice-card" key={option.id}>
                                 <input
-                                  checked={habitualForm.serviceTypeIds.includes(option.id)}
+                                  checked={controller.exceptionForm.serviceTypeIds.includes(option.id)}
                                   type="checkbox"
                                   onChange={() =>
-                                    setHabitualForm((current) => ({
+                                    controller.setExceptionForm((current) => ({
                                       ...current,
                                       serviceTypeIds: toggleSelection(current.serviceTypeIds, option.id),
                                     }))
@@ -848,10 +1407,10 @@ export function AdminAvailabilityPage() {
                             {data.filters.procedureTypes.map((option) => (
                               <label className="choice-card" key={option.id}>
                                 <input
-                                  checked={habitualForm.procedureTypeIds.includes(option.id)}
+                                  checked={controller.exceptionForm.procedureTypeIds.includes(option.id)}
                                   type="checkbox"
                                   onChange={() =>
-                                    setHabitualForm((current) => ({
+                                    controller.setExceptionForm((current) => ({
                                       ...current,
                                       procedureTypeIds: toggleSelection(current.procedureTypeIds, option.id),
                                     }))
@@ -869,10 +1428,10 @@ export function AdminAvailabilityPage() {
                             {data.filters.procedures.map((option) => (
                               <label className="choice-card" key={option.id}>
                                 <input
-                                  checked={habitualForm.procedureIds.includes(option.id)}
+                                  checked={controller.exceptionForm.procedureIds.includes(option.id)}
                                   type="checkbox"
                                   onChange={() =>
-                                    setHabitualForm((current) => ({
+                                    controller.setExceptionForm((current) => ({
                                       ...current,
                                       procedureIds: toggleSelection(current.procedureIds, option.id),
                                     }))
@@ -885,361 +1444,118 @@ export function AdminAvailabilityPage() {
                           </div>
                         </article>
                       </div>
+                    ) : null}
 
-                      <div className="form-actions">
-                        <button className="button" disabled={isSubmitting} type="submit">
-                          {editingHabitualId ? 'Actualizar horario habitual' : 'Crear horario habitual'}
-                        </button>
-                        {editingHabitualId ? (
-                          <button className="button button--ghost" type="button" onClick={resetHabitualForm}>
-                            Cancelar edicion
-                          </button>
-                        ) : null}
-                      </div>
-                    </form>
+                    <div className="form-actions">
+                      <button className="button" disabled={controller.isSubmitting} type="submit">
+                        {controller.exceptionForm.type === 'AGREGAR' ? 'Agregar dia puntual' : 'Quitar dia puntual'}
+                      </button>
+                      <button className="button button--ghost" type="button" onClick={controller.resetExceptionForm}>
+                        Limpiar formulario
+                      </button>
+                    </div>
+                  </form>
 
-                    <div className="availability-admin-list">
-                      {specialistRules.length ? (
-                        specialistRules.map((rule) => (
-                          <article className="availability-admin-card" key={rule.id}>
-                            <div>
-                              <strong>
-                                {rule.weekdayLabels.join(', ')} | {rule.timeSlotLabels.join(', ')}
-                              </strong>
-                              <p>
-                                {rule.startDate} a {rule.endDate}
-                              </p>
+                  <div className="availability-admin-list">
+                    {controller.specialistExceptions.length ? (
+                      controller.specialistExceptions.map((item) => (
+                        <article className="availability-admin-card" key={item.id}>
+                          <div>
+                            <strong>
+                              {item.dateLabel} | {item.typeLabel}
+                            </strong>
+                            <p>{item.timeSlotLabels.join(', ')}</p>
+                            {item.scope.length ? (
                               <div className="chip-list chip-list--static">
-                                {rule.scope.map((item) => (
-                                  <span key={`${rule.id}-${item}`} className="chip-list__item chip-list__item--static">
-                                    {item}
+                                {item.scope.map((scopeItem) => (
+                                  <span
+                                    key={`${item.id}-${scopeItem}`}
+                                    className="chip-list__item chip-list__item--static"
+                                  >
+                                    {scopeItem}
                                   </span>
                                 ))}
                               </div>
-                            </div>
-                            <div className="availability-admin-card__actions">
-                              <button className="button button--ghost button--compact" type="button" onClick={() => loadHabitualForEdit(rule)}>
-                                Editar
-                              </button>
-                              <button
-                                className="button button--ghost button--compact"
-                                type="button"
-                                onClick={() => void handleDeleteHabitual(rule.id)}
-                              >
-                                Eliminar
-                              </button>
-                            </div>
-                          </article>
-                        ))
-                      ) : (
-                        <DataState
-                          title="Sin horarios habituales"
-                          message="Todavia no definiste el patron base de este especialista."
-                        />
-                      )}
-                    </div>
-                  </SectionCard>
-
-                  <SectionCard
-                    eyebrow="Excepciones"
-                    title="Agregar o quitar dias puntuales"
-                    description="Usa este bloque para cubrir imprevistos: quitar un dia, sumar otro o asignarlo a un alcance distinto solo en una fecha concreta."
-                  >
-                    <form className="availability-admin-form" onSubmit={(event) => void handleExceptionSubmit(event)}>
-                      <div className="form-grid">
-                        <label className="field">
-                          <span>Especialista</span>
-                          <select
-                            className="input"
-                            value={exceptionForm.specialistId ?? ''}
-                            onChange={(event) =>
-                              setExceptionForm((current) => ({
-                                ...current,
-                                specialistId: event.target.value ? Number(event.target.value) : null,
-                              }))
-                            }
-                          >
-                            <option value="">Selecciona un especialista</option>
-                            {data.filters.specialists.map((option) => (
-                              <option key={option.id} value={option.id}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="field">
-                          <span>Tipo de cambio</span>
-                          <select
-                            className="input"
-                            value={exceptionForm.type}
-                            onChange={(event) =>
-                              setExceptionForm((current) => ({
-                                ...current,
-                                type: event.target.value as 'AGREGAR' | 'BLOQUEAR',
-                              }))
-                            }
-                          >
-                            <option value="BLOQUEAR">Quitar disponibilidad puntual</option>
-                            <option value="AGREGAR">Agregar disponibilidad puntual</option>
-                          </select>
-                        </label>
-                        <label className="field field--full">
-                          <span>Detalle</span>
-                          <input
-                            className="input"
-                            type="text"
-                            value={exceptionForm.detail}
-                            onChange={(event) =>
-                              setExceptionForm((current) => ({ ...current, detail: event.target.value }))
-                            }
-                            placeholder="Ej. Cambio por incapacidad o cobertura extraordinaria"
-                          />
-                        </label>
-                      </div>
-
-                      <article className="availability-form__panel">
-                        <strong>Fechas puntuales</strong>
-                        <div className="selection-row">
-                          <input
-                            className="input"
-                            type="date"
-                            value={exceptionForm.dateInput}
-                            onChange={(event) =>
-                              setExceptionForm((current) => ({ ...current, dateInput: event.target.value }))
-                            }
-                          />
-                          <button className="button button--ghost button--compact" type="button" onClick={addExceptionDate}>
-                            Agregar fecha
-                          </button>
-                        </div>
-                        <div className="chip-list">
-                          {exceptionForm.dates.length ? (
-                            exceptionForm.dates.map((item) => (
-                              <button
-                                key={item}
-                                className="chip-list__item"
-                                type="button"
-                                onClick={() =>
-                                  setExceptionForm((current) => ({
-                                    ...current,
-                                    dates: current.dates.filter((value) => value !== item),
-                                  }))
-                                }
-                              >
-                                {item}
-                              </button>
-                            ))
-                          ) : (
-                            <span className="availability-form__empty">Todavia no agregaste fechas.</span>
-                          )}
-                        </div>
-                      </article>
-
-                      <article className="availability-form__panel">
-                        <strong>Horarios afectados</strong>
-                        <div className="choice-grid">
-                          {data.filters.timeSlots
-                            .filter((slot) => slot.active)
-                            .map((slot) => (
-                              <label className="choice-card" key={slot.id}>
-                                <input
-                                  checked={exceptionForm.timeSlotIds.includes(slot.id)}
-                                  type="checkbox"
-                                  onChange={() =>
-                                    setExceptionForm((current) => ({
-                                      ...current,
-                                      timeSlotIds: toggleSelection(current.timeSlotIds, slot.id),
-                                    }))
-                                  }
-                                />
-                                <span>{slot.label}</span>
-                              </label>
-                            ))}
-                        </div>
-                      </article>
-
-                      {exceptionForm.type === 'AGREGAR' ? (
-                        <div className="availability-form__scope">
-                          <article className="availability-form__panel">
-                            <strong>Tipos de servicio</strong>
-                            <div className="choice-grid">
-                              {data.filters.serviceTypes.map((option) => (
-                                <label className="choice-card" key={option.id}>
-                                  <input
-                                    checked={exceptionForm.serviceTypeIds.includes(option.id)}
-                                    type="checkbox"
-                                    onChange={() =>
-                                      setExceptionForm((current) => ({
-                                        ...current,
-                                        serviceTypeIds: toggleSelection(current.serviceTypeIds, option.id),
-                                      }))
-                                    }
-                                  />
-                                  <span>{option.label}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </article>
-
-                          <article className="availability-form__panel">
-                            <strong>Tipos de procedimiento estetico</strong>
-                            <div className="choice-grid">
-                              {data.filters.procedureTypes.map((option) => (
-                                <label className="choice-card" key={option.id}>
-                                  <input
-                                    checked={exceptionForm.procedureTypeIds.includes(option.id)}
-                                    type="checkbox"
-                                    onChange={() =>
-                                      setExceptionForm((current) => ({
-                                        ...current,
-                                        procedureTypeIds: toggleSelection(current.procedureTypeIds, option.id),
-                                      }))
-                                    }
-                                  />
-                                  <span>{option.label}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </article>
-
-                          <article className="availability-form__panel">
-                            <strong>Procedimientos especificos</strong>
-                            <div className="choice-grid">
-                              {data.filters.procedures.map((option) => (
-                                <label className="choice-card" key={option.id}>
-                                  <input
-                                    checked={exceptionForm.procedureIds.includes(option.id)}
-                                    type="checkbox"
-                                    onChange={() =>
-                                      setExceptionForm((current) => ({
-                                        ...current,
-                                        procedureIds: toggleSelection(current.procedureIds, option.id),
-                                      }))
-                                    }
-                                  />
-                                  <span>{option.label}</span>
-                                  {option.secondaryLabel ? <small>{option.secondaryLabel}</small> : null}
-                                </label>
-                              ))}
-                            </div>
-                          </article>
-                        </div>
-                      ) : null}
-
-                      <div className="form-actions">
-                        <button className="button" disabled={isSubmitting} type="submit">
-                          {exceptionForm.type === 'AGREGAR' ? 'Agregar dia puntual' : 'Quitar dia puntual'}
-                        </button>
-                        <button className="button button--ghost" type="button" onClick={resetExceptionForm}>
-                          Limpiar formulario
-                        </button>
-                      </div>
-                    </form>
-
-                    <div className="availability-admin-list">
-                      {specialistExceptions.length ? (
-                        specialistExceptions.map((item) => (
-                          <article className="availability-admin-card" key={item.id}>
-                            <div>
-                              <strong>
-                                {item.dateLabel} | {item.typeLabel}
-                              </strong>
-                              <p>{item.timeSlotLabels.join(', ')}</p>
-                              {item.scope.length ? (
-                                <div className="chip-list chip-list--static">
-                                  {item.scope.map((scopeItem) => (
-                                    <span
-                                      key={`${item.id}-${scopeItem}`}
-                                      className="chip-list__item chip-list__item--static"
-                                    >
-                                      {scopeItem}
-                                    </span>
-                                  ))}
-                                </div>
-                              ) : null}
-                              {item.detail ? <small>{item.detail}</small> : null}
-                            </div>
-                            <div className="availability-admin-card__actions">
-                              <StatusBadge tone={item.type === 'AGREGAR' ? 'success' : 'warning'}>
-                                {item.type === 'AGREGAR' ? 'Extra' : 'Bloqueado'}
-                              </StatusBadge>
-                              <button
-                                className="button button--ghost button--compact"
-                                type="button"
-                                onClick={() => void handleDeleteException(item.id)}
-                              >
-                                Eliminar
-                              </button>
-                            </div>
-                          </article>
-                        ))
-                      ) : (
-                        <DataState
-                          title="Sin excepciones"
-                          message="Este especialista todavia no tiene cambios puntuales cargados."
-                        />
-                      )}
-                    </div>
-                  </SectionCard>
-                </section>
-
-                <SectionCard
-                  eyebrow="Vista publicada"
-                  title="Dias y horarios hoy visibles"
-                  description="Esta lista muestra el resultado concreto que ve el cliente para este especialista, incluyendo reservas ya tomadas."
-                >
-                  {specialistSlots.length ? (
-                    <div className="availability-slot-list">
-                      {specialistSlots.map((slot) => (
-                        <article className="availability-slot-card" key={slot.id}>
-                          <header>
-                            <div>
-                              <strong>{slot.dateTime}</strong>
-                              <p>{slot.timeRange}</p>
-                            </div>
-                            <StatusBadge tone={slotTone[slot.status]}>{slot.status}</StatusBadge>
-                          </header>
-                          <div className="chip-list chip-list--static">
-                            {slot.coverage.length ? (
-                              slot.coverage.map((item) => (
-                                <span key={`${slot.id}-${item}`} className="chip-list__item chip-list__item--static">
-                                  {item}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="availability-form__empty">Sin alcance configurado.</span>
-                            )}
+                            ) : null}
+                            {item.detail ? <small>{item.detail}</small> : null}
                           </div>
-                          <div className="availability-slot-card__meta">
-                            <span>{slot.detail || 'Sin detalle adicional.'}</span>
-                            {slot.patient ? (
-                              <p>
-                                Reservado por {slot.patient} | {slot.operation} | {slot.reservationState}
-                              </p>
-                            ) : (
-                              <p>{slot.active ? 'Publicado para reserva' : 'Inactivo para clientes'}</p>
-                            )}
+                          <div className="availability-admin-card__actions">
+                            <StatusBadge tone={item.type === 'AGREGAR' ? 'success' : 'warning'}>
+                              {item.type === 'AGREGAR' ? 'Extra' : 'Bloqueado'}
+                            </StatusBadge>
+                            <button
+                              className="button button--ghost button--compact"
+                              type="button"
+                              onClick={() => void controller.handleDeleteException(item.id)}
+                            >
+                              Eliminar
+                            </button>
                           </div>
                         </article>
-                      ))}
-                    </div>
-                  ) : (
-                    <DataState
-                      title="Sin cupos concretos"
-                      message="Aun no hay dias y horarios publicados para este especialista."
-                    />
-                  )}
+                      ))
+                    ) : (
+                      <DataState
+                        title="Sin excepciones"
+                        message="Este especialista todavia no tiene cambios puntuales cargados."
+                      />
+                    )}
+                  </div>
                 </SectionCard>
-              </>
-            ) : (
-              <DataState
-                title="Selecciona un especialista"
-                message="Elige un especialista para configurar sus horarios base, sus excepciones y revisar sus cupos publicados."
-              />
-            )}
-          </div>
+              </section>
+            </>
+          ) : (
+            <DataState
+              title="Selecciona un especialista"
+              message="Elige un especialista para darle sus horarios habituales y gestionar sus cambios puntuales."
+            />
+          )}
         </div>
-      </SectionCard>
-    </div>
+      </div>
+    </SectionCard>
+  )
+}
+
+export function AdminAvailabilityVisiblePage() {
+  const controller = useAdminAvailabilityController()
+
+  return (
+    <AvailabilityPageShell
+      eyebrow="Agenda publicada"
+      title="Dias y horarios visibles"
+      description="Revisa la agenda concreta que hoy esta visible para clientes, con buscador por fecha y filtros por servicio."
+      controller={controller}
+    >
+      <VisibleAvailabilitySection controller={controller} />
+    </AvailabilityPageShell>
+  )
+}
+
+export function AdminAvailabilityBlocksPage() {
+  const controller = useAdminAvailabilityController()
+
+  return (
+    <AvailabilityPageShell
+      eyebrow="Bloques y dias globales"
+      title="Bloques de horarios"
+      description="Crea, edita y borra bloques de horario, y controla fechas globales como dias libres o dias restaurados."
+      controller={controller}
+    >
+      <BlocksAvailabilitySection controller={controller} />
+    </AvailabilityPageShell>
+  )
+}
+
+export function AdminAvailabilitySchedulesPage() {
+  const controller = useAdminAvailabilityController()
+
+  return (
+    <AvailabilityPageShell
+      eyebrow="Horarios por especialista"
+      title="Gestionar horarios"
+      description="Asigna horarios habituales a especialistas y aplica excepciones puntuales cuando haga falta."
+      controller={controller}
+    >
+      <SchedulesAvailabilitySection controller={controller} />
+    </AvailabilityPageShell>
   )
 }

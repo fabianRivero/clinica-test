@@ -13,10 +13,17 @@ from config.admin_availability_views import (
     admin_update_time_slot,
 )
 from config.api_views import (
+    admin_actualizar_especialista,
+    admin_catalogo_actualizar,
+    admin_catalogo_crear,
+    admin_catalogo_detalle,
+    admin_catalogo_estado,
     admin_catalogos,
+    admin_crear_especialista,
     admin_crear_prospecto,
     admin_dashboard,
     admin_equipo,
+    admin_estado_especialista,
     admin_operacion_detalle,
     admin_operaciones,
     admin_pagos,
@@ -116,5 +123,28 @@ urlpatterns = [
     path("pagos/configuracion-qr/", admin_update_payment_qr_config, name="admin-pagos-qr-config-api"),
     path("pagos/<int:payment_id>/estado/", admin_update_payment_status, name="admin-pagos-status-api"),
     path("catalogos/", admin_catalogos, name="admin-catalogos-api"),
+    path("catalogos/<slug:catalog_key>/", admin_catalogo_detalle, name="admin-catalogo-detail-api"),
+    path("catalogos/<slug:catalog_key>/crear/", admin_catalogo_crear, name="admin-catalogo-create-api"),
+    path(
+        "catalogos/<slug:catalog_key>/<int:item_id>/actualizar/",
+        admin_catalogo_actualizar,
+        name="admin-catalogo-update-api",
+    ),
+    path(
+        "catalogos/<slug:catalog_key>/<int:item_id>/estado/",
+        admin_catalogo_estado,
+        name="admin-catalogo-state-api",
+    ),
     path("equipo/", admin_equipo, name="admin-equipo-api"),
+    path("equipo/crear/", admin_crear_especialista, name="admin-equipo-create-api"),
+    path(
+        "equipo/<int:specialist_id>/actualizar/",
+        admin_actualizar_especialista,
+        name="admin-equipo-update-api",
+    ),
+    path(
+        "equipo/<int:specialist_id>/estado/",
+        admin_estado_especialista,
+        name="admin-equipo-status-api",
+    ),
 ]

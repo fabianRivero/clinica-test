@@ -80,13 +80,25 @@ export type CatalogHealthItem = {
 
 export type StaffCapacityItem = {
   id: string
+  rawId: number
   specialist: string
   specialty: string
+  specialtyIds: number[]
   load: number
   pendingValidations: number
+  username: string
+  email: string
+  primerNombre: string
+  segundoNombre: string
+  apellidoPaterno: string
+  apellidoMaterno: string
+  ci: string
   phone?: string
+  status: string
+  isActive: boolean
   activeOperations?: number
   upcomingAppointments?: number
+  observations?: string
 }
 
 export type ClientSnapshot = {
@@ -196,9 +208,106 @@ export type CatalogsResponse = {
   catalogs: CatalogHealthItem[]
 }
 
+export type AdminCatalogKey =
+  | 'todos-los-servicios'
+  | 'procedimientos-esteticos'
+  | 'tipos-servicio'
+  | 'campos-ficha'
+  | 'patologias-cutaneas'
+  | 'especialidades'
+  | 'grupos-opciones'
+
+export type AdminCatalogFormValue = string | number | boolean | null
+
+export type AdminCatalogFieldOption = {
+  value: string | number
+  label: string
+  secondaryLabel?: string
+}
+
+export type AdminCatalogFieldDefinition = {
+  name: string
+  label: string
+  inputType: 'text' | 'textarea' | 'number' | 'select' | 'checkbox'
+  required: boolean
+  placeholder?: string
+  hint?: string
+  valueType: 'string' | 'number' | 'boolean'
+  allowEmpty: boolean
+  minValue?: number
+  options?: AdminCatalogFieldOption[]
+}
+
+export type AdminCatalogMetadataItem = {
+  label: string
+  value: string
+}
+
+export type AdminCatalogEntry = {
+  id: number
+  title: string
+  subtitle: string
+  active: boolean
+  activeLabel: string
+  metadata: AdminCatalogMetadataItem[]
+  values: Record<string, AdminCatalogFormValue>
+}
+
+export type AdminCatalogDetailResponse = {
+  catalog: {
+    key: AdminCatalogKey
+    title: string
+    description: string
+    createLabel: string
+  }
+  metrics: AdminMetric[]
+  fields: AdminCatalogFieldDefinition[]
+  items: AdminCatalogEntry[]
+}
+
+export type AdminCatalogMutationResponse = {
+  detail: string
+  item: AdminCatalogEntry
+}
+
+export type UpdateAdminCatalogItemStatePayload = {
+  active: boolean
+}
+
 export type StaffResponse = {
   metrics: AdminMetric[]
   staff: StaffCapacityItem[]
+  specialtyOptions: Array<{
+    id: number
+    label: string
+  }>
+}
+
+export type CreateAdminStaffPayload = {
+  username: string
+  password: string
+  email: string
+  primerNombre: string
+  segundoNombre: string
+  apellidoPaterno: string
+  apellidoMaterno: string
+  ci: string
+  telefono: string
+  observaciones: string
+  specialtyIds: number[]
+}
+
+export type UpdateAdminStaffPayload = Omit<CreateAdminStaffPayload, 'password'> & {
+  password?: string
+}
+
+export type UpdateAdminStaffStatusPayload = {
+  active: boolean
+}
+
+export type AdminStaffMutationResponse = {
+  detail: string
+  staffMember: StaffCapacityItem
 }
 
 export type CreateAdminProspectPayload = {

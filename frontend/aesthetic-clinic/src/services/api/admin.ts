@@ -1,7 +1,12 @@
 import type {
   AdminAvailabilityResponse,
+  AdminCatalogDetailResponse,
+  AdminCatalogKey,
+  AdminCatalogMutationResponse,
+  AdminStaffMutationResponse,
   AdminAvailabilityMutationResponse,
   CatalogsResponse,
+  CreateAdminStaffPayload,
   CreateAdminAvailabilityExceptionPayload,
   CreateAdminProspectPayload,
   CreateAdminProspectResponse,
@@ -14,6 +19,9 @@ import type {
   ProspectsResponse,
   StaffResponse,
   UpdateAdminTimeSlotPayload,
+  UpdateAdminCatalogItemStatePayload,
+  UpdateAdminStaffPayload,
+  UpdateAdminStaffStatusPayload,
   UpsertAdminHabitualSchedulePayload,
   UpdateAdminPaymentQrConfigResponse,
   UpdateAdminPaymentStatusPayload,
@@ -155,8 +163,65 @@ export function getAdminCatalogs() {
   return requestJson<CatalogsResponse>('/api/admin/catalogos/')
 }
 
+export function getAdminCatalogDetail(catalogKey: AdminCatalogKey) {
+  return requestJson<AdminCatalogDetailResponse>(`/api/admin/catalogos/${catalogKey}/`)
+}
+
+export function createAdminCatalogItem(
+  catalogKey: AdminCatalogKey,
+  payload: Record<string, unknown>,
+) {
+  return requestJsonWithBody<AdminCatalogMutationResponse>(
+    `/api/admin/catalogos/${catalogKey}/crear/`,
+    payload,
+  )
+}
+
+export function updateAdminCatalogItem(
+  catalogKey: AdminCatalogKey,
+  itemId: number,
+  payload: Record<string, unknown>,
+) {
+  return requestJsonWithBody<AdminCatalogMutationResponse>(
+    `/api/admin/catalogos/${catalogKey}/${itemId}/actualizar/`,
+    payload,
+  )
+}
+
+export function updateAdminCatalogItemState(
+  catalogKey: AdminCatalogKey,
+  itemId: number,
+  payload: UpdateAdminCatalogItemStatePayload,
+) {
+  return requestJsonWithBody<AdminCatalogMutationResponse>(
+    `/api/admin/catalogos/${catalogKey}/${itemId}/estado/`,
+    payload,
+  )
+}
+
 export function getAdminStaff() {
   return requestJson<StaffResponse>('/api/admin/equipo/')
+}
+
+export function createAdminStaff(payload: CreateAdminStaffPayload) {
+  return requestJsonWithBody<AdminStaffMutationResponse>('/api/admin/equipo/crear/', payload)
+}
+
+export function updateAdminStaff(specialistId: number, payload: UpdateAdminStaffPayload) {
+  return requestJsonWithBody<AdminStaffMutationResponse>(
+    `/api/admin/equipo/${specialistId}/actualizar/`,
+    payload,
+  )
+}
+
+export function updateAdminStaffStatus(
+  specialistId: number,
+  payload: UpdateAdminStaffStatusPayload,
+) {
+  return requestJsonWithBody<AdminStaffMutationResponse>(
+    `/api/admin/equipo/${specialistId}/estado/`,
+    payload,
+  )
 }
 
 export function createAdminProspect(payload: CreateAdminProspectPayload) {

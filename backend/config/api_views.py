@@ -1,25 +1,38 @@
 import json
 from pathlib import PurePosixPath
 from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 from functools import wraps
 
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
+from accounts.models import Rol, Usuario
 from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
 from catalogs.models import (
     GrupoOpciones,
     OpcionCatalogo,
     PatologiaCutanea,
     ProcEstetico,
+    ProcEsteticosTipo,
     ServicioConfig,
     TipoServicio,
 )
 from customers.models import Cliente, Prospecto
-from operations.models import CitaMedica, FichaCampo, Operacion
-from staff.models import Especialidad, Especialista
+from operations.models import (
+    AgendaExcepcionEspecialista,
+    AgendaHabitualEspecialista,
+    CitaMedica,
+    DisponibilidadCita,
+    FichaCampo,
+    FichaSeccion,
+    Operacion,
+)
+from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
 
 
 def _json(data, status=200):
@@ -300,6 +313,754 @@ def _catalog_item(identifier, name, count, note):
     }
 
 
+def _catalog_field(
+    name,
+    label,
+    input_type,
+    *,
+    required=False,
+    options=None,
+    placeholder="",
+    hint="",
+    value_type="string",
+    allow_empty=False,
+    min_value=None,
+):
+    payload = {
+        "name": name,
+        "label": label,
+        "inputType": input_type,
+        "required": required,
+        "placeholder": placeholder,
+        "hint": hint,
+        "valueType": value_type,
+        "allowEmpty": allow_empty,
+    }
+    if options is not None:
+        payload["options"] = options
+    if min_value is not None:
+        payload["minValue"] = min_value
+    return payload
+
+
+def _catalog_option(value, label, secondary_label=""):
+    payload = {"value": value, "label": label}
+    if secondary_label:
+        payload["secondaryLabel"] = secondary_label
+    return payload
+
+
+def _catalog_entry(item_id, title, subtitle, active, metadata, values):
+    return {
+        "id": item_id,
+        "title": title,
+        "subtitle": subtitle,
+        "active": active,
+        "activeLabel": "Activo" if active else "Inactivo",
+        "metadata": metadata,
+        "values": values,
+    }
+
+
+def _catalog_metric_set(active_count, inactive_count, total_count, relation_label):
+    return [
+        _metric("catalog-active", "Activos", active_count, "Visibles para nuevas operaciones", "success"),
+        _metric("catalog-inactive", "Inactivos", inactive_count, "Preservados para historico y reactivacion", "warning"),
+        _metric("catalog-total", "Total", total_count, relation_label, "primary"),
+    ]
+
+
+def _catalog_key_to_slug(catalog_key):
+    if catalog_key in {
+        "todos-los-servicios",
+        "procedimientos-esteticos",
+        "tipos-servicio",
+        "campos-ficha",
+        "patologias-cutaneas",
+        "especialidades",
+        "grupos-opciones",
+    }:
+        return catalog_key
+    raise KeyError(catalog_key)
+
+
+def _catalog_summary_descriptor():
+    return [
+        {
+            "key": "todos-los-servicios",
+            "title": "Todos los servicios",
+            "description": "Configuraciones completas de servicio con su precio base y procedimiento asociado.",
+        },
+        {
+            "key": "procedimientos-esteticos",
+            "title": "Procedimientos esteticos",
+            "description": "Catalogo operativo de procedimientos disponibles para las ventas y fichas clinicas.",
+        },
+        {
+            "key": "tipos-servicio",
+            "title": "Tipos de servicio",
+            "description": "Categorias comerciales utilizadas al crear configuraciones de servicio y operaciones.",
+        },
+        {
+            "key": "campos-ficha",
+            "title": "Campos de ficha",
+            "description": "Preguntas configurables por procedimiento dentro de la ficha clinica.",
+        },
+        {
+            "key": "patologias-cutaneas",
+            "title": "Patologias cutaneas",
+            "description": "Catalogo de patologias usado en el analisis estetico del paciente.",
+        },
+        {
+            "key": "especialidades",
+            "title": "Especialidades",
+            "description": "Especialidades disponibles para especialistas y asignacion de agenda.",
+        },
+        {
+            "key": "grupos-opciones",
+            "title": "Grupos de opciones",
+            "description": "Grupos reutilizables para respuestas de seleccion unica o multiple.",
+        },
+    ]
+
+
+def _catalog_page_data(catalog_key):
+    catalog_key = _catalog_key_to_slug(catalog_key)
+
+    if catalog_key == "todos-los-servicios":
+        queryset = (
+            ServicioConfig.objects.select_related(
+                "tipo_servicio",
+                "proc_estetico",
+                "proc_estetico__tipo_p_estetico",
+            )
+            .order_by("tipo_servicio__tipo", "proc_estetico__proceso", "pk")
+        )
+        items = [
+            _catalog_entry(
+                item.pk,
+                str(item),
+                f"Precio base: {_currency(item.precio_base)}",
+                item.activo,
+                [
+                    {"label": "Tipo de servicio", "value": item.tipo_servicio.tipo},
+                    {
+                        "label": "Procedimiento",
+                        "value": item.proc_estetico.proceso if item.proc_estetico else "Sin procedimiento",
+                    },
+                    {
+                        "label": "Tipo de procedimiento",
+                        "value": item.proc_estetico.tipo_p_estetico.tipo if item.proc_estetico else "No aplica",
+                    },
+                    {
+                        "label": "Operaciones vinculadas",
+                        "value": str(item.operaciones.count()),
+                    },
+                ],
+                {
+                    "serviceTypeId": item.tipo_servicio_id,
+                    "procedureId": item.proc_estetico_id,
+                    "basePrice": str(item.precio_base),
+                },
+            )
+            for item in queryset
+        ]
+        active_count = queryset.filter(activo=True).count()
+        total_count = queryset.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Todos los servicios",
+                "description": "Administra cada servicio disponible con su precio base y el procedimiento estetico asociado.",
+                "createLabel": "Crear servicio",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{Operacion.objects.count()} operacion(es) usan este catalogo",
+            ),
+            "fields": [
+                _catalog_field(
+                    "serviceTypeId",
+                    "Tipo de servicio",
+                    "select",
+                    required=True,
+                    value_type="number",
+                    options=[
+                        _catalog_option(tipo.pk, tipo.tipo)
+                        for tipo in TipoServicio.objects.filter(activo=True).order_by("orden", "tipo")
+                    ],
+                ),
+                _catalog_field(
+                    "procedureId",
+                    "Procedimiento estetico",
+                    "select",
+                    value_type="number",
+                    allow_empty=True,
+                    options=[
+                        _catalog_option(
+                            procedimiento.pk,
+                            procedimiento.proceso,
+                            secondary_label=procedimiento.tipo_p_estetico.tipo,
+                        )
+                        for procedimiento in ProcEstetico.objects.select_related("tipo_p_estetico")
+                        .filter(activo=True)
+                        .order_by("tipo_p_estetico__tipo", "orden", "proceso")
+                    ],
+                    hint="Deja este campo vacio para servicios generales como la cita de consulta.",
+                ),
+                _catalog_field(
+                    "basePrice",
+                    "Precio base",
+                    "number",
+                    required=True,
+                    value_type="number",
+                    min_value=0,
+                ),
+            ],
+            "items": items,
+        }
+
+    if catalog_key == "procedimientos-esteticos":
+        queryset = ProcEstetico.objects.select_related("tipo_p_estetico").order_by("orden", "proceso")
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.proceso,
+                f"Tipo: {item.tipo_p_estetico.tipo}",
+                item.activo,
+                [
+                    {"label": "Orden", "value": str(item.orden)},
+                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {
+                        "label": "Servicios vinculados",
+                        "value": str(item.servicios_config.count()),
+                    },
+                ],
+                {
+                    "procedureTypeId": item.tipo_p_estetico_id,
+                    "name": item.proceso,
+                    "description": item.descripcion,
+                    "order": item.orden,
+                },
+            )
+            for item in queryset
+        ]
+        active_count = queryset.filter(activo=True).count()
+        total_count = queryset.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Procedimientos esteticos",
+                "description": "Crea, edita y desactiva procedimientos especificos que luego pueden vincularse a servicios.",
+                "createLabel": "Crear procedimiento",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{ServicioConfig.objects.filter(proc_estetico__isnull=False).count()} configuracion(es) de servicio vinculadas",
+            ),
+            "fields": [
+                _catalog_field(
+                    "procedureTypeId",
+                    "Tipo de procedimiento",
+                    "select",
+                    required=True,
+                    value_type="number",
+                    options=[
+                        _catalog_option(tipo.pk, tipo.tipo)
+                        for tipo in ProcEsteticosTipo.objects.filter(activo=True).order_by("orden", "tipo")
+                    ],
+                ),
+                _catalog_field("name", "Procedimiento", "text", required=True, placeholder="Ej. Borrado de tatuajes"),
+                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas del procedimiento"),
+                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
+            ],
+            "items": items,
+        }
+
+    if catalog_key == "tipos-servicio":
+        queryset = TipoServicio.objects.order_by("orden", "tipo")
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.tipo,
+                "Base comercial del servicio",
+                item.activo,
+                [
+                    {"label": "Orden", "value": str(item.orden)},
+                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {
+                        "label": "Configuraciones activas",
+                        "value": str(item.servicios_config.filter(activo=True).count()),
+                    },
+                ],
+                {
+                    "name": item.tipo,
+                    "description": item.descripcion,
+                    "order": item.orden,
+                },
+            )
+            for item in queryset
+        ]
+        active_count = queryset.filter(activo=True).count()
+        total_count = queryset.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Tipos de servicio",
+                "description": "Administra las categorias comerciales que se usan al vender tratamientos y consultas.",
+                "createLabel": "Crear tipo de servicio",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{ServicioConfig.objects.filter(activo=True).count()} configuracion(es) de servicio activas",
+            ),
+            "fields": [
+                _catalog_field("name", "Tipo de servicio", "text", required=True, placeholder="Ej. Cita de consulta"),
+                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas del tipo de servicio"),
+                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
+            ],
+            "items": items,
+        }
+
+    if catalog_key == "campos-ficha":
+        queryset = (
+            FichaCampo.objects.select_related("seccion__proc_estetico", "grupo_opciones")
+            .order_by("seccion__proc_estetico__proceso", "seccion__orden", "orden", "etiqueta")
+        )
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.etiqueta,
+                f"{item.seccion.proc_estetico.proceso} · {item.seccion.nombre}",
+                item.activo,
+                [
+                    {"label": "Codigo", "value": item.codigo},
+                    {"label": "Tipo", "value": item.get_tipo_campo_display()},
+                    {
+                        "label": "Grupo de opciones",
+                        "value": item.grupo_opciones.nombre if item.grupo_opciones else "Sin grupo",
+                    },
+                    {"label": "Orden", "value": str(item.orden)},
+                    {"label": "Requerido", "value": "Si" if item.requerido else "No"},
+                    {"label": "Detalle", "value": "Permitido" if item.permite_detalle else "No"},
+                ],
+                {
+                    "sectionId": item.seccion_id,
+                    "code": item.codigo,
+                    "label": item.etiqueta,
+                    "fieldType": item.tipo_campo,
+                    "optionGroupId": item.grupo_opciones_id,
+                    "isMultiple": item.es_multiple,
+                    "allowsDetail": item.permite_detalle,
+                    "required": item.requerido,
+                    "order": item.orden,
+                },
+            )
+            for item in queryset
+        ]
+        active_count = queryset.filter(activo=True).count()
+        total_count = queryset.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Campos de ficha",
+                "description": "Gestiona las preguntas configurables que aparecen en las fichas clinicas por procedimiento.",
+                "createLabel": "Crear campo de ficha",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{FichaSeccion.objects.filter(activo=True).count()} seccion(es) disponibles",
+            ),
+            "fields": [
+                _catalog_field(
+                    "sectionId",
+                    "Seccion",
+                    "select",
+                    required=True,
+                    value_type="number",
+                    options=[
+                        _catalog_option(
+                            seccion.pk,
+                            seccion.nombre,
+                            secondary_label=seccion.proc_estetico.proceso,
+                        )
+                        for seccion in FichaSeccion.objects.select_related("proc_estetico").filter(activo=True).order_by(
+                            "proc_estetico__proceso",
+                            "orden",
+                            "nombre",
+                        )
+                    ],
+                ),
+                _catalog_field("code", "Codigo interno", "text", required=True, placeholder="Ej. BRONCEADO"),
+                _catalog_field("label", "Etiqueta visible", "text", required=True, placeholder="Ej. Bronceado reciente"),
+                _catalog_field(
+                    "fieldType",
+                    "Tipo de campo",
+                    "select",
+                    required=True,
+                    options=[
+                        _catalog_option(choice_value, choice_label)
+                        for choice_value, choice_label in FichaCampo.TipoCampo.choices
+                    ],
+                ),
+                _catalog_field(
+                    "optionGroupId",
+                    "Grupo de opciones",
+                    "select",
+                    value_type="number",
+                    allow_empty=True,
+                    options=[
+                        _catalog_option(grupo.pk, grupo.nombre, secondary_label=grupo.codigo)
+                        for grupo in GrupoOpciones.objects.order_by("nombre")
+                    ],
+                    hint="Solo aplica a campos de seleccion.",
+                ),
+                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
+                _catalog_field("isMultiple", "Permite multiples respuestas", "checkbox", value_type="boolean"),
+                _catalog_field("allowsDetail", "Permite detalle adicional", "checkbox", value_type="boolean"),
+                _catalog_field("required", "Campo obligatorio", "checkbox", value_type="boolean"),
+            ],
+            "items": items,
+        }
+
+    if catalog_key == "patologias-cutaneas":
+        queryset = PatologiaCutanea.objects.order_by("orden", "nombre")
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.nombre,
+                "Catalogo clinico",
+                item.activo,
+                [
+                    {"label": "Orden", "value": str(item.orden)},
+                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                ],
+                {
+                    "name": item.nombre,
+                    "description": item.descripcion,
+                    "order": item.orden,
+                },
+            )
+            for item in queryset
+        ]
+        active_count = queryset.filter(activo=True).count()
+        total_count = queryset.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Patologias cutaneas",
+                "description": "Administra las patologias disponibles para el analisis estetico y sus reportes.",
+                "createLabel": "Crear patologia cutanea",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                "Utilizadas en analisis esteticos historicos",
+            ),
+            "fields": [
+                _catalog_field("name", "Patologia cutanea", "text", required=True, placeholder="Ej. Rosacea"),
+                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas o alcance"),
+                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
+            ],
+            "items": items,
+        }
+
+    if catalog_key == "especialidades":
+        queryset = Especialidad.objects.order_by("orden", "nombre")
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.nombre,
+                "Especialidad del equipo",
+                item.activo,
+                [
+                    {"label": "Orden", "value": str(item.orden)},
+                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {
+                        "label": "Especialistas vinculados",
+                        "value": str(item.especialistas_rel.count()),
+                    },
+                ],
+                {
+                    "name": item.nombre,
+                    "description": item.descripcion,
+                    "order": item.orden,
+                },
+            )
+            for item in queryset
+        ]
+        active_count = queryset.filter(activo=True).count()
+        total_count = queryset.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Especialidades",
+                "description": "Administra las especialidades disponibles para asignar al equipo medico y tecnico.",
+                "createLabel": "Crear especialidad",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{Especialista.objects.count()} especialista(s) registrados",
+            ),
+            "fields": [
+                _catalog_field("name", "Especialidad", "text", required=True, placeholder="Ej. Laser terapeutico"),
+                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas sobre la especialidad"),
+                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
+            ],
+            "items": items,
+        }
+
+    if catalog_key == "grupos-opciones":
+        queryset = GrupoOpciones.objects.prefetch_related("opciones").order_by("nombre")
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.nombre,
+                item.codigo,
+                item.activo,
+                [
+                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {"label": "Opciones activas", "value": str(item.opciones.filter(activo=True).count())},
+                    {"label": "Opciones totales", "value": str(item.opciones.count())},
+                ],
+                {
+                    "code": item.codigo,
+                    "name": item.nombre,
+                    "description": item.descripcion,
+                },
+            )
+            for item in queryset
+        ]
+        active_count = queryset.filter(activo=True).count()
+        total_count = queryset.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Grupos de opciones",
+                "description": "Agrupa respuestas reutilizables para campos de ficha y otros formularios dinamicos.",
+                "createLabel": "Crear grupo de opciones",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{OpcionCatalogo.objects.filter(activo=True).count()} opcion(es) activas asociadas",
+            ),
+            "fields": [
+                _catalog_field("code", "Codigo", "text", required=True, placeholder="Ej. SI_NO"),
+                _catalog_field("name", "Nombre", "text", required=True, placeholder="Ej. Si / No"),
+                _catalog_field("description", "Descripcion", "textarea", placeholder="Describe el uso del grupo"),
+            ],
+            "items": items,
+        }
+
+    raise KeyError(catalog_key)
+
+
+def _catalog_parse_payload(catalog_key, payload, instance=None):
+    catalog_key = _catalog_key_to_slug(catalog_key)
+    errors = {}
+
+    def text_value(field_name):
+        return (payload.get(field_name) or "").strip()
+
+    def int_value(field_name, *, required=False, minimum=0, allow_empty=False):
+        raw = payload.get(field_name)
+        if raw in (None, ""):
+            if required and not allow_empty:
+                errors[field_name] = "Este campo es obligatorio."
+            return None
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            errors[field_name] = "Debes enviar un numero valido."
+            return None
+        if value < minimum:
+            errors[field_name] = f"El valor minimo permitido es {minimum}."
+            return None
+        return value
+
+    def decimal_value(field_name, *, required=False, minimum=Decimal("0")):
+        raw = payload.get(field_name)
+        if raw in (None, ""):
+            if required:
+                errors[field_name] = "Este campo es obligatorio."
+            return None
+        try:
+            value = Decimal(str(raw))
+        except (InvalidOperation, TypeError, ValueError):
+            errors[field_name] = "Debes enviar un monto valido."
+            return None
+        if value < minimum:
+            errors[field_name] = f"El valor minimo permitido es {minimum}."
+            return None
+        return value
+
+    def bool_value(field_name):
+        return bool(payload.get(field_name))
+
+    if catalog_key == "todos-los-servicios":
+        service_type_id = int_value("serviceTypeId", required=True, minimum=1)
+        procedure_id = int_value("procedureId", minimum=1, allow_empty=True)
+        base_price = decimal_value("basePrice", required=True)
+        if errors:
+            raise ValidationError(errors)
+
+        service_type = TipoServicio.objects.filter(pk=service_type_id).first()
+        if not service_type:
+            raise ValidationError({"serviceTypeId": "Selecciona un tipo de servicio valido."})
+
+        procedure = None
+        if procedure_id:
+            procedure = ProcEstetico.objects.filter(pk=procedure_id).first()
+            if not procedure:
+                raise ValidationError({"procedureId": "Selecciona un procedimiento valido."})
+
+        obj = instance or ServicioConfig()
+        obj.tipo_servicio = service_type
+        obj.proc_estetico = procedure
+        obj.precio_base = base_price
+        return obj
+
+    if catalog_key == "procedimientos-esteticos":
+        procedure_type_id = int_value("procedureTypeId", required=True, minimum=1)
+        name = text_value("name")
+        if not name:
+            errors["name"] = "El nombre del procedimiento es obligatorio."
+        order = int_value("order", minimum=0, allow_empty=True)
+        if errors:
+            raise ValidationError(errors)
+        procedure_type = ProcEsteticosTipo.objects.filter(pk=procedure_type_id).first()
+        if not procedure_type:
+            raise ValidationError({"procedureTypeId": "Selecciona un tipo de procedimiento valido."})
+        obj = instance or ProcEstetico()
+        obj.tipo_p_estetico = procedure_type
+        obj.proceso = name
+        obj.descripcion = text_value("description")
+        obj.orden = order or 0
+        return obj
+
+    if catalog_key == "tipos-servicio":
+        name = text_value("name")
+        if not name:
+            errors["name"] = "El nombre del tipo de servicio es obligatorio."
+        order = int_value("order", minimum=0, allow_empty=True)
+        if errors:
+            raise ValidationError(errors)
+        obj = instance or TipoServicio()
+        obj.tipo = name
+        obj.descripcion = text_value("description")
+        obj.orden = order or 0
+        return obj
+
+    if catalog_key == "campos-ficha":
+        section_id = int_value("sectionId", required=True, minimum=1)
+        code = text_value("code")
+        label = text_value("label")
+        field_type = text_value("fieldType")
+        option_group_id = int_value("optionGroupId", minimum=1, allow_empty=True)
+        order = int_value("order", minimum=0, allow_empty=True)
+
+        if not code:
+            errors["code"] = "El codigo interno es obligatorio."
+        if not label:
+            errors["label"] = "La etiqueta visible es obligatoria."
+        if field_type not in {choice for choice, _ in FichaCampo.TipoCampo.choices}:
+            errors["fieldType"] = "Selecciona un tipo de campo valido."
+        if errors:
+            raise ValidationError(errors)
+
+        section = FichaSeccion.objects.filter(pk=section_id).first()
+        if not section:
+            raise ValidationError({"sectionId": "Selecciona una seccion valida."})
+
+        option_group = None
+        if option_group_id:
+            option_group = GrupoOpciones.objects.filter(pk=option_group_id).first()
+            if not option_group:
+                raise ValidationError({"optionGroupId": "Selecciona un grupo de opciones valido."})
+
+        obj = instance or FichaCampo()
+        obj.seccion = section
+        obj.codigo = code
+        obj.etiqueta = label
+        obj.tipo_campo = field_type
+        obj.grupo_opciones = option_group
+        obj.es_multiple = bool_value("isMultiple")
+        obj.permite_detalle = bool_value("allowsDetail")
+        obj.requerido = bool_value("required")
+        obj.orden = order or 0
+        return obj
+
+    if catalog_key == "patologias-cutaneas":
+        name = text_value("name")
+        if not name:
+            errors["name"] = "El nombre de la patologia es obligatorio."
+        order = int_value("order", minimum=0, allow_empty=True)
+        if errors:
+            raise ValidationError(errors)
+        obj = instance or PatologiaCutanea()
+        obj.nombre = name
+        obj.descripcion = text_value("description")
+        obj.orden = order or 0
+        return obj
+
+    if catalog_key == "especialidades":
+        name = text_value("name")
+        if not name:
+            errors["name"] = "El nombre de la especialidad es obligatorio."
+        order = int_value("order", minimum=0, allow_empty=True)
+        if errors:
+            raise ValidationError(errors)
+        obj = instance or Especialidad()
+        obj.nombre = name
+        obj.descripcion = text_value("description")
+        obj.orden = order or 0
+        return obj
+
+    if catalog_key == "grupos-opciones":
+        code = text_value("code")
+        name = text_value("name")
+        if not code:
+            errors["code"] = "El codigo es obligatorio."
+        if not name:
+            errors["name"] = "El nombre es obligatorio."
+        if errors:
+            raise ValidationError(errors)
+        obj = instance or GrupoOpciones()
+        obj.codigo = code
+        obj.nombre = name
+        obj.descripcion = text_value("description")
+        return obj
+
+    raise KeyError(catalog_key)
+
+
+def _catalog_get_instance(catalog_key, item_id):
+    catalog_key = _catalog_key_to_slug(catalog_key)
+    model_map = {
+        "todos-los-servicios": ServicioConfig,
+        "procedimientos-esteticos": ProcEstetico,
+        "tipos-servicio": TipoServicio,
+        "campos-ficha": FichaCampo,
+        "patologias-cutaneas": PatologiaCutanea,
+        "especialidades": Especialidad,
+        "grupos-opciones": GrupoOpciones,
+    }
+    return model_map[catalog_key].objects.filter(pk=item_id).first()
+
+
 def _staff_item(especialista):
     citas = list(especialista.citas_medicas.all())
     now = timezone.now()
@@ -319,13 +1080,25 @@ def _staff_item(especialista):
 
     return {
         "id": f"STF-{especialista.pk:04d}",
+        "rawId": especialista.pk,
         "specialist": _full_name(especialista.usuario),
         "specialty": ", ".join(specialties) if specialties else "Sin especialidad",
+        "specialtyIds": [rel.especialidad_id for rel in especialista.especialidades_rel.all()],
         "load": load,
         "pendingValidations": pending_biometric,
-        "phone": especialista.telefono or "Sin telefono",
+        "username": especialista.usuario.username,
+        "email": especialista.usuario.email or "",
+        "primerNombre": especialista.usuario.primer_nombre,
+        "segundoNombre": especialista.usuario.segundo_nombre,
+        "apellidoPaterno": especialista.usuario.apellido_paterno,
+        "apellidoMaterno": especialista.usuario.apellido_materno,
+        "ci": especialista.ci or "",
+        "phone": especialista.telefono or "",
+        "status": "Activo" if especialista.usuario.is_active else "Inactivo",
+        "isActive": bool(especialista.usuario.is_active),
         "activeOperations": len(active_operations),
         "upcomingAppointments": len(upcoming),
+        "observations": especialista.observaciones or "",
     }
 
 
@@ -336,6 +1109,80 @@ def _metric(identifier, label, value, delta, tone):
         "value": str(value),
         "delta": delta,
         "tone": tone,
+    }
+
+
+def _staff_specialty_option(item):
+    return {
+        "id": item.pk,
+        "label": item.nombre,
+    }
+
+
+def _get_worker_role():
+    role, _ = Rol.objects.get_or_create(rol="TRABAJADOR")
+    return role
+
+
+def _clear_specialist_availability(especialista):
+    DisponibilidadCita.objects.filter(especialista=especialista).delete()
+    AgendaHabitualEspecialista.objects.filter(especialista=especialista).delete()
+    AgendaExcepcionEspecialista.objects.filter(especialista=especialista).delete()
+
+
+def _parse_staff_payload(payload, errors, *, instance=None):
+    username = (payload.get("username") or "").strip()
+    email = (payload.get("email") or "").strip()
+    primer_nombre = (payload.get("primerNombre") or "").strip()
+    segundo_nombre = (payload.get("segundoNombre") or "").strip()
+    apellido_paterno = (payload.get("apellidoPaterno") or "").strip()
+    apellido_materno = (payload.get("apellidoMaterno") or "").strip()
+    ci = (payload.get("ci") or "").strip()
+    telefono = (payload.get("telefono") or "").strip()
+    observaciones = (payload.get("observaciones") or "").strip()
+    password = payload.get("password") or ""
+    specialty_ids = payload.get("specialtyIds") or []
+
+    if not username:
+        errors["username"] = "El nombre de usuario es obligatorio."
+    if not primer_nombre:
+        errors["primerNombre"] = "El primer nombre es obligatorio."
+    if not apellido_paterno:
+        errors["apellidoPaterno"] = "El apellido paterno es obligatorio."
+    if not specialty_ids:
+        errors["specialtyIds"] = "Debes seleccionar al menos una especialidad."
+    if instance is None and not password:
+        errors["password"] = "La contraseña inicial es obligatoria."
+
+    specialties = list(Especialidad.objects.filter(pk__in=specialty_ids, activo=True))
+    if len(specialties) != len(set(specialty_ids)):
+        errors["specialtyIds"] = "Alguna de las especialidades ya no está disponible."
+
+    if errors:
+        return None
+
+    usuario = instance.usuario if instance else Usuario()
+    usuario.username = username
+    usuario.email = email
+    usuario.primer_nombre = primer_nombre
+    usuario.segundo_nombre = segundo_nombre
+    usuario.apellido_paterno = apellido_paterno
+    usuario.apellido_materno = apellido_materno
+    usuario.rol = _get_worker_role()
+    if instance is None:
+        usuario.is_active = True
+    if password:
+        usuario.set_password(password)
+
+    especialista = instance or Especialista(usuario=usuario)
+    especialista.ci = ci
+    especialista.telefono = telefono
+    especialista.observaciones = observaciones
+
+    return {
+        "usuario": usuario,
+        "especialista": especialista,
+        "specialties": specialties,
     }
 
 
@@ -909,69 +1756,45 @@ def admin_catalogos(request):
     active_options = OpcionCatalogo.objects.filter(activo=True).count()
 
     data = {
-        "metrics": [
-            _metric(
-                "catalog-procedures",
-                "Procedimientos activos",
-                ProcEstetico.objects.filter(activo=True).count(),
-                f"{active_services} servicio(s) configurados",
-                "primary",
-            ),
-            _metric(
-                "catalog-types",
-                "Tipos de servicio",
-                active_service_types,
-                "Base comercial editable",
-                "success",
-            ),
-            _metric(
-                "catalog-fields",
-                "Campos de ficha",
-                FichaCampo.objects.filter(activo=True).count(),
-                f"{active_groups} grupo(s) de opciones",
-                "warning",
-            ),
-            _metric(
-                "catalog-options",
-                "Opciones catalogadas",
-                active_options,
-                "Respuestas reutilizables para fichas y analisis",
-                "danger",
-            ),
-        ],
         "catalogs": [
             _catalog_item(
-                "procedures",
+                "todos-los-servicios",
+                "Todos los servicios",
+                ServicioConfig.objects.filter(activo=True).count(),
+                "Servicios completos con precio base y procedimiento asociado",
+            ),
+            _catalog_item(
+                "procedimientos-esteticos",
                 "Procedimientos esteticos",
                 ProcEstetico.objects.filter(activo=True).count(),
                 f"{ServicioConfig.objects.filter(activo=True).count()} configuraciones activas de servicio",
             ),
             _catalog_item(
-                "service-types",
+                "tipos-servicio",
                 "Tipos de servicio",
                 active_service_types,
                 "Categorias comerciales visibles en operaciones y ventas",
             ),
             _catalog_item(
-                "form-fields",
+                "campos-ficha",
                 "Campos de ficha",
                 FichaCampo.objects.filter(activo=True).count(),
                 f"{FichaCampo.objects.filter(activo=False).count()} campo(s) inactivos preservados",
             ),
             _catalog_item(
-                "option-groups",
+                "grupos-opciones",
                 "Grupos de opciones",
                 active_groups,
                 f"{active_options} opcion(es) activas asociadas",
             ),
             _catalog_item(
-                "skin-pathologies",
+                "patologias-cutaneas",
                 "Patologias cutaneas",
                 PatologiaCutanea.objects.filter(activo=True).count(),
                 "Disponibles para analisis estetico y reportes",
             ),
             _catalog_item(
-                "specialties",
+                "especialidades",
                 "Especialidades",
                 Especialidad.objects.filter(activo=True).count(),
                 "Catalogo usado para especialistas y asignaciones del equipo",
@@ -979,6 +1802,102 @@ def admin_catalogos(request):
         ],
     }
     return _json(data)
+
+
+@require_GET
+@_admin_required
+def admin_catalogo_detalle(request, catalog_key):
+    try:
+        data = _catalog_page_data(catalog_key)
+    except KeyError:
+        return _json({"detail": "El catalogo solicitado no existe."}, status=404)
+    return _json(data)
+
+
+@require_POST
+@_admin_required
+def admin_catalogo_crear(request, catalog_key):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    try:
+        obj = _catalog_parse_payload(catalog_key, payload)
+        obj.full_clean()
+        obj.save()
+    except KeyError:
+        return _json({"detail": "El catalogo solicitado no existe."}, status=404)
+    except ValidationError as exc:
+        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+    except IntegrityError:
+        return _json({"detail": "Ya existe un registro con esos datos clave."}, status=400)
+
+    return _json(
+        {
+            "detail": "Registro creado correctamente.",
+            "item": next(item for item in _catalog_page_data(catalog_key)["items"] if item["id"] == obj.pk),
+        },
+        status=201,
+    )
+
+
+@require_POST
+@_admin_required
+def admin_catalogo_actualizar(request, catalog_key, item_id):
+    instance = _catalog_get_instance(catalog_key, item_id)
+    if not instance:
+        return _json({"detail": "No encontramos el registro solicitado."}, status=404)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    try:
+        obj = _catalog_parse_payload(catalog_key, payload, instance=instance)
+        obj.full_clean()
+        obj.save()
+    except KeyError:
+        return _json({"detail": "El catalogo solicitado no existe."}, status=404)
+    except ValidationError as exc:
+        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+    except IntegrityError:
+        return _json({"detail": "Ya existe un registro con esos datos clave."}, status=400)
+
+    return _json(
+        {
+            "detail": "Registro actualizado correctamente.",
+            "item": next(item for item in _catalog_page_data(catalog_key)["items"] if item["id"] == obj.pk),
+        }
+    )
+
+
+@require_POST
+@_admin_required
+def admin_catalogo_estado(request, catalog_key, item_id):
+    instance = _catalog_get_instance(catalog_key, item_id)
+    if not instance:
+        return _json({"detail": "No encontramos el registro solicitado."}, status=404)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    active = payload.get("active")
+    if not isinstance(active, bool):
+        return _json({"detail": "Debes indicar si el registro queda activo o inactivo."}, status=400)
+
+    instance.activo = active
+    instance.save(update_fields=["activo", "updated_at"])
+
+    return _json(
+        {
+            "detail": "Estado actualizado correctamente.",
+            "item": next(item for item in _catalog_page_data(catalog_key)["items"] if item["id"] == instance.pk),
+        }
+    )
 
 
 @require_GET
@@ -993,19 +1912,21 @@ def admin_equipo(request):
                 queryset=CitaMedica.objects.select_related("operacion").order_by("fecha_hora"),
             ),
         )
-        .order_by("usuario__primer_nombre", "usuario__apellido_paterno")
+        .order_by("-usuario__is_active", "usuario__primer_nombre", "usuario__apellido_paterno")
     )
     upcoming_appointments = CitaMedica.objects.filter(fecha_hora__gte=timezone.now()).count()
     pending_biometric = CitaMedica.objects.filter(
         estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
     ).count()
+    active_staff = staff_qs.filter(usuario__is_active=True).count()
+    inactive_staff = staff_qs.filter(usuario__is_active=False).count()
 
     data = {
         "metrics": [
             _metric(
                 "team-specialists",
                 "Especialistas activos",
-                staff_qs.count(),
+                active_staff,
                 "Usuarios con perfil operativo asignado",
                 "primary",
             ),
@@ -1030,7 +1951,166 @@ def admin_equipo(request):
                 "Citas realizadas sin cierre final",
                 "danger",
             ),
+            _metric(
+                "team-inactive",
+                "Especialistas inactivos",
+                inactive_staff,
+                "Sin disponibilidad publicada",
+                "warning",
+            ),
         ],
         "staff": [_staff_item(especialista) for especialista in staff_qs],
+        "specialtyOptions": [
+            _staff_specialty_option(item)
+            for item in Especialidad.objects.filter(activo=True).order_by("orden", "nombre")
+        ],
     }
     return _json(data)
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_crear_especialista(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    errors = {}
+    parsed = _parse_staff_payload(payload, errors)
+    if errors:
+        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+
+    usuario = parsed["usuario"]
+    especialista = parsed["especialista"]
+    specialties = parsed["specialties"]
+
+    try:
+        usuario.full_clean()
+        usuario.save()
+        especialista.usuario = usuario
+        especialista.full_clean()
+        especialista.save()
+    except ValidationError as exc:
+        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+    except IntegrityError:
+        return _json({"detail": "Ya existe un especialista o usuario con esos datos."}, status=400)
+
+    EspecialistaEspecialidad.objects.bulk_create(
+        [
+            EspecialistaEspecialidad(especialista=especialista, especialidad=especialidad)
+            for especialidad in specialties
+        ]
+    )
+
+    especialista = (
+        Especialista.objects.select_related("usuario")
+        .prefetch_related("especialidades_rel__especialidad", "citas_medicas")
+        .get(pk=especialista.pk)
+    )
+
+    return _json(
+        {
+            "detail": "Especialista creado correctamente.",
+            "staffMember": _staff_item(especialista),
+        },
+        status=201,
+    )
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_actualizar_especialista(request, specialist_id):
+    especialista = (
+        Especialista.objects.select_related("usuario")
+        .prefetch_related("especialidades_rel")
+        .filter(pk=specialist_id)
+        .first()
+    )
+    if not especialista:
+        return _json({"detail": "No encontramos el especialista solicitado."}, status=404)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    errors = {}
+    parsed = _parse_staff_payload(payload, errors, instance=especialista)
+    if errors:
+        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+
+    usuario = parsed["usuario"]
+    especialista = parsed["especialista"]
+    specialties = parsed["specialties"]
+
+    try:
+        usuario.full_clean()
+        usuario.save()
+        especialista.full_clean()
+        especialista.save()
+    except ValidationError as exc:
+        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+    except IntegrityError:
+        return _json({"detail": "Ya existe un especialista o usuario con esos datos."}, status=400)
+
+    especialista.especialidades_rel.all().delete()
+    EspecialistaEspecialidad.objects.bulk_create(
+        [
+            EspecialistaEspecialidad(especialista=especialista, especialidad=especialidad)
+            for especialidad in specialties
+        ]
+    )
+
+    especialista = (
+        Especialista.objects.select_related("usuario")
+        .prefetch_related("especialidades_rel__especialidad", "citas_medicas")
+        .get(pk=especialista.pk)
+    )
+
+    return _json(
+        {
+            "detail": "Especialista actualizado correctamente.",
+            "staffMember": _staff_item(especialista),
+        }
+    )
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_estado_especialista(request, specialist_id):
+    especialista = Especialista.objects.select_related("usuario").filter(pk=specialist_id).first()
+    if not especialista:
+        return _json({"detail": "No encontramos el especialista solicitado."}, status=404)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    active = payload.get("active")
+    if not isinstance(active, bool):
+        return _json({"detail": "Debes indicar si el especialista quedará activo o inactivo."}, status=400)
+
+    especialista.usuario.is_active = active
+    especialista.usuario.save(update_fields=["is_active"])
+    if not active:
+        _clear_specialist_availability(especialista)
+
+    especialista = (
+        Especialista.objects.select_related("usuario")
+        .prefetch_related("especialidades_rel__especialidad", "citas_medicas")
+        .get(pk=especialista.pk)
+    )
+
+    return _json(
+        {
+            "detail": "Especialista activado correctamente."
+            if active
+            else "Especialista desactivado y disponibilidad eliminada correctamente.",
+            "staffMember": _staff_item(especialista),
+        }
+    )

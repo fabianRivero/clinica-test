@@ -2,8 +2,19 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 
 import { AdminLayout } from './layouts/AdminLayout'
 import { ClientLayout } from './layouts/ClientLayout'
-import { AdminCatalogsPage } from './pages/admin/AdminCatalogsPage'
-import { AdminAvailabilityPage } from './pages/admin/AdminAvailabilityPage'
+import {
+  AdminAllServicesCatalogPage,
+  AdminProceduresCatalogPage,
+  AdminServiceTypesCatalogPage,
+  AdminSkinPathologiesCatalogPage,
+  AdminSpecialtiesCatalogPage,
+} from './pages/admin/AdminCatalogsPage'
+import {
+  AdminAvailabilityBlocksPage,
+  AdminAvailabilitySchedulesPage,
+  AdminAvailabilityVisiblePage,
+} from './pages/admin/AdminAvailabilityPage'
+import { AdminClientsPage } from './pages/admin/AdminClientsPage'
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
 import { AdminOperationDetailPage } from './pages/admin/AdminOperationDetailPage'
 import { AdminOperationsPage } from './pages/admin/AdminOperationsPage'
@@ -11,7 +22,7 @@ import { AdminPaymentsPage } from './pages/admin/AdminPaymentsPage'
 import { AdminProspectConvertPage } from './pages/admin/AdminProspectConvertPage'
 import { AdminProspectCreatePage } from './pages/admin/AdminProspectCreatePage'
 import { AdminProspectsPage } from './pages/admin/AdminProspectsPage'
-import { AdminStaffPage } from './pages/admin/AdminStaffPage'
+import { AdminStaffCreatePage, AdminStaffManagePage } from './pages/admin/AdminStaffPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { ClientDashboardPage } from './pages/client/ClientDashboardPage'
 import { ClientPaymentsPage } from './pages/client/ClientPaymentsPage'
@@ -90,14 +101,31 @@ function App() {
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboardPage />} />
           <Route path="prospectos" element={<AdminProspectsPage />} />
+          <Route path="clientes" element={<AdminClientsPage />} />
           <Route path="prospectos/nuevo" element={<AdminProspectCreatePage />} />
           <Route path="prospectos/:prospectId/convertir" element={<AdminProspectConvertPage />} />
           <Route path="operaciones" element={<AdminOperationsPage />} />
           <Route path="operaciones/:operationId" element={<AdminOperationDetailPage />} />
-          <Route path="disponibilidad" element={<AdminAvailabilityPage />} />
+          <Route
+            path="disponibilidad"
+            element={<Navigate to="/admin/disponibilidad/visibles" replace />}
+          />
+          <Route path="disponibilidad/visibles" element={<AdminAvailabilityVisiblePage />} />
+          <Route path="disponibilidad/bloques" element={<AdminAvailabilityBlocksPage />} />
+          <Route path="disponibilidad/gestionar" element={<AdminAvailabilitySchedulesPage />} />
           <Route path="pagos" element={<AdminPaymentsPage />} />
-          <Route path="catalogos" element={<AdminCatalogsPage />} />
-          <Route path="equipo" element={<AdminStaffPage />} />
+          <Route
+            path="catalogos"
+            element={<Navigate to="/admin/catalogos/todos-los-servicios" replace />}
+          />
+          <Route path="catalogos/todos-los-servicios" element={<AdminAllServicesCatalogPage />} />
+          <Route path="catalogos/procedimientos-esteticos" element={<AdminProceduresCatalogPage />} />
+          <Route path="catalogos/tipos-servicio" element={<AdminServiceTypesCatalogPage />} />
+          <Route path="catalogos/patologias-cutaneas" element={<AdminSkinPathologiesCatalogPage />} />
+          <Route path="catalogos/especialidades" element={<AdminSpecialtiesCatalogPage />} />
+          <Route path="equipo" element={<Navigate to="/admin/equipo/gestionar" replace />} />
+          <Route path="equipo/crear" element={<AdminStaffCreatePage />} />
+          <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />
         </Route>
       </Route>
 
