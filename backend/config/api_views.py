@@ -262,6 +262,23 @@ def _prospect_item(prospecto):
 
 def _client_item(cliente):
     analisis = next(iter(cliente.analisis_esteticos.all()), None)
+    scheduled_appointments = []
+    for operacion in cliente.operaciones.all():
+        for cita in operacion.citas_medicas.all():
+            if cita.estado != CitaMedica.Estado.PROGRAMADA:
+                continue
+            scheduled_appointments.append(
+                {
+                    "id": f"CIT-{cita.pk:04d}",
+                    "rawId": cita.pk,
+                    "dateTime": _datetime_label(cita.fecha_hora),
+                    "operation": _procedure_name(operacion),
+                    "specialist": _full_name(cita.medico.usuario),
+                    "status": cita.get_estado_display(),
+                }
+            )
+
+    scheduled_appointments.sort(key=lambda item: item["dateTime"])
     return {
         "id": f"CLI-{cliente.pk:04d}",
         "name": _full_name(cliente.usuario),
@@ -270,6 +287,7 @@ def _client_item(cliente):
         "activeOperations": cliente.operaciones.filter(estado=Operacion.Estado.EN_PROCESO).count(),
         "totalOperations": cliente.operaciones.count(),
         "lastAnalysis": _date_label(analisis.fecha_analisis) if analisis else "Sin analisis",
+        "scheduledAppointments": scheduled_appointments,
     }
 
 
@@ -1425,7 +1443,20 @@ def admin_prospectos(request):
     prospectos_qs = Prospecto.objects.select_related("registrado_por").order_by("-created_at")
     clientes_qs = (
         Cliente.objects.select_related("usuario")
-        .prefetch_related("operaciones", "analisis_esteticos")
+        .prefetch_related(
+            Prefetch(
+                "operaciones",
+                queryset=Operacion.objects.prefetch_related(
+                    Prefetch(
+                        "citas_medicas",
+                        queryset=CitaMedica.objects.select_related("medico__usuario").order_by(
+                            "fecha_hora"
+                        ),
+                    )
+                ),
+            ),
+            "analisis_esteticos",
+        )
         .order_by("usuario__primer_nombre", "usuario__apellido_paterno")
     )
 
@@ -1464,6 +1495,50 @@ def admin_prospectos(request):
         "clients": [_client_item(cliente) for cliente in clientes_qs],
     }
     return _json(data)
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_cancel_appointment(request, appointment_id):
+    appointment = (
+        CitaMedica.objects.select_related(
+            "medico__usuario",
+            "operacion__paciente__usuario",
+            "operacion__servicio_config__tipo_servicio",
+            "operacion__servicio_config__proc_estetico",
+        )
+        .filter(pk=appointment_id)
+        .first()
+    )
+    if not appointment:
+        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+
+    if appointment.estado != CitaMedica.Estado.PROGRAMADA:
+        return _json(
+            {
+                "detail": "Solo se pueden cancelar citas que todavia esten programadas."
+            },
+            status=400,
+        )
+
+    appointment.estado = CitaMedica.Estado.CANCELADA
+    appointment.verif_biometria = False
+    appointment.save()
+
+    return _json(
+        {
+            "detail": "La cita programada fue cancelada correctamente.",
+            "appointment": {
+                "id": f"CIT-{appointment.pk:04d}",
+                "rawId": appointment.pk,
+                "dateTime": _datetime_label(appointment.fecha_hora),
+                "operation": _procedure_name(appointment.operacion),
+                "specialist": _full_name(appointment.medico.usuario),
+                "status": appointment.get_estado_display(),
+            },
+        }
+    )
 
 
 @require_POST

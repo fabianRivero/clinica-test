@@ -941,7 +941,7 @@ def client_create_reservation(request, operation_id):
 @transaction.atomic
 def client_update_reservation(request, appointment_id):
     cita = (
-        CitaMedica.objects.select_for_update()
+        CitaMedica.objects.select_for_update(of=("self",))
         .select_related(
             "operacion__servicio_config__tipo_servicio",
             "operacion__servicio_config__proc_estetico",
@@ -1008,7 +1008,7 @@ def client_update_reservation(request, appointment_id):
 @transaction.atomic
 def client_cancel_reservation(request, appointment_id):
     cita = (
-        CitaMedica.objects.select_for_update()
+        CitaMedica.objects.select_for_update(of=("self",))
         .select_related(
             "operacion__servicio_config__tipo_servicio",
             "operacion__servicio_config__proc_estetico",

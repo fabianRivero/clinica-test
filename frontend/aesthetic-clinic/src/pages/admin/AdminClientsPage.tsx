@@ -5,10 +5,40 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
-import { getAdminProspects } from '../../services/api/admin'
+import { useNotifications } from '../../providers/NotificationProvider'
+import { cancelAdminAppointment, getAdminProspects } from '../../services/api/admin'
 
 export function AdminClientsPage() {
-  const { data, isLoading, error } = useApiResource(getAdminProspects)
+  const { data, isLoading, error, reload } = useApiResource(getAdminProspects)
+  const { showNotification } = useNotifications()
+
+  async function handleCancelAppointment(appointmentId: number) {
+    const shouldCancel = window.confirm(
+      'Se cancelara la cita programada del cliente y el cupo volvera a quedar disponible. ¿Deseas continuar?',
+    )
+    if (!shouldCancel) {
+      return
+    }
+
+    try {
+      const response = await cancelAdminAppointment(appointmentId)
+      showNotification({
+        title: 'Cita cancelada',
+        message: response.detail,
+        tone: 'success',
+      })
+      reload()
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo cancelar la cita',
+        message:
+          requestError instanceof Error
+            ? requestError.message
+            : 'Intenta nuevamente en unos segundos.',
+        tone: 'danger',
+      })
+    }
+  }
 
   return (
     <div className="page-stack">
@@ -60,6 +90,7 @@ export function AdminClientsPage() {
                       <th>Operaciones activas</th>
                       <th>Historial</th>
                       <th>Ultimo analisis</th>
+                      <th>Citas programadas</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -75,6 +106,31 @@ export function AdminClientsPage() {
                         <td>{client.activeOperations}</td>
                         <td>{client.totalOperations}</td>
                         <td>{client.lastAnalysis}</td>
+                        <td>
+                          {client.scheduledAppointments.length ? (
+                            <div className="table-action-list">
+                              {client.scheduledAppointments.map((appointment) => (
+                                <div key={appointment.id} className="table-action-list__item">
+                                  <div>
+                                    <strong>{appointment.dateTime}</strong>
+                                    <span>
+                                      {appointment.operation} · {appointment.specialist}
+                                    </span>
+                                  </div>
+                                  <button
+                                    className="button button--ghost button--compact"
+                                    type="button"
+                                    onClick={() => void handleCancelAppointment(appointment.rawId)}
+                                  >
+                                    Cancelar cita
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span>Sin citas programadas</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

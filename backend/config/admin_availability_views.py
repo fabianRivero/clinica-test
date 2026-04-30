@@ -135,6 +135,10 @@ def _slot_item(slot):
             if operation
             else ""
         ),
+        "appointmentId": booking.pk if booking else None,
+        "appointmentCanCancel": bool(
+            booking and booking.estado == CitaMedica.Estado.PROGRAMADA
+        ),
         "reservationState": booking.get_estado_display() if booking else "",
         "active": slot.activo,
         "detail": slot.detalle,

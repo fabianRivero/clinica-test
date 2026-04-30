@@ -844,6 +844,23 @@
   }
 }
 
+.table-action-list {
+  display: grid;
+  gap: var(--spacing-2);
+}
+
+.table-action-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+
+  strong,
+  span {
+    display: block;
+  }
+}
+
 .field--inline {
   display: inline-flex;
   align-items: center;

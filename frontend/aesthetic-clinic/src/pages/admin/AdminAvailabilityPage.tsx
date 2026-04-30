@@ -9,6 +9,7 @@ import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
+  cancelAdminAppointment,
   createAdminAvailabilityException,
   createAdminHabitualSchedule,
   createAdminTimeSlot,
@@ -548,6 +549,35 @@ function useAdminAvailabilityController() {
     }
   }
 
+  async function handleCancelReservedAppointment(appointmentId: number) {
+    const shouldCancel = window.confirm(
+      'Se cancelara la cita programada y el cupo volvera a quedar disponible para nuevas reservas. ¿Deseas continuar?',
+    )
+    if (!shouldCancel) {
+      return
+    }
+
+    setSubmitError(null)
+    setIsSubmitting(true)
+    try {
+      const response = await cancelAdminAppointment(appointmentId)
+      showNotification({
+        title: 'Cita cancelada',
+        message: response.detail,
+        tone: 'success',
+      })
+      refreshAvailability()
+    } catch (requestError) {
+      setSubmitError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo cancelar la cita programada.',
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   return {
     data,
     error,
@@ -598,6 +628,7 @@ function useAdminAvailabilityController() {
     handleExceptionSubmit,
     handleDeleteException,
     handleGlobalAction,
+    handleCancelReservedAppointment,
   }
 }
 
@@ -765,7 +796,11 @@ function VisibleAvailabilitySection({ controller }: { controller: AvailabilityCo
         <>
           <div className="availability-slot-list">
             {controller.paginatedVisibleSlots.map((slot) => (
-              <VisibleSlotCard key={slot.id} slot={slot} />
+              <VisibleSlotCard
+                key={slot.id}
+                slot={slot}
+                onCancelAppointment={controller.handleCancelReservedAppointment}
+              />
             ))}
           </div>
 
@@ -791,7 +826,13 @@ function VisibleAvailabilitySection({ controller }: { controller: AvailabilityCo
   )
 }
 
-function VisibleSlotCard({ slot }: { slot: AdminAvailabilitySlot }) {
+function VisibleSlotCard({
+  slot,
+  onCancelAppointment,
+}: {
+  slot: AdminAvailabilitySlot
+  onCancelAppointment: (appointmentId: number) => Promise<void>
+}) {
   return (
     <article className="availability-slot-card">
       <header>
@@ -823,6 +864,17 @@ function VisibleSlotCard({ slot }: { slot: AdminAvailabilitySlot }) {
           <span className="availability-form__empty">Sin alcance configurado.</span>
         )}
       </div>
+      {slot.appointmentCanCancel && slot.appointmentId ? (
+        <div className="catalog-admin-card__actions">
+          <button
+            className="button button--ghost button--compact"
+            type="button"
+            onClick={() => void onCancelAppointment(slot.appointmentId as number)}
+          >
+            Cancelar cita
+          </button>
+        </div>
+      ) : null}
     </article>
   )
 }

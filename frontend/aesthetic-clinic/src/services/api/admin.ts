@@ -5,6 +5,7 @@ import type {
   AdminCatalogMutationResponse,
   AdminStaffMutationResponse,
   AdminAvailabilityMutationResponse,
+  AdminCancelAppointmentResponse,
   CatalogsResponse,
   CreateAdminStaffPayload,
   CreateAdminAvailabilityExceptionPayload,
@@ -120,6 +121,13 @@ export function getAdminDashboard() {
 
 export function getAdminProspects() {
   return requestJson<ProspectsResponse>('/api/admin/prospectos/')
+}
+
+export function cancelAdminAppointment(appointmentId: number) {
+  return requestJsonWithBody<AdminCancelAppointmentResponse>(
+    `/api/admin/citas/${appointmentId}/cancelar/`,
+    {},
+  )
 }
 
 export function getAdminOperations() {

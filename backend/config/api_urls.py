@@ -18,6 +18,7 @@ from config.api_views import (
     admin_catalogo_crear,
     admin_catalogo_detalle,
     admin_catalogo_estado,
+    admin_cancel_appointment,
     admin_catalogos,
     admin_crear_especialista,
     admin_crear_prospecto,
@@ -77,6 +78,7 @@ urlpatterns = [
     ),
     path("operaciones/", admin_operaciones, name="admin-operaciones-api"),
     path("operaciones/<int:operacion_id>/", admin_operacion_detalle, name="admin-operacion-detail-api"),
+    path("citas/<int:appointment_id>/cancelar/", admin_cancel_appointment, name="admin-appointment-cancel-api"),
     path("disponibilidad/", admin_availability, name="admin-availability-api"),
     path("disponibilidad/horarios/crear/", admin_create_time_slot, name="admin-availability-time-slot-create-api"),
     path(

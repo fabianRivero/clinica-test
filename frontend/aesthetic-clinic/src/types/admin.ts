@@ -109,6 +109,16 @@ export type ClientSnapshot = {
   activeOperations: number
   totalOperations: number
   lastAnalysis: string
+  scheduledAppointments: ClientScheduledAppointment[]
+}
+
+export type ClientScheduledAppointment = {
+  id: string
+  rawId: number
+  dateTime: string
+  operation: string
+  specialist: string
+  status: string
 }
 
 export type DashboardResponse = {
@@ -402,6 +412,8 @@ export type AdminGlobalAvailabilityBlock = {
 export type AdminAvailabilitySlot = {
   id: string
   rawId: number
+  appointmentId: number | null
+  appointmentCanCancel: boolean
   specialistId: number
   specialist: string
   dateTime: string
@@ -482,4 +494,9 @@ export type AdminAvailabilityMutationResponse = {
     updated: number
     deactivated: number
   }
+}
+
+export type AdminCancelAppointmentResponse = {
+  detail: string
+  appointment: ClientScheduledAppointment
 }
