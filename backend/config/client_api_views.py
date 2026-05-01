@@ -145,13 +145,9 @@ def _appointment_tone(cita):
 
 
 def _reserve_message(operacion):
-    if operacion.estado != Operacion.Estado.EN_PROCESO:
-        return "Solo los tratamientos en proceso pueden reservar nuevas citas."
-    if not operacion.primer_pago_verificado:
-        return "Necesitas tener el primer pago verificado para poder hacer reservas."
     if operacion.puede_reservar:
         return f"Tienes {operacion.sesiones_disponibles} sesion(es) disponible(s) para reservar."
-    return "Tu tratamiento ya no tiene sesiones disponibles para nuevas reservas."
+    return operacion.motivo_bloqueo_reserva or "Tu tratamiento ya no tiene sesiones disponibles para nuevas reservas."
 
 
 def _metric(identifier, label, value, delta, tone):
@@ -889,7 +885,13 @@ def client_create_reservation(request, operation_id):
     if not operacion:
         return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
     if not operacion.puede_reservar:
-        return _json({"detail": "Esta operacion ya no tiene sesiones disponibles para nuevas reservas."}, status=400)
+        return _json(
+            {
+                "detail": operacion.motivo_bloqueo_reserva
+                or "Esta operacion ya no permite nuevas reservas por ahora."
+            },
+            status=400,
+        )
 
     payload = _load_payload(request)
     if payload is None:

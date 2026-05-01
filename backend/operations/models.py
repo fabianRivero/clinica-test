@@ -86,6 +86,14 @@ class Operacion(TimeStampedModel):
         ).exists()
 
     @property
+    def tiene_reserva_programada(self):
+        return self.reservas_activas > 0
+
+    @property
+    def tiene_cierre_pendiente(self):
+        return self.sesiones_pendientes_confirmacion > 0
+
+    @property
     def sesiones_disponibles(self):
         disponibles = (
             self.sesiones_totales
@@ -100,8 +108,30 @@ class Operacion(TimeStampedModel):
         return (
             self.estado == self.Estado.EN_PROCESO
             and self.primer_pago_verificado
+            and not self.tiene_reserva_programada
+            and not self.tiene_cierre_pendiente
             and self.sesiones_disponibles > 0
         )
+
+    @property
+    def motivo_bloqueo_reserva(self):
+        if self.estado != self.Estado.EN_PROCESO:
+            return "Solo los tratamientos en proceso pueden reservar nuevas citas."
+        if not self.primer_pago_verificado:
+            return "Necesitas tener el primer pago verificado para poder hacer reservas."
+        if self.tiene_reserva_programada:
+            return (
+                "Ya tienes una cita programada para este tratamiento. Debes completarla "
+                "o reprogramarla antes de reservar la siguiente sesión."
+            )
+        if self.tiene_cierre_pendiente:
+            return (
+                "Tu cita anterior aún no se cerró por completo. Espera a que quede "
+                "realizada y confirmada antes de reservar la siguiente sesión."
+            )
+        if self.sesiones_disponibles <= 0:
+            return "Tu tratamiento ya no tiene sesiones disponibles para nuevas reservas."
+        return ""
 
     def __str__(self):
         return f"Operacion #{self.pk} - {self.paciente}"

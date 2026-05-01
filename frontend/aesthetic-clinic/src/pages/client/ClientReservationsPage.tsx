@@ -188,7 +188,7 @@ export function ClientReservationsPage() {
                         </Link>
                       ) : (
                         <button className="button button--ghost" type="button" disabled>
-                          1er pago pendiente
+                          {operation.firstPaymentVerified ? 'Reserva bloqueada' : '1er pago pendiente'}
                         </button>
                       )}
                     </article>
