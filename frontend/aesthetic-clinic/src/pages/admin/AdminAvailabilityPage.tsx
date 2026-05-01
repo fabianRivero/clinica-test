@@ -18,6 +18,7 @@ import {
   deleteAdminTimeSlot,
   getAdminAvailability,
   manageAdminGlobalAvailability,
+  removeAdminVisibleAvailability,
   updateAdminHabitualSchedule,
   updateAdminTimeSlot,
 } from '../../services/api/admin'
@@ -87,6 +88,17 @@ function normalizeSearchValue(value: string) {
   return value.trim().toLowerCase()
 }
 
+function addSelection(current: number[], value: number) {
+  if (current.includes(value)) {
+    return current
+  }
+  return [...current, value].sort((left, right) => left - right)
+}
+
+function removeSelection(current: number[], value: number) {
+  return current.filter((item) => item !== value)
+}
+
 function useSpecialistScopedLists(
   data: AdminAvailabilityResponse | null,
   selectedSpecialistId: number | null,
@@ -119,6 +131,9 @@ function useAdminAvailabilityController() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [slotSearchTerm, setSlotSearchTerm] = useState('')
+  const [activeSpecialistFilterIds, setActiveSpecialistFilterIds] = useState<number[]>([])
+  const [activeVisibleTimeSlotFilterIds, setActiveVisibleTimeSlotFilterIds] = useState<number[]>([])
+  const [activeTimeSlotSpecialistFilter, setActiveTimeSlotSpecialistFilter] = useState<number | 'TODOS'>('TODOS')
   const [activeCoverageFilter, setActiveCoverageFilter] = useState('TODOS')
   const [activeStatusFilter, setActiveStatusFilter] = useState('TODOS')
   const [visibleSlotsState, setVisibleSlotsState] = useState({ key: '', limit: 10 })
@@ -131,6 +146,16 @@ function useAdminAvailabilityController() {
   }, [refreshKey])
   const { data, isLoading, error } = useApiResource(loader)
   const { showNotification } = useNotifications()
+
+  function handleSubmitFailure(requestError: unknown, fallbackMessage: string, notificationTitle: string) {
+    const message = requestError instanceof Error ? requestError.message : fallbackMessage
+    setSubmitError(message)
+    showNotification({
+      title: notificationTitle,
+      message,
+      tone: 'danger',
+    })
+  }
 
   const resolvedSelectedSpecialistId = useMemo(() => {
     if (!data?.specialistSummaries.length) {
@@ -197,6 +222,19 @@ function useAdminAvailabilityController() {
       left.localeCompare(right),
     )
   }, [data])
+  const specialistFilterOptions = data?.filters.specialists ?? []
+  const visibleTimeSlotFilterOptions = data?.filters.timeSlots ?? []
+  const resolvedSpecialistFilterIds = activeSpecialistFilterIds.filter((specialistId) =>
+    specialistFilterOptions.some((item) => item.id === specialistId),
+  )
+  const resolvedVisibleTimeSlotFilterIds = activeVisibleTimeSlotFilterIds.filter((timeSlotId) =>
+    visibleTimeSlotFilterOptions.some((item) => item.id === timeSlotId),
+  )
+  const resolvedTimeSlotSpecialistFilter =
+    activeTimeSlotSpecialistFilter !== 'TODOS' &&
+    !specialistFilterOptions.some((item) => item.id === activeTimeSlotSpecialistFilter)
+      ? 'TODOS'
+      : activeTimeSlotSpecialistFilter
   const resolvedCoverageFilter =
     activeCoverageFilter !== 'TODOS' && !coverageOptions.includes(activeCoverageFilter)
       ? 'TODOS'
@@ -206,7 +244,7 @@ function useAdminAvailabilityController() {
     !statusOptions.includes(activeStatusFilter as AdminAvailabilitySlot['status'])
       ? 'TODOS'
       : activeStatusFilter
-  const visibleSlotsFilterKey = `${slotSearchTerm}::${resolvedCoverageFilter}::${resolvedStatusFilter}`
+  const visibleSlotsFilterKey = `${slotSearchTerm}::${resolvedSpecialistFilterIds.join(',')}::${resolvedVisibleTimeSlotFilterIds.join(',')}::${resolvedCoverageFilter}::${resolvedStatusFilter}`
   const visibleSlotsLimit =
     visibleSlotsState.key === visibleSlotsFilterKey ? visibleSlotsState.limit : 10
   const filteredVisibleSlots = useMemo(() => {
@@ -217,6 +255,11 @@ function useAdminAvailabilityController() {
     const normalizedSearch = normalizeSearchValue(slotSearchTerm)
 
     return data.slots.filter((slot) => {
+      const matchesSpecialist =
+        !resolvedSpecialistFilterIds.length || resolvedSpecialistFilterIds.includes(slot.specialistId)
+      const matchesTimeSlot =
+        !resolvedVisibleTimeSlotFilterIds.length ||
+        (slot.timeSlotId !== null && resolvedVisibleTimeSlotFilterIds.includes(slot.timeSlotId))
       const matchesCoverage =
         resolvedCoverageFilter === 'TODOS' || slot.coverage.includes(resolvedCoverageFilter)
       const matchesStatus = resolvedStatusFilter === 'TODOS' || slot.status === resolvedStatusFilter
@@ -234,13 +277,70 @@ function useAdminAvailabilityController() {
       )
       const matchesSearch = !normalizedSearch || haystack.includes(normalizedSearch)
 
-      return matchesCoverage && matchesStatus && matchesSearch
+      return matchesSpecialist && matchesTimeSlot && matchesCoverage && matchesStatus && matchesSearch
     })
-  }, [data, resolvedCoverageFilter, resolvedStatusFilter, slotSearchTerm])
+  }, [
+    data,
+    resolvedSpecialistFilterIds,
+    resolvedVisibleTimeSlotFilterIds,
+    resolvedCoverageFilter,
+    resolvedStatusFilter,
+    slotSearchTerm,
+  ])
   const paginatedVisibleSlots = useMemo(
     () => filteredVisibleSlots.slice(0, visibleSlotsLimit),
     [filteredVisibleSlots, visibleSlotsLimit],
   )
+  const filteredTimeSlots = useMemo(() => {
+    if (!data) {
+      return []
+    }
+
+    const slotStatsByBaseId = new Map<
+      number,
+      {
+        futureSlots: number
+        reservedFutureSlots: number
+      }
+    >()
+
+    data.slots.forEach((slot) => {
+      if (!slot.timeSlotId) {
+        return
+      }
+      if (
+        resolvedTimeSlotSpecialistFilter !== 'TODOS' &&
+        slot.specialistId !== resolvedTimeSlotSpecialistFilter
+      ) {
+        return
+      }
+
+      const current = slotStatsByBaseId.get(slot.timeSlotId) ?? {
+        futureSlots: 0,
+        reservedFutureSlots: 0,
+      }
+      current.futureSlots += 1
+      if (slot.status === 'reservado') {
+        current.reservedFutureSlots += 1
+      }
+      slotStatsByBaseId.set(slot.timeSlotId, current)
+    })
+
+    return data.filters.timeSlots
+      .map((slot) => {
+        const stats = slotStatsByBaseId.get(slot.id)
+        if (resolvedTimeSlotSpecialistFilter !== 'TODOS' && !stats) {
+          return null
+        }
+
+        return {
+          ...slot,
+          futureSlots: stats?.futureSlots ?? slot.futureSlots,
+          reservedFutureSlots: stats?.reservedFutureSlots ?? slot.reservedFutureSlots,
+        }
+      })
+      .filter((slot): slot is NonNullable<typeof slot> => Boolean(slot))
+  }, [data, resolvedTimeSlotSpecialistFilter])
 
   function refreshAvailability() {
     setRefreshKey((current) => current + 1)
@@ -357,8 +457,10 @@ function useAdminAvailabilityController() {
       refreshAvailability()
     } catch (requestError) {
       console.error('[AdminAvailability] handleTimeSlotSubmit:error', requestError)
-      setSubmitError(
-        requestError instanceof Error ? requestError.message : 'No se pudo guardar el horario base.',
+      handleSubmitFailure(
+        requestError,
+        'No se pudo guardar el horario base.',
+        editingTimeSlotId ? 'No se pudo actualizar el horario' : 'No se pudo crear el horario',
       )
     } finally {
       console.log('[AdminAvailability] handleTimeSlotSubmit:finally', {
@@ -390,8 +492,10 @@ function useAdminAvailabilityController() {
       }
       refreshAvailability()
     } catch (requestError) {
-      setSubmitError(
-        requestError instanceof Error ? requestError.message : 'No se pudo eliminar el horario base.',
+      handleSubmitFailure(
+        requestError,
+        'No se pudo eliminar el horario base.',
+        'No se pudo eliminar el horario',
       )
     } finally {
       setIsSubmitting(false)
@@ -420,8 +524,12 @@ function useAdminAvailabilityController() {
       resetHabitualForm()
       refreshAvailability()
     } catch (requestError) {
-      setSubmitError(
-        requestError instanceof Error ? requestError.message : 'No se pudo guardar el horario habitual.',
+      handleSubmitFailure(
+        requestError,
+        'No se pudo guardar el horario habitual.',
+        editingHabitualId
+          ? 'No se pudo actualizar el horario habitual'
+          : 'No se pudo crear el horario habitual',
       )
     } finally {
       setIsSubmitting(false)
@@ -450,8 +558,10 @@ function useAdminAvailabilityController() {
       }
       refreshAvailability()
     } catch (requestError) {
-      setSubmitError(
-        requestError instanceof Error ? requestError.message : 'No se pudo eliminar el horario habitual.',
+      handleSubmitFailure(
+        requestError,
+        'No se pudo eliminar el horario habitual.',
+        'No se pudo eliminar el horario habitual',
       )
     } finally {
       setIsSubmitting(false)
@@ -484,8 +594,12 @@ function useAdminAvailabilityController() {
       resetExceptionForm()
       refreshAvailability()
     } catch (requestError) {
-      setSubmitError(
-        requestError instanceof Error ? requestError.message : 'No se pudo guardar la excepcion.',
+      handleSubmitFailure(
+        requestError,
+        'No se pudo guardar la excepcion.',
+        exceptionForm.type === 'AGREGAR'
+          ? 'No se pudo agregar la disponibilidad'
+          : 'No se pudo bloquear la disponibilidad',
       )
     } finally {
       setIsSubmitting(false)
@@ -511,8 +625,10 @@ function useAdminAvailabilityController() {
       })
       refreshAvailability()
     } catch (requestError) {
-      setSubmitError(
-        requestError instanceof Error ? requestError.message : 'No se pudo eliminar la excepcion.',
+      handleSubmitFailure(
+        requestError,
+        'No se pudo eliminar la excepcion.',
+        'No se pudo eliminar la excepcion',
       )
     } finally {
       setIsSubmitting(false)
@@ -541,8 +657,10 @@ function useAdminAvailabilityController() {
       }
       refreshAvailability()
     } catch (requestError) {
-      setSubmitError(
-        requestError instanceof Error ? requestError.message : 'No se pudo aplicar el cambio global.',
+      handleSubmitFailure(
+        requestError,
+        'No se pudo aplicar el cambio global.',
+        action === 'BLOQUEAR' ? 'No se pudo bloquear el dia' : 'No se pudo restaurar el dia',
       )
     } finally {
       setIsSubmitting(false)
@@ -568,10 +686,39 @@ function useAdminAvailabilityController() {
       })
       refreshAvailability()
     } catch (requestError) {
-      setSubmitError(
-        requestError instanceof Error
-          ? requestError.message
-          : 'No se pudo cancelar la cita programada.',
+      handleSubmitFailure(
+        requestError,
+        'No se pudo cancelar la cita programada.',
+        'No se pudo cancelar la cita',
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleRemoveVisibleSlot(slotId: number) {
+    const shouldRemove = window.confirm(
+      'Este cupo dejara de estar visible para nuevas reservas. ¿Deseas retirarlo?',
+    )
+    if (!shouldRemove) {
+      return
+    }
+
+    setSubmitError(null)
+    setIsSubmitting(true)
+    try {
+      const response = await removeAdminVisibleAvailability(slotId)
+      showNotification({
+        title: 'Disponibilidad retirada',
+        message: response.detail,
+        tone: 'success',
+      })
+      refreshAvailability()
+    } catch (requestError) {
+      handleSubmitFailure(
+        requestError,
+        'No se pudo retirar la disponibilidad seleccionada.',
+        'No se pudo retirar la disponibilidad',
       )
     } finally {
       setIsSubmitting(false)
@@ -596,11 +743,17 @@ function useAdminAvailabilityController() {
     editingTimeSlotId,
     editingHabitualId,
     slotSearchTerm,
+    activeSpecialistFilterIds: resolvedSpecialistFilterIds,
+    activeVisibleTimeSlotFilterIds: resolvedVisibleTimeSlotFilterIds,
+    activeTimeSlotSpecialistFilter: resolvedTimeSlotSpecialistFilter,
     activeCoverageFilter: resolvedCoverageFilter,
     activeStatusFilter: resolvedStatusFilter,
+    specialistFilterOptions,
+    visibleTimeSlotFilterOptions,
     coverageOptions,
     statusOptions,
     filteredVisibleSlots,
+    filteredTimeSlots,
     paginatedVisibleSlots,
     setSelectedSpecialistId: handleSelectSpecialist,
     setTimeSlotForm,
@@ -609,6 +762,9 @@ function useAdminAvailabilityController() {
     setGlobalDate,
     setGlobalDetail,
     setSlotSearchTerm,
+    setActiveSpecialistFilterIds,
+    setActiveVisibleTimeSlotFilterIds,
+    setActiveTimeSlotSpecialistFilter,
     setActiveCoverageFilter,
     setActiveStatusFilter,
     setVisibleSlotsLimit: handleVisibleSlotsLimitChange,
@@ -629,6 +785,7 @@ function useAdminAvailabilityController() {
     handleDeleteException,
     handleGlobalAction,
     handleCancelReservedAppointment,
+    handleRemoveVisibleSlot,
   }
 }
 
@@ -711,6 +868,13 @@ function AvailabilityPageShell({
 }
 
 function VisibleAvailabilitySection({ controller }: { controller: AvailabilityController }) {
+  const selectedSpecialists = controller.specialistFilterOptions.filter((specialist) =>
+    controller.activeSpecialistFilterIds.includes(specialist.id),
+  )
+  const selectedTimeSlots = controller.visibleTimeSlotFilterOptions.filter((timeSlot) =>
+    controller.activeVisibleTimeSlotFilterIds.includes(timeSlot.id),
+  )
+
   return (
     <SectionCard
       eyebrow="Vista publicada"
@@ -727,6 +891,116 @@ function VisibleAvailabilitySection({ controller }: { controller: AvailabilityCo
             onChange={(event) => controller.setSlotSearchTerm(event.target.value)}
             placeholder="Ej. 2026-05-12, Consulta, Laser"
           />
+        </label>
+
+        <label className="field">
+          <span>Filtrar por especialistas</span>
+          <select
+            className="input"
+            value=""
+            onChange={(event) =>
+              controller.setActiveSpecialistFilterIds((current) =>
+                addSelection(current, Number(event.target.value)),
+              )
+            }
+          >
+            <option value="" disabled>
+              Selecciona un especialista para agregarlo
+            </option>
+            {controller.specialistFilterOptions.map((specialist) => (
+              <option key={specialist.id} value={specialist.id}>
+                {specialist.label}
+              </option>
+            ))}
+          </select>
+          <small>Los seleccionados se acumulan. Si no agregas ninguno, se muestran todos.</small>
+          <div className="selection-chip-panel">
+            {selectedSpecialists.length ? (
+              <>
+                <div className="selection-chip-list">
+                  {selectedSpecialists.map((specialist) => (
+                    <button
+                      key={specialist.id}
+                      className="selection-chip"
+                      type="button"
+                      onClick={() =>
+                        controller.setActiveSpecialistFilterIds((current) =>
+                          removeSelection(current, specialist.id),
+                        )
+                      }
+                    >
+                      <span>{specialist.label}</span>
+                      <strong>Quitar</strong>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="button button--ghost button--compact"
+                  type="button"
+                  onClick={() => controller.setActiveSpecialistFilterIds([])}
+                >
+                  Limpiar especialistas
+                </button>
+              </>
+            ) : (
+              <span className="availability-form__empty">Sin especialistas filtrados.</span>
+            )}
+          </div>
+        </label>
+
+        <label className="field">
+          <span>Filtrar por horarios</span>
+          <select
+            className="input"
+            value=""
+            onChange={(event) =>
+              controller.setActiveVisibleTimeSlotFilterIds((current) =>
+                addSelection(current, Number(event.target.value)),
+              )
+            }
+          >
+            <option value="" disabled>
+              Selecciona un horario para agregarlo
+            </option>
+            {controller.visibleTimeSlotFilterOptions.map((timeSlot) => (
+              <option key={timeSlot.id} value={timeSlot.id}>
+                {timeSlot.label}
+              </option>
+            ))}
+          </select>
+          <small>Los seleccionados se acumulan. Si no agregas ninguno, se muestran todos.</small>
+          <div className="selection-chip-panel">
+            {selectedTimeSlots.length ? (
+              <>
+                <div className="selection-chip-list">
+                  {selectedTimeSlots.map((timeSlot) => (
+                    <button
+                      key={timeSlot.id}
+                      className="selection-chip"
+                      type="button"
+                      onClick={() =>
+                        controller.setActiveVisibleTimeSlotFilterIds((current) =>
+                          removeSelection(current, timeSlot.id),
+                        )
+                      }
+                    >
+                      <span>{timeSlot.label}</span>
+                      <strong>Quitar</strong>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="button button--ghost button--compact"
+                  type="button"
+                  onClick={() => controller.setActiveVisibleTimeSlotFilterIds([])}
+                >
+                  Limpiar horarios
+                </button>
+              </>
+            ) : (
+              <span className="availability-form__empty">Sin horarios filtrados.</span>
+            )}
+          </div>
         </label>
 
         <div className="availability-visible-toolbar__filters">
@@ -781,6 +1055,16 @@ function VisibleAvailabilitySection({ controller }: { controller: AvailabilityCo
           Mostrando {controller.paginatedVisibleSlots.length} de {controller.filteredVisibleSlots.length} horario(s)
         </strong>
         <span>
+          {!controller.activeSpecialistFilterIds.length
+            ? 'Sin filtro de especialista activo.'
+            : `Especialistas filtrados: ${selectedSpecialists.map((specialist) => specialist.label).join(', ')}`}
+        </span>
+        <span>
+          {!controller.activeVisibleTimeSlotFilterIds.length
+            ? 'Sin filtro de horario activo.'
+            : `Horarios filtrados: ${selectedTimeSlots.map((timeSlot) => timeSlot.label).join(', ')}`}
+        </span>
+        <span>
           {controller.activeCoverageFilter === 'TODOS'
             ? 'Sin filtro de servicio activo.'
             : `Servicio filtrado: ${controller.activeCoverageFilter}`}
@@ -800,6 +1084,7 @@ function VisibleAvailabilitySection({ controller }: { controller: AvailabilityCo
                 key={slot.id}
                 slot={slot}
                 onCancelAppointment={controller.handleCancelReservedAppointment}
+                onRemoveVisibleSlot={controller.handleRemoveVisibleSlot}
               />
             ))}
           </div>
@@ -829,9 +1114,11 @@ function VisibleAvailabilitySection({ controller }: { controller: AvailabilityCo
 function VisibleSlotCard({
   slot,
   onCancelAppointment,
+  onRemoveVisibleSlot,
 }: {
   slot: AdminAvailabilitySlot
   onCancelAppointment: (appointmentId: number) => Promise<void>
+  onRemoveVisibleSlot: (slotId: number) => Promise<void>
 }) {
   return (
     <article className="availability-slot-card">
@@ -872,6 +1159,16 @@ function VisibleSlotCard({
             onClick={() => void onCancelAppointment(slot.appointmentId as number)}
           >
             Cancelar cita
+          </button>
+        </div>
+      ) : slot.status === 'disponible' ? (
+        <div className="catalog-admin-card__actions">
+          <button
+            className="button button--warning button--compact"
+            type="button"
+            onClick={() => void onRemoveVisibleSlot(slot.rawId)}
+          >
+            Quitar disponibilidad
           </button>
         </div>
       ) : null}
@@ -953,8 +1250,34 @@ function BlocksAvailabilitySection({ controller }: { controller: AvailabilityCon
           </div>
         </form>
 
+        <div className="availability-visible-toolbar">
+          <label className="field">
+            <span>Filtrar horarios por especialista</span>
+            <select
+              className="input"
+              value={
+                controller.activeTimeSlotSpecialistFilter === 'TODOS'
+                  ? 'TODOS'
+                  : String(controller.activeTimeSlotSpecialistFilter)
+              }
+              onChange={(event) =>
+                controller.setActiveTimeSlotSpecialistFilter(
+                  event.target.value === 'TODOS' ? 'TODOS' : Number(event.target.value),
+                )
+              }
+            >
+              <option value="TODOS">Todos los especialistas</option>
+              {controller.specialistFilterOptions.map((specialist) => (
+                <option key={specialist.id} value={specialist.id}>
+                  {specialist.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         <div className="availability-admin-list">
-          {data.filters.timeSlots.map((slot) => (
+          {controller.filteredTimeSlots.map((slot) => (
             <article className="availability-admin-card" key={slot.id}>
               <div>
                 <strong>{slot.label}</strong>

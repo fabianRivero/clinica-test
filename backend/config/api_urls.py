@@ -9,6 +9,7 @@ from config.admin_availability_views import (
     admin_delete_specialist_exception,
     admin_delete_time_slot,
     admin_manage_global_day,
+    admin_remove_visible_slot,
     admin_update_habitual_schedule,
     admin_update_time_slot,
 )
@@ -80,6 +81,11 @@ urlpatterns = [
     path("operaciones/<int:operacion_id>/", admin_operacion_detalle, name="admin-operacion-detail-api"),
     path("citas/<int:appointment_id>/cancelar/", admin_cancel_appointment, name="admin-appointment-cancel-api"),
     path("disponibilidad/", admin_availability, name="admin-availability-api"),
+    path(
+        "disponibilidad/cupos/<int:slot_id>/retirar/",
+        admin_remove_visible_slot,
+        name="admin-availability-visible-slot-remove-api",
+    ),
     path("disponibilidad/horarios/crear/", admin_create_time_slot, name="admin-availability-time-slot-create-api"),
     path(
         "disponibilidad/horarios/<int:slot_id>/actualizar/",

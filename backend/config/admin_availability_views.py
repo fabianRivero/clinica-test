@@ -283,6 +283,138 @@ def _resolve_time_slots(slot_ids, errors, field_name="timeSlotIds"):
     return slots
 
 
+def _weekday_code_for_date(target_date):
+    return (target_date.weekday() + 1) % 7
+
+
+def _first_common_slot(slot_ids, slots):
+    slot_map = {slot.id: slot for slot in slots}
+    common_ids = sorted(set(slot_ids) & set(slot_map.keys()))
+    if not common_ids:
+        return None
+    return slot_map[common_ids[0]]
+
+
+def _build_availability_overlap_message(specialist, target_date, slot):
+    return (
+        f"Ya existe disponibilidad para {_full_name(specialist.usuario)} "
+        f"el {_date_label(target_date)} en el horario {slot.etiqueta}."
+    )
+
+
+def _validate_habitual_schedule_overlap(
+    specialist,
+    start_date,
+    end_date,
+    weekday_codes,
+    time_slots,
+    exclude_rule_id=None,
+):
+    slot_ids = {slot.id for slot in time_slots}
+    weekday_code_set = set(weekday_codes)
+
+    existing_rules = (
+        AgendaHabitualEspecialista.objects.filter(
+            especialista=specialist,
+            activo=True,
+        )
+        .exclude(pk=exclude_rule_id)
+        .prefetch_related("dias", "horarios")
+    )
+    for rule in existing_rules:
+        first_date = max(start_date, rule.fecha_inicio)
+        last_date = min(end_date, rule.fecha_fin)
+        if first_date > last_date:
+            continue
+
+        existing_weekday_codes = {item.dia_semana for item in rule.dias.all()}
+        overlapping_slot = _first_common_slot(slot_ids, rule.horarios.all())
+        if not overlapping_slot:
+            continue
+
+        current = first_date
+        while current <= last_date:
+            day_code = _weekday_code_for_date(current)
+            if day_code in weekday_code_set and day_code in existing_weekday_codes:
+                return _build_availability_overlap_message(
+                    specialist,
+                    current,
+                    overlapping_slot,
+                )
+            current = current.fromordinal(current.toordinal() + 1)
+
+    existing_exceptions = (
+        AgendaExcepcionEspecialista.objects.filter(
+            especialista=specialist,
+            activo=True,
+            tipo_excepcion=AgendaExcepcionEspecialista.TipoExcepcion.AGREGAR,
+            fecha__gte=start_date,
+            fecha__lte=end_date,
+        ).prefetch_related("horarios")
+    )
+    for exception in existing_exceptions:
+        if _weekday_code_for_date(exception.fecha) not in weekday_code_set:
+            continue
+
+        overlapping_slot = _first_common_slot(slot_ids, exception.horarios.all())
+        if overlapping_slot:
+            return _build_availability_overlap_message(
+                specialist,
+                exception.fecha,
+                overlapping_slot,
+            )
+
+    return None
+
+
+def _validate_exception_overlap(specialist, dates, time_slots):
+    slot_ids = {slot.id for slot in time_slots}
+    date_set = set(dates)
+
+    existing_rules = (
+        AgendaHabitualEspecialista.objects.filter(
+            especialista=specialist,
+            activo=True,
+            fecha_fin__gte=min(dates),
+            fecha_inicio__lte=max(dates),
+        ).prefetch_related("dias", "horarios")
+    )
+    for target_date in sorted(date_set):
+        day_code = _weekday_code_for_date(target_date)
+        for rule in existing_rules:
+            if not (rule.fecha_inicio <= target_date <= rule.fecha_fin):
+                continue
+            if day_code not in {item.dia_semana for item in rule.dias.all()}:
+                continue
+
+            overlapping_slot = _first_common_slot(slot_ids, rule.horarios.all())
+            if overlapping_slot:
+                return _build_availability_overlap_message(
+                    specialist,
+                    target_date,
+                    overlapping_slot,
+                )
+
+    existing_exceptions = (
+        AgendaExcepcionEspecialista.objects.filter(
+            especialista=specialist,
+            activo=True,
+            tipo_excepcion=AgendaExcepcionEspecialista.TipoExcepcion.AGREGAR,
+            fecha__in=dates,
+        ).prefetch_related("horarios")
+    )
+    for exception in existing_exceptions:
+        overlapping_slot = _first_common_slot(slot_ids, exception.horarios.all())
+        if overlapping_slot:
+            return _build_availability_overlap_message(
+                specialist,
+                exception.fecha,
+                overlapping_slot,
+            )
+
+    return None
+
+
 def _time_slot_affects_schedule(slot):
     return (
         slot.agendas_habituales.exists()
@@ -317,6 +449,58 @@ def _success_without_sync(message, status=201):
         },
         status=status,
     )
+
+
+@require_POST
+@transaction.atomic
+@_admin_required
+def admin_remove_visible_slot(request, slot_id):
+    slot = (
+        DisponibilidadCita.objects.select_related("especialista__usuario", "horario_base")
+        .prefetch_related("citas_origen")
+        .filter(pk=slot_id)
+        .first()
+    )
+    if not slot:
+        return _json({"detail": "El cupo seleccionado ya no existe."}, status=404)
+
+    booking = _find_blocking_booking(slot)
+    status_label = _slot_status(slot, booking)
+    if status_label != "disponible":
+        return _json(
+            {
+                "detail": "Solo puedes quitar cupos que sigan disponibles y sin reserva.",
+            },
+            status=400,
+        )
+
+    if not slot.horario_base_id:
+        slot.activo = False
+        slot.save(update_fields=["activo", "updated_at"])
+        return _success_without_sync("Cupo retirado correctamente.")
+
+    slot_date = timezone.localtime(slot.fecha_hora).date()
+    existing_exception = (
+        AgendaExcepcionEspecialista.objects.filter(
+            especialista_id=slot.especialista_id,
+            fecha=slot_date,
+            tipo_excepcion=AgendaExcepcionEspecialista.TipoExcepcion.BLOQUEAR,
+            activo=True,
+            horarios=slot.horario_base,
+        )
+        .first()
+    )
+    if not existing_exception:
+        existing_exception = AgendaExcepcionEspecialista.objects.create(
+            especialista=slot.especialista,
+            fecha=slot_date,
+            tipo_excepcion=AgendaExcepcionEspecialista.TipoExcepcion.BLOQUEAR,
+            activo=True,
+            detalle="Bloqueado manualmente desde dias y horarios visibles.",
+        )
+        existing_exception.horarios.add(slot.horario_base)
+
+    return _sync_and_success("Disponibilidad retirada correctamente.")
 
 
 @require_GET
@@ -654,8 +838,23 @@ def admin_create_habitual_schedule(request):
 
     service_types, procedure_types, procedures = _resolve_scope(payload, errors)
 
+    overlap_error = None
+    if not errors:
+        overlap_error = _validate_habitual_schedule_overlap(
+            specialist=specialist,
+            start_date=start_date,
+            end_date=end_date,
+            weekday_codes=weekday_codes,
+            time_slots=time_slots,
+        )
+        if overlap_error:
+            errors["timeSlotIds"] = overlap_error
+
     if errors:
-        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        return _json(
+            {"detail": overlap_error or "Hay errores en el formulario.", "errors": errors},
+            status=400,
+        )
 
     rule = AgendaHabitualEspecialista.objects.create(
         especialista=specialist,
@@ -713,8 +912,24 @@ def admin_update_habitual_schedule(request, rule_id):
 
     service_types, procedure_types, procedures = _resolve_scope(payload, errors)
 
+    overlap_error = None
+    if not errors:
+        overlap_error = _validate_habitual_schedule_overlap(
+            specialist=specialist,
+            start_date=start_date,
+            end_date=end_date,
+            weekday_codes=weekday_codes,
+            time_slots=time_slots,
+            exclude_rule_id=rule.pk,
+        )
+        if overlap_error:
+            errors["timeSlotIds"] = overlap_error
+
     if errors:
-        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        return _json(
+            {"detail": overlap_error or "Hay errores en el formulario.", "errors": errors},
+            status=400,
+        )
 
     rule.especialista = specialist
     rule.fecha_inicio = start_date
@@ -777,8 +992,24 @@ def admin_create_specialist_exception(request):
     require_scope = exception_type == AgendaExcepcionEspecialista.TipoExcepcion.AGREGAR
     service_types, procedure_types, procedures = _resolve_scope(payload, errors, require_scope=require_scope)
 
+    overlap_error = None
+    if (
+        not errors
+        and exception_type == AgendaExcepcionEspecialista.TipoExcepcion.AGREGAR
+    ):
+        overlap_error = _validate_exception_overlap(
+            specialist=specialist,
+            dates=dates,
+            time_slots=time_slots,
+        )
+        if overlap_error:
+            errors["timeSlotIds"] = overlap_error
+
     if errors:
-        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        return _json(
+            {"detail": overlap_error or "Hay errores en el formulario.", "errors": errors},
+            status=400,
+        )
 
     created = []
     for target_date in dates:

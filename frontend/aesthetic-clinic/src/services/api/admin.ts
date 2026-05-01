@@ -142,6 +142,13 @@ export function getAdminAvailability() {
   return requestJson<AdminAvailabilityResponse>('/api/admin/disponibilidad/')
 }
 
+export function removeAdminVisibleAvailability(slotId: number) {
+  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
+    `/api/admin/disponibilidad/cupos/${slotId}/retirar/`,
+    {},
+  )
+}
+
 export function getAdminPayments() {
   return requestJson<PaymentsResponse>('/api/admin/pagos/')
 }
