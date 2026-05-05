@@ -14,6 +14,7 @@ import {
   AdminAvailabilitySchedulesPage,
   AdminAvailabilityVisiblePage,
 } from './pages/admin/AdminAvailabilityPage'
+import { AdminClientDetailPage } from './pages/admin/AdminClientDetailPage'
 import { AdminClientsPage } from './pages/admin/AdminClientsPage'
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
 import { AdminOperationDetailPage } from './pages/admin/AdminOperationDetailPage'
@@ -102,6 +103,7 @@ function App() {
           <Route index element={<AdminDashboardPage />} />
           <Route path="prospectos" element={<AdminProspectsPage />} />
           <Route path="clientes" element={<AdminClientsPage />} />
+          <Route path="clientes/:clientId" element={<AdminClientDetailPage />} />
           <Route path="prospectos/nuevo" element={<AdminProspectCreatePage />} />
           <Route path="prospectos/:prospectId/convertir" element={<AdminProspectConvertPage />} />
           <Route path="operaciones" element={<AdminOperationsPage />} />

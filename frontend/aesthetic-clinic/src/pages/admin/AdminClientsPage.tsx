@@ -7,6 +7,7 @@ import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { cancelAdminAppointment, getAdminProspects } from '../../services/api/admin'
+import { Link } from 'react-router-dom'
 
 export function AdminClientsPage() {
   const { data, isLoading, error, reload } = useApiResource(getAdminProspects)
@@ -96,7 +97,11 @@ export function AdminClientsPage() {
                   <tbody>
                     {data.clients.map((client) => (
                       <tr key={client.id}>
-                        <td>{client.name}</td>
+                        <td>
+                          <Link className="table-strong-link" to={`/admin/clientes/${client.rawId}`}>
+                            {client.name}
+                          </Link>
+                        </td>
                         <td>
                           <StatusBadge tone={client.status === 'Activo' ? 'success' : 'neutral'}>
                             {client.status}
@@ -122,7 +127,7 @@ export function AdminClientsPage() {
                                     type="button"
                                     onClick={() => void handleCancelAppointment(appointment.rawId)}
                                   >
-                                    Cancelar cita
+                                    Cancelar
                                   </button>
                                 </div>
                               ))}

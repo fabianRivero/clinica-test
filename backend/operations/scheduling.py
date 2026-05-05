@@ -9,6 +9,7 @@ from operations.models import (
     AgendaExcepcionEspecialista,
     AgendaHabitualEspecialista,
     CitaMedica,
+    CitaProspecto,
     DiaBloqueadoAgendaGlobal,
     DisponibilidadCita,
 )
@@ -19,6 +20,32 @@ BLOCKING_RESERVATION_STATES = {
     CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
     CitaMedica.Estado.CONFIRMADA,
 }
+
+
+def mark_expired_programmed_appointments_as_no_show(reference_time=None):
+    now = reference_time or timezone.now()
+    cutoff = now - timezone.timedelta(days=1)
+    updated_count = CitaMedica.objects.filter(
+        estado=CitaMedica.Estado.PROGRAMADA,
+        fecha_hora__lt=cutoff,
+    ).update(
+        estado=CitaMedica.Estado.NO_ASISTIO,
+        verif_biometria=False,
+        fecha_confirmacion_biometrica=None,
+        updated_at=now,
+    )
+    prospect_updated_count = CitaProspecto.objects.filter(
+        estado=CitaProspecto.Estado.PROGRAMADA,
+        fecha_hora__lt=cutoff,
+    ).update(
+        estado=CitaProspecto.Estado.NO_ASISTIO,
+        updated_at=now,
+    )
+    return {
+        "no_show": updated_count,
+        "prospect_no_show": prospect_updated_count,
+        "cutoff": cutoff,
+    }
 
 
 def weekday_code_for_date(target_date):
@@ -169,6 +196,10 @@ def sync_disponibilidad_citas():
                 "citas_origen",
                 queryset=CitaMedica.objects.only("id", "estado", "disponibilidad_id"),
             ),
+            Prefetch(
+                "citas_prospectos_origen",
+                queryset=CitaProspecto.objects.only("id", "estado", "disponibilidad_id"),
+            ),
         )
     )
     print(
@@ -189,6 +220,10 @@ def sync_disponibilidad_citas():
         desired = desired_map.get(key)
         has_blocking_booking = any(
             cita.estado in BLOCKING_RESERVATION_STATES for cita in slot.citas_origen.all()
+        )
+        has_prospect_booking = any(
+            cita.estado == CitaProspecto.Estado.PROGRAMADA
+            for cita in slot.citas_prospectos_origen.all()
         )
 
         if desired:
@@ -220,7 +255,7 @@ def sync_disponibilidad_citas():
             desired_map.pop(key, None)
             continue
 
-        if has_blocking_booking or not slot.activo:
+        if has_blocking_booking or has_prospect_booking or not slot.activo:
             continue
 
         slot.activo = False

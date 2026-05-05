@@ -157,6 +157,7 @@ class PagoRealizado(TimeStampedModel):
         if previous_file_name and previous_file_name != self.comprobante_url.name:
             _safe_delete_file(previous_file_name)
         self.cuota.actualizar_estado_por_pagos()
+        self.cuota.operacion.paciente.actualizar_estado_automaticamente()
 
     def __str__(self):
         return f"Pago #{self.pk} - Cuota #{self.cuota_id}"
@@ -204,6 +205,7 @@ def actualizar_cuota_tras_eliminar_pago(sender, instance, **kwargs):
     if instance.comprobante_url:
         _safe_delete_file(instance.comprobante_url.name)
     instance.cuota.actualizar_estado_por_pagos()
+    instance.cuota.operacion.paciente.actualizar_estado_automaticamente()
 
 
 @receiver(post_delete, sender=ConfiguracionPagoQR)

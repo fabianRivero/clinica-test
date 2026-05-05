@@ -12,7 +12,8 @@ from django.views.decorators.http import require_GET, require_POST
 from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
 from clinical.models import AnalisisEstetico
 from customers.models import Cliente
-from operations.models import CitaMedica, DisponibilidadCita, Operacion
+from operations.models import CitaMedica, CitaProspecto, DisponibilidadCita, Operacion
+from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 
 
 RESERVATION_WINDOW_DAYS = 35
@@ -249,7 +250,11 @@ def _build_operation_slot_map(operacion, editing_appointment=None):
             Prefetch(
                 "citas_origen",
                 queryset=CitaMedica.objects.only("id", "estado", "disponibilidad_id").order_by("-created_at"),
-            )
+            ),
+            Prefetch(
+                "citas_prospectos_origen",
+                queryset=CitaProspecto.objects.only("id", "estado", "disponibilidad_id").order_by("-created_at"),
+            ),
         )
         .filter(
             activo=True,
@@ -270,6 +275,9 @@ def _build_operation_slot_map(operacion, editing_appointment=None):
             cita.estado in BLOCKING_RESERVATION_STATES
             and (editing_appointment is None or cita.pk != editing_appointment.pk)
             for cita in slot.citas_origen.all()
+        ) or any(
+            cita.estado == CitaProspecto.Estado.PROGRAMADA
+            for cita in slot.citas_prospectos_origen.all()
         ):
             continue
 
@@ -312,6 +320,7 @@ def _build_operation_slot_map(operacion, editing_appointment=None):
 
 
 def _get_client_operation(cliente, operation_id):
+    mark_expired_programmed_appointments_as_no_show()
     return (
         Operacion.objects.filter(paciente=cliente, pk=operation_id)
         .select_related("servicio_config__tipo_servicio", "servicio_config__proc_estetico")
@@ -330,6 +339,7 @@ def _get_client_operation(cliente, operation_id):
 
 
 def _get_client_appointment(cliente, appointment_id):
+    mark_expired_programmed_appointments_as_no_show()
     return (
         CitaMedica.objects.filter(operacion__paciente=cliente, pk=appointment_id)
         .select_related(
@@ -448,6 +458,13 @@ def _appointment_item(cita):
         "biometric": "Confirmada" if cita.verif_biometria else "Pendiente",
         "details": cita.detalles_cita or "Sin notas adicionales.",
         "canManage": can_manage,
+        "canMarkPendingBiometric": cita.estado == CitaMedica.Estado.PROGRAMADA,
+        "canConfirmBiometric": cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+        "biometricMockTemplate": getattr(cita.operacion.paciente, "huella_biometrica", None).template_biometrico
+        if hasattr(cita.operacion.paciente, "huella_biometrica")
+        and cita.operacion.paciente.huella_biometrica.activo
+        and cita.operacion.paciente.huella_biometrica.proveedor == "MOCK"
+        else "",
     }
 
 
@@ -520,6 +537,7 @@ def _client_alerts(cliente, active_operations, pending_quotas, pending_payments,
 
 
 def _base_client_queryset(cliente):
+    mark_expired_programmed_appointments_as_no_show()
     operations_qs = (
         Operacion.objects.filter(paciente=cliente)
         .select_related(
@@ -904,6 +922,7 @@ def client_create_reservation(request, operation_id):
     slot = (
         DisponibilidadCita.objects.select_for_update()
         .select_related("especialista__usuario")
+        .prefetch_related("citas_prospectos_origen")
         .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
         .first()
     )
@@ -914,6 +933,11 @@ def client_create_reservation(request, operation_id):
         )
 
     if slot.citas_origen.filter(estado__in=BLOCKING_RESERVATION_STATES).exists():
+        return _json(
+            {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
+            status=409,
+        )
+    if slot.citas_prospectos_origen.filter(estado=CitaProspecto.Estado.PROGRAMADA).exists():
         return _json(
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,
@@ -950,7 +974,7 @@ def client_update_reservation(request, appointment_id):
             "medico__usuario",
             "disponibilidad",
         )
-        .prefetch_related("disponibilidad__citas_origen")
+        .prefetch_related("disponibilidad__citas_origen", "disponibilidad__citas_prospectos_origen")
         .filter(operacion__paciente=request.cliente, pk=appointment_id)
         .first()
     )
@@ -973,7 +997,7 @@ def client_update_reservation(request, appointment_id):
     slot = (
         DisponibilidadCita.objects.select_for_update()
         .select_related("especialista__usuario")
-        .prefetch_related("citas_origen")
+        .prefetch_related("citas_origen", "citas_prospectos_origen")
         .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
         .first()
     )
@@ -984,6 +1008,11 @@ def client_update_reservation(request, appointment_id):
         )
 
     if slot.citas_origen.exclude(pk=cita.pk).filter(estado__in=BLOCKING_RESERVATION_STATES).exists():
+        return _json(
+            {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
+            status=409,
+        )
+    if slot.citas_prospectos_origen.filter(estado=CitaProspecto.Estado.PROGRAMADA).exists():
         return _json(
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,

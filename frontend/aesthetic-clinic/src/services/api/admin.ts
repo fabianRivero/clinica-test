@@ -6,7 +6,14 @@ import type {
   AdminStaffMutationResponse,
   AdminAvailabilityMutationResponse,
   AdminCancelAppointmentResponse,
+  AdminClientDetailResponse,
+  AdminClientInactivateResponse,
+  AdminClientReservationAvailabilityResponse,
+  AdminProspectMedicalAvailabilityResponse,
+  CancelAdminProspectMedicalAppointmentResponse,
   CatalogsResponse,
+  CreateAdminClientReservationResponse,
+  CreateAdminProspectMedicalAppointmentResponse,
   CreateAdminStaffPayload,
   CreateAdminAvailabilityExceptionPayload,
   CreateAdminProspectPayload,
@@ -124,6 +131,50 @@ export function getAdminProspects() {
   return requestJson<ProspectsResponse>('/api/admin/prospectos/')
 }
 
+export function getAdminProspectMedicalAvailability(prospectId: number) {
+  return requestJson<AdminProspectMedicalAvailabilityResponse>(
+    `/api/admin/prospectos/${prospectId}/cita-medica/disponibilidad/`,
+  )
+}
+
+export function createAdminProspectMedicalAppointment(prospectId: number, slotId: number) {
+  return requestJsonWithBody<CreateAdminProspectMedicalAppointmentResponse>(
+    `/api/admin/prospectos/${prospectId}/cita-medica/reservar/`,
+    { slotId },
+  )
+}
+
+export function cancelAdminProspectMedicalAppointment(appointmentId: number) {
+  return requestJsonWithBody<CancelAdminProspectMedicalAppointmentResponse>(
+    `/api/admin/prospectos/citas-medicas/${appointmentId}/cancelar/`,
+    {},
+  )
+}
+
+export function getAdminClientDetail(clientId: string) {
+  return requestJson<AdminClientDetailResponse>(`/api/admin/clientes/${clientId}/`)
+}
+
+export function getAdminClientReservationAvailability(clientId: number, operationId: number) {
+  return requestJson<AdminClientReservationAvailabilityResponse>(
+    `/api/admin/clientes/${clientId}/operaciones/${operationId}/disponibilidad/`,
+  )
+}
+
+export function createAdminClientReservation(clientId: number, operationId: number, slotId: number) {
+  return requestJsonWithBody<CreateAdminClientReservationResponse>(
+    `/api/admin/clientes/${clientId}/operaciones/${operationId}/reservar/`,
+    { slotId },
+  )
+}
+
+export function inactivateAdminClient(clientId: number) {
+  return requestJsonWithBody<AdminClientInactivateResponse>(
+    `/api/admin/clientes/${clientId}/inactivar/`,
+    {},
+  )
+}
+
 export function cancelAdminAppointment(appointmentId: number) {
   return requestJsonWithBody<AdminCancelAppointmentResponse>(
     `/api/admin/citas/${appointmentId}/cancelar/`,
@@ -138,6 +189,13 @@ export function confirmAdminAppointmentBiometric(
   return requestJsonWithBody<OperationDetailResponse>(
     `/api/admin/citas/${appointmentId}/confirmar-biometria/`,
     payload,
+  )
+}
+
+export function markAdminAppointmentPendingBiometric(appointmentId: number) {
+  return requestJsonWithBody<{ detail: string }>(
+    `/api/admin/citas/${appointmentId}/pendiente-biometria/`,
+    {},
   )
 }
 

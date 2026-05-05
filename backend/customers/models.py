@@ -125,17 +125,53 @@ class Cliente(TimeStampedModel):
         db_table = "clientes"
         ordering = ("usuario__primer_nombre", "usuario__apellido_paterno")
 
-    def actualizar_estado_automaticamente(self, save=True):
-        nuevo_estado = (
-            self.Estado.ACTIVO
-            if self.operaciones.filter(estado="EN_PROCESO").exists()
-            else self.Estado.INACTIVO
-        )
+    def cambiar_estado(self, nuevo_estado, save=True):
+        if nuevo_estado not in {choice[0] for choice in self.Estado.choices}:
+            raise ValueError("Estado de cliente no valido.")
         if self.estado_cliente != nuevo_estado:
             self.estado_cliente = nuevo_estado
             if save:
                 self.save(update_fields=["estado_cliente", "updated_at"])
         return self.estado_cliente
+
+    def procedimiento_tiene_pendientes(self, operacion):
+        if operacion.estado in {"CANCELADA", "FINALIZADA"}:
+            return False
+        sesiones_pendientes = operacion.sesiones_confirmadas < operacion.sesiones_totales
+        pagos_pendientes = operacion.cuotas_plan_pagos.exclude(estado="PAGADO").exists()
+        return sesiones_pendientes or pagos_pendientes
+
+    def pendientes_operativos(self):
+        operaciones = self.operaciones.prefetch_related("cuotas_plan_pagos", "citas_medicas")
+        operaciones_con_pendientes = [
+            operacion
+            for operacion in operaciones
+            if self.procedimiento_tiene_pendientes(operacion)
+        ]
+        return {
+            "operaciones_pendientes": len(operaciones_con_pendientes),
+            "sesiones_pendientes": sum(
+                max(operacion.sesiones_totales - operacion.sesiones_confirmadas, 0)
+                for operacion in operaciones_con_pendientes
+            ),
+            "cuotas_pendientes": sum(
+                operacion.cuotas_plan_pagos.exclude(estado="PAGADO").count()
+                for operacion in operaciones_con_pendientes
+            ),
+        }
+
+    def actualizar_estado_automaticamente(self, save=True):
+        tiene_pendientes = False
+        for operacion in self.operaciones.prefetch_related("cuotas_plan_pagos", "citas_medicas"):
+            if self.procedimiento_tiene_pendientes(operacion):
+                tiene_pendientes = True
+                continue
+            if operacion.estado == "EN_PROCESO":
+                operacion.estado = "FINALIZADA"
+                operacion.save(update_fields=["estado", "updated_at"])
+
+        nuevo_estado = self.Estado.ACTIVO if tiene_pendientes else self.Estado.INACTIVO
+        return self.cambiar_estado(nuevo_estado, save=save)
 
     def __str__(self):
         return self.usuario.nombre_completo

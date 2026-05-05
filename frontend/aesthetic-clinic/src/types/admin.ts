@@ -1,3 +1,12 @@
+import type {
+  ClientAppointment,
+  ClientOperation,
+  ClientPayment,
+  ClientQuota,
+  ClientReservationAvailabilityResponse,
+  CreateClientReservationResponse,
+} from './client'
+
 export type AdminMetric = {
   id: string
   label: string
@@ -56,6 +65,18 @@ export type ProspectLead = {
   state?: string
   createdAt?: string
   convertedAt?: string
+  scheduledMedicalAppointment?: ProspectMedicalAppointment | null
+}
+
+export type ProspectMedicalAppointment = {
+  id: string
+  rawId: number
+  prospectRawId: number
+  dateTime: string
+  specialist: string
+  service: string
+  status: string
+  canCancel: boolean
 }
 
 export type OperationCardData = {
@@ -103,6 +124,7 @@ export type StaffCapacityItem = {
 
 export type ClientSnapshot = {
   id: string
+  rawId: number
   name: string
   phone: string
   status: string
@@ -119,6 +141,44 @@ export type ClientScheduledAppointment = {
   operation: string
   specialist: string
   status: string
+}
+
+export type AdminClientDetailResponse = {
+  client: ClientSnapshot
+  metrics: AdminMetric[]
+  operations: ClientOperation[]
+  appointments: ClientAppointment[]
+  sessions: ClientAppointment[]
+  payments: ClientPayment[]
+  pendingQuotas: ClientQuota[]
+}
+
+export type AdminClientReservationAvailabilityResponse = ClientReservationAvailabilityResponse
+
+export type CreateAdminClientReservationResponse = CreateClientReservationResponse
+
+export type AdminClientInactivateResponse = {
+  detail: string
+  client: ClientSnapshot
+}
+
+export type AdminProspectMedicalAvailabilityResponse = {
+  prospect: ProspectLead
+  service: {
+    rawId: number
+    name: string
+  }
+  calendar: ClientReservationAvailabilityResponse['calendar']
+}
+
+export type CreateAdminProspectMedicalAppointmentResponse = {
+  detail: string
+  appointment: ProspectMedicalAppointment
+}
+
+export type CancelAdminProspectMedicalAppointmentResponse = {
+  detail: string
+  appointment: ProspectMedicalAppointment
 }
 
 export type DashboardResponse = {

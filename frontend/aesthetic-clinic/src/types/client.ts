@@ -82,6 +82,9 @@ export type ClientAppointment = {
   biometric: string
   details: string
   canManage: boolean
+  canMarkPendingBiometric: boolean
+  canConfirmBiometric: boolean
+  biometricMockTemplate: string
 }
 
 export type ClientWelcome = {

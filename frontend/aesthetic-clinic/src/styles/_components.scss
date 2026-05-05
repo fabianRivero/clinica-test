@@ -283,6 +283,7 @@
 .field {
   display: grid;
   gap: var(--spacing-2);
+  min-width: 0;
 
   span {
     font-size: 0.92rem;
@@ -307,6 +308,8 @@
 }
 
 .input {
+  width: 100%;
+  min-width: 0;
   min-height: 3rem;
   padding: 0.9rem 1rem;
   border-radius: 16px;
@@ -595,6 +598,16 @@
 .table-muted {
   color: var(--color-text-soft);
   font-size: 0.86rem;
+}
+
+.table-strong-link {
+  color: var(--color-primary);
+  font-weight: 700;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
 }
 
 .agenda-list,

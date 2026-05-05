@@ -14,6 +14,7 @@ from operations.models import (
     AgendaHabitualDia,
     AgendaHabitualEspecialista,
     CitaMedica,
+    CitaProspecto,
     DiaBloqueadoAgendaGlobal,
     DiaSemana,
     DisponibilidadCita,
@@ -91,11 +92,21 @@ def _weekday_labels(rule):
 
 
 def _find_blocking_booking(slot):
-    return next(
+    client_booking = next(
         (
             cita
             for cita in slot.citas_origen.all()
             if cita.estado in BLOCKING_RESERVATION_STATES
+        ),
+        None,
+    )
+    if client_booking:
+        return client_booking
+    return next(
+        (
+            cita
+            for cita in slot.citas_prospectos_origen.all()
+            if cita.estado == CitaProspecto.Estado.PROGRAMADA
         ),
         None,
     )
@@ -113,7 +124,8 @@ def _slot_status(slot, booking):
 
 def _slot_item(slot):
     booking = _find_blocking_booking(slot)
-    operation = booking.operacion if booking else None
+    operation = getattr(booking, "operacion", None) if booking else None
+    prospect = getattr(booking, "prospecto", None) if booking else None
     patient = operation.paciente if operation else None
     return {
         "id": f"AVL-{slot.pk:04d}",
@@ -127,17 +139,19 @@ def _slot_item(slot):
         "timeSlotId": slot.horario_base_id,
         "status": _slot_status(slot, booking),
         "coverage": _scope_labels(slot),
-        "patient": _full_name(patient.usuario) if patient else "",
+        "patient": _full_name(patient.usuario) if patient else str(prospect) if prospect else "",
         "operation": (
             operation.servicio_config.proc_estetico.proceso
             if operation and operation.servicio_config.proc_estetico
             else operation.servicio_config.tipo_servicio.tipo
             if operation
+            else booking.servicio_config.tipo_servicio.tipo
+            if prospect
             else ""
         ),
         "appointmentId": booking.pk if booking else None,
         "appointmentCanCancel": bool(
-            booking and booking.estado == CitaMedica.Estado.PROGRAMADA
+            booking and hasattr(booking, "operacion") and booking.estado == CitaMedica.Estado.PROGRAMADA
         ),
         "reservationState": booking.get_estado_display() if booking else "",
         "active": slot.activo,
@@ -157,7 +171,10 @@ def _time_slot_item(slot):
         "futureSlots": future_slots.count(),
         "reservedFutureSlots": future_slots.filter(
             citas_origen__estado__in=BLOCKING_RESERVATION_STATES
-        ).distinct().count(),
+        ).distinct().count()
+        + future_slots.filter(citas_prospectos_origen__estado=CitaProspecto.Estado.PROGRAMADA)
+        .distinct()
+        .count(),
     }
 
 
@@ -457,7 +474,7 @@ def _success_without_sync(message, status=201):
 def admin_remove_visible_slot(request, slot_id):
     slot = (
         DisponibilidadCita.objects.select_related("especialista__usuario", "horario_base")
-        .prefetch_related("citas_origen")
+        .prefetch_related("citas_origen", "citas_prospectos_origen")
         .filter(pk=slot_id)
         .first()
     )
@@ -518,6 +535,13 @@ def admin_availability(request):
                     "operacion__paciente__usuario",
                     "operacion__servicio_config__tipo_servicio",
                     "operacion__servicio_config__proc_estetico",
+                ).order_by("-created_at"),
+            ),
+            Prefetch(
+                "citas_prospectos_origen",
+                queryset=CitaProspecto.objects.select_related(
+                    "prospecto",
+                    "servicio_config__tipo_servicio",
                 ).order_by("-created_at"),
             ),
         )
@@ -756,6 +780,9 @@ def admin_update_time_slot(request, slot_id):
     has_reserved_future_slots = slot.disponibilidades_cita.filter(
         fecha_hora__gt=timezone.now(),
         citas_origen__estado__in=BLOCKING_RESERVATION_STATES,
+    ).exists() or slot.disponibilidades_cita.filter(
+        fecha_hora__gt=timezone.now(),
+        citas_prospectos_origen__estado=CitaProspecto.Estado.PROGRAMADA,
     ).exists()
     if has_reserved_future_slots and (
         parsed_start != slot.hora_inicio or parsed_end != slot.hora_fin
@@ -791,6 +818,9 @@ def admin_delete_time_slot(request, slot_id):
     if slot.disponibilidades_cita.filter(
         fecha_hora__gt=timezone.now(),
         citas_origen__estado__in=BLOCKING_RESERVATION_STATES,
+    ).exists() or slot.disponibilidades_cita.filter(
+        fecha_hora__gt=timezone.now(),
+        citas_prospectos_origen__estado=CitaProspecto.Estado.PROGRAMADA,
     ).exists():
         return _json(
             {
