@@ -22,7 +22,7 @@ from catalogs.models import (
     ServicioConfig,
     TipoServicio,
 )
-from customers.models import Cliente, Prospecto
+from customers.models import Cliente, HuellaBiometricaCliente, Prospecto
 from operations.models import (
     AgendaExcepcionEspecialista,
     AgendaHabitualEspecialista,
@@ -37,6 +37,13 @@ from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
 
 def _json(data, status=200):
     return JsonResponse(data, status=status, json_dumps_params={"ensure_ascii": False})
+
+
+def _load_payload(request):
+    try:
+        return json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return None
 
 
 def _admin_required(view_func):
@@ -187,6 +194,7 @@ def _operation_card(operacion):
 
 def _operation_detail(operacion):
     ficha = getattr(operacion, "ficha_clinica", None)
+    huella = getattr(operacion.paciente, "huella_biometrica", None)
     procedure = operacion.servicio_config.proc_estetico
     document_field = ficha.documento_escaneado_pdf if ficha else None
     document_url = document_field.url if document_field else ""
@@ -222,13 +230,20 @@ def _operation_detail(operacion):
         "consentAccepted": bool(ficha and ficha.consentimiento_aceptado),
         "documentPdfUrl": document_url,
         "documentPdfName": document_name,
+        "hasBiometricEnrollment": bool(huella and huella.activo),
+        "biometricMockTemplate": huella.template_biometrico if huella and huella.proveedor == HuellaBiometricaCliente.Proveedor.MOCK else "",
         "appointments": [
             {
                 "id": f"CIT-{cita.pk:04d}",
+                "rawId": cita.pk,
                 "dateTime": _datetime_label(cita.fecha_hora),
                 "specialist": _full_name(cita.medico.usuario),
                 "status": cita.get_estado_display(),
                 "biometricStatus": "Validada" if cita.verif_biometria else "Pendiente",
+                "canConfirmBiometric": cita.estado in {
+                    CitaMedica.Estado.PROGRAMADA,
+                    CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+                },
             }
             for cita in operacion.citas_medicas.all()
         ],
@@ -1537,6 +1552,74 @@ def admin_cancel_appointment(request, appointment_id):
                 "specialist": _full_name(appointment.medico.usuario),
                 "status": appointment.get_estado_display(),
             },
+        }
+    )
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_confirm_appointment_biometric(request, appointment_id):
+    appointment = (
+        CitaMedica.objects.select_related(
+            "medico__usuario",
+            "operacion__paciente__usuario",
+            "operacion__servicio_config__tipo_servicio",
+            "operacion__servicio_config__proc_estetico",
+        )
+        .filter(pk=appointment_id)
+        .first()
+    )
+    if not appointment:
+        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+
+    if appointment.estado not in {
+        CitaMedica.Estado.PROGRAMADA,
+        CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+    }:
+        return _json({"detail": "Solo se pueden confirmar citas programadas o pendientes de biometria."}, status=400)
+
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    captured_template = (payload.get("template") or "").strip()
+    try:
+        quality = int(payload.get("quality") or 0)
+    except (TypeError, ValueError):
+        quality = 0
+    enrollment = HuellaBiometricaCliente.objects.filter(
+        cliente=appointment.operacion.paciente,
+        activo=True,
+    ).first()
+
+    if not enrollment:
+        return _json({"detail": "El cliente no tiene una huella biometrica registrada."}, status=400)
+    if not captured_template:
+        return _json({"detail": "Debes capturar la huella antes de confirmar la cita."}, status=400)
+    if quality < 60:
+        return _json({"detail": "La calidad de captura simulada es insuficiente."}, status=400)
+    if captured_template != enrollment.template_biometrico:
+        return _json({"detail": "La huella capturada no coincide con la huella registrada del cliente."}, status=400)
+
+    appointment.estado = CitaMedica.Estado.CONFIRMADA
+    appointment.verif_biometria = True
+    appointment.save()
+
+    return _json(
+        {
+            "detail": "La cita fue confirmada con huella biometrica simulada.",
+            "appointment": {
+                "id": f"CIT-{appointment.pk:04d}",
+                "rawId": appointment.pk,
+                "dateTime": _datetime_label(appointment.fecha_hora),
+                "operation": _procedure_name(appointment.operacion),
+                "specialist": _full_name(appointment.medico.usuario),
+                "status": appointment.get_estado_display(),
+                "biometricStatus": "Validada",
+                "confirmedAt": _datetime_label(appointment.fecha_confirmacion_biometrica),
+            },
+            "operation": _operation_detail(appointment.operacion),
         }
     )
 

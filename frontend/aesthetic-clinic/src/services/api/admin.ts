@@ -30,6 +30,7 @@ import type {
 } from '../../types/admin'
 import type {
   ProspectConversionFinalizeResponse,
+  ProspectConversionBiometricData,
   ProspectConversionMedicalData,
   ProspectConversionOperationData,
   ProspectConversionResponse,
@@ -127,6 +128,16 @@ export function cancelAdminAppointment(appointmentId: number) {
   return requestJsonWithBody<AdminCancelAppointmentResponse>(
     `/api/admin/citas/${appointmentId}/cancelar/`,
     {},
+  )
+}
+
+export function confirmAdminAppointmentBiometric(
+  appointmentId: number,
+  payload: Pick<ProspectConversionBiometricData, 'template' | 'quality' | 'deviceSerial' | 'provider'>,
+) {
+  return requestJsonWithBody<OperationDetailResponse>(
+    `/api/admin/citas/${appointmentId}/confirmar-biometria/`,
+    payload,
   )
 }
 
@@ -348,6 +359,13 @@ export function saveAdminProspectConversionOperationStep(prospectId: string, pay
 export function saveAdminProspectConversionMedicalStep(prospectId: string, payload: ProspectConversionMedicalData) {
   return requestJsonWithBody<ProspectConversionResponse>(
     `/api/admin/prospectos/${prospectId}/conversion/paso-3/`,
+    payload,
+  )
+}
+
+export function saveAdminProspectConversionBiometricStep(prospectId: string, payload: ProspectConversionBiometricData) {
+  return requestJsonWithBody<ProspectConversionResponse>(
+    `/api/admin/prospectos/${prospectId}/conversion/paso-4/`,
     payload,
   )
 }

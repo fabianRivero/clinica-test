@@ -1,6 +1,6 @@
 import type { ProspectLead } from './admin'
 
-export type ConversionStep = 1 | 2 | 3
+export type ConversionStep = 1 | 2 | 3 | 4
 
 export type ProspectConversionUserData = {
   primerNombre: string
@@ -81,14 +81,25 @@ export type ProspectConversionMedicalData = {
   fieldResponses: Record<string, ProspectConversionFieldResponse>
 }
 
+export type ProspectConversionBiometricData = {
+  provider: 'MOCK' | 'SECU_GEN'
+  template: string
+  quality: number
+  deviceSerial: string
+  consentAccepted: boolean
+  capturedAt: string
+}
+
 export type ProspectConversionDraft = {
   currentStep: ConversionStep
   stepUserCompleted: boolean
   stepOperationCompleted: boolean
   stepMedicalCompleted: boolean
+  stepBiometricCompleted: boolean
   userData: ProspectConversionUserData
   operationData: ProspectConversionOperationData
   medicalData: ProspectConversionMedicalData
+  biometricData: ProspectConversionBiometricData
 }
 
 export type ProspectConversionServiceConfig = {

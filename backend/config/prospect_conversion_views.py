@@ -22,7 +22,7 @@ from catalogs.models import (
 )
 from clinical.models import AnalisisEstetico, PatologiaPorAnalisis
 from config.api_views import _admin_required, _prospect_item
-from customers.models import Cliente, Prospecto, ProspectoConversionBorrador
+from customers.models import Cliente, HuellaBiometricaCliente, Prospecto, ProspectoConversionBorrador
 from operations.models import (
     FichaAntecedenteMedico,
     FichaCampo,
@@ -161,6 +161,17 @@ def _blank_medical_data():
     }
 
 
+def _blank_biometric_data():
+    return {
+        "provider": "MOCK",
+        "template": "",
+        "quality": 0,
+        "deviceSerial": "",
+        "consentAccepted": False,
+        "capturedAt": "",
+    }
+
+
 def _field_response_has_value(field, response):
     if field.tipo_campo == FichaCampo.TipoCampo.TEXTO:
         return bool((response.get("valueText") or "").strip())
@@ -200,6 +211,7 @@ def _serialize_draft(draft):
         "stepUserCompleted": draft.paso_usuario_completado,
         "stepOperationCompleted": draft.paso_operacion_completado,
         "stepMedicalCompleted": draft.paso_ficha_completado,
+        "stepBiometricCompleted": draft.paso_biometria_completado,
         "userData": user_data or _build_initial_user_data(draft.prospecto),
         "operationData": {
             "serviceConfigId": "",
@@ -218,6 +230,10 @@ def _serialize_draft(draft):
             "fechasVencimientoCuotas": due_dates,
         },
         "medicalData": medical_data,
+        "biometricData": {
+            **_blank_biometric_data(),
+            **dict(draft.datos_biometria or {}),
+        },
     }
 
 
@@ -700,6 +716,37 @@ def _validate_medical_step(payload, service_config):
     }, None
 
 
+def _validate_biometric_step(payload):
+    errors = {}
+    provider = (payload.get("provider") or "MOCK").strip().upper()
+    template = (payload.get("template") or "").strip()
+    device_serial = (payload.get("deviceSerial") or "").strip()
+    consent_accepted = _parse_bool(payload.get("consentAccepted"))
+    captured_at = (payload.get("capturedAt") or "").strip()
+    quality = _parse_positive_int(payload.get("quality"), "quality", errors, required=True, min_value=1)
+
+    if provider not in {choice[0] for choice in HuellaBiometricaCliente.Proveedor.choices}:
+        errors["provider"] = "El proveedor biometrico no es valido."
+    if not template:
+        errors["template"] = "Debes capturar una huella antes de continuar."
+    if quality is not None and quality < 60:
+        errors["quality"] = "La calidad simulada debe ser de al menos 60."
+    if not consent_accepted:
+        errors["consentAccepted"] = "Debes registrar el consentimiento biometrico del cliente."
+
+    if errors:
+        return None, errors
+
+    return {
+        "provider": provider,
+        "template": template,
+        "quality": quality,
+        "deviceSerial": device_serial,
+        "consentAccepted": consent_accepted,
+        "capturedAt": captured_at,
+    }, None
+
+
 @require_GET
 @_admin_required
 def admin_prospect_conversion_detail(request, prospecto_id):
@@ -822,11 +869,44 @@ def admin_prospect_conversion_medical_step(request, prospecto_id):
 
     draft.datos_ficha = medical_data
     draft.paso_ficha_completado = True
-    draft.paso_actual = ProspectoConversionBorrador.Paso.FICHA_MEDICA
+    draft.paso_actual = max(draft.paso_actual, ProspectoConversionBorrador.Paso.BIOMETRIA)
     draft.save(
         update_fields=[
             "datos_ficha",
             "paso_ficha_completado",
+            "paso_actual",
+            "updated_at",
+        ]
+    )
+    return _json(_serialize_conversion_payload(prospecto, draft))
+
+
+@require_POST
+@_admin_required
+def admin_prospect_conversion_biometric_step(request, prospecto_id):
+    prospecto, error_response = _get_prospecto_convertible(prospecto_id)
+    if error_response:
+        return error_response
+
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    draft = _get_or_create_draft(prospecto, request.user)
+    if not draft.paso_ficha_completado:
+        return _json({"detail": "Debes completar primero la ficha medica."}, status=400)
+
+    biometric_data, errors = _validate_biometric_step(payload)
+    if errors:
+        return _json({"detail": "Corrige los errores del paso 4.", "errors": errors}, status=400)
+
+    draft.datos_biometria = biometric_data
+    draft.paso_biometria_completado = True
+    draft.paso_actual = ProspectoConversionBorrador.Paso.BIOMETRIA
+    draft.save(
+        update_fields=[
+            "datos_biometria",
+            "paso_biometria_completado",
             "paso_actual",
             "updated_at",
         ]
@@ -849,12 +929,18 @@ def admin_prospect_conversion_finalize(request, prospecto_id):
     draft = ProspectoConversionBorrador.objects.select_for_update().filter(prospecto=prospecto).first()
     if not draft:
         return _json({"detail": "No existe un borrador de conversion para este prospecto."}, status=400)
-    if not (draft.paso_usuario_completado and draft.paso_operacion_completado and draft.paso_ficha_completado):
-        return _json({"detail": "Debes completar los tres pasos antes de finalizar la conversion."}, status=400)
+    if not (
+        draft.paso_usuario_completado
+        and draft.paso_operacion_completado
+        and draft.paso_ficha_completado
+        and draft.paso_biometria_completado
+    ):
+        return _json({"detail": "Debes completar los cuatro pasos antes de finalizar la conversion."}, status=400)
 
     user_data = draft.datos_usuario or {}
     operation_data = draft.datos_operacion or {}
     medical_data = draft.datos_ficha or {}
+    biometric_data = draft.datos_biometria or {}
     analisis_data = medical_data.get("analisisEstetico") or {}
 
     service_config = (
@@ -900,6 +986,16 @@ def admin_prospect_conversion_finalize(request, prospecto_id):
         telefono=user_data.get("telefono", ""),
         ocupacion=user_data.get("ocupacion", ""),
         observaciones=user_data.get("observacionesCliente", ""),
+    )
+
+    HuellaBiometricaCliente.objects.create(
+        cliente=cliente,
+        proveedor=biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK,
+        template_biometrico=biometric_data.get("template", ""),
+        device_serial=biometric_data.get("deviceSerial", ""),
+        calidad_captura=int(biometric_data.get("quality") or 0),
+        consentimiento_aceptado=bool(biometric_data.get("consentAccepted")),
+        registrado_por=request.user,
     )
 
     analisis = AnalisisEstetico.objects.create(

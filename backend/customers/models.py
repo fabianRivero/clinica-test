@@ -63,6 +63,7 @@ class ProspectoConversionBorrador(TimeStampedModel):
         DATOS_USUARIO = 1, "Datos de usuario"
         OPERACION = 2, "Operacion"
         FICHA_MEDICA = 3, "Ficha medica"
+        BIOMETRIA = 4, "Biometria"
 
     prospecto = models.OneToOneField(
         "customers.Prospecto",
@@ -83,9 +84,11 @@ class ProspectoConversionBorrador(TimeStampedModel):
     paso_usuario_completado = models.BooleanField(default=False)
     paso_operacion_completado = models.BooleanField(default=False)
     paso_ficha_completado = models.BooleanField(default=False)
+    paso_biometria_completado = models.BooleanField(default=False)
     datos_usuario = models.JSONField(default=dict, blank=True)
     datos_operacion = models.JSONField(default=dict, blank=True)
     datos_ficha = models.JSONField(default=dict, blank=True)
+    datos_biometria = models.JSONField(default=dict, blank=True)
 
     class Meta:
         db_table = "prospectos_conversion_borrador"
@@ -136,5 +139,42 @@ class Cliente(TimeStampedModel):
 
     def __str__(self):
         return self.usuario.nombre_completo
+
+
+class HuellaBiometricaCliente(TimeStampedModel):
+    class Proveedor(models.TextChoices):
+        MOCK = "MOCK", "Simulador"
+        SECU_GEN = "SECU_GEN", "SecuGen"
+
+    cliente = models.OneToOneField(
+        "customers.Cliente",
+        on_delete=models.CASCADE,
+        related_name="huella_biometrica",
+    )
+    proveedor = models.CharField(
+        max_length=20,
+        choices=Proveedor.choices,
+        default=Proveedor.MOCK,
+    )
+    template_biometrico = models.TextField()
+    device_serial = models.CharField(max_length=120, blank=True)
+    calidad_captura = models.PositiveSmallIntegerField(default=0)
+    consentimiento_aceptado = models.BooleanField(default=False)
+    activo = models.BooleanField(default=True)
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="huellas_biometricas_registradas",
+        null=True,
+        blank=True,
+    )
+    fecha_registro = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "clientes_huellas_biometricas"
+        ordering = ("-fecha_registro",)
+
+    def __str__(self):
+        return f"Huella biometrica - {self.cliente}"
 
 # Create your models here.

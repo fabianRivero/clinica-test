@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
@@ -6,7 +6,8 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
-import { getAdminOperationDetail } from '../../services/api/admin'
+import { confirmAdminAppointmentBiometric, getAdminOperationDetail } from '../../services/api/admin'
+import { verifyMockFingerprint } from '../../services/fingerprint/mockFingerprint'
 
 function getStatusTone(status: string) {
   const normalized = status.toLowerCase()
@@ -19,7 +20,37 @@ function getStatusTone(status: string) {
 export function AdminOperationDetailPage() {
   const { operationId = '' } = useParams()
   const loader = useMemo(() => () => getAdminOperationDetail(operationId), [operationId])
-  const { data, isLoading, error } = useApiResource(loader)
+  const { data, isLoading, error, reload } = useApiResource(loader)
+  const [biometricActionId, setBiometricActionId] = useState<number | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const handleConfirmBiometric = async (appointmentId: number) => {
+    if (biometricActionId) return
+
+    setActionError(null)
+    setBiometricActionId(appointmentId)
+    try {
+      if (!operation.biometricMockTemplate) {
+        throw new Error('Esta operacion no tiene una huella mock disponible para comparar.')
+      }
+      const capture = await verifyMockFingerprint(operation.biometricMockTemplate)
+      await confirmAdminAppointmentBiometric(appointmentId, {
+        provider: capture.provider,
+        template: capture.template,
+        quality: capture.quality,
+        deviceSerial: capture.deviceSerial,
+      })
+      reload()
+    } catch (requestError) {
+      setActionError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo confirmar la cita con la huella simulada.',
+      )
+    } finally {
+      setBiometricActionId(null)
+    }
+  }
 
   if (isLoading && !data) {
     return (
@@ -76,6 +107,9 @@ export function AdminOperationDetailPage() {
         title="Informacion principal"
         description="Estado global del tratamiento, paciente, procedimiento y seguimiento activo."
       >
+        {actionError ? (
+          <DataState title="No se pudo confirmar biometria" message={actionError} tone="danger" />
+        ) : null}
         <div className="operation-detail-grid">
           <article className="operation-detail-panel">
             <div className="operation-detail-panel__header">
@@ -252,6 +286,18 @@ export function AdminOperationDetailPage() {
                     <p>{appointment.specialist}</p>
                     <span>{appointment.status}</span>
                     <small>Biometria: {appointment.biometricStatus}</small>
+                    {appointment.canConfirmBiometric ? (
+                      <button
+                        className="button button--ghost button--compact"
+                        disabled={biometricActionId !== null}
+                        type="button"
+                        onClick={() => handleConfirmBiometric(appointment.rawId)}
+                      >
+                        {biometricActionId === appointment.rawId
+                          ? 'Validando...'
+                          : 'Confirmar huella mock'}
+                      </button>
+                    ) : null}
                   </article>
                 ))}
               </div>

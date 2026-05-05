@@ -145,10 +145,12 @@ export type OperationsResponse = {
 
 export type OperationDetailAppointment = {
   id: string
+  rawId: number
   dateTime: string
   specialist: string
   status: string
   biometricStatus: string
+  canConfirmBiometric: boolean
 }
 
 export type OperationDetailQuota = {
@@ -184,6 +186,8 @@ export type OperationDetailData = {
   consentAccepted: boolean
   documentPdfUrl: string
   documentPdfName: string
+  hasBiometricEnrollment: boolean
+  biometricMockTemplate: string
   appointments: OperationDetailAppointment[]
   quotas: OperationDetailQuota[]
 }

@@ -8,12 +8,15 @@ import {
   cancelAdminProspectConversion,
   finalizeAdminProspectConversion,
   getAdminProspectConversion,
+  saveAdminProspectConversionBiometricStep,
   saveAdminProspectConversionMedicalStep,
   saveAdminProspectConversionOperationStep,
   saveAdminProspectConversionUserStep,
 } from '../../services/api/admin'
+import { checkMockFingerprintDevice, enrollMockFingerprint } from '../../services/fingerprint/mockFingerprint'
 import type {
   ConversionStep,
+  ProspectConversionBiometricData,
   ProspectConversionAntecedente,
   ProspectConversionCirugia,
   ProspectConversionDraft,
@@ -30,6 +33,7 @@ const stepLabels: Array<{ step: ConversionStep; label: string }> = [
   { step: 1, label: 'Datos de usuario' },
   { step: 2, label: 'Operacion' },
   { step: 3, label: 'Ficha medica' },
+  { step: 4, label: 'Huella biometrica' },
 ]
 
 type FieldErrors = Record<string, string>
@@ -37,7 +41,8 @@ type FieldErrors = Record<string, string>
 function getInitialStep(draft: ProspectConversionDraft): ConversionStep {
   if (!draft.stepUserCompleted) return 1
   if (!draft.stepOperationCompleted) return 2
-  return 3
+  if (!draft.stepMedicalCompleted) return 3
+  return 4
 }
 
 function emptyFieldResponse(): ProspectConversionFieldResponse {
@@ -78,6 +83,17 @@ function buildDueDateList(count: number, currentValues: string[]) {
   return Array.from({ length: count }, (_, index) => currentValues[index] || '')
 }
 
+function blankBiometricData(): ProspectConversionBiometricData {
+  return {
+    provider: 'MOCK',
+    template: '',
+    quality: 0,
+    deviceSerial: '',
+    consentAccepted: false,
+    capturedAt: '',
+  }
+}
+
 export function AdminProspectConvertPage() {
   const navigate = useNavigate()
   const { prospectId = '' } = useParams()
@@ -96,6 +112,8 @@ export function AdminProspectConvertPage() {
   const [userForm, setUserForm] = useState<ProspectConversionUserData | null>(null)
   const [operationForm, setOperationForm] = useState<ProspectConversionOperationData | null>(null)
   const [medicalForm, setMedicalForm] = useState<ProspectConversionMedicalData | null>(null)
+  const [biometricForm, setBiometricForm] = useState<ProspectConversionBiometricData>(blankBiometricData)
+  const [biometricStatus, setBiometricStatus] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -110,6 +128,7 @@ export function AdminProspectConvertPage() {
         setUserForm(response.draft.userData)
         setOperationForm(response.draft.operationData)
         setMedicalForm(response.draft.medicalData)
+        setBiometricForm(response.draft.biometricData)
         setMedicalDocumentFile(null)
         setActiveStep(getInitialStep(response.draft))
       } catch (requestError) {
@@ -138,7 +157,8 @@ export function AdminProspectConvertPage() {
     if (!data) return false
     if (step === 1) return true
     if (step === 2) return data.draft.stepUserCompleted || activeStep === 2
-    return data.draft.stepOperationCompleted || activeStep === 3
+    if (step === 3) return data.draft.stepOperationCompleted || activeStep === 3
+    return data.draft.stepMedicalCompleted || activeStep === 4
   }
 
   const resetFeedback = () => {
@@ -151,6 +171,7 @@ export function AdminProspectConvertPage() {
     setUserForm(response.draft.userData)
     setOperationForm(response.draft.operationData)
     setMedicalForm(response.draft.medicalData)
+    setBiometricForm(response.draft.biometricData)
   }
 
   const handleUserChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -361,11 +382,70 @@ export function AdminProspectConvertPage() {
     }
   }
 
-  const handleFinalize = async (event: FormEvent) => {
+  const handleSaveStep3 = async (event: FormEvent) => {
     event.preventDefault()
     if (!medicalForm) return
 
     resetFeedback()
+    if (!medicalDocumentFile) {
+      setFieldErrors({
+        documentoFichaPdf: 'Debes adjuntar el PDF escaneado de la ficha medica antes de continuar.',
+      })
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      const saveResponse = await saveAdminProspectConversionMedicalStep(prospectId, medicalForm)
+      applyResponse(saveResponse)
+      setActiveStep(4)
+    } catch (requestError) {
+      if (requestError instanceof Error && 'fieldErrors' in requestError) {
+        const maybeFieldErrors = (requestError as Error & { fieldErrors?: FieldErrors }).fieldErrors
+        if (maybeFieldErrors) {
+          setFieldErrors(maybeFieldErrors)
+        }
+      }
+      setSubmitError(requestError instanceof Error ? requestError.message : 'No se pudo guardar el paso 3.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleCaptureBiometric = async () => {
+    resetFeedback()
+    setBiometricStatus('Conectando con el lector SecuGen simulado...')
+    try {
+      const device = await checkMockFingerprintDevice()
+      setBiometricStatus(device.message)
+      const capture = await enrollMockFingerprint(`${userForm?.username || data?.prospect.name || prospectId}`)
+      setBiometricForm({
+        provider: capture.provider,
+        template: capture.template,
+        quality: capture.quality,
+        deviceSerial: capture.deviceSerial,
+        capturedAt: capture.capturedAt,
+        consentAccepted: biometricForm.consentAccepted,
+      })
+      setBiometricStatus(`Huella simulada capturada con calidad ${capture.quality}.`)
+    } catch (requestError) {
+      setSubmitError(requestError instanceof Error ? requestError.message : 'No se pudo capturar la huella simulada.')
+      setBiometricStatus(null)
+    }
+  }
+
+  const handleFinalize = async (event: FormEvent) => {
+    event.preventDefault()
+
+    resetFeedback()
+    if (!biometricForm.template) {
+      setFieldErrors({ template: 'Debes capturar la huella biometrica simulada.' })
+      return
+    }
+    if (!biometricForm.consentAccepted) {
+      setFieldErrors({ consentAccepted: 'Debes registrar el consentimiento biometrico del cliente.' })
+      return
+    }
     if (!medicalDocumentFile) {
       setFieldErrors({
         documentoFichaPdf: 'Debes adjuntar el PDF escaneado de la ficha medica para finalizar la conversion.',
@@ -375,8 +455,8 @@ export function AdminProspectConvertPage() {
 
     setIsSaving(true)
     try {
-      const saveResponse = await saveAdminProspectConversionMedicalStep(prospectId, medicalForm)
-      applyResponse(saveResponse)
+      const biometricResponse = await saveAdminProspectConversionBiometricStep(prospectId, biometricForm)
+      applyResponse(biometricResponse)
       const finalizeResponse = await finalizeAdminProspectConversion(prospectId, medicalDocumentFile)
       navigate('/admin/prospectos', {
         replace: true,
@@ -628,7 +708,7 @@ export function AdminProspectConvertPage() {
       <PageHeader
         eyebrow="Conversion de prospecto"
         title={`Convertir a ${data.prospect.name}`}
-        description="Este flujo guarda temporalmente la informacion en tres pasos: datos de usuario, operacion y ficha medica. Solo al finalizar se crea el cliente y la nueva operacion."
+        description="Este flujo guarda temporalmente la informacion en cuatro pasos: datos de usuario, operacion, ficha medica y huella biometrica. Solo al finalizar se crea el cliente y la nueva operacion."
         actions={[{ label: 'Volver a prospectos', variant: 'ghost', to: '/admin/prospectos' }]}
       />
 
@@ -655,7 +735,7 @@ export function AdminProspectConvertPage() {
           <button
             key={item.step}
             className={`stepper__item ${activeStep === item.step ? 'is-active' : ''} ${
-              item.step < activeStep || (item.step === 1 && data.draft.stepUserCompleted) || (item.step === 2 && data.draft.stepOperationCompleted) || (item.step === 3 && data.draft.stepMedicalCompleted)
+              item.step < activeStep || (item.step === 1 && data.draft.stepUserCompleted) || (item.step === 2 && data.draft.stepOperationCompleted) || (item.step === 3 && data.draft.stepMedicalCompleted) || (item.step === 4 && data.draft.stepBiometricCompleted)
                 ? 'is-complete'
                 : ''
             }`}
@@ -897,7 +977,7 @@ export function AdminProspectConvertPage() {
           title="Ficha medica"
           description="Completa la informacion clinica general y, si aplica, las respuestas del procedimiento seleccionado."
         >
-          <form className="form-grid" onSubmit={handleFinalize}>
+          <form className="form-grid" onSubmit={handleSaveStep3}>
             <div className="wizard-block field--full">
               <div className="wizard-block__header">
                 <div>
@@ -1021,32 +1101,6 @@ export function AdminProspectConvertPage() {
               <label className="field field--full">
                 <span>Observaciones</span>
                 <textarea className="input textarea" name="observaciones" rows={4} value={medicalForm.observaciones} onChange={handleMedicalChange} />
-              </label>
-            </div>
-
-            <div className="wizard-block field--full">
-              <div className="wizard-block__header">
-                <div>
-                  <strong>Documento escaneado de la ficha</strong>
-                  <p>Adjunta el PDF final escaneado. Este archivo se guardara junto a la ficha clinica de la operacion.</p>
-                </div>
-              </div>
-              <label className="field field--full">
-                <span>PDF de la ficha medica</span>
-                <input
-                  accept=".pdf,application/pdf"
-                  className="input input--file"
-                  type="file"
-                  onChange={handleMedicalDocumentChange}
-                />
-                <small className="field__hint">
-                  {medicalDocumentFile
-                    ? `Archivo seleccionado: ${medicalDocumentFile.name}`
-                    : 'Debes subir un archivo PDF antes de convertir el prospecto.'}
-                </small>
-                {fieldErrors.documentoFichaPdf ? (
-                  <small className="field__error">{fieldErrors.documentoFichaPdf}</small>
-                ) : null}
               </label>
             </div>
 
@@ -1200,6 +1254,32 @@ export function AdminProspectConvertPage() {
               </div>
             )}
 
+            <div className="wizard-block field--full">
+              <div className="wizard-block__header">
+                <div>
+                  <strong>Documento escaneado de la ficha</strong>
+                  <p>Adjunta el PDF final escaneado. Este archivo se guardara junto a la ficha clinica de la operacion.</p>
+                </div>
+              </div>
+              <label className="field field--full">
+                <span>PDF de la ficha medica</span>
+                <input
+                  accept=".pdf,application/pdf"
+                  className="input input--file"
+                  type="file"
+                  onChange={handleMedicalDocumentChange}
+                />
+                <small className="field__hint">
+                  {medicalDocumentFile
+                    ? `Archivo seleccionado: ${medicalDocumentFile.name}`
+                    : 'Debes subir un archivo PDF antes de pasar a la huella biometrica.'}
+                </small>
+                {fieldErrors.documentoFichaPdf ? (
+                  <small className="field__error">{fieldErrors.documentoFichaPdf}</small>
+                ) : null}
+              </label>
+            </div>
+
             {Object.keys(fieldErrors).length ? (
               <div className="field--full">
                 <DataState
@@ -1223,7 +1303,89 @@ export function AdminProspectConvertPage() {
                 Volver
               </button>
               <button className="button" disabled={isSaving || isCancelling} type="submit">
-                {isSaving ? 'Guardando y convirtiendo...' : 'Guardar ficha y convertir prospecto'}
+                {isSaving ? 'Guardando...' : 'Guardar ficha y continuar'}
+              </button>
+            </div>
+          </form>
+        </SectionCard>
+      ) : null}
+
+      {activeStep === 4 ? (
+        <SectionCard
+          eyebrow="Paso 4"
+          title="Huella biometrica"
+          description="Simula el enrolamiento con un lector SecuGen Hamster Pro 20. Esta capa queda lista para reemplazar el proveedor mock por la WebAPI real."
+        >
+          <form className="form-grid" onSubmit={handleFinalize}>
+            <div className="wizard-block field--full">
+              <div className="wizard-block__header">
+                <div>
+                  <strong>Captura simulada</strong>
+                  <p>El sistema genera un template estable para probar el flujo completo sin conectar el dispositivo fisico.</p>
+                </div>
+                <button
+                  className="button button--ghost button--compact"
+                  disabled={isSaving || isCancelling}
+                  type="button"
+                  onClick={handleCaptureBiometric}
+                >
+                  Capturar huella mock
+                </button>
+              </div>
+              <div className="operation-card__note-grid">
+                <article>
+                  <span>Proveedor</span>
+                  <p>{biometricForm.provider === 'MOCK' ? 'Simulador SecuGen' : 'SecuGen real'}</p>
+                </article>
+                <article>
+                  <span>Dispositivo</span>
+                  <p>{biometricForm.deviceSerial || 'Sin captura'}</p>
+                </article>
+                <article>
+                  <span>Calidad</span>
+                  <p>{biometricForm.quality ? `${biometricForm.quality}/100` : 'Pendiente'}</p>
+                </article>
+                <article>
+                  <span>Capturada</span>
+                  <p>{biometricForm.capturedAt || 'Pendiente'}</p>
+                </article>
+              </div>
+              {biometricStatus ? <small className="field__hint">{biometricStatus}</small> : null}
+              {fieldErrors.template ? <small className="field__error">{fieldErrors.template}</small> : null}
+              {fieldErrors.quality ? <small className="field__error">{fieldErrors.quality}</small> : null}
+            </div>
+
+            <label className="field field--full checkbox-row">
+              <input
+                checked={biometricForm.consentAccepted}
+                type="checkbox"
+                onChange={(event) =>
+                  setBiometricForm({
+                    ...biometricForm,
+                    consentAccepted: event.target.checked,
+                  })
+                }
+              />
+              <span>El cliente acepta registrar su huella para confirmar citas realizadas</span>
+            </label>
+            {fieldErrors.consentAccepted ? (
+              <small className="field__error field--full">{fieldErrors.consentAccepted}</small>
+            ) : null}
+
+            <div className="form-actions field--full">
+              <button
+                className="button button--ghost"
+                disabled={isSaving || isCancelling}
+                type="button"
+                onClick={handleCancelDraft}
+              >
+                {isCancelling ? 'Cancelando...' : 'Cancelar conversion'}
+              </button>
+              <button className="button button--ghost" disabled={isSaving || isCancelling} type="button" onClick={() => setActiveStep(3)}>
+                Volver
+              </button>
+              <button className="button" disabled={isSaving || isCancelling} type="submit">
+                {isSaving ? 'Guardando y convirtiendo...' : 'Finalizar conversion'}
               </button>
             </div>
           </form>

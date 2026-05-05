@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from customers.models import Cliente, Prospecto
+from customers.models import Cliente, HuellaBiometricaCliente, Prospecto
 
 
 @admin.register(Cliente)
@@ -14,6 +14,27 @@ class ClienteAdmin(admin.ModelAdmin):
         "telefono",
         "ci",
     )
+
+
+@admin.register(HuellaBiometricaCliente)
+class HuellaBiometricaClienteAdmin(admin.ModelAdmin):
+    list_display = (
+        "cliente",
+        "proveedor",
+        "device_serial",
+        "calidad_captura",
+        "consentimiento_aceptado",
+        "activo",
+        "fecha_registro",
+    )
+    list_filter = ("proveedor", "activo", "consentimiento_aceptado")
+    search_fields = (
+        "cliente__usuario__username",
+        "cliente__usuario__primer_nombre",
+        "cliente__usuario__apellido_paterno",
+        "device_serial",
+    )
+    readonly_fields = ("created_at", "updated_at", "fecha_registro")
 
 
 @admin.register(Prospecto)

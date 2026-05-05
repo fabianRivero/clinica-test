@@ -20,6 +20,7 @@ from config.api_views import (
     admin_catalogo_detalle,
     admin_catalogo_estado,
     admin_cancel_appointment,
+    admin_confirm_appointment_biometric,
     admin_catalogos,
     admin_crear_especialista,
     admin_crear_prospecto,
@@ -37,6 +38,7 @@ from config.prospect_conversion_views import (
     admin_prospect_conversion_cancel,
     admin_prospect_conversion_detail,
     admin_prospect_conversion_finalize,
+    admin_prospect_conversion_biometric_step,
     admin_prospect_conversion_medical_step,
     admin_prospect_conversion_operation_step,
     admin_prospect_conversion_user_step,
@@ -73,6 +75,11 @@ urlpatterns = [
         name="admin-prospect-conversion-medical-step-api",
     ),
     path(
+        "prospectos/<int:prospecto_id>/conversion/paso-4/",
+        admin_prospect_conversion_biometric_step,
+        name="admin-prospect-conversion-biometric-step-api",
+    ),
+    path(
         "prospectos/<int:prospecto_id>/conversion/finalizar/",
         admin_prospect_conversion_finalize,
         name="admin-prospect-conversion-finalize-api",
@@ -80,6 +87,11 @@ urlpatterns = [
     path("operaciones/", admin_operaciones, name="admin-operaciones-api"),
     path("operaciones/<int:operacion_id>/", admin_operacion_detalle, name="admin-operacion-detail-api"),
     path("citas/<int:appointment_id>/cancelar/", admin_cancel_appointment, name="admin-appointment-cancel-api"),
+    path(
+        "citas/<int:appointment_id>/confirmar-biometria/",
+        admin_confirm_appointment_biometric,
+        name="admin-appointment-biometric-confirm-api",
+    ),
     path("disponibilidad/", admin_availability, name="admin-availability-api"),
     path(
         "disponibilidad/cupos/<int:slot_id>/retirar/",
