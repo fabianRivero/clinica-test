@@ -22,6 +22,10 @@ class PagoRealizadoAdmin(admin.ModelAdmin):
     )
 
 
-admin.site.register(CuotaPlanPago)
+@admin.register(CuotaPlanPago)
+class CuotaPlanPagoAdmin(admin.ModelAdmin):
+    list_display = ("operacion", "nro_cuota", "monto_programado", "fecha_vencimiento", "estado")
+    list_filter = ("estado",)
+    search_fields = ("operacion__paciente__usuario__username",)
 
 # Register your models here.

@@ -127,6 +127,7 @@ export type ClientSnapshot = {
   rawId: number
   name: string
   phone: string
+  ci: string
   status: string
   activeOperations: number
   totalOperations: number
@@ -156,6 +157,20 @@ export type AdminClientDetailResponse = {
 export type AdminClientReservationAvailabilityResponse = ClientReservationAvailabilityResponse
 
 export type CreateAdminClientReservationResponse = CreateClientReservationResponse
+
+export type AdminClientFreeMedicalAvailabilityResponse = {
+  client: ClientSnapshot
+  service: {
+    rawId: number
+    name: string
+  }
+  calendar: ClientReservationAvailabilityResponse['calendar']
+}
+
+export type CreateAdminClientFreeMedicalAppointmentResponse = {
+  detail: string
+  appointment: ClientAppointment
+}
 
 export type AdminClientInactivateResponse = {
   detail: string
@@ -215,7 +230,10 @@ export type OperationDetailAppointment = {
 
 export type OperationDetailQuota = {
   id: string
+  rawId: number
   number: number
+  amount: string
+  amountValue: string
   dueDate: string
   status: string
   paymentsCount: number
@@ -254,6 +272,17 @@ export type OperationDetailData = {
 
 export type OperationDetailResponse = {
   operation: OperationDetailData
+}
+
+export type UpdateAdminOperationDetailsPayload = {
+  details: string
+  recommendations: string
+  sessionsTotal: number
+}
+
+export type UpdateAdminOperationPricePayload = {
+  priceTotal: string
+  quotaCount: number
 }
 
 export type PaymentsResponse = {

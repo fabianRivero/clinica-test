@@ -303,6 +303,76 @@ class CitaProspecto(TimeStampedModel):
         return f"Cita prospecto #{self.pk} - {self.prospecto}"
 
 
+class CitaClienteLibre(TimeStampedModel):
+    class Estado(models.TextChoices):
+        PROGRAMADA = "PROGRAMADA", "Programada"
+        CANCELADA = "CANCELADA", "Cancelada"
+        NO_ASISTIO = "NO_ASISTIO", "No asistio"
+
+    cliente = models.ForeignKey(
+        "customers.Cliente",
+        on_delete=models.CASCADE,
+        related_name="citas_medicas_libres",
+    )
+    servicio_config = models.ForeignKey(
+        "catalogs.ServicioConfig",
+        on_delete=models.PROTECT,
+        related_name="citas_clientes_libres",
+    )
+    medico = models.ForeignKey(
+        "staff.Especialista",
+        on_delete=models.PROTECT,
+        related_name="citas_clientes_libres",
+    )
+    disponibilidad = models.ForeignKey(
+        "operations.DisponibilidadCita",
+        on_delete=models.SET_NULL,
+        related_name="citas_clientes_libres_origen",
+        null=True,
+        blank=True,
+    )
+    fecha_hora = models.DateTimeField()
+    estado = models.CharField(
+        max_length=32,
+        choices=Estado.choices,
+        default=Estado.PROGRAMADA,
+    )
+    detalles_cita = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "citas_clientes_libres"
+        ordering = ("fecha_hora",)
+
+    def clean(self):
+        errors = {}
+        if self.servicio_config_id and self.servicio_config.proc_estetico_id:
+            errors["servicio_config"] = "Las citas medicas libres solo pueden usar servicios sin procedimiento."
+
+        if self.disponibilidad_id:
+            if self.medico_id and self.disponibilidad.especialista_id != self.medico_id:
+                errors["disponibilidad"] = (
+                    "La disponibilidad seleccionada pertenece a un especialista diferente."
+                )
+            if self.fecha_hora and self.disponibilidad.fecha_hora != self.fecha_hora:
+                errors["fecha_hora"] = (
+                    "La fecha y hora de la cita deben coincidir con la disponibilidad asignada."
+                )
+            if self.servicio_config_id and not self.disponibilidad.tipos_servicio.filter(
+                pk=self.servicio_config.tipo_servicio_id
+            ).exists():
+                errors["disponibilidad"] = "El cupo seleccionado no corresponde al servicio de cita medica."
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Cita libre #{self.pk} - {self.cliente}"
+
+
 class HorarioDisponibilidad(CatalogoEditableModel):
     hora_inicio = models.TimeField()
     hora_fin = models.TimeField()
@@ -512,7 +582,10 @@ class DisponibilidadCita(TimeStampedModel):
         has_prospect_booking = self.citas_prospectos_origen.filter(
             estado=CitaProspecto.Estado.PROGRAMADA
         ).exists()
-        return has_client_booking or has_prospect_booking
+        has_free_client_booking = self.citas_clientes_libres_origen.filter(
+            estado=CitaClienteLibre.Estado.PROGRAMADA
+        ).exists()
+        return has_client_booking or has_prospect_booking or has_free_client_booking
 
     @property
     def estado_resumen(self):

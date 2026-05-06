@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
@@ -6,7 +6,12 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
-import { confirmAdminAppointmentBiometric, getAdminOperationDetail } from '../../services/api/admin'
+import {
+  confirmAdminAppointmentBiometric,
+  getAdminOperationDetail,
+  updateAdminOperationDetails,
+  updateAdminOperationPricePlan,
+} from '../../services/api/admin'
 import { verifyMockFingerprint } from '../../services/fingerprint/mockFingerprint'
 
 function getStatusTone(status: string) {
@@ -17,12 +22,34 @@ function getStatusTone(status: string) {
   return 'primary'
 }
 
+function numberFromCurrency(value: string) {
+  return value.replace(/[^\d.]/g, '')
+}
+
+function parseSessions(value: string) {
+  const match = value.match(/^(\d+)/)
+  return match ? Number(match[1]) : 1
+}
+
 export function AdminOperationDetailPage() {
   const { operationId = '' } = useParams()
   const loader = useMemo(() => () => getAdminOperationDetail(operationId), [operationId])
   const { data, isLoading, error, reload } = useApiResource(loader)
   const [biometricActionId, setBiometricActionId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [isEditingDetails, setIsEditingDetails] = useState(false)
+  const [isEditingPrice, setIsEditingPrice] = useState(false)
+  const [isSavingDetails, setIsSavingDetails] = useState(false)
+  const [isSavingPrice, setIsSavingPrice] = useState(false)
+  const [detailsForm, setDetailsForm] = useState({
+    details: '',
+    recommendations: '',
+    sessionsTotal: 1,
+  })
+  const [priceForm, setPriceForm] = useState({
+    priceTotal: '',
+    quotaCount: 1,
+  })
 
   const handleConfirmBiometric = async (appointmentId: number) => {
     if (biometricActionId) return
@@ -49,6 +76,61 @@ export function AdminOperationDetailPage() {
       )
     } finally {
       setBiometricActionId(null)
+    }
+  }
+
+  const startEditingDetails = () => {
+    if (!data) return
+    setActionError(null)
+    setDetailsForm({
+      details: data.operation.detallesOperacion === 'Sin detalles registrados.' ? '' : data.operation.detallesOperacion,
+      recommendations: data.operation.recomendaciones === 'Sin recomendaciones registradas.' ? '' : data.operation.recomendaciones,
+      sessionsTotal: parseSessions(data.operation.sessions),
+    })
+    setIsEditingDetails(true)
+  }
+
+  const startEditingPrice = () => {
+    if (!data) return
+    setActionError(null)
+    setPriceForm({
+      priceTotal: numberFromCurrency(data.operation.price),
+      quotaCount: data.operation.quotas.length || 1,
+    })
+    setIsEditingPrice(true)
+  }
+
+  const handleSaveDetails = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!data) return
+
+    setIsSavingDetails(true)
+    setActionError(null)
+    try {
+      await updateAdminOperationDetails(data.operation.rawId, detailsForm)
+      setIsEditingDetails(false)
+      reload()
+    } catch (requestError) {
+      setActionError(requestError instanceof Error ? requestError.message : 'No se pudo actualizar la operacion.')
+    } finally {
+      setIsSavingDetails(false)
+    }
+  }
+
+  const handleSavePrice = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!data) return
+
+    setIsSavingPrice(true)
+    setActionError(null)
+    try {
+      await updateAdminOperationPricePlan(data.operation.rawId, priceForm)
+      setIsEditingPrice(false)
+      reload()
+    } catch (requestError) {
+      setActionError(requestError instanceof Error ? requestError.message : 'No se pudo actualizar el precio pactado.')
+    } finally {
+      setIsSavingPrice(false)
     }
   }
 
@@ -193,6 +275,94 @@ export function AdminOperationDetailPage() {
             <p>{operation.recomendaciones}</p>
           </article>
         </div>
+        <div className="form-actions">
+          <button className="button button--ghost" type="button" onClick={startEditingDetails}>
+            Cambiar detalles
+          </button>
+          <button className="button button--ghost" type="button" onClick={startEditingPrice}>
+            Cambiar precio pactado
+          </button>
+        </div>
+
+        {isEditingDetails ? (
+          <form className="form-grid" onSubmit={handleSaveDetails}>
+            <label className="field field--full">
+              <span>Detalles de la operacion</span>
+              <textarea
+                className="input textarea"
+                rows={4}
+                value={detailsForm.details}
+                onChange={(event) => setDetailsForm({ ...detailsForm, details: event.target.value })}
+              />
+            </label>
+            <label className="field field--full">
+              <span>Recomendaciones</span>
+              <textarea
+                className="input textarea"
+                rows={4}
+                value={detailsForm.recommendations}
+                onChange={(event) => setDetailsForm({ ...detailsForm, recommendations: event.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>Numero de sesiones</span>
+              <input
+                className="input"
+                min="1"
+                type="number"
+                value={detailsForm.sessionsTotal}
+                onChange={(event) => setDetailsForm({ ...detailsForm, sessionsTotal: Number(event.target.value || 1) })}
+              />
+            </label>
+            <div className="form-actions field--full">
+              <button className="button button--ghost" disabled={isSavingDetails} type="button" onClick={() => setIsEditingDetails(false)}>
+                Cancelar
+              </button>
+              <button className="button" disabled={isSavingDetails} type="submit">
+                {isSavingDetails ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {isEditingPrice ? (
+          <form className="form-grid" onSubmit={handleSavePrice}>
+            <label className="field">
+              <span>Precio pactado</span>
+              <input
+                className="input"
+                min="0.01"
+                step="0.01"
+                type="number"
+                value={priceForm.priceTotal}
+                onChange={(event) => setPriceForm({ ...priceForm, priceTotal: event.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>Numero de cuotas</span>
+              <input
+                className="input"
+                min="1"
+                type="number"
+                value={priceForm.quotaCount}
+                onChange={(event) => setPriceForm({ ...priceForm, quotaCount: Number(event.target.value || 1) })}
+              />
+            </label>
+            <div className="field field--full">
+              <small className="field__hint">
+                El sistema respeta lo ya pagado y redistribuye solo el saldo restante entre las cuotas pendientes.
+              </small>
+            </div>
+            <div className="form-actions field--full">
+              <button className="button button--ghost" disabled={isSavingPrice} type="button" onClick={() => setIsEditingPrice(false)}>
+                Cancelar
+              </button>
+              <button className="button" disabled={isSavingPrice} type="submit">
+                {isSavingPrice ? 'Redistribuyendo...' : 'Guardar precio y cuotas'}
+              </button>
+            </div>
+          </form>
+        ) : null}
       </SectionCard>
 
       <SectionCard
@@ -321,7 +491,7 @@ export function AdminOperationDetailPage() {
                 {operation.quotas.map((quota) => (
                   <article className="operation-detail-item" key={quota.id}>
                     <strong>Cuota {quota.number}</strong>
-                    <p>Vence: {quota.dueDate}</p>
+                    <p>{quota.amount} | vence: {quota.dueDate}</p>
                     <span>{quota.status}</span>
                     <small>Pagos registrados: {quota.paymentsCount}</small>
                   </article>

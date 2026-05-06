@@ -12,7 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
 from clinical.models import AnalisisEstetico
 from customers.models import Cliente
-from operations.models import CitaMedica, CitaProspecto, DisponibilidadCita, Operacion
+from operations.models import CitaClienteLibre, CitaMedica, CitaProspecto, DisponibilidadCita, Operacion
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 
 
@@ -108,6 +108,8 @@ def _next_appointment(operacion):
 
 
 def _quota_amount(cuota):
+    if cuota.monto_programado:
+        return cuota.monto_programado
     operacion = cuota.operacion
     if operacion.cuotas_totales:
         return (operacion.precio_total / Decimal(operacion.cuotas_totales)).quantize(
@@ -255,6 +257,10 @@ def _build_operation_slot_map(operacion, editing_appointment=None):
                 "citas_prospectos_origen",
                 queryset=CitaProspecto.objects.only("id", "estado", "disponibilidad_id").order_by("-created_at"),
             ),
+            Prefetch(
+                "citas_clientes_libres_origen",
+                queryset=CitaClienteLibre.objects.only("id", "estado", "disponibilidad_id").order_by("-created_at"),
+            ),
         )
         .filter(
             activo=True,
@@ -278,6 +284,9 @@ def _build_operation_slot_map(operacion, editing_appointment=None):
         ) or any(
             cita.estado == CitaProspecto.Estado.PROGRAMADA
             for cita in slot.citas_prospectos_origen.all()
+        ) or any(
+            cita.estado == CitaClienteLibre.Estado.PROGRAMADA
+            for cita in slot.citas_clientes_libres_origen.all()
         ):
             continue
 
@@ -922,7 +931,7 @@ def client_create_reservation(request, operation_id):
     slot = (
         DisponibilidadCita.objects.select_for_update()
         .select_related("especialista__usuario")
-        .prefetch_related("citas_prospectos_origen")
+        .prefetch_related("citas_prospectos_origen", "citas_clientes_libres_origen")
         .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
         .first()
     )
@@ -938,6 +947,11 @@ def client_create_reservation(request, operation_id):
             status=409,
         )
     if slot.citas_prospectos_origen.filter(estado=CitaProspecto.Estado.PROGRAMADA).exists():
+        return _json(
+            {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
+            status=409,
+        )
+    if slot.citas_clientes_libres_origen.filter(estado=CitaClienteLibre.Estado.PROGRAMADA).exists():
         return _json(
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,
@@ -974,7 +988,7 @@ def client_update_reservation(request, appointment_id):
             "medico__usuario",
             "disponibilidad",
         )
-        .prefetch_related("disponibilidad__citas_origen", "disponibilidad__citas_prospectos_origen")
+        .prefetch_related("disponibilidad__citas_origen", "disponibilidad__citas_prospectos_origen", "disponibilidad__citas_clientes_libres_origen")
         .filter(operacion__paciente=request.cliente, pk=appointment_id)
         .first()
     )
@@ -997,7 +1011,7 @@ def client_update_reservation(request, appointment_id):
     slot = (
         DisponibilidadCita.objects.select_for_update()
         .select_related("especialista__usuario")
-        .prefetch_related("citas_origen", "citas_prospectos_origen")
+        .prefetch_related("citas_origen", "citas_prospectos_origen", "citas_clientes_libres_origen")
         .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
         .first()
     )
@@ -1013,6 +1027,11 @@ def client_update_reservation(request, appointment_id):
             status=409,
         )
     if slot.citas_prospectos_origen.filter(estado=CitaProspecto.Estado.PROGRAMADA).exists():
+        return _json(
+            {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
+            status=409,
+        )
+    if slot.citas_clientes_libres_origen.filter(estado=CitaClienteLibre.Estado.PROGRAMADA).exists():
         return _json(
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,

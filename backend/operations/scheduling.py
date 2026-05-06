@@ -9,6 +9,7 @@ from operations.models import (
     AgendaExcepcionEspecialista,
     AgendaHabitualEspecialista,
     CitaMedica,
+    CitaClienteLibre,
     CitaProspecto,
     DiaBloqueadoAgendaGlobal,
     DisponibilidadCita,
@@ -41,9 +42,17 @@ def mark_expired_programmed_appointments_as_no_show(reference_time=None):
         estado=CitaProspecto.Estado.NO_ASISTIO,
         updated_at=now,
     )
+    free_client_updated_count = CitaClienteLibre.objects.filter(
+        estado=CitaClienteLibre.Estado.PROGRAMADA,
+        fecha_hora__lt=cutoff,
+    ).update(
+        estado=CitaClienteLibre.Estado.NO_ASISTIO,
+        updated_at=now,
+    )
     return {
         "no_show": updated_count,
         "prospect_no_show": prospect_updated_count,
+        "free_client_no_show": free_client_updated_count,
         "cutoff": cutoff,
     }
 
@@ -200,6 +209,10 @@ def sync_disponibilidad_citas():
                 "citas_prospectos_origen",
                 queryset=CitaProspecto.objects.only("id", "estado", "disponibilidad_id"),
             ),
+            Prefetch(
+                "citas_clientes_libres_origen",
+                queryset=CitaClienteLibre.objects.only("id", "estado", "disponibilidad_id"),
+            ),
         )
     )
     print(
@@ -220,12 +233,13 @@ def sync_disponibilidad_citas():
         desired = desired_map.get(key)
         has_blocking_booking = any(
             cita.estado in BLOCKING_RESERVATION_STATES for cita in slot.citas_origen.all()
-        )
-        has_prospect_booking = any(
+        ) or any(
             cita.estado == CitaProspecto.Estado.PROGRAMADA
             for cita in slot.citas_prospectos_origen.all()
+        ) or any(
+            cita.estado == CitaClienteLibre.Estado.PROGRAMADA
+            for cita in slot.citas_clientes_libres_origen.all()
         )
-
         if desired:
             changed_fields = []
             if slot.horario_base_id != desired["horario_base_id"]:
@@ -255,7 +269,7 @@ def sync_disponibilidad_citas():
             desired_map.pop(key, None)
             continue
 
-        if has_blocking_booking or has_prospect_booking or not slot.activo:
+        if has_blocking_booking or not slot.activo:
             continue
 
         slot.activo = False

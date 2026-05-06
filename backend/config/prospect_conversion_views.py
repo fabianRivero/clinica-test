@@ -1,6 +1,6 @@
 import json
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.contrib.auth.hashers import make_password
 from django.db import transaction
@@ -111,6 +111,15 @@ def _parse_decimal(value, field_name, errors, *, required=True, min_value=Decima
         return None
 
     return parsed.quantize(Decimal("0.01"))
+
+
+def _split_amount(total, count):
+    if count <= 0:
+        return []
+    base = (total / Decimal(count)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    amounts = [base for _ in range(count)]
+    amounts[-1] = (total - sum(amounts[:-1])).quantize(Decimal("0.01"))
+    return amounts
 
 
 def _parse_bool(value):
@@ -1027,11 +1036,13 @@ def admin_prospect_conversion_finalize(request, prospecto_id):
         recomendaciones=operation_data.get("recomendaciones", ""),
     )
 
+    quota_amounts = _split_amount(Decimal(operation_data["precioTotal"]), int(operation_data["cuotasTotales"]))
     for cuota_index, fecha_vencimiento in enumerate(operation_data.get("fechasVencimientoCuotas") or []):
         CuotaPlanPago.objects.create(
             operacion=operacion,
             nro_cuota=cuota_index + 1,
             fecha_vencimiento=date.fromisoformat(fecha_vencimiento),
+            monto_programado=quota_amounts[cuota_index] if cuota_index < len(quota_amounts) else Decimal("0.00"),
         )
 
     ficha = FichaClinica.objects.create(

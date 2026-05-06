@@ -5,6 +5,7 @@ from operations.models import (
     AgendaHabitualDia,
     AgendaHabitualEspecialista,
     CitaMedica,
+    CitaClienteLibre,
     DiaBloqueadoAgendaGlobal,
     DisponibilidadCita,
     FichaAntecedenteMedico,
@@ -50,6 +51,17 @@ class CitaMedicaAdmin(admin.ModelAdmin):
     search_fields = (
         "operacion__paciente__usuario__primer_nombre",
         "operacion__paciente__usuario__apellido_paterno",
+        "medico__usuario__primer_nombre",
+    )
+
+
+@admin.register(CitaClienteLibre)
+class CitaClienteLibreAdmin(admin.ModelAdmin):
+    list_display = ("id", "cliente", "servicio_config", "medico", "fecha_hora", "estado")
+    list_filter = ("estado", "servicio_config")
+    search_fields = (
+        "cliente__usuario__primer_nombre",
+        "cliente__usuario__apellido_paterno",
         "medico__usuario__primer_nombre",
     )
 

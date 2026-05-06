@@ -1,7 +1,7 @@
 import json
 from pathlib import PurePosixPath
 from datetime import date, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
 
 from django.core.exceptions import ValidationError
@@ -26,6 +26,7 @@ from customers.models import Cliente, HuellaBiometricaCliente, Prospecto
 from operations.models import (
     AgendaExcepcionEspecialista,
     AgendaHabitualEspecialista,
+    CitaClienteLibre,
     CitaMedica,
     CitaProspecto,
     DisponibilidadCita,
@@ -71,6 +72,47 @@ def _admin_required(view_func):
 
 def _currency(amount):
     return f"Bs {amount:.2f}"
+
+
+def _split_amount(total, count):
+    if count <= 0:
+        return []
+    base = (total / Decimal(count)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    amounts = [base for _ in range(count)]
+    amounts[-1] = (total - sum(amounts[:-1])).quantize(Decimal("0.01"))
+    return amounts
+
+
+def _parse_payload_decimal(payload, field_name, errors, *, min_value=Decimal("0")):
+    raw = payload.get(field_name)
+    if raw in (None, ""):
+        errors[field_name] = "Este campo es obligatorio."
+        return None
+    try:
+        value = Decimal(str(raw)).quantize(Decimal("0.01"))
+    except (InvalidOperation, TypeError, ValueError):
+        errors[field_name] = "Debes enviar un monto valido."
+        return None
+    if value < min_value:
+        errors[field_name] = f"El valor minimo permitido es {min_value}."
+        return None
+    return value
+
+
+def _parse_payload_int(payload, field_name, errors, *, min_value=0):
+    raw = payload.get(field_name)
+    if raw in (None, ""):
+        errors[field_name] = "Este campo es obligatorio."
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        errors[field_name] = "Debes enviar un numero entero valido."
+        return None
+    if value < min_value:
+        errors[field_name] = f"El valor minimo permitido es {min_value}."
+        return None
+    return value
 
 
 def _date_label(value):
@@ -157,6 +199,18 @@ def _quota_status(operacion):
         return f"{pending_quotas} cuota(s) pendientes"
 
     return "Cuotas al dia"
+
+
+def _quota_programmed_amount(cuota):
+    if cuota.monto_programado:
+        return cuota.monto_programado
+    operacion = cuota.operacion
+    if operacion.cuotas_totales:
+        return (operacion.precio_total / Decimal(operacion.cuotas_totales)).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+    return operacion.precio_total
 
 
 def _operation_specialist(operacion):
@@ -261,6 +315,9 @@ def _operation_detail(operacion):
             {
                 "id": f"CUO-{cuota.pk:04d}",
                 "number": cuota.nro_cuota,
+                "rawId": cuota.pk,
+                "amount": _currency(_quota_programmed_amount(cuota)),
+                "amountValue": f"{_quota_programmed_amount(cuota):.2f}",
                 "dueDate": _date_label(cuota.fecha_vencimiento),
                 "status": cuota.get_estado_display(),
                 "paymentsCount": cuota.pagos_realizados.count(),
@@ -309,6 +366,34 @@ def _prospect_appointment_item(appointment):
     }
 
 
+def _free_client_appointment_item(appointment):
+    if not appointment:
+        return None
+    return {
+        "id": f"CLI-CIT-{appointment.pk:04d}",
+        "rawId": appointment.pk,
+        "operationRawId": None,
+        "operation": "Cita medica libre",
+        "specialist": _full_name(appointment.medico.usuario),
+        "dateTime": _datetime_label(appointment.fecha_hora),
+        "status": appointment.get_estado_display(),
+        "statusTone": (
+            "danger"
+            if appointment.estado == CitaClienteLibre.Estado.CANCELADA
+            else "observed"
+            if appointment.estado == CitaClienteLibre.Estado.NO_ASISTIO
+            else "pending"
+        ),
+        "biometric": "No aplica",
+        "details": appointment.detalles_cita or "Cita medica libre sin tratamiento asociado.",
+        "canManage": False,
+        "canMarkPendingBiometric": False,
+        "canConfirmBiometric": False,
+        "biometricMockTemplate": "",
+        "isFreeMedicalAppointment": True,
+    }
+
+
 def _medical_appointment_service_config():
     queryset = ServicioConfig.objects.select_related("tipo_servicio").filter(
         activo=True,
@@ -338,6 +423,10 @@ def _build_prospect_medical_slot_map(service_config):
                 "citas_prospectos_origen",
                 queryset=CitaProspecto.objects.only("id", "estado", "disponibilidad_id"),
             ),
+            Prefetch(
+                "citas_clientes_libres_origen",
+                queryset=CitaClienteLibre.objects.only("id", "estado", "disponibilidad_id"),
+            ),
         )
         .filter(
             activo=True,
@@ -357,6 +446,9 @@ def _build_prospect_medical_slot_map(service_config):
         if any(cita.estado in BLOCKING_RESERVATION_STATES for cita in slot.citas_origen.all()) or any(
             cita.estado == CitaProspecto.Estado.PROGRAMADA
             for cita in slot.citas_prospectos_origen.all()
+        ) or any(
+            cita.estado == CitaClienteLibre.Estado.PROGRAMADA
+            for cita in slot.citas_clientes_libres_origen.all()
         ):
             continue
         local_dt = timezone.localtime(slot.fecha_hora)
@@ -424,6 +516,7 @@ def _client_item(cliente):
         "rawId": cliente.pk,
         "name": _full_name(cliente.usuario),
         "phone": cliente.telefono or "Sin telefono",
+        "ci": cliente.ci or "Sin CI",
         "status": cliente.get_estado_cliente_display(),
         "activeOperations": cliente.operaciones.filter(estado=Operacion.Estado.EN_PROCESO).count(),
         "totalOperations": cliente.operaciones.count(),
@@ -461,6 +554,10 @@ def _admin_client_queryset():
                 .order_by("-created_at"),
             ),
             "analisis_esteticos",
+            Prefetch(
+                "citas_medicas_libres",
+                queryset=CitaClienteLibre.objects.select_related("medico__usuario").order_by("fecha_hora"),
+            ),
         )
     )
 
@@ -472,6 +569,7 @@ def _admin_client_detail(cliente):
         for operacion in operations
         for cita in operacion.citas_medicas.all()
     ]
+    free_appointments = list(cliente.citas_medicas_libres.all())
     quotas = [
         cuota
         for operacion in operations
@@ -527,7 +625,10 @@ def _admin_client_detail(cliente):
             ),
         ],
         "operations": [_client_operation_item(operacion) for operacion in operations],
-        "appointments": [_client_appointment_item(cita) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
+        "appointments": [
+            *[_client_appointment_item(cita) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
+            *[_free_client_appointment_item(cita) for cita in sorted(free_appointments, key=lambda item: item.fecha_hora)],
+        ],
         "sessions": [_client_appointment_item(cita) for cita in sorted(completed_sessions, key=lambda item: item.fecha_hora)],
         "payments": [_client_payment_item(payment) for payment in sorted(payments, key=lambda item: item.created_at, reverse=True)],
         "pendingQuotas": [_client_quota_item(cuota) for cuota in sorted(pending_quotas, key=lambda item: (item.fecha_vencimiento, item.nro_cuota))],
@@ -1816,15 +1917,13 @@ def admin_create_prospect_medical_appointment(request, prospecto_id):
     slot = (
         DisponibilidadCita.objects.select_for_update()
         .select_related("especialista__usuario")
-        .prefetch_related("citas_origen", "citas_prospectos_origen")
+        .prefetch_related("citas_origen", "citas_prospectos_origen", "citas_clientes_libres_origen")
         .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
         .first()
     )
     if not slot or not slot.tipos_servicio.filter(pk=service_config.tipo_servicio_id).exists():
         return _json({"detail": "El horario seleccionado no corresponde al servicio de cita medica."}, status=409)
-    if slot.citas_origen.filter(estado__in=BLOCKING_RESERVATION_STATES).exists() or slot.citas_prospectos_origen.filter(
-        estado=CitaProspecto.Estado.PROGRAMADA
-    ).exists():
+    if slot.tiene_reserva_activa:
         return _json(
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,
@@ -1913,6 +2012,88 @@ def admin_cliente_reservation_availability(request, client_id, operation_id):
     return _json({"operation": _client_operation_item(operacion), "calendar": _client_operation_slot_map(operacion)})
 
 
+@require_GET
+@_admin_required
+def admin_cliente_free_medical_availability(request, client_id):
+    cliente = Cliente.objects.filter(pk=client_id).first()
+    if not cliente:
+        return _json({"detail": "No encontramos el cliente solicitado."}, status=404)
+
+    service_config = _medical_appointment_service_config()
+    if not service_config:
+        return _json(
+            {"detail": "No existe un servicio activo de cita medica o consulta para agendar clientes."},
+            status=400,
+        )
+
+    return _json(
+        {
+            "client": _client_item(cliente),
+            "service": {
+                "rawId": service_config.pk,
+                "name": service_config.tipo_servicio.tipo,
+            },
+            "calendar": _build_prospect_medical_slot_map(service_config),
+        }
+    )
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_cliente_create_free_medical_appointment(request, client_id):
+    cliente = Cliente.objects.select_for_update(of=("self",)).filter(pk=client_id).first()
+    if not cliente:
+        return _json({"detail": "No encontramos el cliente solicitado."}, status=404)
+
+    service_config = _medical_appointment_service_config()
+    if not service_config:
+        return _json(
+            {"detail": "No existe un servicio activo de cita medica o consulta para agendar clientes."},
+            status=400,
+        )
+
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+    slot_id = payload.get("slotId")
+    if not slot_id:
+        return _json({"detail": "Debes seleccionar un horario disponible antes de confirmar la cita."}, status=400)
+
+    slot = (
+        DisponibilidadCita.objects.select_for_update()
+        .select_related("especialista__usuario")
+        .prefetch_related("citas_origen", "citas_prospectos_origen", "citas_clientes_libres_origen")
+        .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
+        .first()
+    )
+    if not slot or not slot.tipos_servicio.filter(pk=service_config.tipo_servicio_id).exists():
+        return _json({"detail": "El horario seleccionado no corresponde al servicio de cita medica."}, status=409)
+    if slot.tiene_reserva_activa:
+        return _json(
+            {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
+            status=409,
+        )
+
+    appointment = CitaClienteLibre.objects.create(
+        cliente=cliente,
+        servicio_config=service_config,
+        medico=slot.especialista,
+        disponibilidad=slot,
+        fecha_hora=slot.fecha_hora,
+        estado=CitaClienteLibre.Estado.PROGRAMADA,
+        detalles_cita="Cita medica libre agendada por administracion.",
+    )
+
+    return _json(
+        {
+            "detail": "La cita medica libre fue agendada correctamente para el cliente.",
+            "appointment": _free_client_appointment_item(appointment),
+        },
+        status=201,
+    )
+
+
 @require_POST
 @_admin_required
 @transaction.atomic
@@ -1953,13 +2134,13 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
     slot = (
         DisponibilidadCita.objects.select_for_update()
         .select_related("especialista__usuario")
-        .prefetch_related("citas_origen")
+        .prefetch_related("citas_origen", "citas_prospectos_origen", "citas_clientes_libres_origen")
         .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
         .first()
     )
     if not slot or not slot.coincide_con_operacion(operacion):
         return _json({"detail": "El horario seleccionado ya no esta disponible para este tratamiento."}, status=409)
-    if slot.citas_origen.filter(estado__in=BLOCKING_RESERVATION_STATES).exists():
+    if slot.tiene_reserva_activa:
         return _json({"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."}, status=409)
 
     cita = CitaMedica.objects.create(
@@ -2303,6 +2484,170 @@ def admin_operacion_detalle(request, operacion_id):
         return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
 
     return _json({"operation": _operation_detail(operacion)})
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_update_operation_details(request, operacion_id):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    operacion = Operacion.objects.select_for_update(of=("self",)).filter(pk=operacion_id).first()
+    if not operacion:
+        return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
+
+    errors = {}
+    sesiones_totales = _parse_payload_int(payload, "sessionsTotal", errors, min_value=1)
+    consumed_sessions = (
+        operacion.sesiones_confirmadas
+        + operacion.sesiones_pendientes_confirmacion
+        + operacion.reservas_activas
+    )
+    if sesiones_totales is not None and sesiones_totales < consumed_sessions:
+        errors["sessionsTotal"] = (
+            f"No puedes bajar de {consumed_sessions} sesion(es), porque ya estan confirmadas, "
+            "reservadas o pendientes de biometria."
+        )
+    if errors:
+        return _json({"detail": "Corrige los datos de la operacion.", "errors": errors}, status=400)
+
+    operacion.detalles_op = (payload.get("details") or "").strip()
+    operacion.recomendaciones = (payload.get("recommendations") or "").strip()
+    operacion.sesiones_totales = sesiones_totales
+    operacion.save(update_fields=["detalles_op", "recomendaciones", "sesiones_totales", "updated_at"])
+    operacion.paciente.actualizar_estado_automaticamente()
+
+    operacion = (
+        Operacion.objects.select_related(
+            "paciente__usuario",
+            "servicio_config__tipo_servicio",
+            "servicio_config__proc_estetico__tipo_p_estetico",
+            "ficha_clinica",
+        )
+        .prefetch_related(
+            Prefetch(
+                "citas_medicas",
+                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+            ),
+            Prefetch(
+                "cuotas_plan_pagos",
+                queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados").order_by("nro_cuota"),
+            ),
+        )
+        .get(pk=operacion.pk)
+    )
+    return _json({"detail": "La operacion fue actualizada correctamente.", "operation": _operation_detail(operacion)})
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_update_operation_price_plan(request, operacion_id):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    operacion = (
+        Operacion.objects.select_for_update(of=("self",))
+        .prefetch_related("cuotas_plan_pagos__pagos_realizados")
+        .filter(pk=operacion_id)
+        .first()
+    )
+    if not operacion:
+        return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
+
+    errors = {}
+    new_price = _parse_payload_decimal(payload, "priceTotal", errors, min_value=Decimal("0.01"))
+    new_quota_count = _parse_payload_int(payload, "quotaCount", errors, min_value=1)
+    if errors:
+        return _json({"detail": "Corrige los datos del plan de pagos.", "errors": errors}, status=400)
+
+    cuotas = list(operacion.cuotas_plan_pagos.all())
+    paid_total = sum(
+        (
+            pago.monto_pagado
+            for cuota in cuotas
+            for pago in cuota.pagos_realizados.all()
+            if pago.estado_verificacion == PagoRealizado.EstadoVerificacion.APROBADO
+        ),
+        Decimal("0.00"),
+    ).quantize(Decimal("0.01"))
+    paid_quotas = [cuota for cuota in cuotas if cuota.estado == CuotaPlanPago.Estado.PAGADO]
+    unpaid_quotas = [cuota for cuota in cuotas if cuota.estado != CuotaPlanPago.Estado.PAGADO]
+    locked_unpaid = [
+        cuota
+        for cuota in unpaid_quotas
+        if cuota.pagos_realizados.exists()
+    ]
+
+    if new_price < paid_total:
+        errors["priceTotal"] = f"El nuevo precio no puede ser menor a lo ya pagado: Bs {paid_total:.2f}."
+    if new_quota_count < len(paid_quotas):
+        errors["quotaCount"] = f"El numero de cuotas no puede ser menor a las {len(paid_quotas)} cuota(s) ya pagadas."
+    if locked_unpaid:
+        errors["quotaCount"] = (
+            "Hay cuotas no pagadas con comprobantes registrados. "
+            "Resuelve o retira esos comprobantes antes de redistribuir el plan."
+        )
+    if errors:
+        return _json({"detail": "No se pudo redistribuir el plan de pagos.", "errors": errors}, status=400)
+
+    remaining_amount = (new_price - paid_total).quantize(Decimal("0.01"))
+    remaining_quota_count = new_quota_count - len(paid_quotas)
+    if remaining_quota_count == 0 and remaining_amount > 0:
+        return _json(
+            {
+                "detail": "No se pudo redistribuir el plan de pagos.",
+                "errors": {"quotaCount": "Necesitas al menos una cuota pendiente para el saldo restante."},
+            },
+            status=400,
+        )
+
+    existing_due_dates = [cuota.fecha_vencimiento for cuota in sorted(unpaid_quotas, key=lambda item: item.nro_cuota)]
+    latest_due_date = max([cuota.fecha_vencimiento for cuota in cuotas], default=timezone.localdate())
+    while len(existing_due_dates) < remaining_quota_count:
+        latest_due_date = latest_due_date + timedelta(days=30)
+        existing_due_dates.append(latest_due_date)
+
+    for cuota in unpaid_quotas:
+        cuota.delete()
+
+    next_quota_number = max([cuota.nro_cuota for cuota in paid_quotas], default=0) + 1
+    for index, amount in enumerate(_split_amount(remaining_amount, remaining_quota_count)):
+        CuotaPlanPago.objects.create(
+            operacion=operacion,
+            nro_cuota=next_quota_number + index,
+            fecha_vencimiento=existing_due_dates[index],
+            monto_programado=amount,
+        )
+
+    operacion.precio_total = new_price
+    operacion.cuotas_totales = new_quota_count
+    operacion.save(update_fields=["precio_total", "cuotas_totales", "updated_at"])
+    operacion.paciente.actualizar_estado_automaticamente()
+
+    operacion = (
+        Operacion.objects.select_related(
+            "paciente__usuario",
+            "servicio_config__tipo_servicio",
+            "servicio_config__proc_estetico__tipo_p_estetico",
+            "ficha_clinica",
+        )
+        .prefetch_related(
+            Prefetch(
+                "citas_medicas",
+                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+            ),
+            Prefetch(
+                "cuotas_plan_pagos",
+                queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados").order_by("nro_cuota"),
+            ),
+        )
+        .get(pk=operacion.pk)
+    )
+    return _json({"detail": "El precio y las cuotas fueron redistribuidos correctamente.", "operation": _operation_detail(operacion)})
 
 
 @require_GET

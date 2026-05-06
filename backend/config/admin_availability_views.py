@@ -13,6 +13,7 @@ from operations.models import (
     AgendaExcepcionEspecialista,
     AgendaHabitualDia,
     AgendaHabitualEspecialista,
+    CitaClienteLibre,
     CitaMedica,
     CitaProspecto,
     DiaBloqueadoAgendaGlobal,
@@ -102,6 +103,16 @@ def _find_blocking_booking(slot):
     )
     if client_booking:
         return client_booking
+    free_client_booking = next(
+        (
+            cita
+            for cita in slot.citas_clientes_libres_origen.all()
+            if cita.estado == CitaClienteLibre.Estado.PROGRAMADA
+        ),
+        None,
+    )
+    if free_client_booking:
+        return free_client_booking
     return next(
         (
             cita
@@ -126,6 +137,7 @@ def _slot_item(slot):
     booking = _find_blocking_booking(slot)
     operation = getattr(booking, "operacion", None) if booking else None
     prospect = getattr(booking, "prospecto", None) if booking else None
+    free_client = getattr(booking, "cliente", None) if booking else None
     patient = operation.paciente if operation else None
     return {
         "id": f"AVL-{slot.pk:04d}",
@@ -139,14 +151,14 @@ def _slot_item(slot):
         "timeSlotId": slot.horario_base_id,
         "status": _slot_status(slot, booking),
         "coverage": _scope_labels(slot),
-        "patient": _full_name(patient.usuario) if patient else str(prospect) if prospect else "",
+        "patient": _full_name(patient.usuario) if patient else str(free_client) if free_client else str(prospect) if prospect else "",
         "operation": (
             operation.servicio_config.proc_estetico.proceso
             if operation and operation.servicio_config.proc_estetico
             else operation.servicio_config.tipo_servicio.tipo
             if operation
             else booking.servicio_config.tipo_servicio.tipo
-            if prospect
+            if prospect or free_client
             else ""
         ),
         "appointmentId": booking.pk if booking else None,
@@ -173,6 +185,9 @@ def _time_slot_item(slot):
             citas_origen__estado__in=BLOCKING_RESERVATION_STATES
         ).distinct().count()
         + future_slots.filter(citas_prospectos_origen__estado=CitaProspecto.Estado.PROGRAMADA)
+        .distinct()
+        .count()
+        + future_slots.filter(citas_clientes_libres_origen__estado=CitaClienteLibre.Estado.PROGRAMADA)
         .distinct()
         .count(),
     }
@@ -474,7 +489,7 @@ def _success_without_sync(message, status=201):
 def admin_remove_visible_slot(request, slot_id):
     slot = (
         DisponibilidadCita.objects.select_related("especialista__usuario", "horario_base")
-        .prefetch_related("citas_origen", "citas_prospectos_origen")
+        .prefetch_related("citas_origen", "citas_prospectos_origen", "citas_clientes_libres_origen")
         .filter(pk=slot_id)
         .first()
     )
@@ -535,6 +550,13 @@ def admin_availability(request):
                     "operacion__paciente__usuario",
                     "operacion__servicio_config__tipo_servicio",
                     "operacion__servicio_config__proc_estetico",
+                ).order_by("-created_at"),
+            ),
+            Prefetch(
+                "citas_clientes_libres_origen",
+                queryset=CitaClienteLibre.objects.select_related(
+                    "cliente__usuario",
+                    "servicio_config__tipo_servicio",
                 ).order_by("-created_at"),
             ),
             Prefetch(
@@ -783,6 +805,9 @@ def admin_update_time_slot(request, slot_id):
     ).exists() or slot.disponibilidades_cita.filter(
         fecha_hora__gt=timezone.now(),
         citas_prospectos_origen__estado=CitaProspecto.Estado.PROGRAMADA,
+    ).exists() or slot.disponibilidades_cita.filter(
+        fecha_hora__gt=timezone.now(),
+        citas_clientes_libres_origen__estado=CitaClienteLibre.Estado.PROGRAMADA,
     ).exists()
     if has_reserved_future_slots and (
         parsed_start != slot.hora_inicio or parsed_end != slot.hora_fin
@@ -821,6 +846,9 @@ def admin_delete_time_slot(request, slot_id):
     ).exists() or slot.disponibilidades_cita.filter(
         fecha_hora__gt=timezone.now(),
         citas_prospectos_origen__estado=CitaProspecto.Estado.PROGRAMADA,
+    ).exists() or slot.disponibilidades_cita.filter(
+        fecha_hora__gt=timezone.now(),
+        citas_clientes_libres_origen__estado=CitaClienteLibre.Estado.PROGRAMADA,
     ).exists():
         return _json(
             {

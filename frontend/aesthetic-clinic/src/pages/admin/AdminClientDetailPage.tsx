@@ -11,15 +11,20 @@ import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
   cancelAdminAppointment,
+  createAdminClientFreeMedicalAppointment,
   confirmAdminAppointmentBiometric,
   createAdminClientReservation,
   getAdminClientDetail,
+  getAdminClientFreeMedicalAvailability,
   getAdminClientReservationAvailability,
   inactivateAdminClient,
   markAdminAppointmentPendingBiometric,
 } from '../../services/api/admin'
 import { verifyMockFingerprint } from '../../services/fingerprint/mockFingerprint'
-import type { AdminClientReservationAvailabilityResponse } from '../../types/admin'
+import type {
+  AdminClientFreeMedicalAvailabilityResponse,
+  AdminClientReservationAvailabilityResponse,
+} from '../../types/admin'
 
 const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
 
@@ -76,9 +81,15 @@ export function AdminClientDetailPage() {
   const [availability, setAvailability] = useState<AdminClientReservationAvailabilityResponse | null>(null)
   const [availabilityError, setAvailabilityError] = useState<string | null>(null)
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false)
+  const [freeAvailability, setFreeAvailability] = useState<AdminClientFreeMedicalAvailabilityResponse | null>(null)
+  const [freeAvailabilityError, setFreeAvailabilityError] = useState<string | null>(null)
+  const [isLoadingFreeAvailability, setIsLoadingFreeAvailability] = useState(false)
   const [selectedDate, setSelectedDate] = useState('')
   const [visibleMonth, setVisibleMonth] = useState<Date>(monthStart(new Date()))
+  const [freeSelectedDate, setFreeSelectedDate] = useState('')
+  const [freeVisibleMonth, setFreeVisibleMonth] = useState<Date>(monthStart(new Date()))
   const [isBookingKey, setIsBookingKey] = useState<string | null>(null)
+  const [isFreeBookingKey, setIsFreeBookingKey] = useState<string | null>(null)
   const [isInactivating, setIsInactivating] = useState(false)
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
 
@@ -125,6 +136,43 @@ export function AdminClientDetailPage() {
     }
   }, [data, effectiveOperationId])
 
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadFreeAvailability() {
+      if (!data) {
+        setFreeAvailability(null)
+        return
+      }
+      setIsLoadingFreeAvailability(true)
+      setFreeAvailabilityError(null)
+      try {
+        const response = await getAdminClientFreeMedicalAvailability(data.client.rawId)
+        if (cancelled) return
+        setFreeAvailability(response)
+        const firstAvailableDate = response.calendar.availableDates[0]?.date ?? ''
+        setFreeSelectedDate(firstAvailableDate)
+        setFreeVisibleMonth(monthStart(firstAvailableDate ? new Date(`${firstAvailableDate}T00:00:00`) : new Date()))
+      } catch (requestError) {
+        if (!cancelled) {
+          setFreeAvailability(null)
+          setFreeAvailabilityError(
+            requestError instanceof Error
+              ? requestError.message
+              : 'No se pudo cargar la disponibilidad para cita medica.',
+          )
+        }
+      } finally {
+        if (!cancelled) setIsLoadingFreeAvailability(false)
+      }
+    }
+
+    void loadFreeAvailability()
+    return () => {
+      cancelled = true
+    }
+  }, [data])
+
   const availableDateSet = useMemo(
     () => new Set(availability?.calendar.availableDates.map((item) => item.date) ?? []),
     [availability],
@@ -139,6 +187,20 @@ export function AdminClientDetailPage() {
     : null
   const canGoPreviousMonth = minMonth ? visibleMonth.getTime() > minMonth.getTime() : false
   const canGoNextMonth = maxMonth ? visibleMonth.getTime() < maxMonth.getTime() : false
+  const freeAvailableDateSet = useMemo(
+    () => new Set(freeAvailability?.calendar.availableDates.map((item) => item.date) ?? []),
+    [freeAvailability],
+  )
+  const freeCalendarDays = useMemo(() => buildCalendarGrid(freeVisibleMonth), [freeVisibleMonth])
+  const freeSelectedSlots = freeAvailability?.calendar.slotsByDate[freeSelectedDate] ?? []
+  const freeMinMonth = freeAvailability?.calendar.windowStart
+    ? monthStart(new Date(`${freeAvailability.calendar.windowStart}T00:00:00`))
+    : null
+  const freeMaxMonth = freeAvailability?.calendar.windowEnd
+    ? monthStart(new Date(`${freeAvailability.calendar.windowEnd}T00:00:00`))
+    : null
+  const canGoPreviousFreeMonth = freeMinMonth ? freeVisibleMonth.getTime() > freeMinMonth.getTime() : false
+  const canGoNextFreeMonth = freeMaxMonth ? freeVisibleMonth.getTime() < freeMaxMonth.getTime() : false
 
   async function handleCancelAppointment(appointmentId: number) {
     const shouldCancel = window.confirm('Se cancelara esta reserva y el cupo volvera a quedar disponible. ¿Deseas continuar?')
@@ -237,6 +299,31 @@ export function AdminClientDetailPage() {
       })
     } finally {
       setIsBookingKey(null)
+    }
+  }
+
+  async function handleReserveFreeMedicalAppointment(slotId: number) {
+    if (!data) return
+    const selectedSlot = Object.values(freeAvailability?.calendar.slotsByDate ?? {})
+      .flat()
+      .find((item) => item.slotId === slotId)
+    const bookingKey = selectedSlot ? `${selectedSlot.date}-${selectedSlot.time}-${selectedSlot.specialistId}` : `slot-${slotId}`
+    setIsFreeBookingKey(bookingKey)
+
+    try {
+      const response = await createAdminClientFreeMedicalAppointment(data.client.rawId, slotId)
+      showNotification({ title: 'Cita medica registrada', message: response.detail, tone: 'success' })
+      reload()
+      setFreeAvailability(null)
+      setFreeSelectedDate('')
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo reservar',
+        message: requestError instanceof Error ? requestError.message : 'No se pudo registrar la cita medica.',
+        tone: 'danger',
+      })
+    } finally {
+      setIsFreeBookingKey(null)
     }
   }
 
@@ -397,6 +484,65 @@ export function AdminClientDetailPage() {
             </div>
           ) : (
             <DataState title="Sin horarios seleccionados" message="Elige un dia resaltado para ver cupos o cambia de procedimiento." />
+          )}
+        </SectionCard>
+      </section>
+
+      <section className="dashboard-grid">
+        <SectionCard eyebrow="Cita medica" title="Reservar cita medica libre" description="Agenda una consulta sin asociarla a un tratamiento activo. Disponible tambien para clientes inactivos.">
+          {isLoadingFreeAvailability ? <DataState title="Cargando cupos" message="Buscando horarios disponibles para cita medica." /> : null}
+          {freeAvailabilityError ? <DataState title="No hay disponibilidad" message={freeAvailabilityError} tone="danger" /> : null}
+
+          {freeAvailability ? (
+            <div className="reservation-calendar">
+              <div className="reservation-calendar__header">
+                <button className="button button--ghost button--compact" disabled={!canGoPreviousFreeMonth} type="button" onClick={() => setFreeVisibleMonth((current) => addMonths(current, -1))}>
+                  Mes anterior
+                </button>
+                <strong>{monthLabel(freeVisibleMonth)}</strong>
+                <button className="button button--ghost button--compact" disabled={!canGoNextFreeMonth} type="button" onClick={() => setFreeVisibleMonth((current) => addMonths(current, 1))}>
+                  Mes siguiente
+                </button>
+              </div>
+              <div className="reservation-calendar__weekdays">
+                {WEEKDAY_LABELS.map((label) => <span key={label}>{label}</span>)}
+              </div>
+              <div className="reservation-calendar__grid">
+                {freeCalendarDays.map((day) => {
+                  const isAvailable = freeAvailableDateSet.has(day.key)
+                  return (
+                    <button key={day.key} className={`reservation-calendar__day ${isAvailable ? 'is-available' : ''} ${freeSelectedDate === day.key ? 'is-selected' : ''} ${!day.inCurrentMonth ? 'is-outside' : ''}`} type="button" onClick={() => setFreeSelectedDate(day.key)}>
+                      <span>{day.dayNumber}</span>
+                      {isAvailable ? <small>{freeAvailability.calendar.availableDates.find((item) => item.date === day.key)?.slotCount ?? 0} cupos</small> : null}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+        </SectionCard>
+
+        <SectionCard eyebrow="Horarios" title={freeSelectedDate ? `Cita medica para ${longDateLabel(freeSelectedDate)}` : 'Selecciona un dia'} description="La cita quedara registrada en la agenda del cliente sin descontar sesiones.">
+          {freeSelectedDate && freeSelectedSlots.length ? (
+            <div className="reservation-slot-list">
+              {freeSelectedSlots.map((slot) => {
+                const bookingKey = `${slot.date}-${slot.time}-${slot.specialistId}`
+                return (
+                  <article className="reservation-slot-card" key={bookingKey}>
+                    <div>
+                      <strong>{slot.timeRange}</strong>
+                      <p>{slot.specialist}</p>
+                      <span>{slot.dateTimeLabel}</span>
+                    </div>
+                    <button className="button" disabled={Boolean(isFreeBookingKey)} type="button" onClick={() => void handleReserveFreeMedicalAppointment(slot.slotId)}>
+                      {isFreeBookingKey === bookingKey ? 'Reservando...' : 'Confirmar cita medica'}
+                    </button>
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <DataState title="Sin horarios seleccionados" message="Elige un dia resaltado para ver cupos de cita medica." />
           )}
         </SectionCard>
       </section>

@@ -8,10 +8,27 @@ import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { cancelAdminAppointment, getAdminProspects } from '../../services/api/admin'
 import { Link } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+
+const CLIENT_STATUS_OPTIONS = ['Activo', 'Inactivo']
 
 export function AdminClientsPage() {
   const { data, isLoading, error, reload } = useApiResource(getAdminProspects)
   const { showNotification } = useNotifications()
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('TODOS')
+
+  const filteredClients = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase()
+    return (data?.clients ?? []).filter((client) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        client.name.toLowerCase().includes(normalizedSearch) ||
+        client.ci.toLowerCase().includes(normalizedSearch)
+      const matchesStatus = statusFilter === 'TODOS' || client.status === statusFilter
+      return matchesSearch && matchesStatus
+    })
+  }, [data, searchTerm, statusFilter])
 
   async function handleCancelAppointment(appointmentId: number) {
     const shouldCancel = window.confirm(
@@ -80,14 +97,41 @@ export function AdminClientsPage() {
             title="Clientes con cuenta"
             description="Clientes activos e inactivos que ya pueden ingresar al portal y revisar su historial."
           >
-            {data.clients.length ? (
+            <div className="form-grid">
+              <label className="field">
+                <span>Buscar cliente</span>
+                <input
+                  className="input"
+                  placeholder="Nombre o CI"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Estado</span>
+                <select
+                  className="input"
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                >
+                  <option value="TODOS">Todos</option>
+                  {CLIENT_STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {filteredClients.length ? (
               <div className="table-card">
                 <table>
                   <thead>
                     <tr>
                       <th>Nombre</th>
                       <th>Estado</th>
-                      <th>Telefono</th>
+                      <th>CI</th>
                       <th>Operaciones activas</th>
                       <th>Historial</th>
                       <th>Ultimo analisis</th>
@@ -95,7 +139,7 @@ export function AdminClientsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.clients.map((client) => (
+                    {filteredClients.map((client) => (
                       <tr key={client.id}>
                         <td>
                           <Link className="table-strong-link" to={`/admin/clientes/${client.rawId}`}>
@@ -107,7 +151,7 @@ export function AdminClientsPage() {
                             {client.status}
                           </StatusBadge>
                         </td>
-                        <td>{client.phone}</td>
+                        <td>{client.ci}</td>
                         <td>{client.activeOperations}</td>
                         <td>{client.totalOperations}</td>
                         <td>{client.lastAnalysis}</td>
@@ -143,8 +187,12 @@ export function AdminClientsPage() {
               </div>
             ) : (
               <DataState
-                title="Sin clientes con cuenta"
-                message="No se encontraron clientes consolidados en la base conectada."
+                title={data.clients.length ? 'Sin resultados' : 'Sin clientes con cuenta'}
+                message={
+                  data.clients.length
+                    ? 'No hay clientes que coincidan con la busqueda o el filtro seleccionado.'
+                    : 'No se encontraron clientes consolidados en la base conectada.'
+                }
               />
             )}
           </SectionCard>

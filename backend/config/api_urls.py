@@ -21,7 +21,9 @@ from config.api_views import (
     admin_catalogo_estado,
     admin_cancel_appointment,
     admin_cliente_create_reservation,
+    admin_cliente_create_free_medical_appointment,
     admin_cliente_detalle,
+    admin_cliente_free_medical_availability,
     admin_cliente_inactivate,
     admin_cliente_reservation_availability,
     admin_confirm_appointment_biometric,
@@ -39,6 +41,8 @@ from config.api_views import (
     admin_pagos,
     admin_prospect_medical_availability,
     admin_prospectos,
+    admin_update_operation_details,
+    admin_update_operation_price_plan,
     admin_update_payment_status,
     admin_update_payment_qr_config,
 )
@@ -87,6 +91,16 @@ urlpatterns = [
         admin_cliente_create_reservation,
         name="admin-client-reservation-create-api",
     ),
+    path(
+        "clientes/<int:client_id>/cita-medica/disponibilidad/",
+        admin_cliente_free_medical_availability,
+        name="admin-client-free-medical-availability-api",
+    ),
+    path(
+        "clientes/<int:client_id>/cita-medica/reservar/",
+        admin_cliente_create_free_medical_appointment,
+        name="admin-client-free-medical-create-api",
+    ),
     path("prospectos/crear/", admin_crear_prospecto, name="admin-prospectos-create-api"),
     path(
         "prospectos/<int:prospecto_id>/conversion/",
@@ -125,6 +139,16 @@ urlpatterns = [
     ),
     path("operaciones/", admin_operaciones, name="admin-operaciones-api"),
     path("operaciones/<int:operacion_id>/", admin_operacion_detalle, name="admin-operacion-detail-api"),
+    path(
+        "operaciones/<int:operacion_id>/actualizar-detalles/",
+        admin_update_operation_details,
+        name="admin-operation-update-details-api",
+    ),
+    path(
+        "operaciones/<int:operacion_id>/actualizar-precio/",
+        admin_update_operation_price_plan,
+        name="admin-operation-update-price-api",
+    ),
     path("citas/<int:appointment_id>/cancelar/", admin_cancel_appointment, name="admin-appointment-cancel-api"),
     path(
         "citas/<int:appointment_id>/pendiente-biometria/",

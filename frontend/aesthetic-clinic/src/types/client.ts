@@ -73,7 +73,7 @@ export type ClientPayment = {
 export type ClientAppointment = {
   id: string
   rawId: number
-  operationRawId: number
+  operationRawId: number | null
   operation: string
   specialist: string
   dateTime: string
@@ -85,6 +85,7 @@ export type ClientAppointment = {
   canMarkPendingBiometric: boolean
   canConfirmBiometric: boolean
   biometricMockTemplate: string
+  isFreeMedicalAppointment?: boolean
 }
 
 export type ClientWelcome = {

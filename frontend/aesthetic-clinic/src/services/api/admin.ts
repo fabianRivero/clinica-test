@@ -7,11 +7,13 @@ import type {
   AdminAvailabilityMutationResponse,
   AdminCancelAppointmentResponse,
   AdminClientDetailResponse,
+  AdminClientFreeMedicalAvailabilityResponse,
   AdminClientInactivateResponse,
   AdminClientReservationAvailabilityResponse,
   AdminProspectMedicalAvailabilityResponse,
   CancelAdminProspectMedicalAppointmentResponse,
   CatalogsResponse,
+  CreateAdminClientFreeMedicalAppointmentResponse,
   CreateAdminClientReservationResponse,
   CreateAdminProspectMedicalAppointmentResponse,
   CreateAdminStaffPayload,
@@ -26,6 +28,8 @@ import type {
   PaymentsResponse,
   ProspectsResponse,
   StaffResponse,
+  UpdateAdminOperationDetailsPayload,
+  UpdateAdminOperationPricePayload,
   UpdateAdminTimeSlotPayload,
   UpdateAdminCatalogItemStatePayload,
   UpdateAdminStaffPayload,
@@ -161,9 +165,22 @@ export function getAdminClientReservationAvailability(clientId: number, operatio
   )
 }
 
+export function getAdminClientFreeMedicalAvailability(clientId: number) {
+  return requestJson<AdminClientFreeMedicalAvailabilityResponse>(
+    `/api/admin/clientes/${clientId}/cita-medica/disponibilidad/`,
+  )
+}
+
 export function createAdminClientReservation(clientId: number, operationId: number, slotId: number) {
   return requestJsonWithBody<CreateAdminClientReservationResponse>(
     `/api/admin/clientes/${clientId}/operaciones/${operationId}/reservar/`,
+    { slotId },
+  )
+}
+
+export function createAdminClientFreeMedicalAppointment(clientId: number, slotId: number) {
+  return requestJsonWithBody<CreateAdminClientFreeMedicalAppointmentResponse>(
+    `/api/admin/clientes/${clientId}/cita-medica/reservar/`,
     { slotId },
   )
 }
@@ -205,6 +222,26 @@ export function getAdminOperations() {
 
 export function getAdminOperationDetail(operationId: string) {
   return requestJson<OperationDetailResponse>(`/api/admin/operaciones/${operationId}/`)
+}
+
+export function updateAdminOperationDetails(
+  operationId: number,
+  payload: UpdateAdminOperationDetailsPayload,
+) {
+  return requestJsonWithBody<OperationDetailResponse>(
+    `/api/admin/operaciones/${operationId}/actualizar-detalles/`,
+    payload,
+  )
+}
+
+export function updateAdminOperationPricePlan(
+  operationId: number,
+  payload: UpdateAdminOperationPricePayload,
+) {
+  return requestJsonWithBody<OperationDetailResponse>(
+    `/api/admin/operaciones/${operationId}/actualizar-precio/`,
+    payload,
+  )
 }
 
 export function getAdminAvailability() {

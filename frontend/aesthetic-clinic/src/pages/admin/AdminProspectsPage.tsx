@@ -18,6 +18,7 @@ import type { AdminProspectMedicalAvailabilityResponse, ProspectLead } from '../
 import { Link, useLocation } from 'react-router-dom'
 
 const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
+const PROSPECT_STATUS_OPTIONS = ['Pasajero', 'Convertido', 'Descartado']
 
 function toDateKey(value: Date) {
   const year = value.getFullYear()
@@ -74,6 +75,8 @@ export function AdminProspectsPage() {
   const [selectedDate, setSelectedDate] = useState('')
   const [visibleMonth, setVisibleMonth] = useState<Date>(monthStart(new Date()))
   const [isBookingKey, setIsBookingKey] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('TODOS')
   const flashMessage =
     typeof location.state === 'object' && location.state && 'flashMessage' in location.state
       ? String(location.state.flashMessage)
@@ -93,6 +96,16 @@ export function AdminProspectsPage() {
     : null
   const canGoPreviousMonth = minMonth ? visibleMonth.getTime() > minMonth.getTime() : false
   const canGoNextMonth = maxMonth ? visibleMonth.getTime() < maxMonth.getTime() : false
+  const filteredProspects = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase()
+    return (data?.prospects ?? []).filter((lead) => {
+      const matchesSearch =
+        !normalizedSearch ||
+        lead.name.toLowerCase().includes(normalizedSearch)
+      const matchesStatus = statusFilter === 'TODOS' || lead.state === statusFilter
+      return matchesSearch && matchesStatus
+    })
+  }, [data, searchTerm, statusFilter])
 
   async function handleOpenBooking(lead: ProspectLead) {
     if (!lead.rawId) return
@@ -203,7 +216,34 @@ export function AdminProspectsPage() {
             title="Prospectos registrados"
             description="Registros internos que todavia no son clientes formales o ya fueron convertidos."
           >
-            {data.prospects.length ? (
+            <div className="form-grid">
+              <label className="field">
+                <span>Buscar prospecto</span>
+                <input
+                  className="input"
+                  placeholder="Nombre"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Estado</span>
+                <select
+                  className="input"
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                >
+                  <option value="TODOS">Todos</option>
+                  {PROSPECT_STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {filteredProspects.length ? (
               <div className="table-card">
                 <table>
                   <thead>
@@ -218,7 +258,7 @@ export function AdminProspectsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.prospects.map((lead) => (
+                    {filteredProspects.map((lead) => (
                       <tr key={lead.id}>
                         <td>
                           <strong>{lead.name}</strong>
@@ -273,8 +313,12 @@ export function AdminProspectsPage() {
               </div>
             ) : (
               <DataState
-                title="Sin prospectos cargados"
-                message="Todavia no hay pasajeros o conversiones registradas en la base real."
+                title={data.prospects.length ? 'Sin resultados' : 'Sin prospectos cargados'}
+                message={
+                  data.prospects.length
+                    ? 'No hay prospectos que coincidan con la busqueda o el filtro seleccionado.'
+                    : 'Todavia no hay pasajeros o conversiones registradas en la base real.'
+                }
               />
             )}
           </SectionCard>
