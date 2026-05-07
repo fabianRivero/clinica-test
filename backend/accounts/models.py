@@ -30,6 +30,13 @@ class Usuario(AbstractUser, TimeStampedModel):
         null=True,
         blank=True,
     )
+    sucursal = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.SET_NULL,
+        related_name="usuarios",
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         db_table = "usuarios"
@@ -52,8 +59,16 @@ class Usuario(AbstractUser, TimeStampedModel):
         return bool(self.rol and self.rol.rol == nombre_rol)
 
     @property
+    def es_admin_principal(self):
+        return self.tiene_rol("ADMIN_PRINCIPAL")
+
+    @property
+    def es_admin_sucursal(self):
+        return self.tiene_rol("ADMIN_SUCURSAL")
+
+    @property
     def es_administrador(self):
-        return self.tiene_rol("ADMINISTRADOR")
+        return self.es_admin_principal or self.es_admin_sucursal
 
     @property
     def es_trabajador(self):

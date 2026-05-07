@@ -66,7 +66,7 @@ export function ClientDashboardPage() {
             <SectionCard
               eyebrow="Tratamientos activos"
               title="Tus operaciones vigentes"
-              description="Resumen rapido de sesiones, especialista asignado y disponibilidad de reserva."
+              description="Resumen rapido de sesiones y especialista asignado."
             >
               {data.operations.length ? (
                 <div className="operation-grid">

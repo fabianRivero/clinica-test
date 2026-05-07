@@ -154,7 +154,9 @@ export type AdminClientDetailResponse = {
   pendingQuotas: ClientQuota[]
 }
 
-export type AdminClientReservationAvailabilityResponse = ClientReservationAvailabilityResponse
+export type AdminClientReservationAvailabilityResponse = {
+  operation: ClientOperation
+}
 
 export type CreateAdminClientReservationResponse = CreateClientReservationResponse
 
@@ -164,7 +166,6 @@ export type AdminClientFreeMedicalAvailabilityResponse = {
     rawId: number
     name: string
   }
-  calendar: ClientReservationAvailabilityResponse['calendar']
 }
 
 export type CreateAdminClientFreeMedicalAppointmentResponse = {
@@ -284,6 +285,7 @@ export type UpdateAdminOperationPricePayload = {
   priceTotal: string
   quotaCount: number
 }
+
 
 export type PaymentsResponse = {
   metrics: AdminMetric[]
@@ -458,40 +460,38 @@ export type AdminSpecialistAvailabilitySummary = {
   exceptions: number
 }
 
+export type AdminBranch = {
+  id: number
+  nombre: string
+  es_principal: boolean
+}
+
 export type AdminHabitualSchedule = {
   id: number
   specialistId: number
-  specialist: string
+  branchId: number
   startDate: string
-  endDate: string
+  endDate: string | null
   weekdayCodes: number[]
   weekdayLabels: string[]
-  timeSlotIds: number[]
-  timeSlotLabels: string[]
-  scope: string[]
-  serviceTypeIds: number[]
-  procedureTypeIds: number[]
-  procedureIds: number[]
-  active: boolean
+  startTime: string
+  endTime: string
   detail: string
+  active: boolean
 }
 
 export type AdminSpecialistAvailabilityException = {
   id: number
   specialistId: number
-  specialist: string
+  branchId: number
   date: string
   dateLabel: string
   type: 'AGREGAR' | 'BLOQUEAR'
   typeLabel: string
-  timeSlotIds: number[]
-  timeSlotLabels: string[]
-  scope: string[]
-  serviceTypeIds: number[]
-  procedureTypeIds: number[]
-  procedureIds: number[]
-  active: boolean
+  startTime: string
+  endTime: string
   detail: string
+  active: boolean
 }
 
 export type AdminGlobalAvailabilityBlock = {
@@ -502,75 +502,46 @@ export type AdminGlobalAvailabilityBlock = {
   detail: string
 }
 
-export type AdminAvailabilitySlot = {
-  id: string
-  rawId: number
-  appointmentId: number | null
-  appointmentCanCancel: boolean
-  specialistId: number
-  specialist: string
-  dateTime: string
-  date: string
-  time: string
-  timeRange: string
-  timeSlotId: number | null
-  status: 'disponible' | 'reservado' | 'expirado' | 'inactivo'
-  coverage: string[]
-  patient: string
-  operation: string
-  reservationState: string
-  active: boolean
-  detail: string
+export type AdminConcurrencyCheckResponse = {
+  concurrency: number
+  presentes: Array<{
+    id: number
+    usuario__primer_nombre: string
+    usuario__apellido_paterno: string
+    especialidad: string
+  }>
 }
 
 export type AdminAvailabilityResponse = {
   metrics: AdminMetric[]
+  branches: AdminBranch[]
   filters: {
     specialists: AdminAvailabilityOption[]
-    serviceTypes: AdminAvailabilityOption[]
-    procedureTypes: AdminAvailabilityOption[]
-    procedures: AdminAvailabilityOption[]
-    timeSlots: AdminTimeSlot[]
     weekdayOptions: AdminWeekdayOption[]
   }
-  specialistSummaries: AdminSpecialistAvailabilitySummary[]
   habitualRules: AdminHabitualSchedule[]
   exceptions: AdminSpecialistAvailabilityException[]
   globalBlocks: AdminGlobalAvailabilityBlock[]
-  slots: AdminAvailabilitySlot[]
-}
-
-export type CreateAdminTimeSlotPayload = {
-  startTime: string
-  endTime: string
-  detail: string
-  order?: number
-}
-
-export type UpdateAdminTimeSlotPayload = CreateAdminTimeSlotPayload & {
-  active: boolean
 }
 
 export type UpsertAdminHabitualSchedulePayload = {
   specialistId: number | null
+  branchId: number | null
   startDate: string
-  endDate: string
+  endDate: string | null
   weekdayCodes: number[]
-  timeSlotIds: number[]
-  serviceTypeIds: number[]
-  procedureTypeIds: number[]
-  procedureIds: number[]
+  startTime: string
+  endTime: string
   detail: string
 }
 
 export type CreateAdminAvailabilityExceptionPayload = {
   specialistId: number | null
+  branchId: number | null
   type: 'AGREGAR' | 'BLOQUEAR'
   dates: string[]
-  timeSlotIds: number[]
-  serviceTypeIds: number[]
-  procedureTypeIds: number[]
-  procedureIds: number[]
+  startTime: string
+  endTime: string
   detail: string
 }
 
@@ -582,11 +553,6 @@ export type ManageAdminGlobalAvailabilityPayload = {
 
 export type AdminAvailabilityMutationResponse = {
   detail: string
-  syncSummary: {
-    created: number
-    updated: number
-    deactivated: number
-  }
 }
 
 export type AdminCancelAppointmentResponse = {

@@ -4,6 +4,20 @@ from django.db import models
 from common.models import CatalogoEditableModel, TimeStampedModel
 
 
+class Sucursal(TimeStampedModel):
+    nombre = models.CharField(max_length=120, unique=True)
+    direccion = models.CharField(max_length=255, blank=True)
+    es_principal = models.BooleanField(default=False)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "sucursales"
+        ordering = ("nombre",)
+
+    def __str__(self):
+        return self.nombre
+
+
 class TipoServicio(CatalogoEditableModel):
     tipo = models.CharField(max_length=120, unique=True)
 

@@ -151,19 +151,12 @@ class CitaMedica(TimeStampedModel):
     operacion = models.ForeignKey(
         "operations.Operacion",
         on_delete=models.CASCADE,
-        related_name="citas_medicas",
+        related_name="citas_medicas", null=True, blank=True,
     )
-    medico = models.ForeignKey(
-        "staff.Especialista",
-        on_delete=models.PROTECT,
+    sucursal = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.CASCADE,
         related_name="citas_medicas",
-    )
-    disponibilidad = models.ForeignKey(
-        "operations.DisponibilidadCita",
-        on_delete=models.SET_NULL,
-        related_name="citas_origen",
-        null=True,
-        blank=True,
     )
     fecha_hora = models.DateTimeField()
     estado = models.CharField(
@@ -203,16 +196,6 @@ class CitaMedica(TimeStampedModel):
             if total_consumido > self.operacion.sesiones_totales:
                 errors["estado"] = "La operacion ya no tiene sesiones disponibles para nuevas reservas."
 
-        if self.disponibilidad_id:
-            if self.medico_id and self.disponibilidad.especialista_id != self.medico_id:
-                errors["disponibilidad"] = (
-                    "La disponibilidad seleccionada pertenece a un especialista diferente."
-                )
-            if self.fecha_hora and self.disponibilidad.fecha_hora != self.fecha_hora:
-                errors["fecha_hora"] = (
-                    "La fecha y hora de la cita deben coincidir con la disponibilidad asignada."
-                )
-
         if errors:
             raise ValidationError(errors)
 
@@ -239,24 +222,17 @@ class CitaProspecto(TimeStampedModel):
     prospecto = models.ForeignKey(
         "customers.Prospecto",
         on_delete=models.CASCADE,
-        related_name="citas_medicas",
+        related_name="citas_medicas", null=True, blank=True,
     )
     servicio_config = models.ForeignKey(
         "catalogs.ServicioConfig",
         on_delete=models.PROTECT,
         related_name="citas_prospectos",
     )
-    medico = models.ForeignKey(
-        "staff.Especialista",
-        on_delete=models.PROTECT,
+    sucursal = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.CASCADE,
         related_name="citas_prospectos",
-    )
-    disponibilidad = models.ForeignKey(
-        "operations.DisponibilidadCita",
-        on_delete=models.SET_NULL,
-        related_name="citas_prospectos_origen",
-        null=True,
-        blank=True,
     )
     fecha_hora = models.DateTimeField()
     estado = models.CharField(
@@ -277,20 +253,6 @@ class CitaProspecto(TimeStampedModel):
 
         if self.servicio_config_id and self.servicio_config.proc_estetico_id:
             errors["servicio_config"] = "Las citas de prospectos solo pueden usar el servicio de cita medica."
-
-        if self.disponibilidad_id:
-            if self.medico_id and self.disponibilidad.especialista_id != self.medico_id:
-                errors["disponibilidad"] = (
-                    "La disponibilidad seleccionada pertenece a un especialista diferente."
-                )
-            if self.fecha_hora and self.disponibilidad.fecha_hora != self.fecha_hora:
-                errors["fecha_hora"] = (
-                    "La fecha y hora de la cita deben coincidir con la disponibilidad asignada."
-                )
-            if self.servicio_config_id and not self.disponibilidad.tipos_servicio.filter(
-                pk=self.servicio_config.tipo_servicio_id
-            ).exists():
-                errors["disponibilidad"] = "El cupo seleccionado no corresponde al servicio de cita medica."
 
         if errors:
             raise ValidationError(errors)
@@ -319,17 +281,10 @@ class CitaClienteLibre(TimeStampedModel):
         on_delete=models.PROTECT,
         related_name="citas_clientes_libres",
     )
-    medico = models.ForeignKey(
-        "staff.Especialista",
-        on_delete=models.PROTECT,
+    sucursal = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.CASCADE,
         related_name="citas_clientes_libres",
-    )
-    disponibilidad = models.ForeignKey(
-        "operations.DisponibilidadCita",
-        on_delete=models.SET_NULL,
-        related_name="citas_clientes_libres_origen",
-        null=True,
-        blank=True,
     )
     fecha_hora = models.DateTimeField()
     estado = models.CharField(
@@ -348,20 +303,6 @@ class CitaClienteLibre(TimeStampedModel):
         if self.servicio_config_id and self.servicio_config.proc_estetico_id:
             errors["servicio_config"] = "Las citas medicas libres solo pueden usar servicios sin procedimiento."
 
-        if self.disponibilidad_id:
-            if self.medico_id and self.disponibilidad.especialista_id != self.medico_id:
-                errors["disponibilidad"] = (
-                    "La disponibilidad seleccionada pertenece a un especialista diferente."
-                )
-            if self.fecha_hora and self.disponibilidad.fecha_hora != self.fecha_hora:
-                errors["fecha_hora"] = (
-                    "La fecha y hora de la cita deben coincidir con la disponibilidad asignada."
-                )
-            if self.servicio_config_id and not self.disponibilidad.tipos_servicio.filter(
-                pk=self.servicio_config.tipo_servicio_id
-            ).exists():
-                errors["disponibilidad"] = "El cupo seleccionado no corresponde al servicio de cita medica."
-
         if errors:
             raise ValidationError(errors)
 
@@ -373,49 +314,23 @@ class CitaClienteLibre(TimeStampedModel):
         return f"Cita libre #{self.pk} - {self.cliente}"
 
 
-class HorarioDisponibilidad(CatalogoEditableModel):
-    hora_inicio = models.TimeField()
-    hora_fin = models.TimeField()
-
-    class Meta:
-        db_table = "horarios_disponibilidad"
-        ordering = ("hora_inicio", "hora_fin", "id")
-        constraints = [
-            models.UniqueConstraint(
-                fields=("hora_inicio", "hora_fin"),
-                name="uniq_horario_disponibilidad_rango",
-            )
-        ]
-
-    @property
-    def etiqueta(self):
-        return f"{self.hora_inicio.strftime('%H:%M')} - {self.hora_fin.strftime('%H:%M')}"
-
-    def clean(self):
-        if self.hora_fin <= self.hora_inicio:
-            raise ValidationError(
-                {"hora_fin": "La hora de fin debe ser posterior a la hora de inicio."}
-            )
-
-    def __str__(self):
-        return self.etiqueta
-
-
 class AgendaHabitualEspecialista(TimeStampedModel):
     especialista = models.ForeignKey(
         "staff.Especialista",
         on_delete=models.CASCADE,
         related_name="agendas_habituales",
     )
-    fecha_inicio = models.DateField()
-    fecha_fin = models.DateField()
-    activo = models.BooleanField(default=True)
-    detalle = models.CharField(max_length=255, blank=True)
-    horarios = models.ManyToManyField(
-        "operations.HorarioDisponibilidad",
-        blank=True,
+    sucursal = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.CASCADE,
         related_name="agendas_habituales",
     )
+    fecha_inicio = models.DateField()
+    fecha_fin = models.DateField()
+    hora_inicio = models.TimeField(null=True, blank=True)
+    hora_fin = models.TimeField(null=True, blank=True)
+    activo = models.BooleanField(default=True)
+    detalle = models.CharField(max_length=255, blank=True)
     tipos_servicio = models.ManyToManyField(
         "catalogs.TipoServicio",
         blank=True,
@@ -482,15 +397,17 @@ class AgendaExcepcionEspecialista(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="excepciones_agenda",
     )
+    sucursal = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.CASCADE,
+        related_name="excepciones_agenda",
+    )
     fecha = models.DateField()
+    hora_inicio = models.TimeField(null=True, blank=True)
+    hora_fin = models.TimeField(null=True, blank=True)
     tipo_excepcion = models.CharField(max_length=10, choices=TipoExcepcion.choices)
     activo = models.BooleanField(default=True)
     detalle = models.CharField(max_length=255, blank=True)
-    horarios = models.ManyToManyField(
-        "operations.HorarioDisponibilidad",
-        blank=True,
-        related_name="excepciones_agenda",
-    )
     tipos_servicio = models.ManyToManyField(
         "catalogs.TipoServicio",
         blank=True,
@@ -526,101 +443,6 @@ class DiaBloqueadoAgendaGlobal(TimeStampedModel):
 
     def __str__(self):
         return f"{self.fecha} - {'Activo' if self.activo else 'Inactivo'}"
-
-
-class DisponibilidadCita(TimeStampedModel):
-    especialista = models.ForeignKey(
-        "staff.Especialista",
-        on_delete=models.PROTECT,
-        related_name="disponibilidades_cita",
-    )
-    horario_base = models.ForeignKey(
-        "operations.HorarioDisponibilidad",
-        on_delete=models.PROTECT,
-        related_name="disponibilidades_cita",
-        null=True,
-        blank=True,
-    )
-    fecha_hora = models.DateTimeField()
-    activo = models.BooleanField(default=True)
-    detalle = models.CharField(max_length=255, blank=True)
-    tipos_servicio = models.ManyToManyField(
-        "catalogs.TipoServicio",
-        blank=True,
-        related_name="disponibilidades_cita",
-    )
-    tipos_proc_estetico = models.ManyToManyField(
-        "catalogs.ProcEsteticosTipo",
-        blank=True,
-        related_name="disponibilidades_cita",
-    )
-    procedimientos_esteticos = models.ManyToManyField(
-        "catalogs.ProcEstetico",
-        blank=True,
-        related_name="disponibilidades_cita",
-    )
-
-    class Meta:
-        db_table = "disponibilidad_citas"
-        ordering = ("fecha_hora", "especialista__usuario__primer_nombre")
-        constraints = [
-            models.UniqueConstraint(
-                fields=("especialista", "fecha_hora"),
-                name="uniq_disponibilidad_especialista_fecha_hora",
-            )
-        ]
-
-    @property
-    def tiene_reserva_activa(self):
-        has_client_booking = self.citas_origen.filter(
-            estado__in={
-                CitaMedica.Estado.PROGRAMADA,
-                CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
-                CitaMedica.Estado.CONFIRMADA,
-            }
-        ).exists()
-        has_prospect_booking = self.citas_prospectos_origen.filter(
-            estado=CitaProspecto.Estado.PROGRAMADA
-        ).exists()
-        has_free_client_booking = self.citas_clientes_libres_origen.filter(
-            estado=CitaClienteLibre.Estado.PROGRAMADA
-        ).exists()
-        return has_client_booking or has_prospect_booking or has_free_client_booking
-
-    @property
-    def estado_resumen(self):
-        if not self.activo:
-            return "INACTIVO"
-        if self.fecha_hora <= timezone.now():
-            return "EXPIRADO"
-        if self.tiene_reserva_activa:
-            return "RESERVADO"
-        return "DISPONIBLE"
-
-    @property
-    def rango_horario(self):
-        if self.horario_base_id:
-            return self.horario_base.etiqueta
-        local_dt = timezone.localtime(self.fecha_hora)
-        return f"{local_dt.strftime('%H:%M')} - {local_dt.strftime('%H:%M')}"
-
-    def coincide_con_operacion(self, operacion):
-        servicio_config = operacion.servicio_config
-        procedimiento = servicio_config.proc_estetico
-
-        if self.tipos_servicio.filter(pk=servicio_config.tipo_servicio_id).exists():
-            return True
-        if procedimiento and self.tipos_proc_estetico.filter(pk=procedimiento.tipo_p_estetico_id).exists():
-            return True
-        if procedimiento and self.procedimientos_esteticos.filter(pk=procedimiento.pk).exists():
-            return True
-        return False
-
-    def __str__(self):
-        return (
-            f"{self.especialista} - "
-            f"{timezone.localtime(self.fecha_hora).strftime('%d/%m/%Y %H:%M')}"
-        )
 
 
 class FichaClinica(TimeStampedModel):

@@ -4,14 +4,12 @@ from config.admin_availability_views import (
     admin_availability,
     admin_create_habitual_schedule,
     admin_create_specialist_exception,
-    admin_create_time_slot,
     admin_delete_habitual_schedule,
     admin_delete_specialist_exception,
-    admin_delete_time_slot,
     admin_manage_global_day,
-    admin_remove_visible_slot,
     admin_update_habitual_schedule,
-    admin_update_time_slot,
+    admin_check_concurrency,
+    admin_get_branches,
 )
 from config.api_views import (
     admin_actualizar_especialista,
@@ -162,22 +160,6 @@ urlpatterns = [
     ),
     path("disponibilidad/", admin_availability, name="admin-availability-api"),
     path(
-        "disponibilidad/cupos/<int:slot_id>/retirar/",
-        admin_remove_visible_slot,
-        name="admin-availability-visible-slot-remove-api",
-    ),
-    path("disponibilidad/horarios/crear/", admin_create_time_slot, name="admin-availability-time-slot-create-api"),
-    path(
-        "disponibilidad/horarios/<int:slot_id>/actualizar/",
-        admin_update_time_slot,
-        name="admin-availability-time-slot-update-api",
-    ),
-    path(
-        "disponibilidad/horarios/<int:slot_id>/eliminar/",
-        admin_delete_time_slot,
-        name="admin-availability-time-slot-delete-api",
-    ),
-    path(
         "disponibilidad/habitual/crear/",
         admin_create_habitual_schedule,
         name="admin-availability-habitual-create-api",
@@ -207,6 +189,12 @@ urlpatterns = [
         admin_manage_global_day,
         name="admin-availability-global-manage-api",
     ),
+    path(
+        "disponibilidad/concurrencia/",
+        admin_check_concurrency,
+        name="admin-availability-check-concurrency-api",
+    ),
+    path("disponibilidad/sucursales/", admin_get_branches, name="admin-branches-api"),
     path("pagos/", admin_pagos, name="admin-pagos-api"),
     path("pagos/configuracion-qr/", admin_update_payment_qr_config, name="admin-pagos-qr-config-api"),
     path("pagos/<int:payment_id>/estado/", admin_update_payment_status, name="admin-pagos-status-api"),

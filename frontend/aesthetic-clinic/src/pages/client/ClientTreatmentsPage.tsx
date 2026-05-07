@@ -40,7 +40,7 @@ export function ClientTreatmentsPage() {
           <SectionCard
             eyebrow="Operacion por operacion"
             title="Detalle de tratamientos"
-            description="Cada tarjeta resume sesiones, recomendaciones, zona tratada y disponibilidad de nuevas reservas."
+            description="Cada tarjeta resume sesiones, recomendaciones y zona tratada."
           >
             {data.operations.length ? (
               <div className="operation-grid">

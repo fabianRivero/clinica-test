@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
@@ -15,62 +15,15 @@ import {
   confirmAdminAppointmentBiometric,
   createAdminClientReservation,
   getAdminClientDetail,
-  getAdminClientFreeMedicalAvailability,
-  getAdminClientReservationAvailability,
   inactivateAdminClient,
   markAdminAppointmentPendingBiometric,
 } from '../../services/api/admin'
 import { verifyMockFingerprint } from '../../services/fingerprint/mockFingerprint'
 import type {
-  AdminClientFreeMedicalAvailabilityResponse,
-  AdminClientReservationAvailabilityResponse,
+  AdminConcurrencyCheckResponse,
 } from '../../types/admin'
-
-const WEEKDAY_LABELS = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
-
-function toDateKey(value: Date) {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, '0')
-  const day = String(value.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function monthStart(value: Date) {
-  return new Date(value.getFullYear(), value.getMonth(), 1)
-}
-
-function addMonths(value: Date, amount: number) {
-  return new Date(value.getFullYear(), value.getMonth() + amount, 1)
-}
-
-function buildCalendarGrid(monthValue: Date) {
-  const start = monthStart(monthValue)
-  const firstWeekday = (start.getDay() + 6) % 7
-  const firstVisibleDay = new Date(start)
-  firstVisibleDay.setDate(start.getDate() - firstWeekday)
-
-  return Array.from({ length: 42 }, (_, index) => {
-    const current = new Date(firstVisibleDay)
-    current.setDate(firstVisibleDay.getDate() + index)
-    return {
-      key: toDateKey(current),
-      dayNumber: current.getDate(),
-      inCurrentMonth: current.getMonth() === monthValue.getMonth(),
-    }
-  })
-}
-
-function monthLabel(value: Date) {
-  return value.toLocaleDateString('es-BO', { month: 'long', year: 'numeric' })
-}
-
-function longDateLabel(value: string) {
-  return new Date(`${value}T00:00:00`).toLocaleDateString('es-BO', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  })
-}
+import { useBranchContext } from '../../providers/BranchProvider'
+import { checkAdminConcurrency } from '../../services/api/admin'
 
 export function AdminClientDetailPage() {
   const { clientId = '' } = useParams()
@@ -78,129 +31,30 @@ export function AdminClientDetailPage() {
   const loader = useCallback(() => getAdminClientDetail(clientId), [clientId])
   const { data, isLoading, error, reload } = useApiResource(loader)
   const [selectedOperationId, setSelectedOperationId] = useState<number | ''>('')
-  const [availability, setAvailability] = useState<AdminClientReservationAvailabilityResponse | null>(null)
-  const [availabilityError, setAvailabilityError] = useState<string | null>(null)
-  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false)
-  const [freeAvailability, setFreeAvailability] = useState<AdminClientFreeMedicalAvailabilityResponse | null>(null)
-  const [freeAvailabilityError, setFreeAvailabilityError] = useState<string | null>(null)
-  const [isLoadingFreeAvailability, setIsLoadingFreeAvailability] = useState(false)
+  const { activeBranch } = useBranchContext()
   const [selectedDate, setSelectedDate] = useState('')
-  const [visibleMonth, setVisibleMonth] = useState<Date>(monthStart(new Date()))
+  const [selectedTime, setSelectedTime] = useState('')
+  const [concurrencyInfo, setConcurrencyInfo] = useState<AdminConcurrencyCheckResponse | null>(null)
+  
   const [freeSelectedDate, setFreeSelectedDate] = useState('')
-  const [freeVisibleMonth, setFreeVisibleMonth] = useState<Date>(monthStart(new Date()))
+  const [freeSelectedTime, setFreeSelectedTime] = useState('')
+  const [freeConcurrencyInfo, setFreeConcurrencyInfo] = useState<AdminConcurrencyCheckResponse | null>(null)
+
+  const [isChecking, setIsChecking] = useState(false)
   const [isBookingKey, setIsBookingKey] = useState<string | null>(null)
   const [isFreeBookingKey, setIsFreeBookingKey] = useState<string | null>(null)
   const [isInactivating, setIsInactivating] = useState(false)
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
 
   const reservableOperations = useMemo(
-    () => data?.operations.filter((operation) => operation.status === 'En proceso') ?? [],
+    () => data?.operations.filter((operation: any) => operation.status === 'En proceso') ?? [],
     [data],
   )
   const effectiveOperationId = selectedOperationId || reservableOperations[0]?.rawId || ''
 
-  useEffect(() => {
-    let cancelled = false
 
-    async function loadAvailability() {
-      if (!data || !effectiveOperationId) {
-        setAvailability(null)
-        return
-      }
-      setIsLoadingAvailability(true)
-      setAvailabilityError(null)
-      try {
-        const response = await getAdminClientReservationAvailability(data.client.rawId, effectiveOperationId)
-        if (cancelled) return
-        setAvailability(response)
-        const firstAvailableDate = response.calendar.availableDates[0]?.date ?? ''
-        setSelectedDate(firstAvailableDate)
-        setVisibleMonth(monthStart(firstAvailableDate ? new Date(`${firstAvailableDate}T00:00:00`) : new Date()))
-      } catch (requestError) {
-        if (!cancelled) {
-          setAvailability(null)
-          setAvailabilityError(
-            requestError instanceof Error
-              ? requestError.message
-              : 'No se pudo cargar la disponibilidad.',
-          )
-        }
-      } finally {
-        if (!cancelled) setIsLoadingAvailability(false)
-      }
-    }
 
-    void loadAvailability()
-    return () => {
-      cancelled = true
-    }
-  }, [data, effectiveOperationId])
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadFreeAvailability() {
-      if (!data) {
-        setFreeAvailability(null)
-        return
-      }
-      setIsLoadingFreeAvailability(true)
-      setFreeAvailabilityError(null)
-      try {
-        const response = await getAdminClientFreeMedicalAvailability(data.client.rawId)
-        if (cancelled) return
-        setFreeAvailability(response)
-        const firstAvailableDate = response.calendar.availableDates[0]?.date ?? ''
-        setFreeSelectedDate(firstAvailableDate)
-        setFreeVisibleMonth(monthStart(firstAvailableDate ? new Date(`${firstAvailableDate}T00:00:00`) : new Date()))
-      } catch (requestError) {
-        if (!cancelled) {
-          setFreeAvailability(null)
-          setFreeAvailabilityError(
-            requestError instanceof Error
-              ? requestError.message
-              : 'No se pudo cargar la disponibilidad para cita medica.',
-          )
-        }
-      } finally {
-        if (!cancelled) setIsLoadingFreeAvailability(false)
-      }
-    }
-
-    void loadFreeAvailability()
-    return () => {
-      cancelled = true
-    }
-  }, [data])
-
-  const availableDateSet = useMemo(
-    () => new Set(availability?.calendar.availableDates.map((item) => item.date) ?? []),
-    [availability],
-  )
-  const calendarDays = useMemo(() => buildCalendarGrid(visibleMonth), [visibleMonth])
-  const selectedSlots = availability?.calendar.slotsByDate[selectedDate] ?? []
-  const minMonth = availability?.calendar.windowStart
-    ? monthStart(new Date(`${availability.calendar.windowStart}T00:00:00`))
-    : null
-  const maxMonth = availability?.calendar.windowEnd
-    ? monthStart(new Date(`${availability.calendar.windowEnd}T00:00:00`))
-    : null
-  const canGoPreviousMonth = minMonth ? visibleMonth.getTime() > minMonth.getTime() : false
-  const canGoNextMonth = maxMonth ? visibleMonth.getTime() < maxMonth.getTime() : false
-  const freeAvailableDateSet = useMemo(
-    () => new Set(freeAvailability?.calendar.availableDates.map((item) => item.date) ?? []),
-    [freeAvailability],
-  )
-  const freeCalendarDays = useMemo(() => buildCalendarGrid(freeVisibleMonth), [freeVisibleMonth])
-  const freeSelectedSlots = freeAvailability?.calendar.slotsByDate[freeSelectedDate] ?? []
-  const freeMinMonth = freeAvailability?.calendar.windowStart
-    ? monthStart(new Date(`${freeAvailability.calendar.windowStart}T00:00:00`))
-    : null
-  const freeMaxMonth = freeAvailability?.calendar.windowEnd
-    ? monthStart(new Date(`${freeAvailability.calendar.windowEnd}T00:00:00`))
-    : null
-  const canGoPreviousFreeMonth = freeMinMonth ? freeVisibleMonth.getTime() > freeMinMonth.getTime() : false
-  const canGoNextFreeMonth = freeMaxMonth ? freeVisibleMonth.getTime() < freeMaxMonth.getTime() : false
 
   async function handleCancelAppointment(appointmentId: number) {
     const shouldCancel = window.confirm('Se cancelara esta reserva y el cupo volvera a quedar disponible. ¿Deseas continuar?')
@@ -277,24 +131,63 @@ export function AdminClientDetailPage() {
     }
   }
 
-  async function handleReserve(slotId: number) {
-    if (!data || !effectiveOperationId) return
-    const selectedSlot = Object.values(availability?.calendar.slotsByDate ?? {})
-      .flat()
-      .find((item) => item.slotId === slotId)
-    const bookingKey = selectedSlot ? `${selectedSlot.date}-${selectedSlot.time}-${selectedSlot.specialistId}` : `slot-${slotId}`
-    setIsBookingKey(bookingKey)
+  async function handleCheckConcurrency() {
+    if (!activeBranch || !selectedDate || !selectedTime) {
+      showNotification({ title: 'Atencion', message: 'Selecciona fecha y hora.', tone: 'warning' })
+      return
+    }
+    setIsChecking(true)
+    try {
+      const parts = selectedTime.split(':')
+      const endHour = String(Number(parts[0]) + 1).padStart(2, '0')
+      const endTime = `${endHour}:${parts[1]}`
+      const info = await checkAdminConcurrency(activeBranch.id, selectedDate, selectedTime, endTime)
+      setConcurrencyInfo(info)
+    } catch (err: any) {
+      showNotification({ title: 'Error', message: err.message, tone: 'danger' })
+    } finally {
+      setIsChecking(false)
+    }
+  }
+
+  async function handleCheckFreeConcurrency() {
+    if (!activeBranch || !freeSelectedDate || !freeSelectedTime) {
+      showNotification({ title: 'Atencion', message: 'Selecciona fecha y hora.', tone: 'warning' })
+      return
+    }
+    setIsChecking(true)
+    try {
+      const parts = freeSelectedTime.split(':')
+      const endHour = String(Number(parts[0]) + 1).padStart(2, '0')
+      const endTime = `${endHour}:${parts[1]}`
+      const info = await checkAdminConcurrency(activeBranch.id, freeSelectedDate, freeSelectedTime, endTime)
+      setFreeConcurrencyInfo(info)
+    } catch (err: any) {
+      showNotification({ title: 'Error', message: err.message, tone: 'danger' })
+    } finally {
+      setIsChecking(false)
+    }
+  }
+
+  async function handleReserve() {
+    if (!data || !effectiveOperationId || !activeBranch) return
+    setIsBookingKey('booking')
 
     try {
-      const response = await createAdminClientReservation(data.client.rawId, effectiveOperationId, slotId)
+      const response = await createAdminClientReservation(data.client.rawId, effectiveOperationId, {
+        branchId: activeBranch.id,
+        dateTime: `${selectedDate}T${selectedTime}:00`
+      } as any)
       showNotification({ title: 'Reserva registrada', message: response.detail, tone: 'success' })
       reload()
       setSelectedOperationId('')
-      setAvailability(null)
-    } catch (requestError) {
+      setSelectedDate('')
+      setSelectedTime('')
+      setConcurrencyInfo(null)
+    } catch (requestError: any) {
       showNotification({
         title: 'No se pudo reservar',
-        message: requestError instanceof Error ? requestError.message : 'No se pudo registrar la reserva.',
+        message: requestError.message,
         tone: 'danger',
       })
     } finally {
@@ -302,24 +195,24 @@ export function AdminClientDetailPage() {
     }
   }
 
-  async function handleReserveFreeMedicalAppointment(slotId: number) {
-    if (!data) return
-    const selectedSlot = Object.values(freeAvailability?.calendar.slotsByDate ?? {})
-      .flat()
-      .find((item) => item.slotId === slotId)
-    const bookingKey = selectedSlot ? `${selectedSlot.date}-${selectedSlot.time}-${selectedSlot.specialistId}` : `slot-${slotId}`
-    setIsFreeBookingKey(bookingKey)
+  async function handleReserveFreeMedicalAppointment() {
+    if (!data || !activeBranch) return
+    setIsFreeBookingKey('booking')
 
     try {
-      const response = await createAdminClientFreeMedicalAppointment(data.client.rawId, slotId)
+      const response = await createAdminClientFreeMedicalAppointment(data.client.rawId, {
+        branchId: activeBranch.id,
+        dateTime: `${freeSelectedDate}T${freeSelectedTime}:00`
+      } as any)
       showNotification({ title: 'Cita medica registrada', message: response.detail, tone: 'success' })
       reload()
-      setFreeAvailability(null)
       setFreeSelectedDate('')
-    } catch (requestError) {
+      setFreeSelectedTime('')
+      setFreeConcurrencyInfo(null)
+    } catch (requestError: any) {
       showNotification({
         title: 'No se pudo reservar',
-        message: requestError instanceof Error ? requestError.message : 'No se pudo registrar la cita medica.',
+        message: requestError.message,
         tone: 'danger',
       })
     } finally {
@@ -413,138 +306,110 @@ export function AdminClientDetailPage() {
       </SectionCard>
 
       <section className="dashboard-grid">
-        <SectionCard eyebrow="Reservas" title="Hacer reserva para este cliente" description="Selecciona un procedimiento en proceso y un cupo publicado por administracion.">
+        <SectionCard eyebrow="Reservas" title="Hacer reserva para este cliente" description="Agendar hora libre (Agenda abierta).">
           {reservableOperations.length ? (
             <div className="form-grid">
               <label className="field field--full">
                 <span>Procedimiento</span>
                 <select className="input" value={effectiveOperationId} onChange={(event) => setSelectedOperationId(Number(event.target.value))}>
-                  {reservableOperations.map((operation) => (
+                  {reservableOperations.map((operation: any) => (
                     <option key={operation.id} value={operation.rawId}>
                       {operation.procedure} | {operation.reserveMessage}
                     </option>
                   ))}
                 </select>
               </label>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <label className="field">
+                  <span>Fecha</span>
+                  <input type="date" className="input" value={selectedDate} onChange={e => { setSelectedDate(e.target.value); setConcurrencyInfo(null); }} />
+                </label>
+                <label className="field">
+                  <span>Hora de Inicio</span>
+                  <input type="time" className="input" value={selectedTime} onChange={e => { setSelectedTime(e.target.value); setConcurrencyInfo(null); }} />
+                </label>
+              </div>
+              
+              <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+                <button type="button" className="button button--secondary" disabled={!selectedDate || !selectedTime || isChecking} onClick={() => void handleCheckConcurrency()}>
+                  {isChecking ? 'Verificando...' : 'Verificar Disponibilidad'}
+                </button>
+              </div>
             </div>
           ) : (
             <DataState title="Sin procedimientos en proceso" message="Este cliente no tiene tratamientos activos para nuevas reservas." />
           )}
-
-          {isLoadingAvailability ? <DataState title="Cargando cupos" message="Buscando horarios disponibles para el procedimiento." /> : null}
-          {availabilityError ? <DataState title="No hay disponibilidad" message={availabilityError} tone="danger" /> : null}
-
-          {availability ? (
-            <div className="reservation-calendar">
-              <div className="reservation-calendar__header">
-                <button className="button button--ghost button--compact" disabled={!canGoPreviousMonth} type="button" onClick={() => setVisibleMonth((current) => addMonths(current, -1))}>
-                  Mes anterior
-                </button>
-                <strong>{monthLabel(visibleMonth)}</strong>
-                <button className="button button--ghost button--compact" disabled={!canGoNextMonth} type="button" onClick={() => setVisibleMonth((current) => addMonths(current, 1))}>
-                  Mes siguiente
-                </button>
-              </div>
-              <div className="reservation-calendar__weekdays">
-                {WEEKDAY_LABELS.map((label) => <span key={label}>{label}</span>)}
-              </div>
-              <div className="reservation-calendar__grid">
-                {calendarDays.map((day) => {
-                  const isAvailable = availableDateSet.has(day.key)
-                  return (
-                    <button key={day.key} className={`reservation-calendar__day ${isAvailable ? 'is-available' : ''} ${selectedDate === day.key ? 'is-selected' : ''} ${!day.inCurrentMonth ? 'is-outside' : ''}`} type="button" onClick={() => setSelectedDate(day.key)}>
-                      <span>{day.dayNumber}</span>
-                      {isAvailable ? <small>{availability.calendar.availableDates.find((item) => item.date === day.key)?.slotCount ?? 0} cupos</small> : null}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ) : null}
         </SectionCard>
 
-        <SectionCard eyebrow="Horarios" title={selectedDate ? `Disponibilidad para ${longDateLabel(selectedDate)}` : 'Selecciona un dia'} description="Al confirmar, la cita quedara registrada para este cliente.">
-          {selectedDate && selectedSlots.length ? (
-            <div className="reservation-slot-list">
-              {selectedSlots.map((slot) => {
-                const bookingKey = `${slot.date}-${slot.time}-${slot.specialistId}`
-                return (
-                  <article className="reservation-slot-card" key={bookingKey}>
-                    <div>
-                      <strong>{slot.timeRange}</strong>
-                      <p>{slot.specialist}</p>
-                      <span>{slot.dateTimeLabel}</span>
-                    </div>
-                    <button className="button" disabled={Boolean(isBookingKey)} type="button" onClick={() => void handleReserve(slot.slotId)}>
-                      {isBookingKey === bookingKey ? 'Reservando...' : 'Confirmar reserva'}
-                    </button>
-                  </article>
-                )
-              })}
+        {concurrencyInfo && (
+          <SectionCard title="Resultados de disponibilidad">
+            <div style={{ padding: '1rem', background: 'var(--c-neutral-100)', borderRadius: '8px' }}>
+              <p style={{ marginBottom: '0.5rem' }}>
+                <strong>Citas simultaneas a esa hora:</strong> {concurrencyInfo.concurrency}
+              </p>
+              <p style={{ marginBottom: '0.5rem' }}>
+                <strong>Especialistas en turno:</strong> {concurrencyInfo.presentes.length > 0 ? concurrencyInfo.presentes.map(p => p.usuario__primer_nombre).join(', ') : 'Ninguno registrado'}
+              </p>
+              {concurrencyInfo.concurrency >= concurrencyInfo.presentes.length && concurrencyInfo.presentes.length > 0 && (
+                <p style={{ color: 'var(--c-danger-600)', marginTop: '0.5rem', fontWeight: 600 }}>
+                  Aviso: Hay mas citas ({concurrencyInfo.concurrency}) que especialistas en turno ({concurrencyInfo.presentes.length}).
+                </p>
+              )}
+              {concurrencyInfo.presentes.length === 0 && (
+                <p style={{ color: 'var(--c-warning-600)', marginTop: '0.5rem', fontWeight: 600 }}>
+                  Aviso: No hay especialistas en turno configurados para esta sucursal a esa hora.
+                </p>
+              )}
+              <div style={{ marginTop: '1.5rem' }}>
+                 <button type="button" className="button button--primary" onClick={() => void handleReserve()} disabled={Boolean(isBookingKey)}>
+                   {isBookingKey ? 'Confirmando...' : 'Confirmar Reserva en esta Hora'}
+                 </button>
+              </div>
             </div>
-          ) : (
-            <DataState title="Sin horarios seleccionados" message="Elige un dia resaltado para ver cupos o cambia de procedimiento." />
-          )}
-        </SectionCard>
+          </SectionCard>
+        )}
       </section>
 
       <section className="dashboard-grid">
         <SectionCard eyebrow="Cita medica" title="Reservar cita medica libre" description="Agenda una consulta sin asociarla a un tratamiento activo. Disponible tambien para clientes inactivos.">
-          {isLoadingFreeAvailability ? <DataState title="Cargando cupos" message="Buscando horarios disponibles para cita medica." /> : null}
-          {freeAvailabilityError ? <DataState title="No hay disponibilidad" message={freeAvailabilityError} tone="danger" /> : null}
-
-          {freeAvailability ? (
-            <div className="reservation-calendar">
-              <div className="reservation-calendar__header">
-                <button className="button button--ghost button--compact" disabled={!canGoPreviousFreeMonth} type="button" onClick={() => setFreeVisibleMonth((current) => addMonths(current, -1))}>
-                  Mes anterior
-                </button>
-                <strong>{monthLabel(freeVisibleMonth)}</strong>
-                <button className="button button--ghost button--compact" disabled={!canGoNextFreeMonth} type="button" onClick={() => setFreeVisibleMonth((current) => addMonths(current, 1))}>
-                  Mes siguiente
-                </button>
-              </div>
-              <div className="reservation-calendar__weekdays">
-                {WEEKDAY_LABELS.map((label) => <span key={label}>{label}</span>)}
-              </div>
-              <div className="reservation-calendar__grid">
-                {freeCalendarDays.map((day) => {
-                  const isAvailable = freeAvailableDateSet.has(day.key)
-                  return (
-                    <button key={day.key} className={`reservation-calendar__day ${isAvailable ? 'is-available' : ''} ${freeSelectedDate === day.key ? 'is-selected' : ''} ${!day.inCurrentMonth ? 'is-outside' : ''}`} type="button" onClick={() => setFreeSelectedDate(day.key)}>
-                      <span>{day.dayNumber}</span>
-                      {isAvailable ? <small>{freeAvailability.calendar.availableDates.find((item) => item.date === day.key)?.slotCount ?? 0} cupos</small> : null}
-                    </button>
-                  )
-                })}
-              </div>
+          <div className="form-grid">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <label className="field">
+                <span>Fecha</span>
+                <input type="date" className="input" value={freeSelectedDate} onChange={e => { setFreeSelectedDate(e.target.value); setFreeConcurrencyInfo(null); }} />
+              </label>
+              <label className="field">
+                <span>Hora de Inicio</span>
+                <input type="time" className="input" value={freeSelectedTime} onChange={e => { setFreeSelectedTime(e.target.value); setFreeConcurrencyInfo(null); }} />
+              </label>
             </div>
-          ) : null}
+            
+            <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+              <button type="button" className="button button--secondary" disabled={!freeSelectedDate || !freeSelectedTime || isChecking} onClick={() => void handleCheckFreeConcurrency()}>
+                {isChecking ? 'Verificando...' : 'Verificar Disponibilidad'}
+              </button>
+            </div>
+          </div>
         </SectionCard>
 
-        <SectionCard eyebrow="Horarios" title={freeSelectedDate ? `Cita medica para ${longDateLabel(freeSelectedDate)}` : 'Selecciona un dia'} description="La cita quedara registrada en la agenda del cliente sin descontar sesiones.">
-          {freeSelectedDate && freeSelectedSlots.length ? (
-            <div className="reservation-slot-list">
-              {freeSelectedSlots.map((slot) => {
-                const bookingKey = `${slot.date}-${slot.time}-${slot.specialistId}`
-                return (
-                  <article className="reservation-slot-card" key={bookingKey}>
-                    <div>
-                      <strong>{slot.timeRange}</strong>
-                      <p>{slot.specialist}</p>
-                      <span>{slot.dateTimeLabel}</span>
-                    </div>
-                    <button className="button" disabled={Boolean(isFreeBookingKey)} type="button" onClick={() => void handleReserveFreeMedicalAppointment(slot.slotId)}>
-                      {isFreeBookingKey === bookingKey ? 'Reservando...' : 'Confirmar cita medica'}
-                    </button>
-                  </article>
-                )
-              })}
+        {freeConcurrencyInfo && (
+          <SectionCard title="Resultados de disponibilidad">
+            <div style={{ padding: '1rem', background: 'var(--c-neutral-100)', borderRadius: '8px' }}>
+              <p style={{ marginBottom: '0.5rem' }}>
+                <strong>Citas simultaneas a esa hora:</strong> {freeConcurrencyInfo.concurrency}
+              </p>
+              <p style={{ marginBottom: '0.5rem' }}>
+                <strong>Especialistas en turno:</strong> {freeConcurrencyInfo.presentes.length > 0 ? freeConcurrencyInfo.presentes.map(p => p.usuario__primer_nombre).join(', ') : 'Ninguno registrado'}
+              </p>
+              <div style={{ marginTop: '1.5rem' }}>
+                 <button type="button" className="button button--primary" onClick={() => void handleReserveFreeMedicalAppointment()} disabled={Boolean(isFreeBookingKey)}>
+                   {isFreeBookingKey ? 'Confirmando...' : 'Confirmar Cita Medica'}
+                 </button>
+              </div>
             </div>
-          ) : (
-            <DataState title="Sin horarios seleccionados" message="Elige un dia resaltado para ver cupos de cita medica." />
-          )}
-        </SectionCard>
+          </SectionCard>
+        )}
       </section>
 
       <SectionCard eyebrow="Agenda" title="Todas las citas del cliente" description="Historial completo de reservas, sesiones realizadas, cancelaciones y pendientes de biometria.">

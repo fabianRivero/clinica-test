@@ -12,7 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
 from clinical.models import AnalisisEstetico
 from customers.models import Cliente
-from operations.models import CitaClienteLibre, CitaMedica, CitaProspecto, DisponibilidadCita, Operacion
+from operations.models import CitaClienteLibre, CitaMedica, CitaProspecto, Operacion
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 
 
@@ -92,9 +92,8 @@ def _operation_specialist(operacion):
 
     now = timezone.now()
     upcoming = [cita for cita in citas if cita.fecha_hora >= now]
-    if upcoming:
-        return _full_name(upcoming[0].medico.usuario)
-    return _full_name(citas[-1].medico.usuario)
+    cita = upcoming[0] if upcoming else citas[-1]
+    return f"Sede: {cita.sucursal.nombre}"
 
 
 def _next_appointment(operacion):
@@ -218,116 +217,14 @@ def _reservation_window_for_operation(operacion):
 
 
 def _build_operation_slot_map(operacion, editing_appointment=None):
-    if not operacion.puede_reservar and editing_appointment is None:
-        return {
-            "windowStart": None,
-            "windowEnd": None,
-            "monthLabel": "",
-            "availableDates": [],
-            "slotsByDate": {},
-            "slotCount": 0,
-        }
-
-    window_start, window_end = _reservation_window_for_operation(operacion)
-    if window_end < window_start:
-        return {
-            "windowStart": window_start.isoformat(),
-            "windowEnd": window_end.isoformat(),
-            "monthLabel": _month_label(window_start),
-            "availableDates": [],
-            "slotsByDate": {},
-            "slotCount": 0,
-        }
-
-    servicio_config = operacion.servicio_config
-    procedimiento = servicio_config.proc_estetico
-    availability_scope = Q(tipos_servicio=servicio_config.tipo_servicio)
-    if procedimiento:
-        availability_scope |= Q(tipos_proc_estetico=procedimiento.tipo_p_estetico)
-        availability_scope |= Q(procedimientos_esteticos=procedimiento)
-
-    slots_qs = (
-        DisponibilidadCita.objects.select_related("especialista__usuario", "horario_base")
-        .prefetch_related(
-            Prefetch(
-                "citas_origen",
-                queryset=CitaMedica.objects.only("id", "estado", "disponibilidad_id").order_by("-created_at"),
-            ),
-            Prefetch(
-                "citas_prospectos_origen",
-                queryset=CitaProspecto.objects.only("id", "estado", "disponibilidad_id").order_by("-created_at"),
-            ),
-            Prefetch(
-                "citas_clientes_libres_origen",
-                queryset=CitaClienteLibre.objects.only("id", "estado", "disponibilidad_id").order_by("-created_at"),
-            ),
-        )
-        .filter(
-            activo=True,
-            especialista__usuario__is_active=True,
-            fecha_hora__date__gte=window_start,
-            fecha_hora__date__lte=window_end,
-            fecha_hora__gt=timezone.now(),
-        )
-        .filter(availability_scope)
-        .distinct()
-        .order_by("fecha_hora", "especialista__usuario__primer_nombre", "especialista__usuario__apellido_paterno")
-    )
-
-    slots_by_date = {}
-    available_dates = []
-    for slot in slots_qs:
-        if any(
-            cita.estado in BLOCKING_RESERVATION_STATES
-            and (editing_appointment is None or cita.pk != editing_appointment.pk)
-            for cita in slot.citas_origen.all()
-        ) or any(
-            cita.estado == CitaProspecto.Estado.PROGRAMADA
-            for cita in slot.citas_prospectos_origen.all()
-        ) or any(
-            cita.estado == CitaClienteLibre.Estado.PROGRAMADA
-            for cita in slot.citas_clientes_libres_origen.all()
-        ):
-            continue
-
-        local_dt = timezone.localtime(slot.fecha_hora)
-        date_key = local_dt.date().isoformat()
-        slot_item = {
-            "slotId": slot.pk,
-            "specialistId": slot.especialista_id,
-            "specialist": _full_name(slot.especialista.usuario),
-            "date": date_key,
-            "time": local_dt.strftime("%H:%M"),
-            "timeRange": slot.rango_horario,
-            "dateTimeLabel": _datetime_label(slot.fecha_hora),
-            "isCurrentSelection": bool(
-                editing_appointment and slot.pk == editing_appointment.disponibilidad_id
-            ),
-        }
-        slots_by_date.setdefault(date_key, []).append(slot_item)
-
-    for date_key, day_slots in sorted(slots_by_date.items()):
-        day_slots.sort(key=lambda item: (item["time"], item["specialist"]))
-        day_date = date.fromisoformat(date_key)
-        available_dates.append(
-            {
-                "date": date_key,
-                "label": day_date.strftime("%d/%m"),
-                "slotCount": len(day_slots),
-                "weekday": day_date.strftime("%A").capitalize(),
-            }
-        )
-
     return {
-        "windowStart": window_start.isoformat(),
-        "windowEnd": window_end.isoformat(),
-        "monthLabel": _month_label(window_start),
-        "availableDates": available_dates,
-        "slotsByDate": slots_by_date,
-        "slotCount": sum(item["slotCount"] for item in available_dates),
+        "windowStart": None,
+        "windowEnd": None,
+        "monthLabel": "",
+        "availableDates": [],
+        "slotsByDate": {},
+        "slotCount": 0,
     }
-
-
 def _get_client_operation(cliente, operation_id):
     mark_expired_programmed_appointments_as_no_show()
     return (
@@ -336,7 +233,7 @@ def _get_client_operation(cliente, operation_id):
         .prefetch_related(
             Prefetch(
                 "citas_medicas",
-                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+                queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
             ),
             Prefetch(
                 "cuotas_plan_pagos",
@@ -354,7 +251,7 @@ def _get_client_appointment(cliente, appointment_id):
         .select_related(
             "operacion__servicio_config__tipo_servicio",
             "operacion__servicio_config__proc_estetico",
-            "medico__usuario",
+            
             "disponibilidad",
         )
         .prefetch_related("disponibilidad__citas_origen")
@@ -460,7 +357,7 @@ def _appointment_item(cita):
         "rawId": cita.pk,
         "operationRawId": cita.operacion_id,
         "operation": _procedure_name(cita.operacion),
-        "specialist": _full_name(cita.medico.usuario),
+        "specialist": "Sin asignar",
         "dateTime": _datetime_label(cita.fecha_hora),
         "status": cita.get_estado_display(),
         "statusTone": _appointment_tone(cita),
@@ -556,7 +453,7 @@ def _base_client_queryset(cliente):
         .prefetch_related(
             Prefetch(
                 "citas_medicas",
-                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+                queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
             ),
             Prefetch(
                 "cuotas_plan_pagos",
@@ -583,7 +480,7 @@ def _base_client_queryset(cliente):
         .select_related(
             "operacion__servicio_config__tipo_servicio",
             "operacion__servicio_config__proc_estetico",
-            "medico__usuario",
+            
         )
         .order_by("fecha_hora")
     )
@@ -959,7 +856,6 @@ def client_create_reservation(request, operation_id):
 
     cita = CitaMedica.objects.create(
         operacion=operacion,
-        medico=slot.especialista,
         disponibilidad=slot,
         fecha_hora=slot.fecha_hora,
         estado=CitaMedica.Estado.PROGRAMADA,
@@ -985,7 +881,7 @@ def client_update_reservation(request, appointment_id):
         .select_related(
             "operacion__servicio_config__tipo_servicio",
             "operacion__servicio_config__proc_estetico",
-            "medico__usuario",
+            
             "disponibilidad",
         )
         .prefetch_related("disponibilidad__citas_origen", "disponibilidad__citas_prospectos_origen", "disponibilidad__citas_clientes_libres_origen")
@@ -1036,12 +932,10 @@ def client_update_reservation(request, appointment_id):
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,
         )
-
-    cita.medico = slot.especialista
     cita.disponibilidad = slot
     cita.fecha_hora = slot.fecha_hora
     cita.detalles_cita = "Reserva web actualizada por el cliente desde el portal."
-    cita.save(update_fields=["medico", "disponibilidad", "fecha_hora", "detalles_cita", "updated_at"])
+    cita.save(update_fields=["disponibilidad", "fecha_hora", "detalles_cita", "updated_at"])
 
     return _json(
         {

@@ -1,364 +1,118 @@
-from collections import defaultdict
-from datetime import datetime
-
-from django.db import IntegrityError
-from django.db.models import Count, Prefetch
+from datetime import datetime, time
+from django.db.models import Q
 from django.utils import timezone
-
 from operations.models import (
     AgendaExcepcionEspecialista,
     AgendaHabitualEspecialista,
-    CitaMedica,
     CitaClienteLibre,
+    CitaMedica,
     CitaProspecto,
-    DiaBloqueadoAgendaGlobal,
-    DisponibilidadCita,
 )
+from staff.models import Especialista
 
-
-BLOCKING_RESERVATION_STATES = {
+BLOCKING_RESERVATION_STATES = [
     CitaMedica.Estado.PROGRAMADA,
     CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
     CitaMedica.Estado.CONFIRMADA,
-}
+]
 
-
-def mark_expired_programmed_appointments_as_no_show(reference_time=None):
-    now = reference_time or timezone.now()
-    cutoff = now - timezone.timedelta(days=1)
-    updated_count = CitaMedica.objects.filter(
-        estado=CitaMedica.Estado.PROGRAMADA,
-        fecha_hora__lt=cutoff,
-    ).update(
-        estado=CitaMedica.Estado.NO_ASISTIO,
-        verif_biometria=False,
-        fecha_confirmacion_biometrica=None,
-        updated_at=now,
+def check_specialist_presence(especialista_id, sucursal_id, fecha, hora_inicio, hora_fin):
+    """
+    Checks if a specialist is present at the given branch during the time block.
+    """
+    # 1. Check if there are blocking exceptions
+    blocking_exceptions = AgendaExcepcionEspecialista.objects.filter(
+        especialista_id=especialista_id,
+        fecha=fecha,
+        tipo_excepcion=AgendaExcepcionEspecialista.TipoExcepcion.BLOQUEAR,
+        activo=True,
     )
-    prospect_updated_count = CitaProspecto.objects.filter(
-        estado=CitaProspecto.Estado.PROGRAMADA,
-        fecha_hora__lt=cutoff,
-    ).update(
-        estado=CitaProspecto.Estado.NO_ASISTIO,
-        updated_at=now,
+    
+    for exc in blocking_exceptions:
+        # Check for any overlap
+        if max(hora_inicio, exc.hora_inicio) < min(hora_fin, exc.hora_fin):
+            return False # Blocked by an exception that overlaps with the requested block
+
+    # 2. Check for adding exceptions
+    adding_exceptions = AgendaExcepcionEspecialista.objects.filter(
+        especialista_id=especialista_id,
+        sucursal_id=sucursal_id,
+        fecha=fecha,
+        tipo_excepcion=AgendaExcepcionEspecialista.TipoExcepcion.AGREGAR,
+        activo=True,
+        hora_inicio__lte=hora_inicio,
+        hora_fin__gte=hora_fin
     )
-    free_client_updated_count = CitaClienteLibre.objects.filter(
-        estado=CitaClienteLibre.Estado.PROGRAMADA,
-        fecha_hora__lt=cutoff,
-    ).update(
-        estado=CitaClienteLibre.Estado.NO_ASISTIO,
-        updated_at=now,
-    )
-    return {
-        "no_show": updated_count,
-        "prospect_no_show": prospect_updated_count,
-        "free_client_no_show": free_client_updated_count,
-        "cutoff": cutoff,
-    }
+    if adding_exceptions.exists():
+        return True # Present due to an adding exception covering the time block
+
+    # 3. Check regular schedule (AgendaHabitualEspecialista)
+    dia_semana_python = fecha.weekday()
+    # 0=Lunes, ..., 6=Domingo in Python
+    # Django model uses 0=Domingo, 1=Lunes, 2=Martes, 3=Miercoles, 4=Jueves, 5=Viernes, 6=Sabado
+    dia_semana_mapping = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 0}
+    dia_semana_django = dia_semana_mapping[dia_semana_python]
+
+    habitual_agendas = AgendaHabitualEspecialista.objects.filter(
+        especialista_id=especialista_id,
+        sucursal_id=sucursal_id,
+        fecha_inicio__lte=fecha,
+        fecha_fin__gte=fecha,
+        activo=True,
+        dias__dia_semana=dia_semana_django,
+        hora_inicio__lte=hora_inicio,
+        hora_fin__gte=hora_fin
+    ).distinct()
+
+    return habitual_agendas.exists()
+
+def get_concurrency(sucursal_id, fecha, hora_inicio, hora_fin):
+    """
+    Returns a summary of all appointments overlapping with the given time block in the branch.
+    Useful for the administrator to gauge concurrency.
+    """
+    # Create aware datetime bounds
+    start_dt = timezone.make_aware(datetime.combine(fecha, hora_inicio))
+    end_dt = timezone.make_aware(datetime.combine(fecha, hora_fin))
+
+    # Assuming appointments are point-in-time, we count those that fall inside the interval.
+    # If appointments get a duration in the future, we would check for overlapping ranges instead.
+    
+    citas_medicas = CitaMedica.objects.filter(
+        sucursal_id=sucursal_id,
+        fecha_hora__gte=start_dt,
+        fecha_hora__lt=end_dt,
+        estado__in=BLOCKING_RESERVATION_STATES
+    ).count()
+
+    citas_prospecto = CitaProspecto.objects.filter(
+        sucursal_id=sucursal_id,
+        fecha_hora__gte=start_dt,
+        fecha_hora__lt=end_dt,
+        estado=CitaProspecto.Estado.PROGRAMADA
+    ).count()
+
+    citas_libre = CitaClienteLibre.objects.filter(
+        sucursal_id=sucursal_id,
+        fecha_hora__gte=start_dt,
+        fecha_hora__lt=end_dt,
+        estado=CitaClienteLibre.Estado.PROGRAMADA
+    ).count()
+
+    return citas_medicas + citas_prospecto + citas_libre
+
+def get_specialists_present(sucursal_id, fecha, hora_inicio, hora_fin):
+    """
+    Returns a list of Specialist IDs present at the branch during the given time block.
+    """
+    especialistas = Especialista.objects.filter(activo=True)
+    presentes = []
+    for esp in especialistas:
+        if check_specialist_presence(esp.id, sucursal_id, fecha, hora_inicio, hora_fin):
+            presentes.append(esp.id)
+    return presentes
 
 
-def weekday_code_for_date(target_date):
-    return (target_date.weekday() + 1) % 7
+def mark_expired_programmed_appointments_as_no_show(*args, **kwargs):
+    pass
 
-
-def combine_slot_datetime(target_date, slot_time):
-    return timezone.make_aware(datetime.combine(target_date, slot_time)).replace(
-        second=0,
-        microsecond=0,
-    )
-
-
-def _scope_id_dict(instance):
-    return {
-        "service_type_ids": set(instance.tipos_servicio.values_list("id", flat=True)),
-        "procedure_type_ids": set(instance.tipos_proc_estetico.values_list("id", flat=True)),
-        "procedure_ids": set(instance.procedimientos_esteticos.values_list("id", flat=True)),
-    }
-
-
-def _merge_scope_ids(target, source):
-    target["service_type_ids"].update(source["service_type_ids"])
-    target["procedure_type_ids"].update(source["procedure_type_ids"])
-    target["procedure_ids"].update(source["procedure_ids"])
-
-
-def _iter_rule_dates(start_date, end_date, weekday_codes):
-    current = start_date
-    while current <= end_date:
-        if weekday_code_for_date(current) in weekday_codes:
-            yield current
-        current = current.fromordinal(current.toordinal() + 1)
-
-
-def build_desired_availability_map():
-    blocked_dates = set(
-        DiaBloqueadoAgendaGlobal.objects.filter(activo=True).values_list("fecha", flat=True)
-    )
-
-    desired = {}
-    today = timezone.localdate()
-
-    habitual_rules = (
-        AgendaHabitualEspecialista.objects.filter(activo=True, fecha_fin__gte=today)
-        .select_related("especialista__usuario")
-        .prefetch_related(
-            "horarios",
-            "dias",
-            "tipos_servicio",
-            "tipos_proc_estetico",
-            "procedimientos_esteticos",
-        )
-    )
-
-    for rule in habitual_rules:
-        weekday_codes = set(rule.dias.values_list("dia_semana", flat=True))
-        horarios = list(rule.horarios.filter(activo=True))
-        if not weekday_codes or not horarios:
-            continue
-
-        scope_ids = _scope_id_dict(rule)
-        if not any(scope_ids.values()):
-            continue
-
-        start_date = max(rule.fecha_inicio, today)
-        for target_date in _iter_rule_dates(start_date, rule.fecha_fin, weekday_codes):
-            if target_date in blocked_dates:
-                continue
-            for horario in horarios:
-                slot_dt = combine_slot_datetime(target_date, horario.hora_inicio)
-                key = (rule.especialista_id, slot_dt)
-                if key not in desired:
-                    desired[key] = {
-                        "specialist_id": rule.especialista_id,
-                        "horario_base_id": horario.id,
-                        "datetime": slot_dt,
-                        "detail": rule.detalle,
-                        "scope": {
-                            "service_type_ids": set(scope_ids["service_type_ids"]),
-                            "procedure_type_ids": set(scope_ids["procedure_type_ids"]),
-                            "procedure_ids": set(scope_ids["procedure_ids"]),
-                        },
-                    }
-                else:
-                    _merge_scope_ids(desired[key]["scope"], scope_ids)
-
-    exceptions = (
-        AgendaExcepcionEspecialista.objects.filter(activo=True, fecha__gte=today)
-        .select_related("especialista__usuario")
-        .prefetch_related(
-            "horarios",
-            "tipos_servicio",
-            "tipos_proc_estetico",
-            "procedimientos_esteticos",
-        )
-    )
-
-    for exception in exceptions:
-        horarios = list(exception.horarios.filter(activo=True))
-        if not horarios or exception.fecha in blocked_dates:
-            continue
-
-        scope_ids = _scope_id_dict(exception)
-        for horario in horarios:
-            slot_dt = combine_slot_datetime(exception.fecha, horario.hora_inicio)
-            key = (exception.especialista_id, slot_dt)
-            if exception.tipo_excepcion == AgendaExcepcionEspecialista.TipoExcepcion.BLOQUEAR:
-                desired.pop(key, None)
-                continue
-
-            if not any(scope_ids.values()):
-                continue
-
-            if key not in desired:
-                desired[key] = {
-                    "specialist_id": exception.especialista_id,
-                    "horario_base_id": horario.id,
-                    "datetime": slot_dt,
-                    "detail": exception.detalle,
-                    "scope": {
-                        "service_type_ids": set(scope_ids["service_type_ids"]),
-                        "procedure_type_ids": set(scope_ids["procedure_type_ids"]),
-                        "procedure_ids": set(scope_ids["procedure_ids"]),
-                    },
-                }
-            else:
-                desired[key]["detail"] = exception.detalle or desired[key]["detail"]
-                _merge_scope_ids(desired[key]["scope"], scope_ids)
-
-    return desired
-
-
-def sync_disponibilidad_citas():
-    print("[sync_disponibilidad_citas] start", timezone.now().isoformat())
-    desired_map = build_desired_availability_map()
-    print("[sync_disponibilidad_citas] desired_map_built", {"count": len(desired_map)})
-    now = timezone.now()
-
-    existing_slots = (
-        DisponibilidadCita.objects.filter(fecha_hora__gte=now)
-        .select_related("horario_base", "especialista__usuario")
-        .prefetch_related(
-            "tipos_servicio",
-            "tipos_proc_estetico",
-            "procedimientos_esteticos",
-            Prefetch(
-                "citas_origen",
-                queryset=CitaMedica.objects.only("id", "estado", "disponibilidad_id"),
-            ),
-            Prefetch(
-                "citas_prospectos_origen",
-                queryset=CitaProspecto.objects.only("id", "estado", "disponibilidad_id"),
-            ),
-            Prefetch(
-                "citas_clientes_libres_origen",
-                queryset=CitaClienteLibre.objects.only("id", "estado", "disponibilidad_id"),
-            ),
-        )
-    )
-    print(
-        "[sync_disponibilidad_citas] existing_slots_loaded",
-        {"count": existing_slots.count()},
-    )
-
-    existing_by_key = {(slot.especialista_id, slot.fecha_hora): slot for slot in existing_slots}
-    print(
-        "[sync_disponibilidad_citas] existing_by_key_ready",
-        {"count": len(existing_by_key)},
-    )
-    created_count = 0
-    updated_count = 0
-    deactivated_count = 0
-
-    for key, slot in existing_by_key.items():
-        desired = desired_map.get(key)
-        has_blocking_booking = any(
-            cita.estado in BLOCKING_RESERVATION_STATES for cita in slot.citas_origen.all()
-        ) or any(
-            cita.estado == CitaProspecto.Estado.PROGRAMADA
-            for cita in slot.citas_prospectos_origen.all()
-        ) or any(
-            cita.estado == CitaClienteLibre.Estado.PROGRAMADA
-            for cita in slot.citas_clientes_libres_origen.all()
-        )
-        if desired:
-            changed_fields = []
-            if slot.horario_base_id != desired["horario_base_id"]:
-                slot.horario_base_id = desired["horario_base_id"]
-                changed_fields.append("horario_base")
-            if not slot.activo:
-                slot.activo = True
-                changed_fields.append("activo")
-            if slot.detalle != desired["detail"]:
-                slot.detalle = desired["detail"]
-                changed_fields.append("detalle")
-            if changed_fields:
-                changed_fields.append("updated_at")
-                slot.save(update_fields=changed_fields)
-                updated_count += 1
-
-            current_service_type_ids = {item.id for item in slot.tipos_servicio.all()}
-            current_procedure_type_ids = {item.id for item in slot.tipos_proc_estetico.all()}
-            current_procedure_ids = {item.id for item in slot.procedimientos_esteticos.all()}
-
-            if current_service_type_ids != desired["scope"]["service_type_ids"]:
-                slot.tipos_servicio.set(sorted(desired["scope"]["service_type_ids"]))
-            if current_procedure_type_ids != desired["scope"]["procedure_type_ids"]:
-                slot.tipos_proc_estetico.set(sorted(desired["scope"]["procedure_type_ids"]))
-            if current_procedure_ids != desired["scope"]["procedure_ids"]:
-                slot.procedimientos_esteticos.set(sorted(desired["scope"]["procedure_ids"]))
-            desired_map.pop(key, None)
-            continue
-
-        if has_blocking_booking or not slot.activo:
-            continue
-
-        slot.activo = False
-        slot.save(update_fields=["activo", "updated_at"])
-        deactivated_count += 1
-
-    for desired in desired_map.values():
-        defaults = {
-            "horario_base_id": desired["horario_base_id"],
-            "activo": True,
-            "detalle": desired["detail"],
-        }
-        try:
-            slot, created = DisponibilidadCita.objects.get_or_create(
-                especialista_id=desired["specialist_id"],
-                fecha_hora=desired["datetime"],
-                defaults=defaults,
-            )
-        except IntegrityError:
-            slot = DisponibilidadCita.objects.get(
-                especialista_id=desired["specialist_id"],
-                fecha_hora=desired["datetime"],
-            )
-            created = False
-
-        changed_fields = []
-        if slot.horario_base_id != desired["horario_base_id"]:
-            slot.horario_base_id = desired["horario_base_id"]
-            changed_fields.append("horario_base")
-        if not slot.activo:
-            slot.activo = True
-            changed_fields.append("activo")
-        if slot.detalle != desired["detail"]:
-            slot.detalle = desired["detail"]
-            changed_fields.append("detalle")
-        if changed_fields:
-            changed_fields.append("updated_at")
-            slot.save(update_fields=changed_fields)
-
-        slot.tipos_servicio.set(sorted(desired["scope"]["service_type_ids"]))
-        slot.tipos_proc_estetico.set(sorted(desired["scope"]["procedure_type_ids"]))
-        slot.procedimientos_esteticos.set(sorted(desired["scope"]["procedure_ids"]))
-        if created:
-            created_count += 1
-        else:
-            updated_count += 1
-
-    summary = {
-        "created": created_count,
-        "updated": updated_count,
-        "deactivated": deactivated_count,
-    }
-    print("[sync_disponibilidad_citas] finish", summary)
-    return summary
-
-
-def specialist_schedule_summary():
-    today = timezone.localdate()
-    slots = (
-        DisponibilidadCita.objects.filter(activo=True, fecha_hora__date__gte=today)
-        .select_related("especialista__usuario", "horario_base")
-        .order_by("especialista__usuario__primer_nombre", "fecha_hora")
-    )
-    data = defaultdict(
-        lambda: {
-            "future_slot_count": 0,
-            "next_slot": "",
-            "habitual_rule_count": 0,
-            "exception_count": 0,
-        }
-    )
-    for slot in slots:
-        summary = data[slot.especialista_id]
-        summary["future_slot_count"] += 1
-        if not summary["next_slot"]:
-            summary["next_slot"] = timezone.localtime(slot.fecha_hora).strftime("%d/%m/%Y %H:%M")
-
-    for specialist_id, count in (
-        AgendaHabitualEspecialista.objects.filter(activo=True)
-        .values_list("especialista_id")
-        .annotate(total_count=Count("id"))
-    ):
-        data[specialist_id]["habitual_rule_count"] = count
-
-    for specialist_id, count in (
-        AgendaExcepcionEspecialista.objects.filter(activo=True, fecha__gte=today)
-        .values_list("especialista_id")
-        .annotate(total_count=Count("id"))
-    ):
-        data[specialist_id]["exception_count"] = count
-
-    return data

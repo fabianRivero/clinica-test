@@ -27,7 +27,6 @@ import { AdminStaffCreatePage, AdminStaffManagePage } from './pages/admin/AdminS
 import { LoginPage } from './pages/auth/LoginPage'
 import { ClientDashboardPage } from './pages/client/ClientDashboardPage'
 import { ClientPaymentsPage } from './pages/client/ClientPaymentsPage'
-import { ClientReservationCreatePage } from './pages/client/ClientReservationCreatePage'
 import { ClientReservationsPage } from './pages/client/ClientReservationsPage'
 import { ClientTreatmentsPage } from './pages/client/ClientTreatmentsPage'
 import { RoleHomePage } from './pages/shared/RoleHomePage'
@@ -130,7 +129,6 @@ function App() {
           <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />
         </Route>
       </Route>
-
       <Route element={<RequireRole allowedRoles={['TRABAJADOR']} />}>
         <Route
           path="/trabajador"
@@ -143,18 +141,14 @@ function App() {
           }
         />
       </Route>
-
       <Route element={<RequireRole allowedRoles={['CLIENTE']} />}>
         <Route path="/cliente" element={<ClientLayout />}>
           <Route index element={<ClientDashboardPage />} />
           <Route path="tratamientos" element={<ClientTreatmentsPage />} />
           <Route path="pagos" element={<ClientPaymentsPage />} />
           <Route path="reservas" element={<ClientReservationsPage />} />
-          <Route path="reservas/:operationId/nueva" element={<ClientReservationCreatePage />} />
-          <Route path="reservas/citas/:appointmentId/editar" element={<ClientReservationCreatePage />} />
         </Route>
       </Route>
-
       <Route path="*" element={<RootRedirect />} />
     </Routes>
   )

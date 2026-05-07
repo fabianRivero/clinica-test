@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import { useAuth } from '../providers/AuthProvider'
+import { BranchProvider, useBranchContext } from '../providers/BranchProvider'
 
 const navigation = [
   { to: '/admin', label: 'Resumen' },
@@ -16,7 +17,6 @@ const navigation = [
   {
     label: 'Disponibilidad',
     children: [
-      { to: '/admin/disponibilidad/visibles', label: 'Dias y horarios visibles' },
       { to: '/admin/disponibilidad/bloques', label: 'Bloques de horarios' },
       { to: '/admin/disponibilidad/gestionar', label: 'Gestionar horarios' },
     ],
@@ -41,7 +41,34 @@ const navigation = [
   },
 ] as const
 
-export function AdminLayout() {
+function BranchSelector() {
+  const { branches, activeBranch, isLoading, setActiveBranch } = useBranchContext()
+
+  if (isLoading || branches.length === 0) return null
+
+  return (
+    <div style={{ marginLeft: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      <label htmlFor="global-branch-selector" style={{ fontSize: '0.875rem', color: 'var(--c-neutral-600)' }}>
+        Sucursal:
+      </label>
+      <select
+        id="global-branch-selector"
+        value={activeBranch?.id || ''}
+        onChange={(e) => setActiveBranch(Number(e.target.value))}
+        className="input"
+        style={{ padding: '0.25rem 0.5rem', height: 'auto', minHeight: '32px', fontSize: '0.875rem' }}
+      >
+        {branches.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.nombre} {b.es_principal ? '(Principal)' : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+function AdminLayoutInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const { user, logout } = useAuth()
@@ -133,6 +160,7 @@ export function AdminLayout() {
               <span className="topbar__eyebrow">Administracion clinica</span>
               <strong>{user?.fullName || 'Administrador'}</strong>
             </div>
+            <BranchSelector />
           </div>
 
           <div className="topbar__right">
@@ -152,5 +180,13 @@ export function AdminLayout() {
         <Outlet />
       </main>
     </div>
+  )
+}
+
+export function AdminLayout() {
+  return (
+    <BranchProvider>
+      <AdminLayoutInner />
+    </BranchProvider>
   )
 }

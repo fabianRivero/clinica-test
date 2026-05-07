@@ -1,7 +1,7 @@
 type DataStateProps = {
   title: string
   message: string
-  tone?: 'neutral' | 'danger'
+  tone?: 'neutral' | 'warning' | 'danger'
 }
 
 export function DataState({ title, message, tone = 'neutral' }: DataStateProps) {

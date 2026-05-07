@@ -4,6 +4,7 @@ type PageHeaderProps = {
   eyebrow: string
   title: string
   description: string
+  children?: React.ReactNode
   actions?: Array<{
     label: string
     variant?: 'primary' | 'ghost'
@@ -16,6 +17,7 @@ export function PageHeader({
   eyebrow,
   title,
   description,
+  children,
   actions,
 }: PageHeaderProps) {
   return (
@@ -24,6 +26,7 @@ export function PageHeader({
         <span className="page-header__eyebrow">{eyebrow}</span>
         <h1>{title}</h1>
         <p>{description}</p>
+        {children}
       </div>
       {actions?.length ? (
         <div className="page-header__actions">

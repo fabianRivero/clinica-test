@@ -21,6 +21,13 @@ class Especialista(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="especialista",
     )
+    sucursal_base = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.SET_NULL,
+        related_name="especialistas_base",
+        null=True,
+        blank=True,
+    )
     ci = models.CharField(max_length=30, blank=True)
     telefono = models.CharField(max_length=30, blank=True)
     observaciones = models.TextField(blank=True)

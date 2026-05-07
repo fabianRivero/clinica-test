@@ -29,7 +29,6 @@ from operations.models import (
     CitaClienteLibre,
     CitaMedica,
     CitaProspecto,
-    DisponibilidadCita,
     FichaCampo,
     FichaSeccion,
     Operacion,
@@ -216,13 +215,12 @@ def _quota_programmed_amount(cuota):
 def _operation_specialist(operacion):
     citas = list(operacion.citas_medicas.all())
     if not citas:
-        return "Sin asignar"
+        return "Por asignar"
 
     now = timezone.now()
     upcoming = [cita for cita in citas if cita.fecha_hora >= now]
-    if upcoming:
-        return _full_name(upcoming[0].medico.usuario)
-    return _full_name(citas[-1].medico.usuario)
+    cita = upcoming[0] if upcoming else citas[-1]
+    return f"Sede: {cita.sucursal.nombre}"
 
 
 def _operation_next_appointment(operacion):
@@ -301,7 +299,7 @@ def _operation_detail(operacion):
                 "id": f"CIT-{cita.pk:04d}",
                 "rawId": cita.pk,
                 "dateTime": _datetime_label(cita.fecha_hora),
-                "specialist": _full_name(cita.medico.usuario),
+                "specialist": "Sin asignar",
                 "status": cita.get_estado_display(),
                 "biometricStatus": "Validada" if cita.verif_biometria else "Pendiente",
                 "canConfirmBiometric": cita.estado in {
@@ -359,7 +357,7 @@ def _prospect_appointment_item(appointment):
         "rawId": appointment.pk,
         "prospectRawId": appointment.prospecto_id,
         "dateTime": _datetime_label(appointment.fecha_hora),
-        "specialist": _full_name(appointment.medico.usuario),
+        "specialist": "Sin asignar",
         "service": appointment.servicio_config.tipo_servicio.tipo,
         "status": appointment.get_estado_display(),
         "canCancel": appointment.estado == CitaProspecto.Estado.PROGRAMADA and appointment.fecha_hora > timezone.now(),
@@ -374,7 +372,7 @@ def _free_client_appointment_item(appointment):
         "rawId": appointment.pk,
         "operationRawId": None,
         "operation": "Cita medica libre",
-        "specialist": _full_name(appointment.medico.usuario),
+        "specialist": "Sin asignar",
         "dateTime": _datetime_label(appointment.fecha_hora),
         "status": appointment.get_estado_display(),
         "statusTone": (
@@ -503,7 +501,7 @@ def _client_item(cliente):
                     "_sortDate": cita.fecha_hora,
                     "dateTime": _datetime_label(cita.fecha_hora),
                     "operation": _procedure_name(operacion),
-                    "specialist": _full_name(cita.medico.usuario),
+                    "specialist": "Sin asignar",
                     "status": cita.get_estado_display(),
                 }
             )
@@ -539,7 +537,7 @@ def _admin_client_queryset():
                 .prefetch_related(
                     Prefetch(
                         "citas_medicas",
-                        queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+                        queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
                     ),
                     Prefetch(
                         "cuotas_plan_pagos",
@@ -550,13 +548,12 @@ def _admin_client_queryset():
                             )
                         ).order_by("nro_cuota"),
                     ),
-                )
-                .order_by("-created_at"),
+                ).order_by("-created_at"),
             ),
             "analisis_esteticos",
             Prefetch(
                 "citas_medicas_libres",
-                queryset=CitaClienteLibre.objects.select_related("medico__usuario").order_by("fecha_hora"),
+                queryset=CitaClienteLibre.objects.select_related().order_by("fecha_hora"),
             ),
         )
     )
@@ -795,8 +792,7 @@ def _catalog_page_data(catalog_key):
                 "tipo_servicio",
                 "proc_estetico",
                 "proc_estetico__tipo_p_estetico",
-            )
-            .order_by("tipo_servicio__tipo", "proc_estetico__proceso", "pk")
+            ).order_by("tipo_servicio__tipo", "proc_estetico__proceso", "pk")
         )
         items = [
             _catalog_entry(
@@ -1424,7 +1420,8 @@ def _catalog_get_instance(catalog_key, item_id):
 
 
 def _staff_item(especialista):
-    citas = list(especialista.citas_medicas.all())
+    # Citas ya no se vinculan directamente a especialistas
+    citas = []
     now = timezone.now()
     upcoming = [cita for cita in citas if cita.fecha_hora >= now]
     pending_biometric = sum(
@@ -1631,14 +1628,12 @@ def admin_dashboard(request):
         PagoRealizado.objects.select_related(
             "cuota__operacion__paciente__usuario",
             "cuota__operacion__servicio_config__proc_estetico",
-        )
-        .order_by("-created_at")
+        ).order_by("-created_at")
     )
     agenda_qs = (
         CitaMedica.objects.select_related(
             "operacion__paciente__usuario",
             "operacion__servicio_config__proc_estetico",
-            "medico__usuario",
         )
         .filter(fecha_hora__date__gte=today)
         .order_by("fecha_hora")
@@ -1648,9 +1643,7 @@ def admin_dashboard(request):
             CitaMedica.objects.select_related(
                 "operacion__paciente__usuario",
                 "operacion__servicio_config__proc_estetico",
-                "medico__usuario",
-            )
-            .order_by("-fecha_hora")
+            ).order_by("-fecha_hora")
         )
 
     operations_qs = (
@@ -1662,7 +1655,7 @@ def admin_dashboard(request):
         .prefetch_related(
             Prefetch(
                 "citas_medicas",
-                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+                queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
             ),
             Prefetch(
                 "cuotas_plan_pagos",
@@ -1677,10 +1670,6 @@ def admin_dashboard(request):
         Especialista.objects.select_related("usuario")
         .prefetch_related(
             "especialidades_rel__especialidad",
-            Prefetch(
-                "citas_medicas",
-                queryset=CitaMedica.objects.select_related("operacion").order_by("fecha_hora"),
-            ),
         )
         .order_by("usuario__primer_nombre", "usuario__apellido_paterno")
     )
@@ -1743,7 +1732,7 @@ def admin_dashboard(request):
                 "time": timezone.localtime(cita.fecha_hora).strftime("%H:%M"),
                 "patient": _full_name(cita.operacion.paciente.usuario),
                 "procedure": _procedure_name(cita.operacion),
-                "specialist": _full_name(cita.medico.usuario),
+                "specialist": "Sin asignar",
                 "status": _agenda_status(cita),
             }
             for cita in agenda_qs[:4]
@@ -1792,7 +1781,6 @@ def admin_prospectos(request):
             Prefetch(
                 "citas_medicas",
                 queryset=CitaProspecto.objects.select_related(
-                    "medico__usuario",
                     "servicio_config__tipo_servicio",
                 ).order_by("fecha_hora"),
             )
@@ -1807,15 +1795,14 @@ def admin_prospectos(request):
                 queryset=Operacion.objects.prefetch_related(
                     Prefetch(
                         "citas_medicas",
-                        queryset=CitaMedica.objects.select_related("medico__usuario").order_by(
+                        queryset=CitaMedica.objects.select_related().order_by(
                             "fecha_hora"
                         ),
                     )
                 ),
             ),
             "analisis_esteticos",
-        )
-        .order_by("usuario__primer_nombre", "usuario__apellido_paterno")
+        ).order_by("usuario__primer_nombre", "usuario__apellido_paterno")
     )
 
     data = {
@@ -1878,7 +1865,6 @@ def admin_prospect_medical_availability(request, prospecto_id):
                 "rawId": service_config.pk,
                 "name": service_config.tipo_servicio.tipo,
             },
-            "calendar": _build_prospect_medical_slot_map(service_config),
         }
     )
 
@@ -1910,33 +1896,27 @@ def admin_create_prospect_medical_appointment(request, prospecto_id):
     payload = _load_payload(request)
     if payload is None:
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
-    slot_id = payload.get("slotId")
-    if not slot_id:
-        return _json({"detail": "Debes seleccionar un horario disponible antes de confirmar la cita."}, status=400)
 
-    slot = (
-        DisponibilidadCita.objects.select_for_update()
-        .select_related("especialista__usuario")
-        .prefetch_related("citas_origen", "citas_prospectos_origen", "citas_clientes_libres_origen")
-        .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
-        .first()
-    )
-    if not slot or not slot.tipos_servicio.filter(pk=service_config.tipo_servicio_id).exists():
-        return _json({"detail": "El horario seleccionado no corresponde al servicio de cita medica."}, status=409)
-    if slot.tiene_reserva_activa:
-        return _json(
-            {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
-            status=409,
-        )
+    sucursal_id = payload.get("branchId")
+    fecha_hora_str = payload.get("dateTime")
+    if not sucursal_id or not fecha_hora_str:
+        return _json({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
+        
+    try:
+        from django.utils import dateparse
+        fecha_hora = dateparse.parse_datetime(fecha_hora_str)
+        if not fecha_hora:
+            raise ValueError
+    except Exception:
+        return _json({"detail": "Formato de fecha u hora invalido."}, status=400)
 
     appointment = CitaProspecto.objects.create(
         prospecto=prospecto,
         servicio_config=service_config,
-        medico=slot.especialista,
-        disponibilidad=slot,
-        fecha_hora=slot.fecha_hora,
+        sucursal_id=sucursal_id,
+        fecha_hora=fecha_hora,
         estado=CitaProspecto.Estado.PROGRAMADA,
-        detalles_cita="Cita medica agendada por administracion para conversion de prospecto.",
+        detalles_cita="Cita medica agendada libremente por administracion.",
     )
 
     return _json(
@@ -1954,7 +1934,7 @@ def admin_create_prospect_medical_appointment(request, prospecto_id):
 def admin_cancel_prospect_medical_appointment(request, appointment_id):
     appointment = (
         CitaProspecto.objects.select_for_update(of=("self",))
-        .select_related("prospecto", "medico__usuario", "servicio_config__tipo_servicio")
+        .select_related("prospecto",  "servicio_config__tipo_servicio")
         .filter(pk=appointment_id)
         .first()
     )
@@ -1998,7 +1978,7 @@ def admin_cliente_reservation_availability(request, client_id, operation_id):
         .prefetch_related(
             Prefetch(
                 "citas_medicas",
-                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+                queryset=CitaMedica.objects.order_by("fecha_hora"),
             ),
             Prefetch("cuotas_plan_pagos", queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados").order_by("nro_cuota")),
         )
@@ -2009,7 +1989,7 @@ def admin_cliente_reservation_availability(request, client_id, operation_id):
     if operacion.estado != Operacion.Estado.EN_PROCESO:
         return _json({"detail": "Solo se pueden reservar citas para tratamientos en proceso."}, status=400)
 
-    return _json({"operation": _client_operation_item(operacion), "calendar": _client_operation_slot_map(operacion)})
+    return _json({"operation": _client_operation_item(operacion)})
 
 
 @require_GET
@@ -2033,7 +2013,6 @@ def admin_cliente_free_medical_availability(request, client_id):
                 "rawId": service_config.pk,
                 "name": service_config.tipo_servicio.tipo,
             },
-            "calendar": _build_prospect_medical_slot_map(service_config),
         }
     )
 
@@ -2056,31 +2035,25 @@ def admin_cliente_create_free_medical_appointment(request, client_id):
     payload = _load_payload(request)
     if payload is None:
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
-    slot_id = payload.get("slotId")
-    if not slot_id:
-        return _json({"detail": "Debes seleccionar un horario disponible antes de confirmar la cita."}, status=400)
-
-    slot = (
-        DisponibilidadCita.objects.select_for_update()
-        .select_related("especialista__usuario")
-        .prefetch_related("citas_origen", "citas_prospectos_origen", "citas_clientes_libres_origen")
-        .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
-        .first()
-    )
-    if not slot or not slot.tipos_servicio.filter(pk=service_config.tipo_servicio_id).exists():
-        return _json({"detail": "El horario seleccionado no corresponde al servicio de cita medica."}, status=409)
-    if slot.tiene_reserva_activa:
-        return _json(
-            {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
-            status=409,
-        )
+        
+    sucursal_id = payload.get("branchId")
+    fecha_hora_str = payload.get("dateTime")
+    if not sucursal_id or not fecha_hora_str:
+        return _json({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
+        
+    try:
+        from django.utils import dateparse
+        fecha_hora = dateparse.parse_datetime(fecha_hora_str)
+        if not fecha_hora:
+            raise ValueError
+    except Exception:
+        return _json({"detail": "Formato de fecha u hora invalido."}, status=400)
 
     appointment = CitaClienteLibre.objects.create(
         cliente=cliente,
         servicio_config=service_config,
-        medico=slot.especialista,
-        disponibilidad=slot,
-        fecha_hora=slot.fecha_hora,
+        sucursal_id=sucursal_id,
+        fecha_hora=fecha_hora,
         estado=CitaClienteLibre.Estado.PROGRAMADA,
         detalles_cita="Cita medica libre agendada por administracion.",
     )
@@ -2109,7 +2082,7 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
         .prefetch_related(
             Prefetch(
                 "citas_medicas",
-                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+                queryset=CitaMedica.objects.order_by("fecha_hora"),
             ),
             Prefetch("cuotas_plan_pagos", queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados").order_by("nro_cuota")),
         )
@@ -2127,29 +2100,26 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
     if payload is None:
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
-    slot_id = payload.get("slotId")
-    if not slot_id:
-        return _json({"detail": "Debes seleccionar un horario disponible antes de confirmar la reserva."}, status=400)
-
-    slot = (
-        DisponibilidadCita.objects.select_for_update()
-        .select_related("especialista__usuario")
-        .prefetch_related("citas_origen", "citas_prospectos_origen", "citas_clientes_libres_origen")
-        .filter(pk=slot_id, activo=True, fecha_hora__gt=timezone.now())
-        .first()
-    )
-    if not slot or not slot.coincide_con_operacion(operacion):
-        return _json({"detail": "El horario seleccionado ya no esta disponible para este tratamiento."}, status=409)
-    if slot.tiene_reserva_activa:
-        return _json({"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."}, status=409)
+    sucursal_id = payload.get("branchId")
+    fecha_hora_str = payload.get("dateTime")
+    
+    if not sucursal_id or not fecha_hora_str:
+        return _json({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
+        
+    try:
+        from django.utils import dateparse
+        fecha_hora = dateparse.parse_datetime(fecha_hora_str)
+        if not fecha_hora:
+            raise ValueError
+    except Exception:
+        return _json({"detail": "Formato de fecha u hora invalido."}, status=400)
 
     cita = CitaMedica.objects.create(
         operacion=operacion,
-        medico=slot.especialista,
-        disponibilidad=slot,
-        fecha_hora=slot.fecha_hora,
+        sucursal_id=sucursal_id,
+        fecha_hora=fecha_hora,
         estado=CitaMedica.Estado.PROGRAMADA,
-        detalles_cita="Reserva creada por administracion desde el administrador del cliente.",
+        detalles_cita="Reserva creada libremente por administracion.",
     )
 
     return _json(
@@ -2218,7 +2188,7 @@ def admin_cliente_inactivate(request, client_id):
 def admin_cancel_appointment(request, appointment_id):
     appointment = (
         CitaMedica.objects.select_related(
-            "medico__usuario",
+            
             "operacion__paciente__usuario",
             "operacion__servicio_config__tipo_servicio",
             "operacion__servicio_config__proc_estetico",
@@ -2249,7 +2219,7 @@ def admin_cancel_appointment(request, appointment_id):
                 "rawId": appointment.pk,
                 "dateTime": _datetime_label(appointment.fecha_hora),
                 "operation": _procedure_name(appointment.operacion),
-                "specialist": _full_name(appointment.medico.usuario),
+                "specialist": "Sin asignar",
                 "status": appointment.get_estado_display(),
             },
         }
@@ -2262,7 +2232,7 @@ def admin_cancel_appointment(request, appointment_id):
 def admin_mark_appointment_pending_biometric(request, appointment_id):
     appointment = (
         CitaMedica.objects.select_related(
-            "medico__usuario",
+            
             "operacion__paciente__usuario",
             "operacion__servicio_config__tipo_servicio",
             "operacion__servicio_config__proc_estetico",
@@ -2296,7 +2266,7 @@ def admin_mark_appointment_pending_biometric(request, appointment_id):
 def admin_confirm_appointment_biometric(request, appointment_id):
     appointment = (
         CitaMedica.objects.select_related(
-            "medico__usuario",
+            
             "operacion__paciente__usuario",
             "operacion__servicio_config__tipo_servicio",
             "operacion__servicio_config__proc_estetico",
@@ -2345,7 +2315,7 @@ def admin_confirm_appointment_biometric(request, appointment_id):
                 "rawId": appointment.pk,
                 "dateTime": _datetime_label(appointment.fecha_hora),
                 "operation": _procedure_name(appointment.operacion),
-                "specialist": _full_name(appointment.medico.usuario),
+                "specialist": "Sin asignar",
                 "status": appointment.get_estado_display(),
                 "biometricStatus": "Validada",
                 "confirmedAt": _datetime_label(appointment.fecha_confirmacion_biometrica),
@@ -2411,14 +2381,13 @@ def admin_operaciones(request):
         .prefetch_related(
             Prefetch(
                 "citas_medicas",
-                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+                queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
             ),
             Prefetch(
                 "cuotas_plan_pagos",
                 queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados").order_by("nro_cuota"),
             ),
-        )
-        .order_by("-created_at")
+        ).order_by("-created_at")
     )
     blocked_reservations = sum(
         1
@@ -2469,7 +2438,7 @@ def admin_operacion_detalle(request, operacion_id):
         .prefetch_related(
             Prefetch(
                 "citas_medicas",
-                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+                queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
             ),
             Prefetch(
                 "cuotas_plan_pagos",
@@ -2529,7 +2498,7 @@ def admin_update_operation_details(request, operacion_id):
         .prefetch_related(
             Prefetch(
                 "citas_medicas",
-                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+                queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
             ),
             Prefetch(
                 "cuotas_plan_pagos",
@@ -2638,7 +2607,7 @@ def admin_update_operation_price_plan(request, operacion_id):
         .prefetch_related(
             Prefetch(
                 "citas_medicas",
-                queryset=CitaMedica.objects.select_related("medico__usuario").order_by("fecha_hora"),
+                queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
             ),
             Prefetch(
                 "cuotas_plan_pagos",
@@ -2658,8 +2627,7 @@ def admin_pagos(request):
             "cuota__operacion__paciente__usuario",
             "cuota__operacion__servicio_config__proc_estetico",
             "verificado_por",
-        )
-        .order_by("-created_at")
+        ).order_by("-created_at")
     )
     pending_amount = sum(
         payment.monto_pagado
@@ -2955,10 +2923,6 @@ def admin_equipo(request):
         Especialista.objects.select_related("usuario")
         .prefetch_related(
             "especialidades_rel__especialidad",
-            Prefetch(
-                "citas_medicas",
-                queryset=CitaMedica.objects.select_related("operacion").order_by("fecha_hora"),
-            ),
         )
         .order_by("-usuario__is_active", "usuario__primer_nombre", "usuario__apellido_paterno")
     )
@@ -3054,7 +3018,7 @@ def admin_crear_especialista(request):
 
     especialista = (
         Especialista.objects.select_related("usuario")
-        .prefetch_related("especialidades_rel__especialidad", "citas_medicas")
+        .prefetch_related("especialidades_rel__especialidad")
         .get(pk=especialista.pk)
     )
 
@@ -3114,7 +3078,7 @@ def admin_actualizar_especialista(request, specialist_id):
 
     especialista = (
         Especialista.objects.select_related("usuario")
-        .prefetch_related("especialidades_rel__especialidad", "citas_medicas")
+        .prefetch_related("especialidades_rel__especialidad")
         .get(pk=especialista.pk)
     )
 
@@ -3150,7 +3114,7 @@ def admin_estado_especialista(request, specialist_id):
 
     especialista = (
         Especialista.objects.select_related("usuario")
-        .prefetch_related("especialidades_rel__especialidad", "citas_medicas")
+        .prefetch_related("especialidades_rel__especialidad")
         .get(pk=especialista.pk)
     )
 

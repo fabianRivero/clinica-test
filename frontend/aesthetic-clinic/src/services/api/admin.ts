@@ -1,5 +1,6 @@
 import type {
   AdminAvailabilityResponse,
+  AdminBranch,
   AdminCatalogDetailResponse,
   AdminCatalogKey,
   AdminCatalogMutationResponse,
@@ -20,7 +21,6 @@ import type {
   CreateAdminAvailabilityExceptionPayload,
   CreateAdminProspectPayload,
   CreateAdminProspectResponse,
-  CreateAdminTimeSlotPayload,
   DashboardResponse,
   ManageAdminGlobalAvailabilityPayload,
   OperationDetailResponse,
@@ -30,7 +30,6 @@ import type {
   StaffResponse,
   UpdateAdminOperationDetailsPayload,
   UpdateAdminOperationPricePayload,
-  UpdateAdminTimeSlotPayload,
   UpdateAdminCatalogItemStatePayload,
   UpdateAdminStaffPayload,
   UpdateAdminStaffStatusPayload,
@@ -38,6 +37,7 @@ import type {
   UpdateAdminPaymentQrConfigResponse,
   UpdateAdminPaymentStatusPayload,
   UpdateAdminPaymentStatusResponse,
+  AdminConcurrencyCheckResponse,
 } from '../../types/admin'
 import type {
   ProspectConversionFinalizeResponse,
@@ -141,10 +141,10 @@ export function getAdminProspectMedicalAvailability(prospectId: number) {
   )
 }
 
-export function createAdminProspectMedicalAppointment(prospectId: number, slotId: number) {
+export function createAdminProspectMedicalAppointment(prospectId: number, data: { branchId: number, dateTime: string }) {
   return requestJsonWithBody<CreateAdminProspectMedicalAppointmentResponse>(
     `/api/admin/prospectos/${prospectId}/cita-medica/reservar/`,
-    { slotId },
+    data,
   )
 }
 
@@ -171,17 +171,17 @@ export function getAdminClientFreeMedicalAvailability(clientId: number) {
   )
 }
 
-export function createAdminClientReservation(clientId: number, operationId: number, slotId: number) {
+export function createAdminClientReservation(clientId: number, operationId: number, data: { branchId: number, dateTime: string }) {
   return requestJsonWithBody<CreateAdminClientReservationResponse>(
     `/api/admin/clientes/${clientId}/operaciones/${operationId}/reservar/`,
-    { slotId },
+    data,
   )
 }
 
-export function createAdminClientFreeMedicalAppointment(clientId: number, slotId: number) {
+export function createAdminClientFreeMedicalAppointment(clientId: number, data: { branchId: number, dateTime: string }) {
   return requestJsonWithBody<CreateAdminClientFreeMedicalAppointmentResponse>(
     `/api/admin/clientes/${clientId}/cita-medica/reservar/`,
-    { slotId },
+    data,
   )
 }
 
@@ -349,35 +349,20 @@ export function createAdminProspect(payload: CreateAdminProspectPayload) {
   return requestJsonWithBody<CreateAdminProspectResponse>('/api/admin/prospectos/crear/', payload)
 }
 
-export function createAdminTimeSlot(payload: CreateAdminTimeSlotPayload) {
-  console.log('[adminApi] createAdminTimeSlot:request', {
-    path: '/api/admin/disponibilidad/horarios/crear/',
-    payload,
-    at: new Date().toISOString(),
-  })
-  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
-    '/api/admin/disponibilidad/horarios/crear/',
-    payload,
-  ).then((response) => {
-    console.log('[adminApi] createAdminTimeSlot:response', {
-      response,
-      at: new Date().toISOString(),
-    })
-    return response
-  })
-}
-
-export function updateAdminTimeSlot(slotId: number, payload: UpdateAdminTimeSlotPayload) {
-  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
-    `/api/admin/disponibilidad/horarios/${slotId}/actualizar/`,
-    payload,
-  )
-}
-
-export function deleteAdminTimeSlot(slotId: number) {
-  return requestJsonWithBody<AdminAvailabilityMutationResponse>(
-    `/api/admin/disponibilidad/horarios/${slotId}/eliminar/`,
-    {},
+export function checkAdminConcurrency(
+  branchId: number,
+  date: string,
+  startTime: string,
+  endTime: string,
+) {
+  return requestJsonWithBody<AdminConcurrencyCheckResponse>(
+    '/api/admin/disponibilidad/concurrencia/',
+    {
+      sucursal_id: branchId,
+      fecha: date,
+      hora_inicio: startTime,
+      hora_fin: endTime,
+    }
   )
 }
 
@@ -474,3 +459,8 @@ export function finalizeAdminProspectConversion(prospectId: string, documentFile
     formData,
   )
 }
+
+export function getAdminBranches() {
+  return requestJson<{ branches: AdminBranch[] }>('/api/admin/disponibilidad/sucursales/')
+}
+

@@ -14,6 +14,7 @@ class Prospecto(TimeStampedModel):
     nombres = models.CharField(max_length=120)
     apellidos = models.CharField(max_length=160)
     telefono = models.CharField(max_length=30, blank=True)
+
     estado = models.CharField(
         max_length=20,
         choices=Estado.choices,
@@ -22,6 +23,13 @@ class Prospecto(TimeStampedModel):
     observaciones = models.TextField(blank=True)
     registrado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="prospectos_registrados",
+        null=True,
+        blank=True,
+    )
+    sucursal_registro = models.ForeignKey(
+        "catalogs.Sucursal",
         on_delete=models.SET_NULL,
         related_name="prospectos_registrados",
         null=True,
@@ -106,6 +114,13 @@ class Cliente(TimeStampedModel):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="cliente",
+    )
+    sucursal_registro = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.SET_NULL,
+        related_name="clientes_registrados",
+        null=True,
+        blank=True,
     )
     ci = models.CharField(max_length=30, blank=True)
     estado_cliente = models.CharField(
