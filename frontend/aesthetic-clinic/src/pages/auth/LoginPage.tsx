@@ -14,9 +14,9 @@ export function LoginPage() {
 
   const requestedPath =
     typeof location.state === 'object' &&
-    location.state &&
-    'from' in location.state &&
-    typeof location.state.from === 'string'
+      location.state &&
+      'from' in location.state &&
+      typeof location.state.from === 'string'
       ? location.state.from
       : ''
 
@@ -52,7 +52,7 @@ export function LoginPage() {
           <span className="auth-shell__eyebrow">Clinica estetica</span>
           <h1>Nataly Ferrufino Estetic & Academy</h1>
           <p>
-            Plataforma de gestión de operaciones, agenda y pagos. Accede con tus credenciales para comenzar. 
+            Plataforma de gestión de operaciones, agenda y pagos. Accede con tus credenciales para comenzar.
           </p>
         </div>
 
@@ -115,7 +115,8 @@ export function LoginPage() {
         <div className="demo-credentials">
           <strong>Credenciales demo</strong>
           <ul>
-            <li>`admin / admin123456`</li>
+            <li>`admin.general / admin123456`</li>
+            <li>`admin.sucursal / admin123456`</li>
             <li>`paciente.demo / paciente123456`</li>
           </ul>
         </div>

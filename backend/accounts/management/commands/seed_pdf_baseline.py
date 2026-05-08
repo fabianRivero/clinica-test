@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.utils import timezone
 
 from accounts.models import Rol, Usuario
 from catalogs.models import (
@@ -18,16 +19,16 @@ from catalogs.models import (
     TipoPiel,
     TipoServicio,
     ImplanteInjerto,
+    Sucursal,
 )
+from customers.models import Prospecto, Cliente
 from operations.models import (
     AgendaExcepcionEspecialista,
     AgendaHabitualDia,
     AgendaHabitualEspecialista,
     DiaBloqueadoAgendaGlobal,
-    DisponibilidadCita,
     FichaCampo,
     FichaSeccion,
-    HorarioDisponibilidad,
 )
 from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
 
@@ -42,12 +43,16 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         roles = self._seed_roles()
-        self._normalize_admin_users(roles["ADMINISTRADOR"])
-        specialist_users = self._seed_specialist_users(roles["TRABAJADOR"])
-        specialties, specialists = self._seed_staff(specialist_users)
+        branches = self._seed_branches()
+        self._seed_admins(roles["ADMINISTRADOR"], branches)
+        specialist_users = self._seed_specialist_users(roles["TRABAJADOR"], branches)
+        specialties, specialists = self._seed_staff(specialist_users, branches)
         catalogs = self._seed_catalogs()
         self._seed_form_configuration(catalogs)
+        self._seed_prospects(branches)
+        self._seed_formal_patients(roles["CLIENTE"], branches)
         self._clear_schedule_configuration()
+        self._seed_schedules(specialists)
 
         self.stdout.write(self.style.SUCCESS("Base PDF minima cargada correctamente."))
         self.stdout.write(
@@ -58,9 +63,7 @@ class Command(BaseCommand):
             f"tipos_servicio={TipoServicio.objects.count()}, "
             f"procedimientos={ProcEstetico.objects.count()}, "
             f"servicios_config={ServicioConfig.objects.count()}, "
-            f"horarios_base={HorarioDisponibilidad.objects.count()}, "
-            f"agendas_habituales={AgendaHabitualEspecialista.objects.count()}, "
-            f"disponibilidades={DisponibilidadCita.objects.count()}"
+            f"agendas_habituales={AgendaHabitualEspecialista.objects.count()}"
         )
         self.stdout.write(
             "Especialistas creados: "
@@ -97,7 +100,53 @@ class Command(BaseCommand):
                 changed_fields.append("updated_at")
                 admin_user.save(update_fields=changed_fields)
 
-    def _seed_specialist_users(self, worker_role):
+    def _seed_branches(self):
+        branch_a, _ = Sucursal.objects.update_or_create(
+            nombre="Sucursal Norte",
+            defaults={"direccion": "Avenida Siempre Viva 123", "activa": True}
+        )
+        branch_b, _ = Sucursal.objects.update_or_create(
+            nombre="Sucursal Sur",
+            defaults={"direccion": "Calle Falsa 456", "activa": True}
+        )
+        return {"A": branch_a, "B": branch_b}
+
+    def _seed_admins(self, admin_role, branches):
+        # Admin General
+        admin_gen, created = Usuario.objects.update_or_create(
+            username="admin.general",
+            defaults={
+                "primer_nombre": "Admin",
+                "apellido_paterno": "General",
+                "email": "admin.general@clinic.local",
+                "rol": admin_role,
+                "sucursal": branches["A"],
+                "is_active": True,
+                "is_staff": True,
+                "is_superuser": True,
+            },
+        )
+        admin_gen.set_password("admin123456")
+        admin_gen.save()
+
+        # Admin Sucursal
+        admin_suc, created = Usuario.objects.update_or_create(
+            username="admin.sucursal",
+            defaults={
+                "primer_nombre": "Admin",
+                "apellido_paterno": "Sucursal",
+                "email": "admin.sucursal@clinic.local",
+                "rol": admin_role,
+                "sucursal": branches["B"],
+                "is_active": True,
+                "is_staff": True,
+                "is_superuser": False,
+            },
+        )
+        admin_suc.set_password("admin123456")
+        admin_suc.save()
+
+    def _seed_specialist_users(self, worker_role, branches):
         user_specs = {
             "lucia.laser": {
                 "password": "laser123456",
@@ -106,6 +155,7 @@ class Command(BaseCommand):
                 "apellido_paterno": "Suarez",
                 "apellido_materno": "Molina",
                 "email": "lucia.laser@clinic.local",
+                "branch": branches["A"],
             },
             "diego.tatuajes": {
                 "password": "tatuajes123456",
@@ -114,6 +164,7 @@ class Command(BaseCommand):
                 "apellido_paterno": "Roca",
                 "apellido_materno": "Salinas",
                 "email": "diego.tatuajes@clinic.local",
+                "branch": branches["A"],
             },
             "sofia.manchas": {
                 "password": "manchas123456",
@@ -122,6 +173,7 @@ class Command(BaseCommand):
                 "apellido_paterno": "Mendez",
                 "apellido_materno": "Rojas",
                 "email": "sofia.manchas@clinic.local",
+                "branch": branches["B"],
             },
             "rafael.consulta": {
                 "password": "consulta123456",
@@ -130,14 +182,7 @@ class Command(BaseCommand):
                 "apellido_paterno": "Quiroga",
                 "apellido_materno": "Perez",
                 "email": "rafael.consulta@clinic.local",
-            },
-            "elena.estetica": {
-                "password": "estetica123456",
-                "primer_nombre": "Elena",
-                "segundo_nombre": "Maria",
-                "apellido_paterno": "Salvatierra",
-                "apellido_materno": "Lopez",
-                "email": "elena.estetica@clinic.local",
+                "branch": branches["B"],
             },
         }
 
@@ -147,11 +192,12 @@ class Command(BaseCommand):
                 username=username,
                 defaults={
                     "primer_nombre": spec["primer_nombre"],
-                    "segundo_nombre": spec["segundo_nombre"],
+                    "segundo_nombre": spec.get("segundo_nombre", ""),
                     "apellido_paterno": spec["apellido_paterno"],
-                    "apellido_materno": spec["apellido_materno"],
+                    "apellido_materno": spec.get("apellido_materno", ""),
                     "email": spec["email"],
                     "rol": worker_role,
+                    "sucursal": spec["branch"],
                     "is_active": True,
                     "is_staff": False,
                     "is_superuser": False,
@@ -162,7 +208,7 @@ class Command(BaseCommand):
             users[username] = user
         return users
 
-    def _seed_staff(self, users):
+    def _seed_staff(self, users, branches):
         specialty_specs = {
             "dermatologia_laser": {
                 "nombre": "Dermatologia laser",
@@ -231,13 +277,6 @@ class Command(BaseCommand):
                 "telefono": "74455667",
                 "observaciones": "Medico para consultas y controles.",
                 "specialties": ["consulta_medica", "medicina_estetica"],
-            },
-            "elena": {
-                "user": users["elena.estetica"],
-                "ci": "8901234",
-                "telefono": "75566778",
-                "observaciones": "Apoyo clinico para depilacion, manchas y consultas.",
-                "specialties": ["dermatologia_laser", "tratamiento_manchas", "consulta_medica"],
             },
         }
 
@@ -585,11 +624,89 @@ class Command(BaseCommand):
         for order, (code, label, field_type, group) in enumerate(tattoo_fields, start=1):
             sync_field(tattoo_section, code, label, field_type, order, group)
 
+    def _seed_prospects(self, branches):
+        prospect_specs = [
+            {"nombres": "Juan", "apellidos": "Perez", "telefono": "70000001", "sucursal": branches["A"]},
+            {"nombres": "Maria", "apellidos": "Gomez", "telefono": "70000002", "sucursal": branches["B"]},
+        ]
+        for spec in prospect_specs:
+            Prospecto.objects.get_or_create(
+                nombres=spec["nombres"],
+                apellidos=spec["apellidos"],
+                defaults={
+                    "telefono": spec["telefono"],
+                    "sucursal_registro": spec["sucursal"],
+                    "estado": Prospecto.Estado.PASAJERO,
+                }
+            )
+
+    def _seed_formal_patients(self, client_role, branches):
+        # Crear usuario para paciente demo
+        user, created = Usuario.objects.update_or_create(
+            username="paciente.demo",
+            defaults={
+                "primer_nombre": "Paciente",
+                "apellido_paterno": "Demo",
+                "email": "paciente.demo@clinic.local",
+                "rol": client_role,
+                "sucursal": branches["A"],
+                "is_active": True,
+            },
+        )
+        user.set_password("paciente123456")
+        user.save()
+
+        # Crear registro de cliente
+        cliente, _ = Cliente.objects.update_or_create(
+            usuario=user,
+            defaults={
+                "telefono": "78888888",
+                "ci": "12345678",
+                "direccion_domicilio": "Zona Central, Edif. Demo",
+            }
+        )
+
+        # Crear prospecto de origen para que el historial este completo
+        Prospecto.objects.get_or_create(
+            nombres="Paciente",
+            apellidos="Demo",
+            convertido_a_cliente=cliente,
+            defaults={
+                "telefono": "78888888",
+                "sucursal_registro": branches["A"],
+                "estado": Prospecto.Estado.CONVERTIDO,
+                "fecha_conversion": timezone.now(),
+            }
+        )
+
+    def _seed_schedules(self, specialists):
+        from datetime import time
+        start_time = time(8, 0)
+        end_time = time(18, 0)
+        
+        for specialist in specialists.values():
+            # Agenda habitual de Lunes a Viernes (0 a 4)
+            habitual, _ = AgendaHabitualEspecialista.objects.update_or_create(
+                especialista=specialist,
+                sucursal=specialist.usuario.sucursal,
+                defaults={
+                    "fecha_inicio": "2024-01-01",
+                    "fecha_fin": "2099-12-31",
+                    "hora_inicio": start_time,
+                    "hora_fin": end_time,
+                    "detalle": "Horario base 08:00 - 18:00",
+                }
+            )
+            for day in range(5):
+                AgendaHabitualDia.objects.update_or_create(
+                    agenda=habitual,
+                    dia_semana=day,
+                    defaults={}
+                )
+
     def _clear_schedule_configuration(self):
-        DisponibilidadCita.objects.all().delete()
         AgendaExcepcionEspecialista.objects.all().delete()
         AgendaHabitualDia.objects.all().delete()
         AgendaHabitualEspecialista.objects.all().delete()
         DiaBloqueadoAgendaGlobal.objects.all().delete()
-        HorarioDisponibilidad.objects.all().delete()
 
