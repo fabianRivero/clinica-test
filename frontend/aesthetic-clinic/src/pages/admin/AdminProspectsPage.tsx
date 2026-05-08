@@ -283,7 +283,7 @@ export function AdminProspectsPage() {
                             <StatusBadge
                               tone={
                                 lead.stage === 'Convertido' ? 'success' :
-                                  lead.stage === 'Cita Programada' ? 'info' :
+                                  lead.stage === 'Cita Programada' ? 'primary' :
                                     'primary'
                               }
                             >
@@ -372,7 +372,6 @@ export function AdminProspectsPage() {
               onSave={handleUpdateProspect}
               isUpdating={isUpdating}
               handleCancelAppointment={handleCancelAppointment}
-              onUpdateAppointmentStatus={handleUpdateAppointmentStatus}
             />
           )}
 
@@ -620,14 +619,12 @@ function EditProspectModal({
   onSave,
   isUpdating,
   handleCancelAppointment,
-  onUpdateAppointmentStatus,
 }: {
   prospect: ProspectLead
   onClose: () => void
   onSave: (data: any) => Promise<void>
   isUpdating: boolean
   handleCancelAppointment: (id: number) => Promise<void>
-  onUpdateAppointmentStatus: (id: number, status: string) => Promise<void>
 }) {
   const [firstName, setFirstName] = useState(prospect.firstName || '')
   const [lastName, setLastName] = useState(prospect.lastName || '')
@@ -733,7 +730,7 @@ function EditProspectModal({
                               <StatusBadge tone={
                                 currentStatusValue === 'REALIZADA' ? 'success' :
                                   currentStatusValue === 'CANCELADA' ? 'danger' :
-                                    currentStatusValue === 'NO_ASISTIO' ? 'warning' : 'info'
+                                    currentStatusValue === 'NO_ASISTIO' ? 'warning' : 'primary'
                               }>
                                 {
                                   currentStatusValue === 'PROGRAMADA' ? 'Programada' :

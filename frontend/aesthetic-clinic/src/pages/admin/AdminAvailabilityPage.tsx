@@ -18,6 +18,7 @@ import {
   manageAdminGlobalAvailability,
   updateAdminHabitualSchedule,
 } from '../../services/api/admin'
+import type { UpsertAdminHabitualSchedulePayload } from '../../types/admin'
 
 function buildEmptyHabitualForm(branchId: number) {
   return {
