@@ -1,6 +1,7 @@
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
+# pyrefly: ignore [missing-import]
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
@@ -916,7 +917,6 @@ class Command(BaseCommand):
                 "user": users["paciente_demo"],
                 "ci": "7894561",
                 "estado_cliente": Cliente.Estado.INACTIVO,
-                "cod_biometrico": "BIO-0001",
                 "fecha_nacimiento": date(1992, 6, 14),
                 "nro_hijos": 1,
                 "direccion_domicilio": "Zona Sur, Calle 12 #45",
@@ -928,7 +928,6 @@ class Command(BaseCommand):
                 "user": users["paciente_tatuaje"],
                 "ci": "8123456",
                 "estado_cliente": Cliente.Estado.INACTIVO,
-                "cod_biometrico": "BIO-0002",
                 "fecha_nacimiento": date(1989, 10, 9),
                 "nro_hijos": 2,
                 "direccion_domicilio": "Equipetrol, Edificio Terra 5B",
@@ -940,7 +939,6 @@ class Command(BaseCommand):
                 "user": users["paciente_finalizada"],
                 "ci": "9345678",
                 "estado_cliente": Cliente.Estado.INACTIVO,
-                "cod_biometrico": "BIO-0003",
                 "fecha_nacimiento": date(1995, 2, 21),
                 "nro_hijos": 0,
                 "direccion_domicilio": "Norte, Condominio Magnolia",
@@ -952,7 +950,6 @@ class Command(BaseCommand):
                 "user": users["paciente_cancelada"],
                 "ci": "8456123",
                 "estado_cliente": Cliente.Estado.INACTIVO,
-                "cod_biometrico": "BIO-0004",
                 "fecha_nacimiento": date(1991, 8, 30),
                 "nro_hijos": 3,
                 "direccion_domicilio": "Av. Alemana, Condominio Nativa",
@@ -964,7 +961,6 @@ class Command(BaseCommand):
                 "user": users["paciente_borrador"],
                 "ci": "7567894",
                 "estado_cliente": Cliente.Estado.INACTIVO,
-                "cod_biometrico": "BIO-0005",
                 "fecha_nacimiento": date(1998, 1, 17),
                 "nro_hijos": 0,
                 "direccion_domicilio": "Zona Oeste, Calle Libertad",
@@ -976,7 +972,6 @@ class Command(BaseCommand):
                 "user": users["paciente_inactiva"],
                 "ci": "6987452",
                 "estado_cliente": Cliente.Estado.INACTIVO,
-                "cod_biometrico": "BIO-0006",
                 "fecha_nacimiento": date(1987, 12, 4),
                 "nro_hijos": 2,
                 "direccion_domicilio": "Zona Centro, Barrio Urubo",
@@ -988,7 +983,6 @@ class Command(BaseCommand):
                 "user": users["paciente_limpieza"],
                 "ci": "7345211",
                 "estado_cliente": Cliente.Estado.INACTIVO,
-                "cod_biometrico": "BIO-0007",
                 "fecha_nacimiento": date(1996, 11, 11),
                 "nro_hijos": 0,
                 "direccion_domicilio": "Barrio Sirari, Torre Magnolia",
@@ -1005,7 +999,6 @@ class Command(BaseCommand):
                 defaults={
                     "ci": spec["ci"],
                     "estado_cliente": spec["estado_cliente"],
-                    "cod_biometrico": spec["cod_biometrico"],
                     "fecha_nacimiento": spec["fecha_nacimiento"],
                     "nro_hijos": spec["nro_hijos"],
                     "direccion_domicilio": spec["direccion_domicilio"],

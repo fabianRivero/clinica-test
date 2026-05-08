@@ -22,6 +22,7 @@ import {
 function buildEmptyHabitualForm(branchId: number) {
   return {
     specialistId: null as number | null,
+    specialistIds: [] as number[],
     branchId: branchId,
     startDate: '',
     endDate: '',
@@ -200,7 +201,11 @@ export function AdminAvailabilitySchedulesPage() {
 
   async function handleHabitualSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!habitualForm.specialistId) {
+    if (!editingHabitualId && habitualForm.specialistIds.length === 0) {
+      showNotification({ title: 'Error', message: 'Debe seleccionar al menos un especialista', tone: 'danger' })
+      return
+    }
+    if (editingHabitualId && !habitualForm.specialistId) {
       showNotification({ title: 'Error', message: 'Debe seleccionar un especialista', tone: 'danger' })
       return
     }
@@ -211,8 +216,9 @@ export function AdminAvailabilitySchedulesPage() {
 
     setIsSubmitting(true)
     try {
-      const payload = {
-        specialistId: habitualForm.specialistId,
+      const payload: UpsertAdminHabitualSchedulePayload = {
+        specialistId: editingHabitualId ? habitualForm.specialistId : null,
+        specialistIds: editingHabitualId ? [] : habitualForm.specialistIds,
         branchId: activeBranch?.id || 1,
         startDate: habitualForm.startDate,
         endDate: habitualForm.endDate || null,
@@ -321,20 +327,54 @@ export function AdminAvailabilitySchedulesPage() {
           >
             <form className="form-stack" onSubmit={(e) => void handleHabitualSubmit(e)}>
               <div className="form-group">
-                <label>Especialista</label>
-                <select
-                  className="input"
-                  value={habitualForm.specialistId || ''}
-                  onChange={(e) => setHabitualForm({ ...habitualForm, specialistId: Number(e.target.value) || null })}
-                  required
-                >
-                  <option value="">Seleccione un especialista...</option>
-                  {data.filters.specialists.map((sp) => (
-                    <option key={sp.id} value={sp.id}>
-                      {sp.label}
-                    </option>
-                  ))}
-                </select>
+                <label>{editingHabitualId ? 'Especialista' : 'Especialista(s)'}</label>
+                {editingHabitualId ? (
+                  <select
+                    className="input"
+                    value={habitualForm.specialistId || ''}
+                    onChange={(e) => setHabitualForm({ ...habitualForm, specialistId: Number(e.target.value) || null })}
+                    required
+                  >
+                    <option value="">Seleccione un especialista...</option>
+                    {data.filters.specialists.map((sp) => (
+                      <option key={sp.id} value={sp.id}>
+                        {sp.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div
+                    className="checkbox-group"
+                    style={{
+                      maxHeight: '150px',
+                      overflowY: 'auto',
+                      border: '1px solid var(--border)',
+                      padding: '0.5rem',
+                      borderRadius: '4px',
+                      background: 'var(--bg-card)',
+                    }}
+                  >
+                    {data.filters.specialists.map((sp) => (
+                      <label
+                        key={sp.id}
+                        className="checkbox-label"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', cursor: 'pointer' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={habitualForm.specialistIds.includes(sp.id)}
+                          onChange={() =>
+                            setHabitualForm({
+                              ...habitualForm,
+                              specialistIds: toggleSelection(habitualForm.specialistIds, sp.id),
+                            })
+                          }
+                        />
+                        <span>{sp.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -476,12 +516,13 @@ export function AdminAvailabilitySchedulesPage() {
                                   setEditingHabitualId(rule.id)
                                   setHabitualForm({
                                     specialistId: rule.specialistId,
+                                    specialistIds: [rule.specialistId],
                                     branchId: activeBranch.id,
                                     startDate: rule.startDate,
                                     endDate: rule.endDate || '',
                                     weekdayCodes: rule.weekdayCodes,
-                                    startTime: rule.startTime,
-                                    endTime: rule.endTime,
+                                    startTime: rule.startTime.slice(0, 5),
+                                    endTime: rule.endTime.slice(0, 5),
                                     detail: rule.detail,
                                   })
                                 }}

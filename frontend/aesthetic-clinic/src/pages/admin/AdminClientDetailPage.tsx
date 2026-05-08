@@ -74,6 +74,9 @@ export function AdminClientDetailPage() {
   }
 
   async function handleMarkPendingBiometric(appointmentId: number) {
+    const confirmed = window.confirm('Solo se debe cambiar a este estado cuando el cliente asiste al tratamiento. ¿Deseas continuar?')
+    if (!confirmed) return
+
     setAppointmentActionId(appointmentId)
     try {
       const response = await markAdminAppointmentPendingBiometric(appointmentId)
@@ -138,10 +141,7 @@ export function AdminClientDetailPage() {
     }
     setIsChecking(true)
     try {
-      const parts = selectedTime.split(':')
-      const endHour = String(Number(parts[0]) + 1).padStart(2, '0')
-      const endTime = `${endHour}:${parts[1]}`
-      const info = await checkAdminConcurrency(activeBranch.id, selectedDate, selectedTime, endTime)
+      const info = await checkAdminConcurrency(activeBranch.id, selectedDate, selectedTime, selectedTime)
       setConcurrencyInfo(info)
     } catch (err: any) {
       showNotification({ title: 'Error', message: err.message, tone: 'danger' })
@@ -157,10 +157,7 @@ export function AdminClientDetailPage() {
     }
     setIsChecking(true)
     try {
-      const parts = freeSelectedTime.split(':')
-      const endHour = String(Number(parts[0]) + 1).padStart(2, '0')
-      const endTime = `${endHour}:${parts[1]}`
-      const info = await checkAdminConcurrency(activeBranch.id, freeSelectedDate, freeSelectedTime, endTime)
+      const info = await checkAdminConcurrency(activeBranch.id, freeSelectedDate, freeSelectedTime, freeSelectedTime)
       setFreeConcurrencyInfo(info)
     } catch (err: any) {
       showNotification({ title: 'Error', message: err.message, tone: 'danger' })
@@ -168,6 +165,7 @@ export function AdminClientDetailPage() {
       setIsChecking(false)
     }
   }
+
 
   async function handleReserve() {
     if (!data || !effectiveOperationId || !activeBranch) return
@@ -346,10 +344,10 @@ export function AdminClientDetailPage() {
           <SectionCard title="Resultados de disponibilidad">
             <div style={{ padding: '1rem', background: 'var(--c-neutral-100)', borderRadius: '8px' }}>
               <p style={{ marginBottom: '0.5rem' }}>
-                <strong>Citas simultaneas a esa hora:</strong> {concurrencyInfo.concurrency}
+                <strong>Citas simultaneas de 1 hora antes a 1 hora despues ({concurrencyInfo.hora_inicio} a {concurrencyInfo.hora_fin}):</strong> {concurrencyInfo.concurrency}
               </p>
               <p style={{ marginBottom: '0.5rem' }}>
-                <strong>Especialistas en turno:</strong> {concurrencyInfo.presentes.length > 0 ? concurrencyInfo.presentes.map(p => p.usuario__primer_nombre).join(', ') : 'Ninguno registrado'}
+                <strong>Especialistas en turno {concurrencyInfo.hora_seleccionada}:</strong> {concurrencyInfo.presentes.length > 0 ? concurrencyInfo.presentes.map(p => p.usuario__primer_nombre).join(', ') : 'Ninguno registrado'}
               </p>
               {concurrencyInfo.concurrency >= concurrencyInfo.presentes.length && concurrencyInfo.presentes.length > 0 && (
                 <p style={{ color: 'var(--c-danger-600)', marginTop: '0.5rem', fontWeight: 600 }}>
@@ -397,10 +395,10 @@ export function AdminClientDetailPage() {
           <SectionCard title="Resultados de disponibilidad">
             <div style={{ padding: '1rem', background: 'var(--c-neutral-100)', borderRadius: '8px' }}>
               <p style={{ marginBottom: '0.5rem' }}>
-                <strong>Citas simultaneas a esa hora:</strong> {freeConcurrencyInfo.concurrency}
+                <strong>Citas simultaneas de 1 hora antes a 1 hora despues ({freeConcurrencyInfo.hora_inicio} a {freeConcurrencyInfo.hora_fin}):</strong> {freeConcurrencyInfo.concurrency}
               </p>
               <p style={{ marginBottom: '0.5rem' }}>
-                <strong>Especialistas en turno:</strong> {freeConcurrencyInfo.presentes.length > 0 ? freeConcurrencyInfo.presentes.map(p => p.usuario__primer_nombre).join(', ') : 'Ninguno registrado'}
+                <strong>Especialistas en turno {freeConcurrencyInfo.hora_seleccionada}:</strong> {freeConcurrencyInfo.presentes.length > 0 ? freeConcurrencyInfo.presentes.map(p => p.usuario__primer_nombre).join(', ') : 'Ninguno registrado'}
               </p>
               <div style={{ marginTop: '1.5rem' }}>
                  <button type="button" className="button button--primary" onClick={() => void handleReserveFreeMedicalAppointment()} disabled={Boolean(isFreeBookingKey)}>
@@ -453,7 +451,7 @@ export function AdminClientDetailPage() {
                             type="button"
                             onClick={() => void handleMarkPendingBiometric(appointment.rawId)}
                           >
-                            {appointmentActionId === appointment.rawId ? 'Actualizando...' : 'Pendiente biometria'}
+                            {appointmentActionId === appointment.rawId ? 'Actualizando...' : 'Cambiar a pendiente de biometria'}
                           </button>
                         ) : null}
                         {appointment.canConfirmBiometric ? (

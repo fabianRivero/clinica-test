@@ -89,7 +89,7 @@ function blankBiometricData(): ProspectConversionBiometricData {
     template: '',
     quality: 0,
     deviceSerial: '',
-    consentAccepted: false,
+    consentAccepted: true,
     capturedAt: '',
   }
 }
@@ -126,7 +126,12 @@ export function AdminProspectConvertPage() {
         if (cancelled) return
         setData(response)
         setUserForm(response.draft.userData)
-        setOperationForm(response.draft.operationData)
+        const draftOpData = { ...response.draft.operationData }
+        if (!draftOpData.fechaInicio) {
+          draftOpData.fechaInicio = new Date().toLocaleDateString('en-CA')
+        }
+        setOperationForm(draftOpData)
+
         setMedicalForm(response.draft.medicalData)
         setBiometricForm(response.draft.biometricData)
         setMedicalDocumentFile(null)
@@ -141,6 +146,7 @@ export function AdminProspectConvertPage() {
         }
       }
     }
+
 
     void load()
     return () => {
@@ -161,11 +167,6 @@ export function AdminProspectConvertPage() {
     return data.draft.stepMedicalCompleted || activeStep === 4
   }
 
-  const resetFeedback = () => {
-    setSubmitError(null)
-    setFieldErrors({})
-  }
-
   const applyResponse = (response: ProspectConversionResponse) => {
     setData(response)
     setUserForm(response.draft.userData)
@@ -174,10 +175,29 @@ export function AdminProspectConvertPage() {
     setBiometricForm(response.draft.biometricData)
   }
 
+  const resetFeedback = () => {
+    setSubmitError(null)
+    setFieldErrors({})
+  }
+
   const handleUserChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (!userForm) return
     const { name, value } = event.target
-    setUserForm({ ...userForm, [name]: name === 'nroHijos' ? Number(value || 0) : value })
+    const nextForm = { ...userForm, [name]: name === 'nroHijos' ? Number(value || 0) : value }
+
+    if (name === 'ci') {
+      if (!userForm.username || userForm.username === userForm.ci) {
+        nextForm.username = value
+      }
+      if (!password || password === userForm.ci) {
+        setPassword(value)
+      }
+      if (!confirmPassword || confirmPassword === userForm.ci) {
+        setConfirmPassword(value)
+      }
+    }
+
+    setUserForm(nextForm)
     setFieldErrors((current) => ({ ...current, [name]: '' }))
     setSubmitError(null)
   }
@@ -359,14 +379,21 @@ export function AdminProspectConvertPage() {
     }
   }
 
+  const today = new Date().toLocaleDateString('en-CA')
+
   const handleSaveStep2 = async (event: FormEvent) => {
     event.preventDefault()
     if (!operationForm) return
 
+    const finalForm = { 
+      ...operationForm,
+      fechaInicio: today
+    }
+
     resetFeedback()
     setIsSaving(true)
     try {
-      const response = await saveAdminProspectConversionOperationStep(prospectId, operationForm)
+      const response = await saveAdminProspectConversionOperationStep(prospectId, finalForm)
       applyResponse(response)
       setActiveStep(3)
     } catch (requestError) {
@@ -440,10 +467,6 @@ export function AdminProspectConvertPage() {
     resetFeedback()
     if (!biometricForm.template) {
       setFieldErrors({ template: 'Debes capturar la huella biometrica simulada.' })
-      return
-    }
-    if (!biometricForm.consentAccepted) {
-      setFieldErrors({ consentAccepted: 'Debes registrar el consentimiento biometrico del cliente.' })
       return
     }
     if (!medicalDocumentFile) {
@@ -729,7 +752,6 @@ export function AdminProspectConvertPage() {
           <p>Creado {data.prospect.createdAt}</p>
         </article>
       </section>
-
       <div className="stepper">
         {stepLabels.map((item) => (
           <button
@@ -777,7 +799,11 @@ export function AdminProspectConvertPage() {
               <input className="input" name="apellidoMaterno" value={userForm.apellidoMaterno} onChange={handleUserChange} />
             </label>
             <label className="field">
-              <span>Usuario</span>
+              <span>CI</span>
+              <input className="input" name="ci" value={userForm.ci} onChange={handleUserChange} />
+            </label>
+            <label className="field">
+              <span>Nombre de usuario</span>
               <input className="input" name="username" value={userForm.username} onChange={handleUserChange} />
               {fieldErrors.username ? <small className="field__error">{fieldErrors.username}</small> : null}
             </label>
@@ -799,17 +825,9 @@ export function AdminProspectConvertPage() {
               <input className="input" name="telefono" value={userForm.telefono} onChange={handleUserChange} />
             </label>
             <label className="field">
-              <span>CI</span>
-              <input className="input" name="ci" value={userForm.ci} onChange={handleUserChange} />
-            </label>
-            <label className="field">
-              <span>Codigo biometrico</span>
-              <input className="input" name="codBiometrico" value={userForm.codBiometrico} onChange={handleUserChange} />
-              {fieldErrors.codBiometrico ? <small className="field__error">{fieldErrors.codBiometrico}</small> : null}
-            </label>
-            <label className="field">
               <span>Fecha de nacimiento</span>
               <input className="input" name="fechaNacimiento" type="date" value={userForm.fechaNacimiento} onChange={handleUserChange} />
+              {fieldErrors.fechaNacimiento ? <small className="field__error">{fieldErrors.fechaNacimiento}</small> : null}
             </label>
             <label className="field">
               <span>Nro. hijos</span>
@@ -844,7 +862,6 @@ export function AdminProspectConvertPage() {
           </form>
         </SectionCard>
       ) : null}
-
       {activeStep === 2 ? (
         <SectionCard
           eyebrow="Paso 2"
@@ -880,11 +897,7 @@ export function AdminProspectConvertPage() {
               <input className="input" name="precioTotal" value={operationForm.precioTotal} onChange={handleOperationChange} />
               {fieldErrors.precioTotal ? <small className="field__error">{fieldErrors.precioTotal}</small> : null}
             </label>
-            <label className="field">
-              <span>Cuotas totales</span>
-              <input className="input" min="1" name="cuotasTotales" type="number" value={operationForm.cuotasTotales} onChange={handleOperationChange} />
-              {fieldErrors.cuotasTotales ? <small className="field__error">{fieldErrors.cuotasTotales}</small> : null}
-            </label>
+
             <label className="field">
               <span>Sesiones totales</span>
               <input className="input" min="1" name="sesionesTotales" type="number" value={operationForm.sesionesTotales} onChange={handleOperationChange} />
@@ -902,19 +915,32 @@ export function AdminProspectConvertPage() {
               {fieldErrors.estado ? <small className="field__error">{fieldErrors.estado}</small> : null}
             </label>
             <label className="field">
-              <span>Fecha de inicio</span>
-              <input className="input" name="fechaInicio" type="date" value={operationForm.fechaInicio} onChange={handleOperationChange} />
+              <span>Fecha de registro</span>
+              <input 
+                className="input" 
+                name="fechaInicio" 
+                type="date" 
+                value={today} 
+                disabled
+              />
               {fieldErrors.fechaInicio ? <small className="field__error">{fieldErrors.fechaInicio}</small> : null}
             </label>
-            <label className="field">
-              <span>Fecha final</span>
-              <input className="input" name="fechaFinal" type="date" value={operationForm.fechaFinal} onChange={handleOperationChange} />
-              {fieldErrors.fechaFinal ? <small className="field__error">{fieldErrors.fechaFinal}</small> : null}
-            </label>
+
             <label className="field">
               <span>Zona general</span>
               <input className="input" name="zonaGeneral" value={operationForm.zonaGeneral} onChange={handleOperationChange} />
             </label>
+            <label className="field">
+              <span>Zona especifica</span>
+              <input className="input" name="zonaEspecifica" value={operationForm.zonaEspecifica} onChange={handleOperationChange} />
+            </label>
+
+            <label className="field">
+              <span>Cuotas totales</span>
+              <input className="input" min="1" name="cuotasTotales" type="number" value={operationForm.cuotasTotales} onChange={handleOperationChange} />
+              {fieldErrors.cuotasTotales ? <small className="field__error">{fieldErrors.cuotasTotales}</small> : null}
+            </label>
+
             <div className="field field--full">
               <span>Fechas de vencimiento por cuota</span>
               <div className="wizard-list">
@@ -939,10 +965,7 @@ export function AdminProspectConvertPage() {
                 <small className="field__error">{fieldErrors.fechasVencimientoCuotas}</small>
               ) : null}
             </div>
-            <label className="field field--full">
-              <span>Zona especifica</span>
-              <input className="input" name="zonaEspecifica" value={operationForm.zonaEspecifica} onChange={handleOperationChange} />
-            </label>
+
             <label className="field field--full">
               <span>Detalle de la operacion</span>
               <textarea className="input textarea" name="detallesOperacion" rows={4} value={operationForm.detallesOperacion} onChange={handleOperationChange} />
@@ -990,17 +1013,9 @@ export function AdminProspectConvertPage() {
                   <span>Fecha de ficha</span>
                   <input className="input" name="fechaFicha" type="date" value={medicalForm.fechaFicha} onChange={handleMedicalChange} />
                 </label>
-                <label className="field">
-                  <span>Firma paciente CI</span>
-                  <input className="input" name="firmaPacienteCi" value={medicalForm.firmaPacienteCi} onChange={handleMedicalChange} />
-                </label>
                 <label className="field field--full">
                   <span>Motivo de consulta</span>
                   <textarea className="input textarea" name="motivoConsulta" rows={4} value={medicalForm.motivoConsulta} onChange={handleMedicalChange} />
-                </label>
-                <label className="field field--full checkbox-row">
-                  <input checked={medicalForm.consentimientoAceptado} name="consentimientoAceptado" type="checkbox" onChange={handleMedicalChange} />
-                  <span>Consentimiento aceptado</span>
                 </label>
               </div>
             </div>
@@ -1355,22 +1370,6 @@ export function AdminProspectConvertPage() {
               {fieldErrors.quality ? <small className="field__error">{fieldErrors.quality}</small> : null}
             </div>
 
-            <label className="field field--full checkbox-row">
-              <input
-                checked={biometricForm.consentAccepted}
-                type="checkbox"
-                onChange={(event) =>
-                  setBiometricForm({
-                    ...biometricForm,
-                    consentAccepted: event.target.checked,
-                  })
-                }
-              />
-              <span>El cliente acepta registrar su huella para confirmar citas realizadas</span>
-            </label>
-            {fieldErrors.consentAccepted ? (
-              <small className="field__error field--full">{fieldErrors.consentAccepted}</small>
-            ) : null}
 
             <div className="form-actions field--full">
               <button

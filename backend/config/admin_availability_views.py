@@ -122,19 +122,27 @@ def admin_availability(request):
 def admin_create_habitual_schedule(request):
     try:
         data = json.loads(request.body)
+        specialist_ids = data.get("specialistIds", [])
+        if not specialist_ids and data.get("specialistId"):
+            specialist_ids = [data["specialistId"]]
+
+        if not specialist_ids:
+            return _json({"detail": "Debes seleccionar al menos un especialista."}, status=400)
+
         with transaction.atomic():
-            agenda = AgendaHabitualEspecialista.objects.create(
-                especialista_id=data["specialistId"],
-                sucursal_id=data["branchId"],
-                fecha_inicio=data["startDate"],
-                fecha_fin=data.get("endDate"),
-                hora_inicio=data.get("startTime"),
-                hora_fin=data.get("endTime"),
-                detalle=data.get("detail", "")
-            )
-            for d in data.get("weekdayCodes", []):
-                AgendaHabitualDia.objects.create(agenda=agenda, dia_semana=d)
-        return _json({"detail": "Agenda habitual creada exitosamente"})
+            for sp_id in specialist_ids:
+                agenda = AgendaHabitualEspecialista.objects.create(
+                    especialista_id=sp_id,
+                    sucursal_id=data["branchId"],
+                    fecha_inicio=data["startDate"],
+                    fecha_fin=data.get("endDate"),
+                    hora_inicio=data.get("startTime"),
+                    hora_fin=data.get("endTime"),
+                    detalle=data.get("detail", "")
+                )
+                for d in data.get("weekdayCodes", []):
+                    AgendaHabitualDia.objects.create(agenda=agenda, dia_semana=d)
+        return _json({"detail": "Agenda(s) habitual(es) creada(s) exitosamente"})
     except Exception as e:
         return _json({"detail": str(e)}, status=400)
 
@@ -221,13 +229,26 @@ def admin_manage_global_day(request):
 @_admin_required
 def admin_check_concurrency(request):
     try:
+        from datetime import timedelta
         data = json.loads(request.body)
         sucursal_id = data["sucursal_id"]
         fecha = datetime.strptime(data["fecha"], "%Y-%m-%d").date()
         hora_inicio = datetime.strptime(data["hora_inicio"], "%H:%M").time()
-        hora_fin = datetime.strptime(data["hora_fin"], "%H:%M").time()
-        concurrency = get_concurrency(sucursal_id, fecha, hora_inicio, hora_fin)
-        presentes = get_specialists_present(sucursal_id, fecha, hora_inicio, hora_fin)
+        
+        # Calcular ventana de 1 hora antes y 1 hora despues para la concurrencia
+        dt_inicio = datetime.combine(fecha, hora_inicio)
+        dt_ventana_inicio = dt_inicio - timedelta(hours=1)
+        dt_ventana_fin = dt_inicio + timedelta(hours=1)
+        
+        hora_ventana_inicio = dt_ventana_inicio.time()
+        hora_ventana_fin = dt_ventana_fin.time()
+
+        # Concurrencia en la ventana de 2 horas ( -1h a +1h )
+        concurrency = get_concurrency(sucursal_id, fecha, hora_ventana_inicio, hora_ventana_fin)
+        
+        # Especialistas presentes en el momento exacto (hora_inicio)
+        presentes = get_specialists_present(sucursal_id, fecha, hora_inicio, hora_inicio)
+        
         especialistas = []
         for esp in Especialista.objects.filter(id__in=presentes).select_related("usuario"):
             especialistas.append({
@@ -236,7 +257,14 @@ def admin_check_concurrency(request):
                 "usuario__apellido_paterno": esp.usuario.apellido_paterno,
                 "especialidad": ", ".join(esp.especialidades_rel.values_list("especialidad__nombre", flat=True))
             })
-        return _json({"concurrency": concurrency, "presentes": especialistas})
+            
+        return _json({
+            "concurrency": concurrency, 
+            "presentes": especialistas,
+            "hora_inicio": hora_ventana_inicio.strftime("%H:%M"),
+            "hora_fin": hora_ventana_fin.strftime("%H:%M"),
+            "hora_seleccionada": hora_inicio.strftime("%H:%M")
+        })
     except Exception as e:
         return _json({"detail": str(e)}, status=400)
 

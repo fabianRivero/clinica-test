@@ -29,9 +29,13 @@ def check_specialist_presence(especialista_id, sucursal_id, fecha, hora_inicio, 
     )
     
     for exc in blocking_exceptions:
-        # Check for any overlap
-        if max(hora_inicio, exc.hora_inicio) < min(hora_fin, exc.hora_fin):
-            return False # Blocked by an exception that overlaps with the requested block
+        # Check for any overlap. If point-in-time check, see if time falls in range.
+        if hora_inicio == hora_fin:
+            if exc.hora_inicio <= hora_inicio <= exc.hora_fin:
+                return False
+        else:
+            if max(hora_inicio, exc.hora_inicio) < min(hora_fin, exc.hora_fin):
+                return False # Blocked by an exception that overlaps with the requested block
 
     # 2. Check for adding exceptions
     adding_exceptions = AgendaExcepcionEspecialista.objects.filter(
@@ -40,11 +44,11 @@ def check_specialist_presence(especialista_id, sucursal_id, fecha, hora_inicio, 
         fecha=fecha,
         tipo_excepcion=AgendaExcepcionEspecialista.TipoExcepcion.AGREGAR,
         activo=True,
-        hora_inicio__lte=hora_inicio,
-        hora_fin__gte=hora_fin
     )
-    if adding_exceptions.exists():
-        return True # Present due to an adding exception covering the time block
+    
+    for exc in adding_exceptions:
+        if exc.hora_inicio <= hora_inicio and (exc.hora_fin >= hora_fin if hora_inicio != hora_fin else exc.hora_fin >= hora_inicio):
+            return True
 
     # 3. Check regular schedule (AgendaHabitualEspecialista)
     dia_semana_python = fecha.weekday()
@@ -61,10 +65,14 @@ def check_specialist_presence(especialista_id, sucursal_id, fecha, hora_inicio, 
         activo=True,
         dias__dia_semana=dia_semana_django,
         hora_inicio__lte=hora_inicio,
-        hora_fin__gte=hora_fin
-    ).distinct()
+    )
+    
+    if hora_inicio == hora_fin:
+        habitual_agendas = habitual_agendas.filter(hora_fin__gte=hora_inicio)
+    else:
+        habitual_agendas = habitual_agendas.filter(hora_fin__gte=hora_fin)
 
-    return habitual_agendas.exists()
+    return habitual_agendas.distinct().exists()
 
 def get_concurrency(sucursal_id, fecha, hora_inicio, hora_fin):
     """
@@ -105,7 +113,7 @@ def get_specialists_present(sucursal_id, fecha, hora_inicio, hora_fin):
     """
     Returns a list of Specialist IDs present at the branch during the given time block.
     """
-    especialistas = Especialista.objects.filter(activo=True)
+    especialistas = Especialista.objects.filter(usuario__is_active=True)
     presentes = []
     for esp in especialistas:
         if check_specialist_presence(esp.id, sucursal_id, fecha, hora_inicio, hora_fin):
@@ -113,6 +121,70 @@ def get_specialists_present(sucursal_id, fecha, hora_inicio, hora_fin):
     return presentes
 
 
-def mark_expired_programmed_appointments_as_no_show(*args, **kwargs):
-    pass
+def get_available_dates(sucursal_id, start_date, end_date):
+    """
+    Returns a set of dates that have at least one specialist potentially present.
+    This is an optimization to avoid thousands of queries when building a calendar.
+    """
+    available_dates = set()
+    
+    # 1. Dates with 'AGREGAR' exceptions
+    exceptions = AgendaExcepcionEspecialista.objects.filter(
+        sucursal_id=sucursal_id,
+        fecha__gte=start_date,
+        fecha__lte=end_date,
+        tipo_excepcion=AgendaExcepcionEspecialista.TipoExcepcion.AGREGAR,
+        activo=True,
+    ).values_list('fecha', flat=True)
+    available_dates.update(exceptions)
+    
+    # 2. Dates covered by habitual agendas
+    habitual = AgendaHabitualEspecialista.objects.filter(
+        sucursal_id=sucursal_id,
+        fecha_inicio__lte=end_date,
+        fecha_fin__gte=start_date,
+        activo=True,
+    ).prefetch_related('dias')
+    
+    for h in habitual:
+        # Calculate intersection of [start_date, end_date] and [h.fecha_inicio, h.fecha_fin]
+        actual_start = max(start_date, h.fecha_inicio)
+        actual_end = min(end_date, h.fecha_fin)
+        
+        allowed_weekdays = set(h.dias.values_list('dia_semana', flat=True))
+        
+        # Mapping from Django weekday to Python weekday (0=Mon...6=Sun)
+        # Django: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+        # Python: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun
+        django_to_python = {0: 6, 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5}
+        python_allowed = {django_to_python[d] for d in allowed_weekdays}
+        
+        from datetime import timedelta
+        curr = actual_start
+        while curr <= actual_end:
+            if curr.weekday() in python_allowed:
+                available_dates.add(curr)
+            curr += timedelta(days=1)
+            
+    return available_dates
 
+
+def mark_expired_programmed_appointments_as_no_show(*args, **kwargs):
+    """
+    Automatically changes the status of PROGRAMADA appointments to NO_ASISTIO 
+     if they are more than 24 hours old.
+    """
+    from datetime import timedelta
+    cutoff = timezone.now() - timedelta(days=1)
+    
+    # Update CitaProspecto
+    CitaProspecto.objects.filter(
+        estado=CitaProspecto.Estado.PROGRAMADA,
+        fecha_hora__lt=cutoff
+    ).update(estado=CitaProspecto.Estado.NO_ASISTIO)
+    
+    # Update CitaMedica (clients)
+    CitaMedica.objects.filter(
+        estado=CitaMedica.Estado.PROGRAMADA,
+        fecha_hora__lt=cutoff
+    ).update(estado=CitaMedica.Estado.NO_ASISTIO)

@@ -135,9 +135,10 @@ export function getAdminProspects() {
   return requestJson<ProspectsResponse>('/api/admin/prospectos/')
 }
 
-export function getAdminProspectMedicalAvailability(prospectId: number) {
+export function getAdminProspectMedicalAvailability(prospectId: number, branchId?: number) {
+  const query = branchId ? `?branchId=${branchId}` : ''
   return requestJson<AdminProspectMedicalAvailabilityResponse>(
-    `/api/admin/prospectos/${prospectId}/cita-medica/disponibilidad/`,
+    `/api/admin/prospectos/${prospectId}/cita-medica/disponibilidad/${query}`,
   )
 }
 
@@ -153,6 +154,21 @@ export function cancelAdminProspectMedicalAppointment(appointmentId: number) {
     `/api/admin/prospectos/citas-medicas/${appointmentId}/cancelar/`,
     {},
   )
+}
+
+export function updateAdminProspect(prospectId: number, data: { firstName?: string; lastName?: string; phone?: string; observations?: string }) {
+  return requestJsonWithBody<{ detail: string; prospect: any }>(
+    `/api/admin/prospectos/${prospectId}/actualizar/`,
+    data,
+  )
+}
+
+export async function updateAdminProspectAppointmentStatus(appointmentId: number, status: string) {
+  return requestJsonWithBody(`/api/admin/prospectos/citas/${appointmentId}/actualizar/`, { status })
+}
+
+export async function updateAdminAppointmentStatus(appointmentId: number, status: string) {
+  return requestJsonWithBody(`/api/admin/citas/${appointmentId}/actualizar/`, { status })
 }
 
 export function getAdminClientDetail(clientId: string) {

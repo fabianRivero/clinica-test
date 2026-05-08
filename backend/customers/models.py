@@ -128,7 +128,7 @@ class Cliente(TimeStampedModel):
         choices=Estado.choices,
         default=Estado.INACTIVO,
     )
-    cod_biometrico = models.CharField(max_length=255, blank=True, null=True, unique=True)
+
     fecha_nacimiento = models.DateField(null=True, blank=True)
     nro_hijos = models.PositiveIntegerField(default=0)
     direccion_domicilio = models.CharField(max_length=255, blank=True)

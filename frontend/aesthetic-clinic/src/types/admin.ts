@@ -58,14 +58,18 @@ export type ProspectLead = {
   id: string
   rawId?: number
   name: string
+  firstName?: string
+  lastName?: string
   phone: string
   interest: string
   registeredBy: string
-  stage: 'nuevo' | 'seguimiento' | 'propuesta' | 'convertido'
+  stage: string
   state?: string
+  stateValue?: string
+  observations?: string
   createdAt?: string
   convertedAt?: string
-  scheduledMedicalAppointment?: ProspectMedicalAppointment | null
+  medicalAppointments?: ProspectMedicalAppointment[]
 }
 
 export type ProspectMedicalAppointment = {
@@ -76,6 +80,8 @@ export type ProspectMedicalAppointment = {
   specialist: string
   service: string
   status: string
+  statusValue?: string
+  statusTone?: 'approved' | 'danger' | 'observed' | 'pending'
   canCancel: boolean
 }
 
@@ -510,6 +516,9 @@ export type AdminConcurrencyCheckResponse = {
     usuario__apellido_paterno: string
     especialidad: string
   }>
+  hora_inicio?: string
+  hora_fin?: string
+  hora_seleccionada?: string
 }
 
 export type AdminAvailabilityResponse = {
@@ -525,7 +534,8 @@ export type AdminAvailabilityResponse = {
 }
 
 export type UpsertAdminHabitualSchedulePayload = {
-  specialistId: number | null
+  specialistId?: number | null
+  specialistIds?: number[]
   branchId: number | null
   startDate: string
   endDate: string | null

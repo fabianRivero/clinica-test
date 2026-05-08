@@ -140,7 +140,6 @@ def _build_initial_user_data(prospecto):
         "email": "",
         "telefono": prospecto.telefono,
         "ci": "",
-        "codBiometrico": "",
         "fechaNacimiento": "",
         "nroHijos": 0,
         "direccionDomicilio": "",
@@ -176,7 +175,7 @@ def _blank_biometric_data():
         "template": "",
         "quality": 0,
         "deviceSerial": "",
-        "consentAccepted": False,
+        "consentAccepted": True,
         "capturedAt": "",
     }
 
@@ -196,6 +195,7 @@ def _field_response_has_value(field, response):
 def _serialize_draft(draft):
     user_data = dict(draft.datos_usuario or {})
     user_data.pop("passwordHash", None)
+    user_data.pop("codBiometrico", None)
     user_data["hasPassword"] = bool((draft.datos_usuario or {}).get("passwordHash"))
     default_medical_data = _blank_medical_data()
     saved_medical_data = dict(draft.datos_ficha or {})
@@ -418,11 +418,7 @@ def _validate_user_step(payload, draft):
     if not password and not existing_hash:
         errors["password"] = "La contraseña es obligatoria."
 
-    cod_biometrico = (payload.get("codBiometrico") or "").strip()
-    if cod_biometrico and Cliente.objects.filter(cod_biometrico=cod_biometrico).exists():
-        errors["codBiometrico"] = "Ya existe un cliente con este codigo biometrico."
-
-    fecha_nacimiento = _parse_date(payload.get("fechaNacimiento"), "fechaNacimiento", errors, required=False)
+    fecha_nacimiento = _parse_date(payload.get("fechaNacimiento"), "fechaNacimiento", errors, required=True)
     nro_hijos = _parse_positive_int(payload.get("nroHijos"), "nroHijos", errors, required=False, min_value=0)
 
     if errors:
@@ -437,7 +433,6 @@ def _validate_user_step(payload, draft):
         "email": (payload.get("email") or "").strip(),
         "telefono": (payload.get("telefono") or "").strip(),
         "ci": (payload.get("ci") or "").strip(),
-        "codBiometrico": cod_biometrico,
         "fechaNacimiento": fecha_nacimiento.isoformat() if fecha_nacimiento else "",
         "nroHijos": 0 if nro_hijos is None else nro_hijos,
         "direccionDomicilio": (payload.get("direccionDomicilio") or "").strip(),
@@ -740,8 +735,6 @@ def _validate_biometric_step(payload):
         errors["template"] = "Debes capturar una huella antes de continuar."
     if quality is not None and quality < 60:
         errors["quality"] = "La calidad simulada debe ser de al menos 60."
-    if not consent_accepted:
-        errors["consentAccepted"] = "Debes registrar el consentimiento biometrico del cliente."
 
     if errors:
         return None, errors
@@ -967,9 +960,6 @@ def admin_prospect_conversion_finalize(request, prospecto_id):
         return _json({"detail": "El borrador no tiene una contraseña valida para crear la cuenta."}, status=400)
     if Usuario.objects.filter(username=user_data.get("username", "")).exists():
         return _json({"detail": "Ya existe una cuenta con el usuario seleccionado. Actualiza el paso 1 antes de continuar."}, status=400)
-    cod_biometrico = user_data.get("codBiometrico") or None
-    if cod_biometrico and Cliente.objects.filter(cod_biometrico=cod_biometrico).exists():
-        return _json({"detail": "El codigo biometrico indicado ya pertenece a otro cliente. Corrigelo en el paso 1."}, status=400)
 
     user = Usuario.objects.create(
         username=user_data["username"],
@@ -988,7 +978,6 @@ def admin_prospect_conversion_finalize(request, prospecto_id):
     cliente = Cliente.objects.create(
         usuario=user,
         ci=user_data.get("ci", ""),
-        cod_biometrico=cod_biometrico,
         fecha_nacimiento=date.fromisoformat(user_data["fechaNacimiento"]) if user_data.get("fechaNacimiento") else None,
         nro_hijos=int(user_data.get("nroHijos") or 0),
         direccion_domicilio=user_data.get("direccionDomicilio", ""),

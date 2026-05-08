@@ -43,6 +43,9 @@ from config.api_views import (
     admin_update_operation_price_plan,
     admin_update_payment_status,
     admin_update_payment_qr_config,
+    admin_update_prospect,
+    admin_update_prospect_medical_appointment,
+    admin_update_appointment_status,
 )
 from config.prospect_conversion_views import (
     admin_prospect_conversion_cancel,
@@ -58,10 +61,16 @@ from config.prospect_conversion_views import (
 urlpatterns = [
     path("dashboard/", admin_dashboard, name="admin-dashboard-api"),
     path("prospectos/", admin_prospectos, name="admin-prospectos-api"),
+    path("prospectos/<int:prospecto_id>/actualizar/", admin_update_prospect, name="admin-prospectos-update-api"),
     path(
         "prospectos/<int:prospecto_id>/cita-medica/disponibilidad/",
         admin_prospect_medical_availability,
         name="admin-prospect-medical-availability-api",
+    ),
+    path(
+        "prospectos/citas/<int:appointment_id>/actualizar/",
+        admin_update_prospect_medical_appointment,
+        name="admin-prospect-appointment-update-api",
     ),
     path(
         "prospectos/<int:prospecto_id>/cita-medica/reservar/",
@@ -152,6 +161,11 @@ urlpatterns = [
         "citas/<int:appointment_id>/pendiente-biometria/",
         admin_mark_appointment_pending_biometric,
         name="admin-appointment-pending-biometric-api",
+    ),
+    path(
+        "citas/<int:appointment_id>/actualizar/",
+        admin_update_appointment_status,
+        name="admin-appointment-status-update-api",
     ),
     path(
         "citas/<int:appointment_id>/confirmar-biometria/",

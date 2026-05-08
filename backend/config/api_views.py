@@ -1,6 +1,6 @@
 import json
 from pathlib import PurePosixPath
-from datetime import date, timedelta
+from datetime import date, timedelta, time
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
 
@@ -334,18 +334,23 @@ def _prospect_item(prospecto):
         ),
         None,
     )
+    citas = prospecto.citas_medicas.order_by("-fecha_hora").all()
     return {
         "id": f"PRO-{prospecto.pk:04d}",
         "rawId": prospecto.pk,
         "name": str(prospecto),
+        "firstName": prospecto.nombres,
+        "lastName": prospecto.apellidos,
         "phone": prospecto.telefono or "Sin telefono",
         "interest": _prospect_interest(prospecto),
         "registeredBy": _full_name(prospecto.registrado_por),
         "stage": _prospect_stage(prospecto),
         "state": prospecto.get_estado_display(),
+        "stateValue": prospecto.estado,
+        "observations": prospecto.observaciones,
         "createdAt": _datetime_label(prospecto.created_at),
         "convertedAt": _datetime_label(prospecto.fecha_conversion) if prospecto.fecha_conversion else "-",
-        "scheduledMedicalAppointment": _prospect_appointment_item(active_appointment) if active_appointment else None,
+        "medicalAppointments": [_prospect_appointment_item(c) for c in citas],
     }
 
 
@@ -360,6 +365,12 @@ def _prospect_appointment_item(appointment):
         "specialist": "Sin asignar",
         "service": appointment.servicio_config.tipo_servicio.tipo,
         "status": appointment.get_estado_display(),
+        "statusValue": appointment.estado,
+        "statusTone": (
+            "approved" if appointment.estado == CitaProspecto.Estado.PROGRAMADA
+            else "danger" if appointment.estado == CitaProspecto.Estado.CANCELADA
+            else "observed"
+        ),
         "canCancel": appointment.estado == CitaProspecto.Estado.PROGRAMADA and appointment.fecha_hora > timezone.now(),
     }
 
@@ -406,83 +417,36 @@ def _medical_appointment_service_config():
     return preferred or queryset.order_by("tipo_servicio__orden", "tipo_servicio__tipo", "pk").first()
 
 
-def _build_prospect_medical_slot_map(service_config):
+def _build_prospect_medical_slot_map(service_config, branch_id=1):
+    from operations.scheduling import get_available_dates
+    
     today = timezone.localdate()
     window_start = today
     window_end = today + timedelta(days=34)
-    slots_qs = (
-        DisponibilidadCita.objects.select_related("especialista__usuario", "horario_base")
-        .prefetch_related(
-            Prefetch(
-                "citas_origen",
-                queryset=CitaMedica.objects.only("id", "estado", "disponibilidad_id"),
-            ),
-            Prefetch(
-                "citas_prospectos_origen",
-                queryset=CitaProspecto.objects.only("id", "estado", "disponibilidad_id"),
-            ),
-            Prefetch(
-                "citas_clientes_libres_origen",
-                queryset=CitaClienteLibre.objects.only("id", "estado", "disponibilidad_id"),
-            ),
-        )
-        .filter(
-            activo=True,
-            especialista__usuario__is_active=True,
-            tipos_servicio=service_config.tipo_servicio,
-            fecha_hora__date__gte=window_start,
-            fecha_hora__date__lte=window_end,
-            fecha_hora__gt=timezone.now(),
-        )
-        .distinct()
-        .order_by("fecha_hora", "especialista__usuario__primer_nombre", "especialista__usuario__apellido_paterno")
-    )
-
-    slots_by_date = {}
+    
+    available_dates_set = get_available_dates(branch_id, window_start, window_end)
     available_dates = []
-    for slot in slots_qs:
-        if any(cita.estado in BLOCKING_RESERVATION_STATES for cita in slot.citas_origen.all()) or any(
-            cita.estado == CitaProspecto.Estado.PROGRAMADA
-            for cita in slot.citas_prospectos_origen.all()
-        ) or any(
-            cita.estado == CitaClienteLibre.Estado.PROGRAMADA
-            for cita in slot.citas_clientes_libres_origen.all()
-        ):
-            continue
-        local_dt = timezone.localtime(slot.fecha_hora)
-        date_key = local_dt.date().isoformat()
-        slots_by_date.setdefault(date_key, []).append(
-            {
-                "slotId": slot.pk,
-                "specialistId": slot.especialista_id,
-                "specialist": _full_name(slot.especialista.usuario),
-                "date": date_key,
-                "time": local_dt.strftime("%H:%M"),
-                "timeRange": slot.rango_horario,
-                "dateTimeLabel": _datetime_label(slot.fecha_hora),
-                "isCurrentSelection": False,
-            }
-        )
-
-    for date_key, day_slots in sorted(slots_by_date.items()):
-        day_slots.sort(key=lambda item: (item["time"], item["specialist"]))
-        day_date = date.fromisoformat(date_key)
-        available_dates.append(
-            {
-                "date": date_key,
-                "label": day_date.strftime("%d/%m"),
-                "slotCount": len(day_slots),
-                "weekday": day_date.strftime("%A").capitalize(),
-            }
-        )
+    
+    # Format the response
+    for i in range(35):
+        current_date = window_start + timedelta(days=i)
+        if current_date in available_dates_set:
+            available_dates.append(
+                {
+                    "date": current_date.isoformat(),
+                    "label": current_date.strftime("%d/%m"),
+                    "slotCount": 1, # Indication that it is available
+                    "weekday": current_date.strftime("%A").capitalize(),
+                }
+            )
 
     return {
         "windowStart": window_start.isoformat(),
         "windowEnd": window_end.isoformat(),
         "monthLabel": window_start.strftime("%B %Y").capitalize(),
         "availableDates": available_dates,
-        "slotsByDate": slots_by_date,
-        "slotCount": sum(item["slotCount"] for item in available_dates),
+        "slotsByDate": {},
+        "slotCount": len(available_dates),
     }
 
 
@@ -1858,6 +1822,15 @@ def admin_prospect_medical_availability(request, prospecto_id):
             status=400,
         )
 
+    branch_id = request.GET.get("branchId")
+    if branch_id:
+        try:
+            branch_id = int(branch_id)
+        except ValueError:
+            branch_id = 1
+    else:
+        branch_id = 1
+
     return _json(
         {
             "prospect": _prospect_item(prospecto),
@@ -1865,6 +1838,7 @@ def admin_prospect_medical_availability(request, prospecto_id):
                 "rawId": service_config.pk,
                 "name": service_config.tipo_servicio.tipo,
             },
+            "calendar": _build_prospect_medical_slot_map(service_config, branch_id=branch_id),
         }
     )
 
@@ -1905,6 +1879,8 @@ def admin_create_prospect_medical_appointment(request, prospecto_id):
     try:
         from django.utils import dateparse
         fecha_hora = dateparse.parse_datetime(fecha_hora_str)
+        if timezone.is_naive(fecha_hora):
+            fecha_hora = timezone.make_aware(fecha_hora)
         if not fecha_hora:
             raise ValueError
     except Exception:
@@ -1918,13 +1894,57 @@ def admin_create_prospect_medical_appointment(request, prospecto_id):
         estado=CitaProspecto.Estado.PROGRAMADA,
         detalles_cita="Cita medica agendada libremente por administracion.",
     )
-
     return _json(
         {
             "detail": "La cita medica fue agendada correctamente para el prospecto.",
             "appointment": _prospect_appointment_item(appointment),
         },
         status=201,
+    )
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_update_prospect(request, prospecto_id):
+    prospecto = Prospecto.objects.select_for_update().filter(pk=prospecto_id).first()
+    if not prospecto:
+        return _json({"detail": "No encontramos el prospecto solicitado."}, status=404)
+
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "Datos invalidos."}, status=400)
+
+    if "firstName" in payload:
+        prospecto.nombres = payload["firstName"]
+    if "lastName" in payload:
+        prospecto.apellidos = payload["lastName"]
+    if "phone" in payload:
+        prospecto.telefono = payload["phone"]
+    if "observations" in payload:
+        prospecto.observaciones = payload["observations"]
+
+    prospecto.save()
+
+    # Manejar actualizaciones de estados de citas si vienen en el payload
+    appointment_statuses = payload.get("appointmentStatuses", {})
+    if appointment_statuses:
+        # appointment_statuses es un dict { "id": "NUEVO_ESTADO" }
+        for app_id_str, new_status in appointment_statuses.items():
+            try:
+                app_id = int(app_id_str)
+                appointment = CitaProspecto.objects.filter(pk=app_id, prospecto=prospecto).first()
+                if appointment and new_status in CitaProspecto.Estado.values:
+                    appointment.estado = new_status
+                    appointment.save()
+            except (ValueError, TypeError):
+                continue
+
+    return _json(
+        {
+            "detail": "Datos del prospecto y estados de citas actualizados correctamente.",
+            "prospect": _prospect_item(prospecto),
+        }
     )
 
 
@@ -1951,6 +1971,38 @@ def admin_cancel_prospect_medical_appointment(request, appointment_id):
         {
             "detail": "La cita medica del prospecto fue cancelada correctamente.",
             "appointment": _prospect_appointment_item(appointment),
+        }
+    )
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_update_prospect_medical_appointment(request, appointment_id):
+    appointment = (
+        CitaProspecto.objects.select_for_update(of=("self",))
+        .select_related("prospecto")
+        .filter(pk=appointment_id)
+        .first()
+    )
+    if not appointment:
+        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+
+    payload = _load_payload(request)
+    if not payload or "status" not in payload:
+        return _json({"detail": "Datos insuficientes."}, status=400)
+
+    new_status = payload["status"]
+    if new_status not in CitaProspecto.Estado.values:
+        return _json({"detail": "Estado de cita invalido."}, status=400)
+
+    appointment.estado = new_status
+    appointment.save()
+
+    return _json(
+        {
+            "detail": "Cita medica actualizada correctamente.",
+            "prospect": _prospect_item(appointment.prospecto),
         }
     )
 
@@ -2044,6 +2096,8 @@ def admin_cliente_create_free_medical_appointment(request, client_id):
     try:
         from django.utils import dateparse
         fecha_hora = dateparse.parse_datetime(fecha_hora_str)
+        if fecha_hora and timezone.is_naive(fecha_hora):
+            fecha_hora = timezone.make_aware(fecha_hora)
         if not fecha_hora:
             raise ValueError
     except Exception:
@@ -2109,6 +2163,8 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
     try:
         from django.utils import dateparse
         fecha_hora = dateparse.parse_datetime(fecha_hora_str)
+        if fecha_hora and timezone.is_naive(fecha_hora):
+            fecha_hora = timezone.make_aware(fecha_hora)
         if not fecha_hora:
             raise ValueError
     except Exception:
@@ -2258,6 +2314,40 @@ def admin_mark_appointment_pending_biometric(request, appointment_id):
             "operation": _operation_detail(appointment.operacion),
         }
     )
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_update_appointment_status(request, appointment_id):
+    appointment = CitaMedica.objects.filter(pk=appointment_id).first()
+    if not appointment:
+        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+
+    payload = _load_payload(request)
+    nuevo_estado = payload.get("status")
+    if nuevo_estado not in [choice[0] for choice in CitaMedica.Estado.choices]:
+        return _json({"detail": "El estado proporcionado no es valido."}, status=400)
+
+    appointment.estado = nuevo_estado
+    # Si se marca como PROGRAMADA, nos aseguramos que verif_biometria sea False
+    if appointment.estado == CitaMedica.Estado.PROGRAMADA:
+        appointment.verif_biometria = False
+    # Si se marca como CONFIRMADA, verif_biometria deberia ser True
+    elif appointment.estado == CitaMedica.Estado.CONFIRMADA:
+        appointment.verif_biometria = True
+
+    appointment.save(update_fields=["estado", "verif_biometria", "updated_at"])
+
+    return _json(
+        {
+            "detail": f"El estado de la cita fue actualizado a {appointment.get_estado_display()}.",
+            "appointment_id": appointment.id,
+            "new_status": appointment.estado,
+        }
+    )
+
+
 
 
 @require_POST
