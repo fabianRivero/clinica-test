@@ -14,7 +14,6 @@ import {
   getAdminProspectMedicalAvailability,
   getAdminProspects,
   updateAdminProspect,
-  updateAdminProspectAppointmentStatus,
 } from '../../services/api/admin'
 import type {
   AdminProspectMedicalAvailabilityResponse,
@@ -33,23 +32,6 @@ export function AdminProspectsPage() {
   const location = useLocation()
   const { showNotification } = useNotifications()
 
-  async function handleUpdateAppointmentStatus(appointmentId: number, status: string) {
-    try {
-      await updateAdminProspectAppointmentStatus(appointmentId, status)
-      showNotification({
-        title: 'Cita actualizada',
-        message: 'El estado de la cita ha sido modificado.',
-        tone: 'success',
-      })
-      await reload()
-    } catch (err) {
-      showNotification({
-        title: 'Error',
-        message: err instanceof Error ? err.message : 'No se pudo actualizar la cita',
-        tone: 'danger',
-      })
-    }
-  }
 
   const { data, isLoading, error, reload } = useApiResource(getAdminProspects)
   const { activeBranch } = useBranchContext()
