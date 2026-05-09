@@ -33,10 +33,21 @@ export type VerificationPayment = {
   bank: string
   status: 'pendiente' | 'observado' | 'aprobado'
   quota?: string
-  dueDate?: string
-  verifier?: string
-  receiptUrl?: string
   note?: string
+}
+
+export type UpcomingPayment = {
+  id: number
+  dueDate: string
+  dueDateLabel: string
+  amount: string
+  client: string
+  clientId: number
+  operation: string
+  operationId: number
+  quotaNumber: number
+  isToday: boolean
+  isThisWeek: boolean
 }
 
 export type PaymentQrConfig = {
@@ -48,10 +59,14 @@ export type PaymentQrConfig = {
 export type AgendaItem = {
   id: string
   time: string
+  dateLabel: string
   patient: string
   procedure: string
+  operationId: number
   specialist: string
   status: 'programada' | 'biometria' | 'confirmada'
+  isToday: boolean
+  isThisWeek: boolean
 }
 
 export type ProspectLead = {
@@ -204,8 +219,13 @@ export type CancelAdminProspectMedicalAppointmentResponse = {
 }
 
 export type DashboardResponse = {
+  payments_month: number
+  payments_year: number
+  agenda_month: number
+  agenda_year: number
   metrics: AdminMetric[]
   payments: VerificationPayment[]
+  upcomingPayments: UpcomingPayment[]
   agenda: AgendaItem[]
   prospects: ProspectLead[]
   alerts: AdminAlert[]

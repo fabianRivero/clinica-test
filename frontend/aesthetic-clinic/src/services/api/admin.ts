@@ -127,8 +127,9 @@ async function requestFormDataWithBody<T>(path: string, body: FormData): Promise
   return responseBody as T
 }
 
-export function getAdminDashboard() {
-  return requestJson<DashboardResponse>('/api/admin/dashboard/')
+export function getAdminDashboard(params?: { p_month: number; p_year: number; a_month: number; a_year: number }) {
+  const query = params ? `?p_month=${params.p_month}&p_year=${params.p_year}&a_month=${params.a_month}&a_year=${params.a_year}` : ''
+  return requestJson<DashboardResponse>(`/api/admin/dashboard/${query}`)
 }
 
 export function getAdminProspects() {

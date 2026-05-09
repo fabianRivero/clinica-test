@@ -734,6 +734,36 @@ class Command(BaseCommand):
         # Forzar actualizacion de estado
         cliente_demo.actualizar_estado_automaticamente()
 
+        # 3. Tratamiento NUEVO (Pendiente para hoy para probar Dashboard)
+        op_hoy = Operacion.objects.create(
+            paciente=cliente_demo,
+            servicio_config=ServicioConfig.objects.filter(proc_estetico__proceso="Depilacion definitiva").first(),
+            precio_total=Decimal("200.00"),
+            cuotas_totales=1,
+            sesiones_totales=1,
+            fecha_inicio=timezone.now().date(),
+            estado=Operacion.Estado.EN_PROCESO,
+            detalles_op="Nueva consulta de seguimiento"
+        )
+
+        CuotaPlanPago.objects.create(
+            operacion=op_hoy,
+            nro_cuota=1,
+            fecha_vencimiento=timezone.now().date(),
+            monto_programado=Decimal("200.00"),
+            estado=CuotaPlanPago.Estado.PENDIENTE
+        )
+
+        # Cita para hoy
+        CitaMedica.objects.create(
+            operacion=op_hoy,
+            sucursal=branches["A"],
+            fecha_hora=timezone.now().replace(hour=10, minute=0, second=0, microsecond=0),
+            estado=CitaMedica.Estado.PROGRAMADA
+        )
+
+        cliente_demo.actualizar_estado_automaticamente()
+
     def _seed_schedules(self, specialists):
         from datetime import time
         start_time = time(8, 0)

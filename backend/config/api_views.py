@@ -1588,27 +1588,52 @@ def _dashboard_alerts():
 def admin_dashboard(request):
     mark_expired_programmed_appointments_as_no_show()
     today = timezone.localdate()
+    now = timezone.now()
+
+    # Parametros de pagos
+    try:
+        p_month = int(request.GET.get("p_month", today.month))
+        p_year = int(request.GET.get("p_year", today.year))
+    except (TypeError, ValueError):
+        p_month = today.month
+        p_year = today.year
+
+    # Parametros de agenda
+    try:
+        a_month = int(request.GET.get("a_month", today.month))
+        a_year = int(request.GET.get("a_year", today.year))
+    except (TypeError, ValueError):
+        a_month = today.month
+        a_year = today.year
+
+    # Calculo de rangos
+    start_p = date(p_year, p_month, 1)
+    if p_month == 12:
+        end_p = date(p_year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end_p = date(p_year, p_month + 1, 1) - timedelta(days=1)
+
+    start_a = date(a_year, a_month, 1)
+    if a_month == 12:
+        end_a = date(a_year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end_a = date(a_year, a_month + 1, 1) - timedelta(days=1)
+
+    # Filtro futuro solo si es el mes actual real
+    pay_range_start = start_p
+    age_range_start = start_a
+
+    if p_month == today.month and p_year == today.year:
+        pay_range_start = today
+    if a_month == today.month and a_year == today.year:
+        age_range_start = today
+
     pending_payments_qs = (
         PagoRealizado.objects.select_related(
             "cuota__operacion__paciente__usuario",
             "cuota__operacion__servicio_config__proc_estetico",
         ).order_by("-created_at")
     )
-    agenda_qs = (
-        CitaMedica.objects.select_related(
-            "operacion__paciente__usuario",
-            "operacion__servicio_config__proc_estetico",
-        )
-        .filter(fecha_hora__date__gte=today)
-        .order_by("fecha_hora")
-    )
-    if not agenda_qs.exists():
-        agenda_qs = (
-            CitaMedica.objects.select_related(
-                "operacion__paciente__usuario",
-                "operacion__servicio_config__proc_estetico",
-            ).order_by("-fecha_hora")
-        )
 
     operations_qs = (
         Operacion.objects.select_related(
@@ -1658,12 +1683,74 @@ def admin_dashboard(request):
         estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
     ).count()
 
+    # Pagos proximos (cuotas del rango seleccionado)
+    upcoming_quotas = CuotaPlanPago.objects.select_related(
+        "operacion__paciente__usuario",
+        "operacion__servicio_config__proc_estetico"
+    ).filter(
+        fecha_vencimiento__range=(pay_range_start, end_p),
+        estado__in=[CuotaPlanPago.Estado.PENDIENTE, CuotaPlanPago.Estado.VENCIDA]
+    ).order_by("fecha_vencimiento")
+
+    start_of_week = today - timedelta(days=today.weekday())
+    end_of_week = start_of_week + timedelta(days=6)
+
+    upcoming_payments = []
+    for q in upcoming_quotas:
+        upcoming_payments.append({
+            "id": q.pk,
+            "dueDate": q.fecha_vencimiento.isoformat(),
+            "dueDateLabel": _date_label(q.fecha_vencimiento),
+            "amount": _currency(_quota_programmed_amount(q)),
+            "client": _full_name(q.operacion.paciente.usuario),
+            "clientId": q.operacion.paciente_id,
+            "operation": _procedure_name(q.operacion),
+            "operationId": q.operacion_id,
+            "quotaNumber": q.nro_cuota,
+            "isToday": q.fecha_vencimiento == today,
+            "isThisWeek": start_of_week <= q.fecha_vencimiento <= end_of_week,
+        })
+
+    # Agenda del mes (solo PROGRAMADA y desde el rango seleccionado)
+    agenda_qs_month = (
+        CitaMedica.objects.select_related(
+            "operacion__paciente__usuario",
+            "operacion__servicio_config__proc_estetico"
+        )
+        .filter(
+            fecha_hora__date__range=(age_range_start, end_a),
+            estado=CitaMedica.Estado.PROGRAMADA
+        )
+        .order_by("fecha_hora")
+    )
+
+    agenda_data = []
+    for cita in agenda_qs_month:
+        cita_local = timezone.localtime(cita.fecha_hora)
+        agenda_data.append({
+            "id": cita.pk,
+            "time": cita_local.strftime("%H:%M"),
+            "dateLabel": cita_local.strftime("%d/%m/%Y"),
+            "patient": _full_name(cita.operacion.paciente.usuario),
+            "clientId": cita.operacion.paciente_id,
+            "procedure": _procedure_name(cita.operacion),
+            "operationId": cita.operacion_id,
+            "specialist": "Asignado",
+            "status": _agenda_status(cita),
+            "isToday": cita.fecha_hora.date() == today,
+            "isThisWeek": start_of_week <= cita.fecha_hora.date() <= end_of_week,
+        })
+
     data = {
+        "payments_month": p_month,
+        "payments_year": p_year,
+        "agenda_month": a_month,
+        "agenda_year": a_year,
         "metrics": [
             _metric(
                 "payments",
                 "Pagos por verificar",
-                pending_payments.count(),
+                pending_payments_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE).count(),
                 f"{payments_today} subidos hoy",
                 "warning",
             ),
@@ -1690,46 +1777,11 @@ def admin_dashboard(request):
             ),
         ],
         "payments": [_payment_item(payment) for payment in pending_payments_qs[:5]],
-        "agenda": [
-            {
-                "id": f"CIT-{cita.pk:04d}",
-                "time": timezone.localtime(cita.fecha_hora).strftime("%H:%M"),
-                "patient": _full_name(cita.operacion.paciente.usuario),
-                "procedure": _procedure_name(cita.operacion),
-                "specialist": "Sin asignar",
-                "status": _agenda_status(cita),
-            }
-            for cita in agenda_qs[:4]
-        ],
+        "upcomingPayments": upcoming_payments,
+        "agenda": agenda_data,
         "prospects": [_prospect_item(prospecto) for prospecto in prospectos_qs[:4]],
         "alerts": _dashboard_alerts(),
         "operations": [_operation_card(operacion) for operacion in operations_qs[:4]],
-        "catalogHealth": [
-            _catalog_item(
-                "procedures",
-                "Procedimientos esteticos",
-                ProcEstetico.objects.filter(activo=True).count(),
-                f"{ServicioConfig.objects.filter(activo=True).count()} servicio(s) activos configurados",
-            ),
-            _catalog_item(
-                "fields",
-                "Campos clinicos",
-                FichaCampo.objects.filter(activo=True).count(),
-                f"{GrupoOpciones.objects.filter(activo=True).count()} grupo(s) de opciones disponibles",
-            ),
-            _catalog_item(
-                "specialties",
-                "Especialidades",
-                Especialidad.objects.filter(activo=True).count(),
-                f"{staff_qs.count()} especialista(s) con carga operativa",
-            ),
-            _catalog_item(
-                "skin",
-                "Patologias cutaneas",
-                PatologiaCutanea.objects.filter(activo=True).count(),
-                f"{OpcionCatalogo.objects.filter(activo=True).count()} opciones catalogadas en total",
-            ),
-        ],
         "staffCapacity": [_staff_item(especialista) for especialista in staff_qs[:4]],
     }
     return _json(data)
