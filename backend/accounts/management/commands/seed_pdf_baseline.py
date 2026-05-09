@@ -29,7 +29,10 @@ from operations.models import (
     DiaBloqueadoAgendaGlobal,
     FichaCampo,
     FichaSeccion,
+    Operacion,
+    CitaMedica,
 )
+from billing.models import CuotaPlanPago, PagoRealizado
 from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
 
 
@@ -641,8 +644,8 @@ class Command(BaseCommand):
             )
 
     def _seed_formal_patients(self, client_role, branches):
-        # Crear usuario para paciente demo
-        user, created = Usuario.objects.update_or_create(
+        # Paciente INACTIVO (Demo con historial completo)
+        user_demo, _ = Usuario.objects.update_or_create(
             username="paciente.demo",
             defaults={
                 "primer_nombre": "Paciente",
@@ -653,31 +656,83 @@ class Command(BaseCommand):
                 "is_active": True,
             },
         )
-        user.set_password("paciente123456")
-        user.save()
+        user_demo.set_password("paciente123456")
+        user_demo.save()
 
-        # Crear registro de cliente
-        cliente, _ = Cliente.objects.update_or_create(
-            usuario=user,
+        cliente_demo, _ = Cliente.objects.update_or_create(
+            usuario=user_demo,
             defaults={
                 "telefono": "78888888",
                 "ci": "12345678",
                 "direccion_domicilio": "Zona Central, Edif. Demo",
+                "estado_cliente": Cliente.Estado.INACTIVO,
             }
         )
 
-        # Crear prospecto de origen para que el historial este completo
+        # Crear prospecto de origen
         Prospecto.objects.get_or_create(
             nombres="Paciente",
             apellidos="Demo",
-            convertido_a_cliente=cliente,
+            convertido_a_cliente=cliente_demo,
             defaults={
                 "telefono": "78888888",
                 "sucursal_registro": branches["A"],
                 "estado": Prospecto.Estado.CONVERTIDO,
-                "fecha_conversion": timezone.now(),
+                "fecha_conversion": timezone.now() - timezone.timedelta(days=40),
             }
         )
+
+        # Simular historial pasado para que sea Inactivo legalmente
+        fecha_pasada = timezone.now() - timezone.timedelta(days=30)
+        
+        # Operacion finalizada
+        op = Operacion.objects.create(
+            paciente=cliente_demo,
+            servicio_config=ServicioConfig.objects.filter(proc_estetico__proceso="Depilacion definitiva").first(),
+            precio_total=Decimal("850.00"),
+            cuotas_totales=1,
+            sesiones_totales=1,
+            fecha_inicio=fecha_pasada.date(),
+            fecha_final=fecha_pasada.date(),
+            estado=Operacion.Estado.FINALIZADA,
+            detalles_op="Tratamiento demo completado"
+        )
+
+        # Cita realizada y confirmada
+        CitaMedica.objects.create(
+            operacion=op,
+            sucursal=branches["A"],
+            fecha_hora=fecha_pasada,
+            estado=CitaMedica.Estado.CONFIRMADA,
+            verif_biometria=True,
+            fecha_confirmacion_biometrica=fecha_pasada,
+            detalles_cita="Sesion completada satisfactoriamente"
+        )
+
+        # Pago de cuota realizado
+        cuota = CuotaPlanPago.objects.create(
+            operacion=op,
+            nro_cuota=1,
+            fecha_vencimiento=fecha_pasada.date(),
+            monto_programado=Decimal("850.00"),
+            estado=CuotaPlanPago.Estado.PAGADO
+        )
+
+        # Registro de pago aprobado
+        admin_user = Usuario.objects.filter(is_superuser=True).first()
+        PagoRealizado.objects.create(
+            cuota=cuota,
+            monto_pagado=Decimal("850.00"),
+            comprobante_url="seed_comprobante.pdf",
+            estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
+            verificado=True,
+            verificado_por=admin_user,
+            fecha_verificacion=fecha_pasada,
+            detalles_pago="Pago total en efectivo"
+        )
+
+        # Forzar actualizacion de estado
+        cliente_demo.actualizar_estado_automaticamente()
 
     def _seed_schedules(self, specialists):
         from datetime import time

@@ -1,0 +1,39 @@
+CREDENCIALES DE ACCESO AL SISTEMA (ENTORNO DE DESARROLLO / PDF BASELINE)
+
+================================================================================
+ADMINISTRADORES
+================================================================================
+Admin General (Sucursal Norte):
+- Usuario: admin.general
+- Password: admin123456
+
+Admin Sucursal (Sucursal Sur):
+- Usuario: admin.sucursal
+- Password: admin123456
+
+================================================================================
+ESPECIALISTAS
+================================================================================
+Lucia Laser (Depilacion Laser - Sucursal Norte):
+- Usuario: lucia.laser
+- Password: laser123456
+
+Diego Tatuajes (Borrado Tatuajes - Sucursal Norte):
+- Usuario: diego.tatuajes
+- Password: tatuajes123456
+
+Sofia Manchas (Tratamiento Manchas - Sucursal Sur):
+- Usuario: sofia.manchas
+- Password: manchas123456
+
+Rafael Consulta (Consulta Medica - Sucursal Sur):
+- Usuario: rafael.consulta
+- Password: consulta123456
+
+================================================================================
+CLIENTES / PACIENTES
+================================================================================
+Paciente INACTIVO (Demo):
+- Usuario: paciente.demo
+- Password: paciente123456
+- Estado: INACTIVO (Tiene historial de tratamiento terminado y pagado)
