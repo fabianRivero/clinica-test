@@ -130,6 +130,15 @@ def _parse_bool(value):
     return bool(value)
 
 
+def _cap(text):
+    if not text:
+        return ""
+    raw = str(text).strip()
+    if not raw:
+        return ""
+    return raw[0].upper() + raw[1:]
+
+
 def _build_initial_user_data(prospecto):
     return {
         "primerNombre": prospecto.nombres,
@@ -414,6 +423,10 @@ def _validate_user_step(payload, draft):
     elif Usuario.objects.filter(username=username).exists():
         errors["username"] = "Ya existe una cuenta con este nombre de usuario."
 
+    ci = (payload.get("ci") or "").strip()
+    if ci and Cliente.objects.filter(ci=ci).exists():
+        errors["ci"] = "Ya existe un cliente registrado con esta Cedula de Identidad."
+
     existing_hash = (draft.datos_usuario or {}).get("passwordHash")
     if not password and not existing_hash:
         errors["password"] = "La contraseña es obligatoria."
@@ -425,19 +438,19 @@ def _validate_user_step(payload, draft):
         return None, errors
 
     return {
-        "primerNombre": primer_nombre,
-        "segundoNombre": (payload.get("segundoNombre") or "").strip(),
-        "apellidoPaterno": apellido_paterno,
-        "apellidoMaterno": (payload.get("apellidoMaterno") or "").strip(),
+        "primerNombre": _cap(primer_nombre),
+        "segundoNombre": _cap(payload.get("segundoNombre")),
+        "apellidoPaterno": _cap(apellido_paterno),
+        "apellidoMaterno": _cap(payload.get("apellidoMaterno")),
         "username": username,
         "email": (payload.get("email") or "").strip(),
         "telefono": (payload.get("telefono") or "").strip(),
         "ci": (payload.get("ci") or "").strip(),
         "fechaNacimiento": fecha_nacimiento.isoformat() if fecha_nacimiento else "",
         "nroHijos": 0 if nro_hijos is None else nro_hijos,
-        "direccionDomicilio": (payload.get("direccionDomicilio") or "").strip(),
-        "ocupacion": (payload.get("ocupacion") or "").strip(),
-        "observacionesCliente": (payload.get("observacionesCliente") or "").strip(),
+        "direccionDomicilio": _cap(payload.get("direccionDomicilio")),
+        "ocupacion": _cap(payload.get("ocupacion")),
+        "observacionesCliente": _cap(payload.get("observacionesCliente")),
         "passwordHash": make_password(password) if password else existing_hash,
     }, None
 
@@ -450,6 +463,7 @@ def _validate_operation_step(payload):
     cuotas_totales = _parse_positive_int(payload.get("cuotasTotales"), "cuotasTotales", errors, min_value=1)
     sesiones_totales = _parse_positive_int(payload.get("sesionesTotales"), "sesionesTotales", errors, min_value=1)
     fecha_inicio = _parse_date(payload.get("fechaInicio"), "fechaInicio", errors, required=True)
+    today = timezone.localdate()
     fecha_final = _parse_date(payload.get("fechaFinal"), "fechaFinal", errors, required=False)
     estado = (payload.get("estado") or Operacion.Estado.EN_PROCESO).strip()
     if estado not in {choice[0] for choice in Operacion.Estado.choices}:
@@ -487,6 +501,10 @@ def _validate_operation_step(payload):
             )
             if not parsed_due_date:
                 continue
+            if parsed_due_date < today:
+                errors[f"fechasVencimientoCuotas.{index}"] = (
+                    "La fecha de vencimiento debe ser hoy o en el futuro."
+                )
             if parsed_due_date in seen_due_dates:
                 errors[f"fechasVencimientoCuotas.{index}"] = (
                     "Las fechas de vencimiento no pueden repetirse."
@@ -501,16 +519,16 @@ def _validate_operation_step(payload):
     return (
         {
             "serviceConfigId": service_config_id,
-            "zonaGeneral": (payload.get("zonaGeneral") or "").strip(),
-            "zonaEspecifica": (payload.get("zonaEspecifica") or "").strip(),
+            "zonaGeneral": _cap(payload.get("zonaGeneral")),
+            "zonaEspecifica": _cap(payload.get("zonaEspecifica")),
             "precioTotal": f"{precio_total:.2f}",
             "cuotasTotales": cuotas_totales,
             "sesionesTotales": sesiones_totales,
             "fechaInicio": fecha_inicio.isoformat() if fecha_inicio else "",
             "fechaFinal": fecha_final.isoformat() if fecha_final else "",
             "estado": estado,
-            "detallesOperacion": (payload.get("detallesOperacion") or "").strip(),
-            "recomendaciones": (payload.get("recomendaciones") or "").strip(),
+            "detallesOperacion": _cap(payload.get("detallesOperacion")),
+            "recomendaciones": _cap(payload.get("recomendaciones")),
             "fechasVencimientoCuotas": [item.isoformat() for item in due_dates],
         },
         service_config,
@@ -679,7 +697,7 @@ def _validate_medical_step(payload, service_config):
             errors[f"fieldResponses.{raw_field_id}.optionIds"] = "Este campo solo acepta una opcion."
 
         cleaned_response = {
-            "valueText": (item.get("valueText") or "").strip(),
+            "valueText": _cap(item.get("valueText")),
             "valueNumber": str(item.get("valueNumber") or "").strip(),
             "valueDate": str(item.get("valueDate") or "").strip(),
             "valueBoolean": bool(item.get("valueBoolean")) if item.get("valueBoolean") is not None else None,
@@ -703,8 +721,8 @@ def _validate_medical_step(payload, service_config):
 
     return {
         "fechaFicha": fecha_ficha.isoformat() if fecha_ficha else "",
-        "motivoConsulta": (payload.get("motivoConsulta") or "").strip(),
-        "observaciones": (payload.get("observaciones") or "").strip(),
+        "motivoConsulta": _cap(payload.get("motivoConsulta")),
+        "observaciones": _cap(payload.get("observaciones")),
         "consentimientoAceptado": _parse_bool(payload.get("consentimientoAceptado")),
         "firmaPacienteCi": (payload.get("firmaPacienteCi") or "").strip(),
         "analisisEstetico": {

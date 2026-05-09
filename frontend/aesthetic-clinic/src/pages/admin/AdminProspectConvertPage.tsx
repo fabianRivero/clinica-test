@@ -554,7 +554,7 @@ export function AdminProspectConvertPage() {
     if (field.type === 'TEXTO') {
       return (
         <label className="field field--full" key={field.id}>
-          <span>{field.label}</span>
+          <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
           <input
             className="input"
             value={response.valueText}
@@ -573,7 +573,7 @@ export function AdminProspectConvertPage() {
     if (field.type === 'NUMERO') {
       return (
         <label className="field" key={field.id}>
-          <span>{field.label}</span>
+          <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
           <input
             className="input"
             type="number"
@@ -593,7 +593,7 @@ export function AdminProspectConvertPage() {
     if (field.type === 'FECHA') {
       return (
         <label className="field" key={field.id}>
-          <span>{field.label}</span>
+          <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
           <input
             className="input"
             type="date"
@@ -613,7 +613,7 @@ export function AdminProspectConvertPage() {
     if (field.type === 'BOOLEANO') {
       return (
         <label className="field" key={field.id}>
-          <span>{field.label}</span>
+          <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
           <select
             className="input"
             value={
@@ -641,7 +641,7 @@ export function AdminProspectConvertPage() {
     if (field.type === 'SELECCION') {
       return (
         <label className="field" key={field.id}>
-          <span>{field.label}</span>
+          <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
           <select
             className="input"
             value={response.optionIds[0] ? String(response.optionIds[0]) : ''}
@@ -666,7 +666,7 @@ export function AdminProspectConvertPage() {
 
     return (
       <div className="field field--full" key={field.id}>
-        <span>{field.label}</span>
+        <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
         <div className="checkbox-grid">
           {field.options.map((option) => {
             const checked = response.optionIds.includes(option.id)
@@ -801,6 +801,7 @@ export function AdminProspectConvertPage() {
             <label className="field">
               <span>CI</span>
               <input className="input" name="ci" value={userForm.ci} onChange={handleUserChange} />
+              {fieldErrors.ci ? <small className="field__error">{fieldErrors.ci}</small> : null}
             </label>
             <label className="field">
               <span>Nombre de usuario</span>
@@ -1295,15 +1296,6 @@ export function AdminProspectConvertPage() {
               </label>
             </div>
 
-            {Object.keys(fieldErrors).length ? (
-              <div className="field--full">
-                <DataState
-                  title="Hay campos por revisar"
-                  message={Object.values(fieldErrors).filter(Boolean).join(' ')}
-                  tone="danger"
-                />
-              </div>
-            ) : null}
 
             <div className="form-actions field--full">
               <button
