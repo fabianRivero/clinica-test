@@ -219,19 +219,20 @@ export type CancelAdminProspectMedicalAppointmentResponse = {
 }
 
 export type DashboardResponse = {
-  payments_month: number
-  payments_year: number
-  agenda_month: number
-  agenda_year: number
   metrics: AdminMetric[]
-  payments: VerificationPayment[]
-  upcomingPayments: UpcomingPayment[]
-  agenda: AgendaItem[]
-  prospects: ProspectLead[]
   alerts: AdminAlert[]
-  operations: OperationCardData[]
-  catalogHealth: CatalogHealthItem[]
-  staffCapacity: StaffCapacityItem[]
+}
+
+export type DashboardPaymentsResponse = {
+  month: number
+  year: number
+  payments: UpcomingPayment[]
+}
+
+export type DashboardAgendaResponse = {
+  month: number
+  year: number
+  agenda: AgendaItem[]
 }
 
 export type ProspectsResponse = {

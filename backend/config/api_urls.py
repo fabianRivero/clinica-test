@@ -32,6 +32,8 @@ from config.api_views import (
     admin_cancel_prospect_medical_appointment,
     admin_create_prospect_medical_appointment,
     admin_dashboard,
+    admin_dashboard_payments,
+    admin_dashboard_agenda,
     admin_equipo,
     admin_estado_especialista,
     admin_operacion_detalle,
@@ -60,6 +62,8 @@ from config.prospect_conversion_views import (
 
 urlpatterns = [
     path("dashboard/", admin_dashboard, name="admin-dashboard-api"),
+    path("dashboard/payments/", admin_dashboard_payments, name="admin-dashboard-payments-api"),
+    path("dashboard/agenda/", admin_dashboard_agenda, name="admin-dashboard-agenda-api"),
     path("prospectos/", admin_prospectos, name="admin-prospectos-api"),
     path("prospectos/<int:prospecto_id>/actualizar/", admin_update_prospect, name="admin-prospectos-update-api"),
     path(

@@ -1586,91 +1586,23 @@ def _dashboard_alerts():
 @require_GET
 @_admin_required
 def admin_dashboard(request):
+    """Retorna solo las metricas basicas y alertas del dashboard"""
     mark_expired_programmed_appointments_as_no_show()
     today = timezone.localdate()
-    now = timezone.now()
 
-    # Parametros de pagos
-    try:
-        p_month = int(request.GET.get("p_month", today.month))
-        p_year = int(request.GET.get("p_year", today.year))
-    except (TypeError, ValueError):
-        p_month = today.month
-        p_year = today.year
+    operations_qs = Operacion.objects.filter(estado=Operacion.Estado.EN_PROCESO)
+    prospectos_qs = Prospecto.objects.all()
 
-    # Parametros de agenda
-    try:
-        a_month = int(request.GET.get("a_month", today.month))
-        a_year = int(request.GET.get("a_year", today.year))
-    except (TypeError, ValueError):
-        a_month = today.month
-        a_year = today.year
-
-    # Calculo de rangos
-    start_p = date(p_year, p_month, 1)
-    if p_month == 12:
-        end_p = date(p_year + 1, 1, 1) - timedelta(days=1)
-    else:
-        end_p = date(p_year, p_month + 1, 1) - timedelta(days=1)
-
-    start_a = date(a_year, a_month, 1)
-    if a_month == 12:
-        end_a = date(a_year + 1, 1, 1) - timedelta(days=1)
-    else:
-        end_a = date(a_year, a_month + 1, 1) - timedelta(days=1)
-
-    # Filtro futuro solo si es el mes actual real
-    pay_range_start = start_p
-    age_range_start = start_a
-
-    if p_month == today.month and p_year == today.year:
-        pay_range_start = today
-    if a_month == today.month and a_year == today.year:
-        age_range_start = today
-
-    pending_payments_qs = (
-        PagoRealizado.objects.select_related(
-            "cuota__operacion__paciente__usuario",
-            "cuota__operacion__servicio_config__proc_estetico",
-        ).order_by("-created_at")
-    )
-
-    operations_qs = (
-        Operacion.objects.select_related(
-            "paciente__usuario",
-            "servicio_config__tipo_servicio",
-            "servicio_config__proc_estetico",
-        )
-        .prefetch_related(
-            Prefetch(
-                "citas_medicas",
-                queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
-            ),
-            Prefetch(
-                "cuotas_plan_pagos",
-                queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados").order_by("nro_cuota"),
-            ),
-        )
-        .filter(estado=Operacion.Estado.EN_PROCESO)
-        .order_by("-created_at")
-    )
-    prospectos_qs = Prospecto.objects.select_related("registrado_por").order_by("-created_at")
-    staff_qs = (
-        Especialista.objects.select_related("usuario")
-        .prefetch_related(
-            "especialidades_rel__especialidad",
-        )
-        .order_by("usuario__primer_nombre", "usuario__apellido_paterno")
-    )
-
-    pending_payments = pending_payments_qs.filter(
+    pending_payments_count = PagoRealizado.objects.filter(
         estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE
-    )
-    payments_today = pending_payments.filter(created_at__date=today).count()
+    ).count()
+    payments_today = PagoRealizado.objects.filter(created_at__date=today).count()
+
     operations_started_this_month = Operacion.objects.filter(
         created_at__year=today.year,
         created_at__month=today.month,
     ).count()
+
     converted_prospects = Prospecto.objects.filter(estado=Prospecto.Estado.CONVERTIDO).count()
     total_prospects = Prospecto.objects.count()
     prospect_delta = (
@@ -1678,17 +1610,50 @@ def admin_dashboard(request):
         if total_prospects
         else "Sin conversiones aun"
     )
+
     appointments_today = CitaMedica.objects.filter(fecha_hora__date=today).count()
     pending_biometric = CitaMedica.objects.filter(
         estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
     ).count()
 
-    # Pagos proximos (cuotas del rango seleccionado)
+    data = {
+        "metrics": [
+            _metric("payments", "Pagos por verificar", pending_payments_count, f"{payments_today} subidos hoy", "warning"),
+            _metric("operations", "Tratamientos activos", operations_qs.count(), f"{operations_started_this_month} iniciadas este mes", "primary"),
+            _metric("prospects", "Prospectos en seguimiento", prospectos_qs.filter(estado=Prospecto.Estado.PASAJERO).count(), prospect_delta, "success"),
+            _metric("appointments", "Citas del dia", appointments_today, f"{pending_biometric} pendientes de biometria", "danger" if pending_biometric else "success"),
+        ],
+        "alerts": _dashboard_alerts(),
+    }
+    return _json(data)
+
+
+@require_GET
+@_admin_required
+def admin_dashboard_payments(request):
+    """Retorna los pagos proximos filtrados por mes/año"""
+    today = timezone.localdate()
+    try:
+        month = int(request.GET.get("month", today.month))
+        year = int(request.GET.get("year", today.year))
+    except (TypeError, ValueError):
+        month, year = today.month, today.year
+
+    start = date(year, month, 1)
+    if month == 12:
+        end = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end = date(year, month + 1, 1) - timedelta(days=1)
+
+    range_start = start
+    if month == today.month and year == today.year:
+        range_start = today
+
     upcoming_quotas = CuotaPlanPago.objects.select_related(
         "operacion__paciente__usuario",
         "operacion__servicio_config__proc_estetico"
     ).filter(
-        fecha_vencimiento__range=(pay_range_start, end_p),
+        fecha_vencimiento__range=(range_start, end),
         estado__in=[CuotaPlanPago.Estado.PENDIENTE, CuotaPlanPago.Estado.VENCIDA]
     ).order_by("fecha_vencimiento")
 
@@ -1711,21 +1676,51 @@ def admin_dashboard(request):
             "isThisWeek": start_of_week <= q.fecha_vencimiento <= end_of_week,
         })
 
-    # Agenda del mes (solo PROGRAMADA y desde el rango seleccionado)
-    agenda_qs_month = (
+    return _json({
+        "month": month,
+        "year": year,
+        "payments": upcoming_payments
+    })
+
+
+@require_GET
+@_admin_required
+def admin_dashboard_agenda(request):
+    """Retorna la agenda filtrada por mes/año"""
+    today = timezone.localdate()
+    try:
+        month = int(request.GET.get("month", today.month))
+        year = int(request.GET.get("year", today.year))
+    except (TypeError, ValueError):
+        month, year = today.month, today.year
+
+    start = date(year, month, 1)
+    if month == 12:
+        end = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end = date(year, month + 1, 1) - timedelta(days=1)
+
+    range_start = start
+    if month == today.month and year == today.year:
+        range_start = today
+
+    agenda_qs = (
         CitaMedica.objects.select_related(
             "operacion__paciente__usuario",
             "operacion__servicio_config__proc_estetico"
         )
         .filter(
-            fecha_hora__date__range=(age_range_start, end_a),
+            fecha_hora__date__range=(range_start, end),
             estado=CitaMedica.Estado.PROGRAMADA
         )
         .order_by("fecha_hora")
     )
 
+    start_of_week = today - timedelta(days=today.weekday())
+    end_of_week = start_of_week + timedelta(days=6)
+
     agenda_data = []
-    for cita in agenda_qs_month:
+    for cita in agenda_qs:
         cita_local = timezone.localtime(cita.fecha_hora)
         agenda_data.append({
             "id": cita.pk,
@@ -1741,50 +1736,11 @@ def admin_dashboard(request):
             "isThisWeek": start_of_week <= cita.fecha_hora.date() <= end_of_week,
         })
 
-    data = {
-        "payments_month": p_month,
-        "payments_year": p_year,
-        "agenda_month": a_month,
-        "agenda_year": a_year,
-        "metrics": [
-            _metric(
-                "payments",
-                "Pagos por verificar",
-                pending_payments_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE).count(),
-                f"{payments_today} subidos hoy",
-                "warning",
-            ),
-            _metric(
-                "operations",
-                "Tratamientos activos",
-                operations_qs.count(),
-                f"{operations_started_this_month} iniciadas este mes",
-                "primary",
-            ),
-            _metric(
-                "prospects",
-                "Prospectos en seguimiento",
-                prospectos_qs.filter(estado=Prospecto.Estado.PASAJERO).count(),
-                prospect_delta,
-                "success",
-            ),
-            _metric(
-                "appointments",
-                "Citas del dia",
-                appointments_today,
-                f"{pending_biometric} pendientes de biometria",
-                "danger" if pending_biometric else "success",
-            ),
-        ],
-        "payments": [_payment_item(payment) for payment in pending_payments_qs[:5]],
-        "upcomingPayments": upcoming_payments,
-        "agenda": agenda_data,
-        "prospects": [_prospect_item(prospecto) for prospecto in prospectos_qs[:4]],
-        "alerts": _dashboard_alerts(),
-        "operations": [_operation_card(operacion) for operacion in operations_qs[:4]],
-        "staffCapacity": [_staff_item(especialista) for especialista in staff_qs[:4]],
-    }
-    return _json(data)
+    return _json({
+        "month": month,
+        "year": year,
+        "agenda": agenda_data
+    })
 
 
 @require_GET
