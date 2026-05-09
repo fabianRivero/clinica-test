@@ -183,17 +183,25 @@ def admin_delete_habitual_schedule(request, rule_id):
 def admin_create_specialist_exception(request):
     try:
         data = json.loads(request.body)
+        specialist_ids = data.get("specialistIds", [])
+        if not specialist_ids and data.get("specialistId"):
+            specialist_ids = [data["specialistId"]]
+        
+        if not specialist_ids:
+            return _json({"detail": "Debes seleccionar al menos un especialista."}, status=400)
+
         with transaction.atomic():
-            for d_str in data.get("dates", []):
-                AgendaExcepcionEspecialista.objects.create(
-                    especialista_id=data["specialistId"],
-                    sucursal_id=data["branchId"],
-                    fecha=d_str,
-                    hora_inicio=data.get("startTime"),
-                    hora_fin=data.get("endTime"),
-                    tipo_excepcion=data["type"],
-                    detalle=data.get("detail", "")
-                )
+            for sp_id in specialist_ids:
+                for d_str in data.get("dates", []):
+                    AgendaExcepcionEspecialista.objects.create(
+                        especialista_id=sp_id,
+                        sucursal_id=data["branchId"],
+                        fecha=d_str,
+                        hora_inicio=data.get("startTime") or None,
+                        hora_fin=data.get("endTime") or None,
+                        tipo_excepcion=data["type"],
+                        detalle=data.get("detail", "")
+                    )
         return _json({"detail": "Excepcion(es) creada(s)"})
     except Exception as e:
         return _json({"detail": str(e)}, status=400)

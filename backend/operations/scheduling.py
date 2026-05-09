@@ -29,6 +29,10 @@ def check_specialist_presence(especialista_id, sucursal_id, fecha, hora_inicio, 
     )
     
     for exc in blocking_exceptions:
+        # If any of the exception times is None, it's a whole day block
+        if exc.hora_inicio is None or exc.hora_fin is None:
+            return False
+            
         # Check for any overlap. If point-in-time check, see if time falls in range.
         if hora_inicio == hora_fin:
             if exc.hora_inicio <= hora_inicio <= exc.hora_fin:
@@ -47,6 +51,10 @@ def check_specialist_presence(especialista_id, sucursal_id, fecha, hora_inicio, 
     )
     
     for exc in adding_exceptions:
+        # If whole day added
+        if exc.hora_inicio is None or exc.hora_fin is None:
+            return True
+            
         if exc.hora_inicio <= hora_inicio and (exc.hora_fin >= hora_fin if hora_inicio != hora_fin else exc.hora_fin >= hora_inicio):
             return True
 
