@@ -35,11 +35,16 @@ class Command(BaseCommand):
         if usernames:
             preserved_users = list(user_model.objects.filter(username__in=usernames))
             encontrados = {user.username for user in preserved_users}
-            faltantes = [username for username in usernames if username not in encontrados]
-            if faltantes:
+            if not encontrados:
                 raise CommandError(
-                    "No se encontraron los usuarios a preservar: "
-                    + ", ".join(sorted(faltantes))
+                    "No se encontró ninguno de los usuarios a preservar: "
+                    + ", ".join(sorted(usernames))
+                )
+            
+            faltantes = [username for username in usernames if username not in encontrados]
+            if faltantes and options.get("verbosity", 1) >= 1:
+                self.stdout.write(
+                    self.style.WARNING(f"Aviso: No se encontraron algunos usuarios: {', '.join(faltantes)}")
                 )
         else:
             preserved_users = list(user_model.objects.filter(is_superuser=True))

@@ -12,6 +12,14 @@ import {
   saveAdminProspectConversionMedicalStep,
   saveAdminProspectConversionOperationStep,
   saveAdminProspectConversionUserStep,
+  initializeAdminClientReactivation,
+  getAdminClientReactivation,
+  cancelAdminClientReactivation,
+  saveAdminClientReactivationUserStep,
+  saveAdminClientReactivationOperationStep,
+  saveAdminClientReactivationMedicalStep,
+  saveAdminClientReactivationBiometricStep,
+  finalizeAdminClientReactivation,
 } from '../../services/api/admin'
 import { checkMockFingerprintDevice, enrollMockFingerprint } from '../../services/fingerprint/mockFingerprint'
 import type {
@@ -96,7 +104,9 @@ function blankBiometricData(): ProspectConversionBiometricData {
 
 export function AdminProspectConvertPage() {
   const navigate = useNavigate()
-  const { prospectId = '' } = useParams()
+  const { prospectId = '', clientId = '' } = useParams()
+  const isReactivation = !!clientId
+  const targetId = isReactivation ? clientId : prospectId
 
   const [data, setData] = useState<ProspectConversionResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -108,6 +118,8 @@ export function AdminProspectConvertPage() {
   const [activeStep, setActiveStep] = useState<ConversionStep>(1)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [medicalDocumentFile, setMedicalDocumentFile] = useState<File | null>(null)
   const [userForm, setUserForm] = useState<ProspectConversionUserData | null>(null)
   const [operationForm, setOperationForm] = useState<ProspectConversionOperationData | null>(null)
@@ -122,10 +134,17 @@ export function AdminProspectConvertPage() {
       setIsLoading(true)
       setError(null)
       try {
-        const response = await getAdminProspectConversion(prospectId)
+        const response = isReactivation
+          ? await initializeAdminClientReactivation(clientId)
+          : await getAdminProspectConversion(prospectId)
+
         if (cancelled) return
         setData(response)
         setUserForm(response.draft.userData)
+        if (response.draft.userData.hasPassword) {
+          setPassword('********')
+          setConfirmPassword('********')
+        }
         const draftOpData = { ...response.draft.operationData }
         if (!draftOpData.fechaInicio) {
           draftOpData.fechaInicio = new Date().toLocaleDateString('en-CA')
@@ -358,10 +377,9 @@ export function AdminProspectConvertPage() {
 
     setIsSaving(true)
     try {
-      const response = await saveAdminProspectConversionUserStep(prospectId, {
-        ...userForm,
-        password: password || undefined,
-      })
+      const response = isReactivation
+        ? await saveAdminClientReactivationUserStep(clientId, { ...userForm, password: password || undefined })
+        : await saveAdminProspectConversionUserStep(prospectId, { ...userForm, password: password || undefined })
       applyResponse(response)
       setPassword('')
       setConfirmPassword('')
@@ -385,7 +403,7 @@ export function AdminProspectConvertPage() {
     event.preventDefault()
     if (!operationForm) return
 
-    const finalForm = { 
+    const finalForm = {
       ...operationForm,
       fechaInicio: today
     }
@@ -393,7 +411,9 @@ export function AdminProspectConvertPage() {
     resetFeedback()
     setIsSaving(true)
     try {
-      const response = await saveAdminProspectConversionOperationStep(prospectId, finalForm)
+      const response = isReactivation
+        ? await saveAdminClientReactivationOperationStep(clientId, finalForm)
+        : await saveAdminProspectConversionOperationStep(prospectId, finalForm)
       applyResponse(response)
       setActiveStep(3)
     } catch (requestError) {
@@ -423,7 +443,9 @@ export function AdminProspectConvertPage() {
 
     setIsSaving(true)
     try {
-      const saveResponse = await saveAdminProspectConversionMedicalStep(prospectId, medicalForm)
+      const saveResponse = isReactivation
+        ? await saveAdminClientReactivationMedicalStep(clientId, medicalForm, medicalDocumentFile || undefined)
+        : await saveAdminProspectConversionMedicalStep(prospectId, medicalForm)
       applyResponse(saveResponse)
       setActiveStep(4)
     } catch (requestError) {
@@ -478,10 +500,14 @@ export function AdminProspectConvertPage() {
 
     setIsSaving(true)
     try {
-      const biometricResponse = await saveAdminProspectConversionBiometricStep(prospectId, biometricForm)
+      const biometricResponse = isReactivation
+        ? await saveAdminClientReactivationBiometricStep(clientId, biometricForm)
+        : await saveAdminProspectConversionBiometricStep(prospectId, biometricForm)
       applyResponse(biometricResponse)
-      const finalizeResponse = await finalizeAdminProspectConversion(prospectId, medicalDocumentFile)
-      navigate('/admin/prospectos', {
+      const finalizeResponse = isReactivation
+        ? await finalizeAdminClientReactivation(clientId, medicalDocumentFile)
+        : await finalizeAdminProspectConversion(prospectId, medicalDocumentFile)
+      navigate(isReactivation ? `/admin/clientes/${clientId}` : '/admin/prospectos', {
         replace: true,
         state: {
           flashMessage: `${finalizeResponse.detail} Cliente: ${finalizeResponse.client.name}. Operacion: ${finalizeResponse.operation.procedure}.`,
@@ -514,11 +540,15 @@ export function AdminProspectConvertPage() {
     resetFeedback()
     setIsCancelling(true)
     try {
-      const response = await cancelAdminProspectConversion(prospectId)
-      navigate('/admin/prospectos', {
+      if (isReactivation) {
+        await cancelAdminClientReactivation(clientId)
+      } else {
+        await cancelAdminProspectConversion(prospectId)
+      }
+      navigate(isReactivation ? `/admin/clientes/${clientId}` : '/admin/prospectos', {
         replace: true,
         state: {
-          flashMessage: response.detail,
+          flashMessage: 'Borrador cancelado correctamente.',
         },
       })
     } catch (requestError) {
@@ -535,6 +565,7 @@ export function AdminProspectConvertPage() {
   const renderDynamicField = (field: ProspectConversionField) => {
     if (!medicalForm) return null
     const response = medicalForm.fieldResponses[String(field.id)] || emptyFieldResponse()
+    const fieldError = fieldErrors[`fieldResponses.${field.id}.required`] || null
 
     const detailInput = field.allowsDetail ? (
       <textarea
@@ -554,7 +585,7 @@ export function AdminProspectConvertPage() {
     if (field.type === 'TEXTO') {
       return (
         <label className="field field--full" key={field.id}>
-          <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
+          <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
           <input
             className="input"
             value={response.valueText}
@@ -565,6 +596,7 @@ export function AdminProspectConvertPage() {
               }))
             }
           />
+          {fieldError ? <small className="field__error">{fieldError}</small> : null}
           {detailInput}
         </label>
       )
@@ -573,7 +605,7 @@ export function AdminProspectConvertPage() {
     if (field.type === 'NUMERO') {
       return (
         <label className="field" key={field.id}>
-          <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
+          <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
           <input
             className="input"
             type="number"
@@ -585,6 +617,7 @@ export function AdminProspectConvertPage() {
               }))
             }
           />
+          {fieldError ? <small className="field__error">{fieldError}</small> : null}
           {detailInput}
         </label>
       )
@@ -593,7 +626,7 @@ export function AdminProspectConvertPage() {
     if (field.type === 'FECHA') {
       return (
         <label className="field" key={field.id}>
-          <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
+          <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
           <input
             className="input"
             type="date"
@@ -605,6 +638,7 @@ export function AdminProspectConvertPage() {
               }))
             }
           />
+          {fieldError ? <small className="field__error">{fieldError}</small> : null}
           {detailInput}
         </label>
       )
@@ -613,7 +647,7 @@ export function AdminProspectConvertPage() {
     if (field.type === 'BOOLEANO') {
       return (
         <label className="field" key={field.id}>
-          <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
+          <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
           <select
             className="input"
             value={
@@ -633,6 +667,7 @@ export function AdminProspectConvertPage() {
             <option value="true">Si</option>
             <option value="false">No</option>
           </select>
+          {fieldError ? <small className="field__error">{fieldError}</small> : null}
           {detailInput}
         </label>
       )
@@ -641,7 +676,7 @@ export function AdminProspectConvertPage() {
     if (field.type === 'SELECCION') {
       return (
         <label className="field" key={field.id}>
-          <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
+          <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
           <select
             className="input"
             value={response.optionIds[0] ? String(response.optionIds[0]) : ''}
@@ -659,6 +694,7 @@ export function AdminProspectConvertPage() {
               </option>
             ))}
           </select>
+          {fieldError ? <small className="field__error">{fieldError}</small> : null}
           {detailInput}
         </label>
       )
@@ -666,7 +702,7 @@ export function AdminProspectConvertPage() {
 
     return (
       <div className="field field--full" key={field.id}>
-        <span>{field.label} {field.required && <span style={{ color: 'var(--color-danger)' }}>*</span>}</span>
+        <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
         <div className="checkbox-grid">
           {field.options.map((option) => {
             const checked = response.optionIds.includes(option.id)
@@ -689,6 +725,7 @@ export function AdminProspectConvertPage() {
             )
           })}
         </div>
+        {fieldError ? <small className="field__error">{fieldError}</small> : null}
         {detailInput}
       </div>
     )
@@ -726,41 +763,56 @@ export function AdminProspectConvertPage() {
     )
   }
 
+  const isActiveClient = isReactivation && data?.client?.status === 'ACTIVO'
+  const wizardTitle = isActiveClient
+    ? 'Nuevo procedimiento'
+    : isReactivation
+      ? 'Reactivacion de cliente'
+      : 'Conversion de prospecto'
+  const wizardSubject = isActiveClient
+    ? `Nuevo procedimiento para ${data.client?.name}`
+    : isReactivation
+      ? `Reactivar a ${data.client?.name}`
+      : `Convertir a ${data.prospect?.name}`
+
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Conversion de prospecto"
-        title={`Convertir a ${data.prospect.name}`}
-        description="Este flujo guarda temporalmente la informacion en cuatro pasos: datos de usuario, operacion, ficha medica y huella biometrica. Solo al finalizar se crea el cliente y la nueva operacion."
-        actions={[{ label: 'Volver a prospectos', variant: 'ghost', to: '/admin/prospectos' }]}
+        eyebrow={wizardTitle}
+        title={wizardSubject}
+        description="Este flujo guarda temporalmente la informacion en cuatro pasos: datos de usuario, operacion, ficha medica y huella biometrica. Solo al finalizar se crea/actualiza el cliente y la nueva operacion."
+        actions={[{
+          label: isReactivation ? 'Volver a cliente' : 'Volver a prospectos',
+          variant: 'ghost',
+          to: isReactivation ? `/admin/clientes/${clientId}` : '/admin/prospectos'
+        }]}
       />
 
       <section className="wizard-summary">
         <article>
-          <span>Prospecto</span>
-          <strong>{data.prospect.name}</strong>
-          <p>{data.prospect.phone}</p>
+          <span>{isReactivation ? 'Cliente' : 'Prospecto'}</span>
+          <strong>{isReactivation ? data.client?.name : data.prospect?.name}</strong>
+          <p>{isReactivation ? data.client?.ci : data.prospect?.phone}</p>
         </article>
         <article>
-          <span>Interes inicial</span>
-          <strong>{data.prospect.interest}</strong>
-          <p>Registrado por {data.prospect.registeredBy}</p>
+          <span>{isReactivation ? 'Estado de cliente' : 'Interes inicial'}</span>
+          <strong>{isReactivation ? data.client?.status : data.prospect?.interest}</strong>
+          <p>{isActiveClient ? 'Agregar nuevo tratamiento' : isReactivation ? 'Procedimiento previo finalizado' : `Registrado por ${data.prospect?.registeredBy}`}</p>
         </article>
         <article>
-          <span>Estado actual</span>
-          <strong>{data.prospect.state}</strong>
-          <p>Creado {data.prospect.createdAt}</p>
+          <span>{isReactivation ? 'Identificacion' : 'Estado actual'}</span>
+          <strong>{isReactivation ? data.client?.ci : data.prospect?.state}</strong>
+          <p>{isReactivation ? 'Verificado en sistema' : `Creado ${data.prospect?.createdAt}`}</p>
         </article>
       </section>
       <div className="stepper">
         {stepLabels.map((item) => (
           <button
             key={item.step}
-            className={`stepper__item ${activeStep === item.step ? 'is-active' : ''} ${
-              item.step < activeStep || (item.step === 1 && data.draft.stepUserCompleted) || (item.step === 2 && data.draft.stepOperationCompleted) || (item.step === 3 && data.draft.stepMedicalCompleted) || (item.step === 4 && data.draft.stepBiometricCompleted)
+            className={`stepper__item ${activeStep === item.step ? 'is-active' : ''} ${item.step < activeStep || (item.step === 1 && data.draft.stepUserCompleted) || (item.step === 2 && data.draft.stepOperationCompleted) || (item.step === 3 && data.draft.stepMedicalCompleted) || (item.step === 4 && data.draft.stepBiometricCompleted)
                 ? 'is-complete'
                 : ''
-            }`}
+              }`}
             disabled={isSaving || isCancelling || !canGoToStep(item.step)}
             type="button"
             onClick={() => setActiveStep(item.step)}
@@ -812,15 +864,66 @@ export function AdminProspectConvertPage() {
               <span>Email</span>
               <input className="input" name="email" type="email" value={userForm.email} onChange={handleUserChange} />
             </label>
-            <label className="field">
-              <span>Contraseña</span>
-              <input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder={userForm.hasPassword ? 'Dejar vacio para conservar la actual' : ''} />
-              {fieldErrors.password ? <small className="field__error">{fieldErrors.password}</small> : null}
-            </label>
-            <label className="field">
-              <span>Confirmar contraseña</span>
-              <input className="input" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
-            </label>
+            {!isReactivation && (
+              <>
+                <label className="field field--password">
+                  <span>Contraseña</span>
+                  <input
+                    className="input"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder={userForm.hasPassword ? 'Dejar vacio para conservar la actual' : ''}
+                  />
+                  <button
+                    className="field__toggle"
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    title={showPassword ? 'Ocultar' : 'Mostrar'}
+                  >
+                    {showPassword ? (
+                      <svg fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="20">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                        <line x1="1" x2="23" y1="1" y2="23" />
+                      </svg>
+                    ) : (
+                      <svg fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="20">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
+                  {fieldErrors.password ? <small className="field__error">{fieldErrors.password}</small> : null}
+                </label>
+                <label className="field field--password">
+                  <span>Confirmar contraseña</span>
+                  <input
+                    className="input"
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                  />
+                  <button
+                    className="field__toggle"
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    title={showConfirmPassword ? 'Ocultar' : 'Mostrar'}
+                  >
+                    {showConfirmPassword ? (
+                      <svg fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="20">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                        <line x1="1" x2="23" y1="1" y2="23" />
+                      </svg>
+                    ) : (
+                      <svg fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="20">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
+                </label>
+              </>
+            )}
             <label className="field">
               <span>Telefono</span>
               <input className="input" name="telefono" value={userForm.telefono} onChange={handleUserChange} />
@@ -871,7 +974,7 @@ export function AdminProspectConvertPage() {
         >
           <form className="form-grid" onSubmit={handleSaveStep2}>
             <label className="field field--full">
-              <span>Servicio</span>
+              <span>Servicio <span style={{ color: 'var(--color-danger)' }}>*</span></span>
               <select className="input" name="serviceConfigId" value={operationForm.serviceConfigId} onChange={handleOperationChange}>
                 <option value="">Seleccionar servicio</option>
                 {data.serviceConfigs.map((item) => (
@@ -894,13 +997,13 @@ export function AdminProspectConvertPage() {
             ) : null}
 
             <label className="field">
-              <span>Precio total</span>
+              <span>Precio total <span style={{ color: 'var(--color-danger)' }}>*</span></span>
               <input className="input" name="precioTotal" value={operationForm.precioTotal} onChange={handleOperationChange} />
               {fieldErrors.precioTotal ? <small className="field__error">{fieldErrors.precioTotal}</small> : null}
             </label>
 
             <label className="field">
-              <span>Sesiones totales</span>
+              <span>Sesiones totales <span style={{ color: 'var(--color-danger)' }}>*</span></span>
               <input className="input" min="1" name="sesionesTotales" type="number" value={operationForm.sesionesTotales} onChange={handleOperationChange} />
               {fieldErrors.sesionesTotales ? <small className="field__error">{fieldErrors.sesionesTotales}</small> : null}
             </label>
@@ -917,27 +1020,29 @@ export function AdminProspectConvertPage() {
             </label>
             <label className="field">
               <span>Fecha de registro</span>
-              <input 
-                className="input" 
-                name="fechaInicio" 
-                type="date" 
-                value={today} 
+              <input
+                className="input"
+                name="fechaInicio"
+                type="date"
+                value={today}
                 disabled
               />
               {fieldErrors.fechaInicio ? <small className="field__error">{fieldErrors.fechaInicio}</small> : null}
             </label>
 
             <label className="field">
-              <span>Zona general</span>
+              <span>Zona general <span style={{ color: 'var(--color-danger)' }}>*</span></span>
               <input className="input" name="zonaGeneral" value={operationForm.zonaGeneral} onChange={handleOperationChange} />
+              {fieldErrors.zonaGeneral ? <small className="field__error">{fieldErrors.zonaGeneral}</small> : null}
             </label>
             <label className="field">
-              <span>Zona especifica</span>
+              <span>Zona especifica <span style={{ color: 'var(--color-danger)' }}>*</span></span>
               <input className="input" name="zonaEspecifica" value={operationForm.zonaEspecifica} onChange={handleOperationChange} />
+              {fieldErrors.zonaEspecifica ? <small className="field__error">{fieldErrors.zonaEspecifica}</small> : null}
             </label>
 
             <label className="field">
-              <span>Cuotas totales</span>
+              <span>Cuotas totales <span style={{ color: 'var(--color-danger)' }}>*</span></span>
               <input className="input" min="1" name="cuotasTotales" type="number" value={operationForm.cuotasTotales} onChange={handleOperationChange} />
               {fieldErrors.cuotasTotales ? <small className="field__error">{fieldErrors.cuotasTotales}</small> : null}
             </label>
@@ -1134,7 +1239,7 @@ export function AdminProspectConvertPage() {
                 {medicalForm.antecedentes.map((item, index) => (
                   <div className="wizard-list__item" key={`antecedente-${index}`}>
                     <label className="field">
-                      <span>Antecedente</span>
+                      <span>Antecedente <span style={{ color: 'var(--color-danger)' }}>*</span></span>
                       <select className="input" value={item.antecedenteId} onChange={(event) => updateAntecedente(index, 'antecedenteId', event.target.value)}>
                         <option value="">Seleccionar</option>
                         {data.medicalConfig.antecedentes.map((option) => (
@@ -1143,13 +1248,15 @@ export function AdminProspectConvertPage() {
                           </option>
                         ))}
                       </select>
+                      {fieldErrors[`antecedentes.${index}.antecedenteId`] ? <small className="field__error">{fieldErrors[`antecedentes.${index}.antecedenteId`]}</small> : null}
                     </label>
                     <label className="field">
-                      <span>Tipo</span>
+                      <span>Tipo <span style={{ color: 'var(--color-danger)' }}>*</span></span>
                       <select className="input" value={item.tipoAntecedente} onChange={(event) => updateAntecedente(index, 'tipoAntecedente', event.target.value as 'FAMILIAR' | 'PERSONAL')}>
                         <option value="PERSONAL">Personal</option>
                         <option value="FAMILIAR">Familiar</option>
                       </select>
+                      {fieldErrors[`antecedentes.${index}.tipoAntecedente`] ? <small className="field__error">{fieldErrors[`antecedentes.${index}.tipoAntecedente`]}</small> : null}
                     </label>
                     <label className="field field--full">
                       <span>Detalle</span>
@@ -1177,7 +1284,7 @@ export function AdminProspectConvertPage() {
                 {medicalForm.implantes.map((item, index) => (
                   <div className="wizard-list__item" key={`implante-${index}`}>
                     <label className="field">
-                      <span>Implante</span>
+                      <span>Implante <span style={{ color: 'var(--color-danger)' }}>*</span></span>
                       <select className="input" value={item.implanteId} onChange={(event) => updateImplante(index, 'implanteId', event.target.value)}>
                         <option value="">Seleccionar</option>
                         {data.medicalConfig.implantes.map((option) => (
@@ -1186,6 +1293,7 @@ export function AdminProspectConvertPage() {
                           </option>
                         ))}
                       </select>
+                      {fieldErrors[`implantes.${index}.implanteId`] ? <small className="field__error">{fieldErrors[`implantes.${index}.implanteId`]}</small> : null}
                     </label>
                     <label className="field field--full">
                       <span>Detalle</span>
@@ -1213,7 +1321,7 @@ export function AdminProspectConvertPage() {
                 {medicalForm.cirugias.map((item, index) => (
                   <div className="wizard-list__item" key={`cirugia-${index}`}>
                     <label className="field">
-                      <span>Cirugia</span>
+                      <span>Cirugia <span style={{ color: 'var(--color-danger)' }}>*</span></span>
                       <select className="input" value={item.cirugiaId} onChange={(event) => updateCirugia(index, 'cirugiaId', event.target.value)}>
                         <option value="">Seleccionar</option>
                         {data.medicalConfig.cirugias.map((option) => (
@@ -1222,10 +1330,12 @@ export function AdminProspectConvertPage() {
                           </option>
                         ))}
                       </select>
+                      {fieldErrors[`cirugias.${index}.cirugiaId`] ? <small className="field__error">{fieldErrors[`cirugias.${index}.cirugiaId`]}</small> : null}
                     </label>
                     <label className="field">
-                      <span>Hace cuanto tiempo</span>
+                      <span>Hace cuanto tiempo <span style={{ color: 'var(--color-danger)' }}>*</span></span>
                       <input className="input" value={item.haceCuantoTiempo} onChange={(event) => updateCirugia(index, 'haceCuantoTiempo', event.target.value)} />
+                      {fieldErrors[`cirugias.${index}.haceCuantoTiempo`] ? <small className="field__error">{fieldErrors[`cirugias.${index}.haceCuantoTiempo`]}</small> : null}
                     </label>
                     <label className="field field--full">
                       <span>Detalle</span>
@@ -1376,7 +1486,7 @@ export function AdminProspectConvertPage() {
                 Volver
               </button>
               <button className="button" disabled={isSaving || isCancelling} type="submit">
-                {isSaving ? 'Guardando y convirtiendo...' : 'Finalizar conversion'}
+                {isSaving ? 'Guardando y convirtiendo...' : 'Finalizar'}
               </button>
             </div>
           </form>

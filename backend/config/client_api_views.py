@@ -351,7 +351,7 @@ def _payment_qr_config_item(config):
 
 
 def _appointment_item(cita):
-    can_manage = cita.estado == CitaMedica.Estado.PROGRAMADA and cita.fecha_hora > timezone.now()
+    can_manage = cita.estado == CitaMedica.Estado.PROGRAMADA
     return {
         "id": f"CIT-{cita.pk:04d}",
         "rawId": cita.pk,

@@ -47,8 +47,11 @@ def _load_payload(request):
         return None
 
 
-def _get_required_pdf_file(request):
-    document = request.FILES.get("documentoFichaPdf")
+def _get_required_pdf_file(request, draft=None):
+    document = request.FILES.get("documento_escaneado_pdf") or request.FILES.get("documentoFichaPdf")
+    if not document and draft and draft.documento_pdf:
+        document = draft.documento_pdf
+
     if not document:
         return None, _json({"detail": "Debes adjuntar el PDF escaneado de la ficha medica."}, status=400)
 
@@ -137,17 +140,15 @@ def _cap(text):
     if not raw:
         return ""
     return raw[0].upper() + raw[1:]
-
-
 def _build_initial_user_data(prospecto):
     return {
         "primerNombre": prospecto.nombres,
         "segundoNombre": "",
         "apellidoPaterno": prospecto.apellidos,
         "apellidoMaterno": "",
-        "username": "",
-        "email": "",
-        "telefono": prospecto.telefono,
+        "username": prospecto.username or "",
+        "email": prospecto.email or "",
+        "telefono": prospecto.telefono or "",
         "ci": "",
         "fechaNacimiento": "",
         "nroHijos": 0,
@@ -156,6 +157,83 @@ def _build_initial_user_data(prospecto):
         "observacionesCliente": prospecto.observaciones or "",
         "hasPassword": False,
     }
+
+
+
+def _build_initial_client_user_data(cliente):
+    user = cliente.usuario
+    return {
+        "primerNombre": user.primer_nombre,
+        "segundoNombre": user.segundo_nombre,
+        "apellidoPaterno": user.apellido_paterno,
+        "apellidoMaterno": user.apellido_materno,
+        "username": user.username,
+        "email": user.email or "",
+        "telefono": cliente.telefono or user.username, # Fallback to username if phone is empty
+        "ci": cliente.ci,
+        "fechaNacimiento": str(cliente.fecha_nacimiento) if cliente.fecha_nacimiento else "",
+        "nroHijos": cliente.nro_hijos,
+        "direccionDomicilio": cliente.direccion_domicilio,
+        "ocupacion": cliente.ocupacion,
+        "observacionesCliente": cliente.observaciones,
+        "hasPassword": True,
+    }
+
+
+def _build_initial_client_medical_data(cliente):
+    # Intentar obtener la ficha clinica de la ultima operacion finalizada o mas reciente
+    ultima_operacion = cliente.operaciones.order_by("-created_at").first()
+    data = _blank_medical_data()
+    
+    if ultima_operacion and hasattr(ultima_operacion, "ficha_clinica"):
+        ficha = ultima_operacion.ficha_clinica
+        
+        # Mapear antecedentes
+        data["antecedentes"] = [
+            {
+                "id": f"{ant.pk}",
+                "antecedenteId": ant.antecedente_id,
+                "tipoAntecedente": ant.tipo_antecedente,
+                "detalle": ant.detalle
+            }
+            for ant in ficha.antecedentes.all()
+        ]
+        
+        # Mapear implantes
+        data["implantes"] = [
+            {
+                "id": f"{imp.pk}",
+                "implanteId": imp.implante_id,
+                "detalle": imp.detalle
+            }
+            for imp in ficha.implantes.all()
+        ]
+        
+        # Mapear cirugias
+        data["cirugias"] = [
+            {
+                "id": f"{cir.pk}",
+                "cirugiaId": cir.cirugia_id,
+                "haceCuantoTiempo": cir.hace_cuanto_tiempo,
+                "detalle": cir.detalle
+            }
+            for cir in ficha.cirugias.all()
+        ]
+
+    return data
+
+
+def _build_initial_client_biometric_data(cliente):
+    data = _blank_biometric_data()
+    if hasattr(cliente, "huella_biometrica") and cliente.huella_biometrica.activo:
+        huella = cliente.huella_biometrica
+        data["provider"] = huella.proveedor
+        data["template"] = huella.template_biometrico
+        data["quality"] = huella.calidad_captura
+        data["deviceSerial"] = huella.device_serial
+        data["consentAccepted"] = huella.consentimiento_aceptado
+        data["capturedAt"] = str(huella.fecha_registro)
+    return data
 
 
 def _blank_medical_data():
@@ -202,11 +280,36 @@ def _field_response_has_value(field, response):
 
 
 def _serialize_draft(draft):
-    user_data = dict(draft.datos_usuario or {})
-    user_data.pop("passwordHash", None)
-    user_data.pop("codBiometrico", None)
-    user_data["hasPassword"] = bool((draft.datos_usuario or {}).get("passwordHash"))
+    # Obtener los datos guardados en el borrador
+    saved_user_data = dict(draft.datos_usuario or {})
+    saved_user_data.pop("passwordHash", None)
+    saved_user_data.pop("codBiometrico", None)
+    
+    # Determinar si el borrador ya tiene una contraseña (del cliente o puesta por admin)
+    has_password = bool((draft.datos_usuario or {}).get("passwordHash"))
+    if not has_password and draft.cliente:
+        has_password = bool(draft.cliente.usuario.password)
+
+    # Datos iniciales (si es cliente reactivado o prospecto)
+    initial_user_data = {}
+    if draft.cliente:
+        initial_user_data = _build_initial_client_user_data(draft.cliente)
+    elif draft.prospecto:
+        initial_user_data = _build_initial_user_data(draft.prospecto)
+    
+    # Combinar: los datos guardados en el borrador sobrescriben los iniciales,
+    # excepto si el dato guardado esta vacio.
+    user_data = {**initial_user_data}
+    for key, val in saved_user_data.items():
+        if val not in (None, ""):
+            user_data[key] = val
+    
+    user_data["hasPassword"] = has_password
+
     default_medical_data = _blank_medical_data()
+    if not draft.datos_ficha and draft.cliente:
+        default_medical_data = _build_initial_client_medical_data(draft.cliente)
+
     saved_medical_data = dict(draft.datos_ficha or {})
     saved_operation_data = dict(draft.datos_operacion or {})
     cuotas_totales = int(saved_operation_data.get("cuotasTotales") or 1)
@@ -224,13 +327,17 @@ def _serialize_draft(draft):
         },
     }
 
+    initial_biometric_data = _blank_biometric_data()
+    if not draft.datos_biometria and draft.cliente:
+        initial_biometric_data = _build_initial_client_biometric_data(draft.cliente)
+
     return {
         "currentStep": draft.paso_actual,
         "stepUserCompleted": draft.paso_usuario_completado,
         "stepOperationCompleted": draft.paso_operacion_completado,
         "stepMedicalCompleted": draft.paso_ficha_completado,
         "stepBiometricCompleted": draft.paso_biometria_completado,
-        "userData": user_data or _build_initial_user_data(draft.prospecto),
+        "userData": user_data,
         "operationData": {
             "serviceConfigId": "",
             "zonaGeneral": "",
@@ -249,7 +356,7 @@ def _serialize_draft(draft):
         },
         "medicalData": medical_data,
         "biometricData": {
-            **_blank_biometric_data(),
+            **initial_biometric_data,
             **dict(draft.datos_biometria or {}),
         },
     }
@@ -360,29 +467,59 @@ def _serialize_medical_config(service_config):
     }
 
 
-def _get_prospecto_convertible(prospecto_id):
-    prospecto = Prospecto.objects.select_related("registrado_por", "convertido_a_cliente").filter(pk=prospecto_id).first()
-    if not prospecto:
-        return None, _json({"detail": "No encontramos el prospecto solicitado."}, status=404)
-    if prospecto.estado == Prospecto.Estado.CONVERTIDO:
-        return None, _json({"detail": "Este prospecto ya fue convertido a cliente."}, status=400)
-    if prospecto.estado != Prospecto.Estado.PASAJERO:
-        return None, _json({"detail": "Solo los prospectos pasajeros pueden iniciar este flujo."}, status=400)
-    return prospecto, None
+def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
+    if prospecto_id:
+        prospecto = Prospecto.objects.filter(pk=prospecto_id).first()
+        if not prospecto:
+            return None, "No encontramos el prospecto solicitado."
+        if prospecto.estado != Prospecto.Estado.PASAJERO:
+            return None, "Este prospecto ya fue procesado."
+        draft, _ = ProspectoConversionBorrador.objects.get_or_create(
+            prospecto=prospecto,
+            defaults={"iniciado_por": request.user}
+        )
+        return draft, None
+    elif cliente_id:
+        cliente = Cliente.objects.filter(pk=cliente_id).first()
+        if not cliente:
+            return None, "No encontramos el cliente solicitado."
+        draft, created = ProspectoConversionBorrador.objects.get_or_create(
+            cliente=cliente,
+            defaults={"iniciado_por": request.user}
+        )
+        if created:
+            # Pre-poblamos el hash de contraseña para reactivacion
+            draft.datos_usuario = {"passwordHash": cliente.usuario.password}
+            draft.save(update_fields=["datos_usuario"])
+        return draft, None
+    return None, "Se requiere un ID de prospecto o cliente."
 
 
-def _get_or_create_draft(prospecto, user):
-    draft, _ = ProspectoConversionBorrador.objects.get_or_create(
-        prospecto=prospecto,
-        defaults={
-            "iniciado_por": user,
-            "datos_usuario": _build_initial_user_data(prospecto),
-        },
+@require_GET
+@_admin_required
+def admin_prospect_conversion_initialize(request, prospecto_id):
+    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id)
+    if error:
+        return _json({"detail": error}, status=400)
+
+    return _json(
+        {
+            "draft": _serialize_draft(draft),
+            "catalogs": {
+                "serviceConfigs": _serialize_service_configs(),
+            },
+        }
     )
-    if not draft.iniciado_por_id:
-        draft.iniciado_por = user
-        draft.save(update_fields=["iniciado_por", "updated_at"])
-    return draft
+
+
+@require_GET
+@_admin_required
+def admin_client_reactivation_initialize(request, cliente_id):
+    draft, error = _get_draft_convertible(request, cliente_id=cliente_id)
+    if error:
+        return _json({"detail": error}, status=400)
+
+    return _json(_admin_conversion_detail(draft))
 
 
 def _serialize_conversion_payload(prospecto, draft):
@@ -413,19 +550,31 @@ def _validate_user_step(payload, draft):
     apellido_paterno = (payload.get("apellidoPaterno") or "").strip()
     username = (payload.get("username") or "").strip()
     password = payload.get("password") or ""
+    if password == "********":
+        password = ""
 
     if not primer_nombre:
         errors["primerNombre"] = "El primer nombre es obligatorio."
     if not apellido_paterno:
         errors["apellidoPaterno"] = "El apellido paterno es obligatorio."
+    
     if not username:
         errors["username"] = "El nombre de usuario es obligatorio."
-    elif Usuario.objects.filter(username=username).exists():
-        errors["username"] = "Ya existe una cuenta con este nombre de usuario."
+    else:
+        existing_user = Usuario.objects.filter(username=username).first()
+        if existing_user:
+            # Si es reactivacion de cliente, permitimos su propio username
+            is_own_username = draft.cliente and draft.cliente.usuario_id == existing_user.pk
+            if not is_own_username:
+                errors["username"] = "Ya existe una cuenta con este nombre de usuario."
 
     ci = (payload.get("ci") or "").strip()
-    if ci and Cliente.objects.filter(ci=ci).exists():
-        errors["ci"] = "Ya existe un cliente registrado con esta Cedula de Identidad."
+    if ci:
+        existing_client = Cliente.objects.filter(ci=ci).first()
+        if existing_client:
+            is_own_ci = draft.cliente and draft.cliente.pk == existing_client.pk
+            if not is_own_ci:
+                errors["ci"] = "Ya existe un cliente registrado con esta Cedula de Identidad."
 
     existing_hash = (draft.datos_usuario or {}).get("passwordHash")
     if not password and not existing_hash:
@@ -468,6 +617,14 @@ def _validate_operation_step(payload):
     estado = (payload.get("estado") or Operacion.Estado.EN_PROCESO).strip()
     if estado not in {choice[0] for choice in Operacion.Estado.choices}:
         errors["estado"] = "El estado seleccionado no es valido."
+
+    zona_general = (payload.get("zonaGeneral") or "").strip()
+    if not zona_general:
+        errors["zonaGeneral"] = "La zona general es obligatoria."
+
+    zona_especifica = (payload.get("zonaEspecifica") or "").strip()
+    if not zona_especifica:
+        errors["zonaEspecifica"] = "La zona especifica es obligatoria."
 
     service_config = None
     if service_config_id:
@@ -594,68 +751,94 @@ def _validate_medical_step(payload, service_config):
     antecedentes_validated = []
     antecedentes_seen = set()
     for index, item in enumerate(antecedentes_payload):
-        antecedente_id = _parse_positive_int(item.get("antecedenteId"), f"antecedentes.{index}.antecedenteId", errors, min_value=1)
+        # Mandatory if entry exists
+        antecedente_id = _parse_positive_int(item.get("antecedenteId"), f"antecedentes.{index}.antecedenteId", errors, required=True, min_value=1)
         tipo_antecedente = (item.get("tipoAntecedente") or "").strip()
-        if tipo_antecedente not in {
+        if not tipo_antecedente:
+            errors[f"antecedentes.{index}.tipoAntecedente"] = "Este campo es obligatorio."
+        elif tipo_antecedente not in {
             FichaAntecedenteMedico.TipoAntecedente.FAMILIAR,
             FichaAntecedenteMedico.TipoAntecedente.PERSONAL,
         }:
             errors[f"antecedentes.{index}.tipoAntecedente"] = "Selecciona un tipo de antecedente valido."
-        antecedente = AntecedenteMedico.objects.filter(pk=antecedente_id, activo=True).first() if antecedente_id else None
-        if antecedente_id and not antecedente:
+        
+        if errors.get(f"antecedentes.{index}.antecedenteId") or errors.get(f"antecedentes.{index}.tipoAntecedente"):
+            continue
+
+        antecedente = AntecedenteMedico.objects.filter(pk=antecedente_id, activo=True).first()
+        if not antecedente:
             errors[f"antecedentes.{index}.antecedenteId"] = "El antecedente seleccionado no existe."
-        if antecedente:
-            antecedente_key = (antecedente.id, tipo_antecedente)
-            if antecedente_key in antecedentes_seen:
-                errors[f"antecedentes.{index}.antecedenteId"] = "Este antecedente ya fue agregado para el mismo tipo."
-                continue
-            antecedentes_seen.add(antecedente_key)
-            antecedentes_validated.append(
-                {
-                    "antecedenteId": antecedente.id,
-                    "tipoAntecedente": tipo_antecedente,
-                    "detalle": (item.get("detalle") or "").strip(),
-                }
-            )
+            continue
+
+        antecedente_key = (antecedente.id, tipo_antecedente)
+        if antecedente_key in antecedentes_seen:
+            errors[f"antecedentes.{index}.antecedenteId"] = "Este antecedente ya fue agregado para el mismo tipo."
+            continue
+        
+        antecedentes_seen.add(antecedente_key)
+        antecedentes_validated.append(
+            {
+                "antecedenteId": antecedente.id,
+                "tipoAntecedente": tipo_antecedente,
+                "detalle": (item.get("detalle") or "").strip(),
+            }
+        )
 
     implantes_validated = []
     implantes_seen = set()
     for index, item in enumerate(implantes_payload):
-        implante_id = _parse_positive_int(item.get("implanteId"), f"implantes.{index}.implanteId", errors, min_value=1)
-        implante = ImplanteInjerto.objects.filter(pk=implante_id, activo=True).first() if implante_id else None
-        if implante_id and not implante:
+        # Mandatory if entry exists
+        implante_id = _parse_positive_int(item.get("implanteId"), f"implantes.{index}.implanteId", errors, required=True, min_value=1)
+        
+        if errors.get(f"implantes.{index}.implanteId"):
+            continue
+
+        implante = ImplanteInjerto.objects.filter(pk=implante_id, activo=True).first()
+        if not implante:
             errors[f"implantes.{index}.implanteId"] = "El implante seleccionado no existe."
-        if implante:
-            if implante.id in implantes_seen:
-                errors[f"implantes.{index}.implanteId"] = "Este implante ya fue agregado."
-                continue
-            implantes_seen.add(implante.id)
-            implantes_validated.append(
-                {
-                    "implanteId": implante.id,
-                    "detalle": (item.get("detalle") or "").strip(),
-                }
-            )
+            continue
+
+        if implante.id in implantes_seen:
+            errors[f"implantes.{index}.implanteId"] = "Este implante ya fue agregado."
+            continue
+        
+        implantes_seen.add(implante.id)
+        implantes_validated.append(
+            {
+                "implanteId": implante.id,
+                "detalle": (item.get("detalle") or "").strip(),
+            }
+        )
 
     cirugias_validated = []
     cirugias_seen = set()
     for index, item in enumerate(cirugias_payload):
-        cirugia_id = _parse_positive_int(item.get("cirugiaId"), f"cirugias.{index}.cirugiaId", errors, min_value=1)
-        cirugia = CirugiaEstetica.objects.filter(pk=cirugia_id, activo=True).first() if cirugia_id else None
-        if cirugia_id and not cirugia:
+        # Mandatory if entry exists
+        cirugia_id = _parse_positive_int(item.get("cirugiaId"), f"cirugias.{index}.cirugiaId", errors, required=True, min_value=1)
+        hace_cuanto_tiempo = (item.get("haceCuantoTiempo") or "").strip()
+        if not hace_cuanto_tiempo:
+            errors[f"cirugias.{index}.haceCuantoTiempo"] = "Este campo es obligatorio."
+
+        if errors.get(f"cirugias.{index}.cirugiaId") or errors.get(f"cirugias.{index}.haceCuantoTiempo"):
+            continue
+
+        cirugia = CirugiaEstetica.objects.filter(pk=cirugia_id, activo=True).first()
+        if not cirugia:
             errors[f"cirugias.{index}.cirugiaId"] = "La cirugia seleccionada no existe."
-        if cirugia:
-            if cirugia.id in cirugias_seen:
-                errors[f"cirugias.{index}.cirugiaId"] = "Esta cirugia ya fue agregada."
-                continue
-            cirugias_seen.add(cirugia.id)
-            cirugias_validated.append(
-                {
-                    "cirugiaId": cirugia.id,
-                    "haceCuantoTiempo": (item.get("haceCuantoTiempo") or "").strip(),
-                    "detalle": (item.get("detalle") or "").strip(),
-                }
-            )
+            continue
+
+        if cirugia.id in cirugias_seen:
+            errors[f"cirugias.{index}.cirugiaId"] = "Esta cirugia ya fue agregada."
+            continue
+        
+        cirugias_seen.add(cirugia.id)
+        cirugias_validated.append(
+            {
+                "cirugiaId": cirugia.id,
+                "haceCuantoTiempo": hace_cuanto_tiempo,
+                "detalle": (item.get("detalle") or "").strip(),
+            }
+        )
 
     valid_field_ids = set()
     valid_option_ids = {}
@@ -706,12 +889,11 @@ def _validate_medical_step(payload, service_config):
         }
         field_responses_validated[str(field_id)] = cleaned_response
 
-        if field.requerido and not _field_response_has_value(field, cleaned_response):
+        if not _field_response_has_value(field, cleaned_response):
             errors[f"fieldResponses.{raw_field_id}.required"] = f"Debes completar el campo {field.etiqueta}."
 
+    # Todos los campos de la ficha especifica del procedimiento son obligatorios
     for field_id, field in fields_by_id.items():
-        if not field.requerido:
-            continue
         response = field_responses_validated.get(str(field_id))
         if not response or not _field_response_has_value(field, response):
             errors[f"fieldResponses.{field_id}.required"] = f"Debes completar el campo {field.etiqueta}."
@@ -767,43 +949,77 @@ def _validate_biometric_step(payload):
     }, None
 
 
+def _admin_conversion_detail(draft):
+    prospecto = draft.prospecto
+    cliente = draft.cliente
+    
+    service_config = None
+    service_config_id = (draft.datos_operacion or {}).get("serviceConfigId")
+    if service_config_id:
+        service_config = (
+            ServicioConfig.objects.select_related("tipo_servicio", "proc_estetico")
+            .filter(pk=service_config_id)
+            .first()
+        )
+
+    return {
+        "prospect": _prospect_item(prospecto) if prospecto else None,
+        "client": {
+            "id": cliente.pk,
+            "name": cliente.usuario.nombre_completo,
+            "ci": cliente.ci,
+            "status": cliente.estado_cliente,
+        } if cliente else None,
+        "draft": _serialize_draft(draft),
+        "serviceConfigs": _serialize_service_configs(),
+        "operationStates": [
+            {"value": value, "label": label}
+            for value, label in Operacion.Estado.choices
+        ],
+        "medicalConfig": _serialize_medical_config(service_config),
+    }
+
+
 @require_GET
 @_admin_required
 def admin_prospect_conversion_detail(request, prospecto_id):
-    prospecto, error_response = _get_prospecto_convertible(prospecto_id)
-    if error_response:
-        return error_response
+    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id)
+    if error:
+        return _json({"detail": error}, status=400)
+    return _json(_admin_conversion_detail(draft))
 
-    draft = _get_or_create_draft(prospecto, request.user)
-    return _json(_serialize_conversion_payload(prospecto, draft))
+
+@require_GET
+@_admin_required
+def admin_client_reactivation_detail(request, cliente_id):
+    draft, error = _get_draft_convertible(request, cliente_id=cliente_id)
+    if error:
+        return _json({"detail": error}, status=400)
+    return _json(_admin_conversion_detail(draft))
 
 
 @require_POST
 @_admin_required
-def admin_prospect_conversion_cancel(request, prospecto_id):
-    prospecto, error_response = _get_prospecto_convertible(prospecto_id)
-    if error_response:
-        return error_response
+def admin_prospect_conversion_cancel(request, prospecto_id=None, cliente_id=None):
+    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+    if error:
+        return _json({"detail": error}, status=400)
 
-    deleted_count, _ = ProspectoConversionBorrador.objects.filter(prospecto=prospecto).delete()
-    if deleted_count:
-        return _json({"detail": "El borrador de conversion fue descartado correctamente."})
-
-    return _json({"detail": "No habia un borrador activo para este prospecto."})
+    draft.delete()
+    return _json({"detail": "El borrador de conversion fue descartado correctamente."})
 
 
 @require_POST
 @_admin_required
-def admin_prospect_conversion_user_step(request, prospecto_id):
-    prospecto, error_response = _get_prospecto_convertible(prospecto_id)
-    if error_response:
-        return error_response
+def admin_prospect_conversion_user_step(request, prospecto_id=None, cliente_id=None):
+    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+    if error:
+        return _json({"detail": error}, status=400)
 
     payload = _load_payload(request)
     if payload is None:
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
-    draft = _get_or_create_draft(prospecto, request.user)
     user_data, errors = _validate_user_step(payload, draft)
     if errors:
         return _json({"detail": "Corrige los errores del paso 1.", "errors": errors}, status=400)
@@ -819,21 +1035,20 @@ def admin_prospect_conversion_user_step(request, prospecto_id):
             "updated_at",
         ]
     )
-    return _json(_serialize_conversion_payload(prospecto, draft))
+    return _json(_admin_conversion_detail(draft))
 
 
 @require_POST
 @_admin_required
-def admin_prospect_conversion_operation_step(request, prospecto_id):
-    prospecto, error_response = _get_prospecto_convertible(prospecto_id)
-    if error_response:
-        return error_response
+def admin_prospect_conversion_operation_step(request, prospecto_id=None, cliente_id=None):
+    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+    if error:
+        return _json({"detail": error}, status=400)
 
     payload = _load_payload(request)
     if payload is None:
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
-    draft = _get_or_create_draft(prospecto, request.user)
     if not draft.paso_usuario_completado:
         return _json({"detail": "Debes completar primero los datos de usuario."}, status=400)
 
@@ -858,21 +1073,35 @@ def admin_prospect_conversion_operation_step(request, prospecto_id):
             "updated_at",
         ]
     )
-    return _json(_serialize_conversion_payload(prospecto, draft))
+    return _json(_admin_conversion_detail(draft))
 
 
 @require_POST
 @_admin_required
-def admin_prospect_conversion_medical_step(request, prospecto_id):
-    prospecto, error_response = _get_prospecto_convertible(prospecto_id)
-    if error_response:
-        return error_response
+def admin_prospect_conversion_medical_step(request, prospecto_id=None, cliente_id=None):
+    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+    if error:
+        return _json({"detail": error}, status=400)
 
-    payload = _load_payload(request)
-    if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+    if request.content_type and request.content_type.startswith("multipart/form-data"):
+        payload_raw = request.POST.get("payload")
+        if not payload_raw:
+            return _json({"detail": "Falta el campo 'payload' en el form-data."}, status=400)
+        try:
+            payload = json.loads(payload_raw)
+        except json.JSONDecodeError:
+            return _json({"detail": "El campo 'payload' no es JSON valido."}, status=400)
+        
+        # Guardamos el PDF si viene
+        pdf_file = request.FILES.get("documento_escaneado_pdf")
+        if pdf_file:
+            draft.documento_pdf = pdf_file
+            draft.save(update_fields=["documento_pdf"])
+    else:
+        payload = _load_payload(request)
+        if payload is None:
+            return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
-    draft = _get_or_create_draft(prospecto, request.user)
     if not draft.paso_operacion_completado:
         return _json({"detail": "Debes completar primero los datos de la operacion."}, status=400)
 
@@ -898,21 +1127,20 @@ def admin_prospect_conversion_medical_step(request, prospecto_id):
             "updated_at",
         ]
     )
-    return _json(_serialize_conversion_payload(prospecto, draft))
+    return _json(_admin_conversion_detail(draft))
 
 
 @require_POST
 @_admin_required
-def admin_prospect_conversion_biometric_step(request, prospecto_id):
-    prospecto, error_response = _get_prospecto_convertible(prospecto_id)
-    if error_response:
-        return error_response
+def admin_prospect_conversion_biometric_step(request, prospecto_id=None, cliente_id=None):
+    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+    if error:
+        return _json({"detail": error}, status=400)
 
     payload = _load_payload(request)
     if payload is None:
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
-    draft = _get_or_create_draft(prospecto, request.user)
     if not draft.paso_ficha_completado:
         return _json({"detail": "Debes completar primero la ficha medica."}, status=400)
 
@@ -931,31 +1159,28 @@ def admin_prospect_conversion_biometric_step(request, prospecto_id):
             "updated_at",
         ]
     )
-    return _json(_serialize_conversion_payload(prospecto, draft))
+    return _json(_admin_conversion_detail(draft))
 
 
 @require_POST
 @_admin_required
 @transaction.atomic
-def admin_prospect_conversion_finalize(request, prospecto_id):
-    prospecto, error_response = _get_prospecto_convertible(prospecto_id)
-    if error_response:
-        return error_response
+def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=None):
+    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+    if error:
+        return _json({"detail": error}, status=400)
 
-    document_file, document_error = _get_required_pdf_file(request)
+    document_file, document_error = _get_required_pdf_file(request, draft=draft)
     if document_error:
         return document_error
 
-    draft = ProspectoConversionBorrador.objects.select_for_update().filter(prospecto=prospecto).first()
-    if not draft:
-        return _json({"detail": "No existe un borrador de conversion para este prospecto."}, status=400)
     if not (
         draft.paso_usuario_completado
         and draft.paso_operacion_completado
         and draft.paso_ficha_completado
         and draft.paso_biometria_completado
     ):
-        return _json({"detail": "Debes completar los cuatro pasos antes de finalizar la conversion."}, status=400)
+        return _json({"detail": "Debes completar los cuatro pasos antes de finalizar."}, status=400)
 
     user_data = draft.datos_usuario or {}
     operation_data = draft.datos_operacion or {}
@@ -974,44 +1199,75 @@ def admin_prospect_conversion_finalize(request, prospecto_id):
     client_role = Rol.objects.filter(rol="CLIENTE").first()
     if not client_role:
         return _json({"detail": "No existe el rol CLIENTE configurado en el sistema."}, status=500)
-    if not user_data.get("passwordHash"):
-        return _json({"detail": "El borrador no tiene una contraseña valida para crear la cuenta."}, status=400)
-    if Usuario.objects.filter(username=user_data.get("username", "")).exists():
-        return _json({"detail": "Ya existe una cuenta con el usuario seleccionado. Actualiza el paso 1 antes de continuar."}, status=400)
 
-    user = Usuario.objects.create(
-        username=user_data["username"],
-        email=user_data.get("email", ""),
-        primer_nombre=user_data["primerNombre"],
-        segundo_nombre=user_data.get("segundoNombre", ""),
-        apellido_paterno=user_data["apellidoPaterno"],
-        apellido_materno=user_data.get("apellidoMaterno", ""),
-        rol=client_role,
-        is_active=True,
-        is_staff=False,
-        is_superuser=False,
-        password=user_data["passwordHash"],
-    )
+    if draft.prospecto:
+        # Nueva cuenta para prospecto
+        if not user_data.get("passwordHash"):
+            return _json({"detail": "El borrador no tiene una contraseña valida para crear la cuenta."}, status=400)
+        
+        username = user_data.get("username", "")
+        if Usuario.objects.filter(username=username).exists():
+            return _json({"detail": "Ya existe una cuenta con el usuario seleccionado. Actualiza el paso 1 antes de continuar."}, status=400)
 
-    cliente = Cliente.objects.create(
-        usuario=user,
-        ci=user_data.get("ci", ""),
-        fecha_nacimiento=date.fromisoformat(user_data["fechaNacimiento"]) if user_data.get("fechaNacimiento") else None,
-        nro_hijos=int(user_data.get("nroHijos") or 0),
-        direccion_domicilio=user_data.get("direccionDomicilio", ""),
-        telefono=user_data.get("telefono", ""),
-        ocupacion=user_data.get("ocupacion", ""),
-        observaciones=user_data.get("observacionesCliente", ""),
-    )
+        user = Usuario.objects.create(
+            username=username,
+            email=user_data.get("email", ""),
+            primer_nombre=user_data["primerNombre"],
+            segundo_nombre=user_data.get("segundoNombre", ""),
+            apellido_paterno=user_data["apellidoPaterno"],
+            apellido_materno=user_data.get("apellidoMaterno", ""),
+            rol=client_role,
+            is_active=True,
+            is_staff=False,
+            is_superuser=False,
+            password=user_data["passwordHash"],
+        )
 
-    HuellaBiometricaCliente.objects.create(
+        cliente = Cliente.objects.create(
+            usuario=user,
+            ci=user_data.get("ci", ""),
+            fecha_nacimiento=date.fromisoformat(user_data["fechaNacimiento"]),
+            nro_hijos=int(user_data.get("nroHijos") or 0),
+            direccion_domicilio=user_data.get("direccionDomicilio", ""),
+            telefono=user_data.get("telefono", ""),
+            ocupacion=user_data.get("ocupacion", ""),
+            observaciones=user_data.get("observacionesCliente", ""),
+        )
+    else:
+        # Actualizacion de cliente existente (reactivacion)
+        cliente = draft.cliente
+        user = cliente.usuario
+        
+        # Actualizamos datos del usuario
+        user.primer_nombre = user_data["primerNombre"]
+        user.segundo_nombre = user_data.get("segundoNombre", "")
+        user.apellido_paterno = user_data["apellidoPaterno"]
+        user.apellido_materno = user_data.get("apellidoMaterno", "")
+        user.email = user_data.get("email", "")
+        if user_data.get("passwordHash"):
+            user.password = user_data["passwordHash"]
+        user.save()
+        
+        # Actualizamos datos del cliente
+        cliente.ci = user_data.get("ci", "")
+        cliente.fecha_nacimiento = date.fromisoformat(user_data["fechaNacimiento"])
+        cliente.nro_hijos = int(user_data.get("nroHijos") or 0)
+        cliente.direccion_domicilio = user_data.get("direccionDomicilio", "")
+        cliente.telefono = user_data.get("telefono", "")
+        cliente.ocupacion = user_data.get("ocupacion", "")
+        cliente.observaciones = user_data.get("observacionesCliente", "")
+        cliente.save()
+
+    HuellaBiometricaCliente.objects.update_or_create(
         cliente=cliente,
-        proveedor=biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK,
-        template_biometrico=biometric_data.get("template", ""),
-        device_serial=biometric_data.get("deviceSerial", ""),
-        calidad_captura=int(biometric_data.get("quality") or 0),
-        consentimiento_aceptado=bool(biometric_data.get("consentAccepted")),
-        registrado_por=request.user,
+        defaults={
+            "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK,
+            "template_biometrico": biometric_data.get("template", ""),
+            "device_serial": biometric_data.get("deviceSerial", ""),
+            "calidad_captura": int(biometric_data.get("quality") or 0),
+            "consentimiento_aceptado": bool(biometric_data.get("consentAccepted")),
+            "registrado_por": request.user,
+        }
     )
 
     analisis = AnalisisEstetico.objects.create(
@@ -1101,12 +1357,12 @@ def admin_prospect_conversion_finalize(request, prospecto_id):
                 opcion_id=option_id,
             )
 
-    prospecto.marcar_como_convertido(cliente, save=True)
+    if draft.prospecto: draft.prospecto.marcar_como_convertido(cliente, save=True)
     draft.delete()
 
     return _json(
         {
-            "detail": "El prospecto fue convertido correctamente a cliente.",
+            "detail": "El proceso finalizo correctamente." if draft.cliente else "El prospecto fue convertido correctamente a cliente.",
             "client": {
                 "id": cliente.id,
                 "name": cliente.usuario.nombre_completo,

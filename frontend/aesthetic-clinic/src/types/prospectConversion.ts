@@ -160,7 +160,8 @@ export type ProspectConversionMedicalConfig = {
 }
 
 export type ProspectConversionResponse = {
-  prospect: ProspectLead
+  prospect: ProspectLead | null
+  client?: { id: number; name: string; ci: string; status: string; } | null
   draft: ProspectConversionDraft
   serviceConfigs: ProspectConversionServiceConfig[]
   operationStates: ProspectConversionStateOption[]

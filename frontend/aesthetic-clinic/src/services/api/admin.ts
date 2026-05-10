@@ -488,3 +488,47 @@ export function getAdminBranches() {
   return requestJson<{ branches: AdminBranch[] }>('/api/admin/disponibilidad/sucursales/')
 }
 
+// Client Reactivation
+export function initializeAdminClientReactivation(clientId: string) {
+  return requestJson<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/initialize/`)
+}
+
+export function getAdminClientReactivation(clientId: string) {
+  return requestJson<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/`)
+}
+
+export function cancelAdminClientReactivation(clientId: string) {
+  return requestJsonWithBody<{ detail: string }>(`/api/admin/clientes/${clientId}/reactivar/cancelar/`, {})
+}
+
+export function saveAdminClientReactivationUserStep(clientId: string, payload: ProspectConversionUserData & { password?: string }) {
+  return requestJsonWithBody<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/paso-1/`, payload)
+}
+
+export function saveAdminClientReactivationOperationStep(clientId: string, payload: ProspectConversionOperationData) {
+  return requestJsonWithBody<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/paso-2/`, payload)
+}
+
+export function saveAdminClientReactivationMedicalStep(clientId: string, payload: ProspectConversionMedicalData, pdfFile?: File) {
+  const formData = new FormData()
+  formData.append('payload', JSON.stringify(payload))
+  if (pdfFile) {
+    formData.append('documento_escaneado_pdf', pdfFile)
+  }
+
+  return requestFormDataWithBody<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/paso-3/`, formData)
+}
+
+export function saveAdminClientReactivationBiometricStep(clientId: string, payload: ProspectConversionBiometricData) {
+  return requestJsonWithBody<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/paso-4/`, payload)
+}
+
+export function finalizeAdminClientReactivation(clientId: string, pdfFile?: File) {
+  const formData = new FormData()
+  if (pdfFile) {
+    formData.append('documento_escaneado_pdf', pdfFile)
+  }
+
+  return requestFormDataWithBody<ProspectConversionFinalizeResponse>(`/api/admin/clientes/${clientId}/reactivar/finalizar/`, formData)
+}
+

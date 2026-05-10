@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
 import { AdminRelationshipTabs } from '../../components/admin/AdminRelationshipTabs'
@@ -26,6 +26,7 @@ import { useBranchContext } from '../../providers/BranchProvider'
 import { checkAdminConcurrency } from '../../services/api/admin'
 
 export function AdminClientDetailPage() {
+  const navigate = useNavigate()
   const { clientId = '' } = useParams()
   const { showNotification } = useNotifications()
   const loader = useCallback(() => getAdminClientDetail(clientId), [clientId])
@@ -282,6 +283,10 @@ export function AdminClientDetailPage() {
         description={`${data.client.status} | ${data.client.phone} | Ultimo analisis: ${data.client.lastAnalysis}`}
         actions={[
           { label: 'Volver a clientes', variant: 'ghost', to: '/admin/clientes' },
+          ...(data.client.status === 'Inactivo' ? [{
+            label: 'Reactivar / Nuevo tratamiento',
+            onClick: () => navigate(`/admin/clientes/${clientId}/reactivar`)
+          }] : [])
         ]}
       />
 
@@ -297,9 +302,33 @@ export function AdminClientDetailPage() {
         <div className="client-inline-meta">
           <StatusBadge tone={data.client.status === 'Activo' ? 'success' : 'neutral'}>{data.client.status}</StatusBadge>
           <span>{data.client.activeOperations} procedimiento(s) activo(s)</span>
-          <button className="button button--ghost" disabled={data.client.status !== 'Activo' || isInactivating} type="button" onClick={() => void handleInactivateClient()}>
-            {isInactivating ? 'Inactivando...' : 'Convertir a inactivo'}
-          </button>
+          {data.client.status === 'Activo' ? (
+            <>
+              <button
+                className="button"
+                type="button"
+                onClick={() => navigate(`/admin/clientes/${clientId}/reactivar`)}
+              >
+                Añadir procedimiento
+              </button>
+              <button
+                className="button button--ghost"
+                disabled={isInactivating}
+                type="button"
+                onClick={() => void handleInactivateClient()}
+              >
+                {isInactivating ? 'Inactivando...' : 'Convertir a inactivo'}
+              </button>
+            </>
+          ) : (
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={() => navigate(`/admin/clientes/${clientId}/reactivar`)}
+            >
+              Reactivar / Nuevo tratamiento
+            </button>
+          )}
         </div>
       </SectionCard>
 
@@ -434,16 +463,6 @@ export function AdminClientDetailPage() {
                     <td>{appointment.biometric}</td>
                     <td>
                       <div className="table-action-list">
-                        {appointment.canManage ? (
-                          <button
-                            className="button button--ghost button--compact"
-                            disabled={appointmentActionId !== null}
-                            type="button"
-                            onClick={() => void handleCancelAppointment(appointment.rawId)}
-                          >
-                            Cancelar reserva
-                          </button>
-                        ) : null}
                         {appointment.canMarkPendingBiometric ? (
                           <button
                             className="button button--ghost button--compact"
@@ -452,6 +471,16 @@ export function AdminClientDetailPage() {
                             onClick={() => void handleMarkPendingBiometric(appointment.rawId)}
                           >
                             {appointmentActionId === appointment.rawId ? 'Actualizando...' : 'Cambiar a pendiente de biometria'}
+                          </button>
+                        ) : null}
+                        {appointment.canManage ? (
+                          <button
+                            className="button button--ghost button--compact"
+                            disabled={appointmentActionId !== null}
+                            type="button"
+                            onClick={() => void handleCancelAppointment(appointment.rawId)}
+                          >
+                            Cancelar reserva
                           </button>
                         ) : null}
                         {appointment.canConfirmBiometric ? (

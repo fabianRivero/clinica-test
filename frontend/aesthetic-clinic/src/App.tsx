@@ -103,6 +103,7 @@ function App() {
           <Route path="prospectos" element={<AdminProspectsPage />} />
           <Route path="clientes" element={<AdminClientsPage />} />
           <Route path="clientes/:clientId" element={<AdminClientDetailPage />} />
+          <Route path="clientes/:clientId/reactivar" element={<AdminProspectConvertPage />} />
           <Route path="prospectos/nuevo" element={<AdminProspectCreatePage />} />
           <Route path="prospectos/:prospectId/convertir" element={<AdminProspectConvertPage />} />
           <Route path="operaciones" element={<AdminOperationsPage />} />

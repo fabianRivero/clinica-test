@@ -30,33 +30,6 @@ export function AdminClientsPage() {
     })
   }, [data, searchTerm, statusFilter])
 
-  async function handleCancelAppointment(appointmentId: number) {
-    const shouldCancel = window.confirm(
-      'Se cancelara la cita programada del cliente y el cupo volvera a quedar disponible. ¿Deseas continuar?',
-    )
-    if (!shouldCancel) {
-      return
-    }
-
-    try {
-      const response = await cancelAdminAppointment(appointmentId)
-      showNotification({
-        title: 'Cita cancelada',
-        message: response.detail,
-        tone: 'success',
-      })
-      reload()
-    } catch (requestError) {
-      showNotification({
-        title: 'No se pudo cancelar la cita',
-        message:
-          requestError instanceof Error
-            ? requestError.message
-            : 'Intenta nuevamente en unos segundos.',
-        tone: 'danger',
-      })
-    }
-  }
 
   return (
     <div className="page-stack">
@@ -166,13 +139,6 @@ export function AdminClientsPage() {
                                       {appointment.operation} · {appointment.specialist}
                                     </span>
                                   </div>
-                                  <button
-                                    className="button button--ghost button--compact"
-                                    type="button"
-                                    onClick={() => void handleCancelAppointment(appointment.rawId)}
-                                  >
-                                    Cancelar
-                                  </button>
                                 </div>
                               ))}
                             </div>

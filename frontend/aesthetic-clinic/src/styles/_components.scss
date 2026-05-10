@@ -279,7 +279,6 @@
   font-size: 1.1rem;
   line-height: 1;
 }
-
 .field {
   display: grid;
   gap: var(--spacing-2);
@@ -289,6 +288,39 @@
     font-size: 0.92rem;
     font-weight: 600;
     color: var(--color-text);
+  }
+}
+
+.field--password {
+  position: relative;
+
+  .input {
+    padding-right: 3.5rem;
+  }
+
+  .field__toggle {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-top: 0.7rem; // Offset for the label span
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-soft);
+    z-index: 2;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+
+    &:hover {
+      color: var(--color-primary);
+      background-color: rgba(var(--color-primary-rgb), 0.05);
+    }
   }
 }
 

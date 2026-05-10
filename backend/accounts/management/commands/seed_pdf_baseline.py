@@ -21,7 +21,7 @@ from catalogs.models import (
     ImplanteInjerto,
     Sucursal,
 )
-from customers.models import Prospecto, Cliente
+from customers.models import Prospecto, Cliente, HuellaBiometricaCliente
 from operations.models import (
     AgendaExcepcionEspecialista,
     AgendaHabitualDia,
@@ -53,6 +53,7 @@ class Command(BaseCommand):
         catalogs = self._seed_catalogs()
         self._seed_form_configuration(catalogs)
         self._seed_prospects(branches)
+        self._clear_business_data()
         self._seed_formal_patients(roles["CLIENTE"], branches)
         self._clear_schedule_configuration()
         self._seed_schedules(specialists)
@@ -665,6 +666,7 @@ class Command(BaseCommand):
                 "telefono": "78888888",
                 "ci": "12345678",
                 "direccion_domicilio": "Zona Central, Edif. Demo",
+                "fecha_nacimiento": "1990-01-01",
                 "estado_cliente": Cliente.Estado.INACTIVO,
             }
         )
@@ -764,6 +766,108 @@ class Command(BaseCommand):
 
         cliente_demo.actualizar_estado_automaticamente()
 
+        # Huella biometrica del paciente demo
+        admin_user = Usuario.objects.filter(is_superuser=True).first()
+        HuellaBiometricaCliente.objects.update_or_create(
+            cliente=cliente_demo,
+            defaults={
+                "proveedor": HuellaBiometricaCliente.Proveedor.MOCK,
+                "template_biometrico": "MOCK_TEMPLATE_DEMO_abc123def456",
+                "device_serial": "MOCK-DEVICE-001",
+                "calidad_captura": 85,
+                "consentimiento_aceptado": True,
+                "activo": True,
+                "registrado_por": admin_user,
+                "fecha_registro": fecha_pasada,
+            }
+        )
+
+        # --- SEGUNDO PACIENTE INACTIVO ---
+        user_inactivo, _ = Usuario.objects.update_or_create(
+            username="paciente.inactivo",
+            defaults={
+                "primer_nombre": "Carlos",
+                "apellido_paterno": "Inactivo",
+                "email": "carlos.inactivo@clinic.local",
+                "rol": client_role,
+                "sucursal": branches["B"],
+                "is_active": True,
+            },
+        )
+        user_inactivo.set_password("paciente123456")
+        user_inactivo.save()
+
+        cliente_inactivo, _ = Cliente.objects.update_or_create(
+            usuario=user_inactivo,
+            defaults={
+                "telefono": "76666666",
+                "ci": "87654321",
+                "direccion_domicilio": "Zona Sur, Calle Inactiva",
+                "fecha_nacimiento": "1985-05-15",
+                "estado_cliente": Cliente.Estado.INACTIVO,
+            }
+        )
+
+        # Operacion de Manchas finalizada hace 6 meses
+        fecha_manchas = timezone.now() - timezone.timedelta(days=180)
+        op_manchas = Operacion.objects.create(
+            paciente=cliente_inactivo,
+            servicio_config=ServicioConfig.objects.filter(proc_estetico__proceso="Tratamiento de manchas").first(),
+            precio_total=Decimal("650.00"),
+            cuotas_totales=1,
+            sesiones_totales=1,
+            fecha_inicio=fecha_manchas.date(),
+            fecha_final=fecha_manchas.date(),
+            estado=Operacion.Estado.FINALIZADA,
+            detalles_op="Tratamiento de manchas completado hace meses"
+        )
+
+        CitaMedica.objects.create(
+            operacion=op_manchas,
+            sucursal=branches["B"],
+            fecha_hora=fecha_manchas,
+            estado=CitaMedica.Estado.CONFIRMADA,
+            verif_biometria=True,
+            detalles_cita="Alta medica por manchas"
+        )
+
+        cuota_m = CuotaPlanPago.objects.create(
+            operacion=op_manchas,
+            nro_cuota=1,
+            fecha_vencimiento=fecha_manchas.date(),
+            monto_programado=Decimal("650.00"),
+            estado=CuotaPlanPago.Estado.PAGADO
+        )
+
+        admin_user = Usuario.objects.filter(is_superuser=True).first()
+        PagoRealizado.objects.create(
+            cuota=cuota_m,
+            monto_pagado=Decimal("650.00"),
+            comprobante_url="seed_carlos_comprobante.pdf",
+            estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
+            verificado=True,
+            verificado_por=admin_user,
+            fecha_verificacion=fecha_manchas,
+            detalles_pago="Pago de tratamiento previo de manchas"
+        )
+
+        cliente_inactivo.actualizar_estado_automaticamente()
+
+        # Huella biometrica de Carlos
+        HuellaBiometricaCliente.objects.update_or_create(
+            cliente=cliente_inactivo,
+            defaults={
+                "proveedor": HuellaBiometricaCliente.Proveedor.MOCK,
+                "template_biometrico": "MOCK_TEMPLATE_CARLOS_xyz789ghi012",
+                "device_serial": "MOCK-DEVICE-002",
+                "calidad_captura": 90,
+                "consentimiento_aceptado": True,
+                "activo": True,
+                "registrado_por": admin_user,
+                "fecha_registro": fecha_manchas,
+            }
+        )
+
     def _seed_schedules(self, specialists):
         from datetime import time
         start_time = time(8, 0)
@@ -794,4 +898,11 @@ class Command(BaseCommand):
         AgendaHabitualDia.objects.all().delete()
         AgendaHabitualEspecialista.objects.all().delete()
         DiaBloqueadoAgendaGlobal.objects.all().delete()
+
+    def _clear_business_data(self):
+        HuellaBiometricaCliente.objects.all().delete()
+        PagoRealizado.objects.all().delete()
+        CuotaPlanPago.objects.all().delete()
+        CitaMedica.objects.all().delete()
+        Operacion.objects.all().delete()
 

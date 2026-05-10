@@ -77,6 +77,15 @@ class ProspectoConversionBorrador(TimeStampedModel):
         "customers.Prospecto",
         on_delete=models.CASCADE,
         related_name="borrador_conversion",
+        null=True,
+        blank=True,
+    )
+    cliente = models.OneToOneField(
+        "customers.Cliente",
+        on_delete=models.CASCADE,
+        related_name="borrador_reactivacion",
+        null=True,
+        blank=True,
     )
     iniciado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -97,6 +106,7 @@ class ProspectoConversionBorrador(TimeStampedModel):
     datos_operacion = models.JSONField(default=dict, blank=True)
     datos_ficha = models.JSONField(default=dict, blank=True)
     datos_biometria = models.JSONField(default=dict, blank=True)
+    documento_pdf = models.FileField(upload_to="conversiones/borradores/", null=True, blank=True)
 
     class Meta:
         db_table = "prospectos_conversion_borrador"
@@ -129,7 +139,7 @@ class Cliente(TimeStampedModel):
         default=Estado.INACTIVO,
     )
 
-    fecha_nacimiento = models.DateField(null=True, blank=True)
+    fecha_nacimiento = models.DateField()
     nro_hijos = models.PositiveIntegerField(default=0)
     direccion_domicilio = models.CharField(max_length=255, blank=True)
     telefono = models.CharField(max_length=30, blank=True)

@@ -57,6 +57,8 @@ from config.prospect_conversion_views import (
     admin_prospect_conversion_medical_step,
     admin_prospect_conversion_operation_step,
     admin_prospect_conversion_user_step,
+    admin_client_reactivation_initialize,
+    admin_client_reactivation_detail,
 )
 
 
@@ -111,6 +113,46 @@ urlpatterns = [
         "clientes/<int:client_id>/cita-medica/reservar/",
         admin_cliente_create_free_medical_appointment,
         name="admin-client-free-medical-create-api",
+    ),
+    path(
+        "clientes/<int:cliente_id>/reactivar/initialize/",
+        admin_client_reactivation_initialize,
+        name="admin-client-reactivation-initialize-api",
+    ),
+    path(
+        "clientes/<int:cliente_id>/reactivar/",
+        admin_client_reactivation_detail,
+        name="admin-client-reactivation-detail-api",
+    ),
+    path(
+        "clientes/<int:cliente_id>/reactivar/cancelar/",
+        admin_prospect_conversion_cancel,
+        name="admin-client-reactivation-cancel-api",
+    ),
+    path(
+        "clientes/<int:cliente_id>/reactivar/paso-1/",
+        admin_prospect_conversion_user_step,
+        name="admin-client-reactivation-user-step-api",
+    ),
+    path(
+        "clientes/<int:cliente_id>/reactivar/paso-2/",
+        admin_prospect_conversion_operation_step,
+        name="admin-client-reactivation-operation-step-api",
+    ),
+    path(
+        "clientes/<int:cliente_id>/reactivar/paso-3/",
+        admin_prospect_conversion_medical_step,
+        name="admin-client-reactivation-medical-step-api",
+    ),
+    path(
+        "clientes/<int:cliente_id>/reactivar/paso-4/",
+        admin_prospect_conversion_biometric_step,
+        name="admin-client-reactivation-biometric-step-api",
+    ),
+    path(
+        "clientes/<int:cliente_id>/reactivar/finalizar/",
+        admin_prospect_conversion_finalize,
+        name="admin-client-reactivation-finalize-api",
     ),
     path("prospectos/crear/", admin_crear_prospecto, name="admin-prospectos-create-api"),
     path(
