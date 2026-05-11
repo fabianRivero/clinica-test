@@ -14,7 +14,10 @@ import {
   getAdminStaff,
   updateAdminStaff,
   updateAdminStaffStatus,
+  changeAdminStaffBranch,
 } from '../../services/api/admin'
+import { useAuth } from '../../providers/AuthProvider'
+import { useBranchContext } from '../../providers/BranchProvider'
 import type {
   CreateAdminStaffPayload,
   StaffCapacityItem,
@@ -426,6 +429,31 @@ export function AdminStaffCreatePage() {
 export function AdminStaffManagePage() {
   const { data, isLoading, error, reload } = useApiResource(getAdminStaff)
   const { showNotification } = useNotifications()
+  const { user } = useAuth()
+  const isMainAdmin = user?.isMainAdmin || user?.isSuperuser
+  const { branches } = useBranchContext()
+  const [isChangingBranchId, setIsChangingBranchId] = useState<number | null>(null)
+
+  async function handleChangeBranch(staffMember: StaffCapacityItem, branchId: number) {
+    const branchName = branches.find(b => b.id === branchId)?.nombre || 'esta sucursal'
+    const confirmed = window.confirm(`¿Seguro que deseas mover a ${staffMember.specialist} a la sucursal ${branchName}?`)
+    if (!confirmed) return
+
+    setIsChangingBranchId(staffMember.rawId)
+    try {
+      const response = await changeAdminStaffBranch(staffMember.rawId, branchId)
+      showNotification({ title: 'Usuario movido', message: response.detail, tone: 'success' })
+      reload()
+    } catch (err: any) {
+      showNotification({
+        title: 'Error al mover',
+        message: err.message,
+        tone: 'danger',
+      })
+    } finally {
+      setIsChangingBranchId(null)
+    }
+  }
 
   async function handleToggleStatus(staffMember: StaffCapacityItem) {
     try {
@@ -523,6 +551,24 @@ export function AdminStaffManagePage() {
                       >
                         {item.isActive ? 'Desactivar' : 'Activar'}
                       </button>
+                      {isMainAdmin && (
+                        <button
+                          className="button button--secondary button--compact"
+                          type="button"
+                          disabled={isChangingBranchId === item.rawId}
+                          onClick={() => {
+                            const targetBranchId = window.prompt(
+                              `Ingresa el ID de la sucursal destino para ${item.specialist}:\n\n` +
+                              branches.map(b => `[ ${b.id} ] - ${b.nombre}`).join('\n')
+                            )
+                            if (targetBranchId) {
+                              handleChangeBranch(item, Number(targetBranchId))
+                            }
+                          }}
+                        >
+                          {isChangingBranchId === item.rawId ? 'Moviendo...' : 'Cambiar sucursal'}
+                        </button>
+                      )}
                     </div>
                   </article>
                 ))}

@@ -47,7 +47,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         roles = self._seed_roles()
         branches = self._seed_branches()
-        self._seed_admins(roles["ADMINISTRADOR"], branches)
+        self._seed_admins(roles, branches)
         specialist_users = self._seed_specialist_users(roles["TRABAJADOR"], branches)
         specialties, specialists = self._seed_staff(specialist_users, branches)
         catalogs = self._seed_catalogs()
@@ -83,9 +83,11 @@ class Command(BaseCommand):
 
     def _seed_roles(self):
         roles = {}
-        for role_name in ("ADMINISTRADOR", "TRABAJADOR", "CLIENTE"):
+        for role_name in ("ADMIN_PRINCIPAL", "ADMIN_SUCURSAL", "TRABAJADOR", "CLIENTE"):
             role, _ = Rol.objects.update_or_create(rol=role_name, defaults={})
             roles[role_name] = role
+        # Eliminar rol legacy ADMINISTRADOR si existe
+        Rol.objects.filter(rol="ADMINISTRADOR").delete()
         return roles
 
     def _normalize_admin_users(self, admin_role):
@@ -115,15 +117,15 @@ class Command(BaseCommand):
         )
         return {"A": branch_a, "B": branch_b}
 
-    def _seed_admins(self, admin_role, branches):
-        # Admin General
+    def _seed_admins(self, roles, branches):
+        # Admin General (principal)
         admin_gen, created = Usuario.objects.update_or_create(
             username="admin.general",
             defaults={
                 "primer_nombre": "Admin",
                 "apellido_paterno": "General",
                 "email": "admin.general@clinic.local",
-                "rol": admin_role,
+                "rol": roles["ADMIN_PRINCIPAL"],
                 "sucursal": branches["A"],
                 "is_active": True,
                 "is_staff": True,
@@ -133,14 +135,14 @@ class Command(BaseCommand):
         admin_gen.set_password("admin123456")
         admin_gen.save()
 
-        # Admin Sucursal
+        # Admin Sucursal (solo ve datos de su sucursal)
         admin_suc, created = Usuario.objects.update_or_create(
             username="admin.sucursal",
             defaults={
                 "primer_nombre": "Admin",
-                "apellido_paterno": "Sucursal",
+                "apellido_paterno": "Sucursal Sur",
                 "email": "admin.sucursal@clinic.local",
-                "rol": admin_role,
+                "rol": roles["ADMIN_SUCURSAL"],
                 "sucursal": branches["B"],
                 "is_active": True,
                 "is_staff": True,

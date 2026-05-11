@@ -69,6 +69,42 @@ def _admin_required(view_func):
     return wrapped
 
 
+def _admin_principal_required(view_func):
+    @wraps(view_func)
+    def wrapped(request, *args, **kwargs):
+        user = request.user
+        if not user.is_authenticated:
+            return _json({"detail": "Autenticacion requerida."}, status=401)
+        if not (user.is_superuser or user.es_admin_principal):
+            return _json({"detail": "Esta accion requiere permisos de administrador principal."}, status=403)
+        return view_func(request, *args, **kwargs)
+
+    return wrapped
+
+
+def _get_user_branch(request):
+    """Retorna la sucursal efectiva para filtrar datos.
+
+    - Admin de sucursal: siempre su sucursal asignada (obligatorio).
+    - Admin principal: la sucursal del query param 'branchId' si fue enviado,
+      o None si no se envio (ve todo).
+    """
+    user = request.user
+    if not (user.is_superuser or user.es_admin_principal):
+        # Admin de sucursal: su sucursal esta fija
+        return user.sucursal
+
+    # Admin principal: filtro opcional por branchId del selector
+    branch_id = request.GET.get("branchId") or request.POST.get("branchId")
+    if branch_id:
+        try:
+            from catalogs.models import Sucursal
+            return Sucursal.objects.filter(pk=int(branch_id), activa=True).first()
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
 def _currency(amount):
     return f"Bs {amount:.2f}"
 
@@ -1453,7 +1489,7 @@ def _clear_specialist_availability(especialista):
     AgendaExcepcionEspecialista.objects.filter(especialista=especialista).delete()
 
 
-def _parse_staff_payload(payload, errors, *, instance=None):
+def _parse_staff_payload(request, payload, errors, *, instance=None):
     username = (payload.get("username") or "").strip()
     email = (payload.get("email") or "").strip()
     primer_nombre = (payload.get("primerNombre") or "").strip()
@@ -1465,6 +1501,7 @@ def _parse_staff_payload(payload, errors, *, instance=None):
     observaciones = (payload.get("observaciones") or "").strip()
     password = payload.get("password") or ""
     specialty_ids = payload.get("specialtyIds") or []
+    branch_id = payload.get("branchId")
 
     if not username:
         errors["username"] = "El nombre de usuario es obligatorio."
@@ -1480,6 +1517,17 @@ def _parse_staff_payload(payload, errors, *, instance=None):
     specialties = list(Especialidad.objects.filter(pk__in=specialty_ids, activo=True))
     if len(specialties) != len(set(specialty_ids)):
         errors["specialtyIds"] = "Alguna de las especialidades ya no está disponible."
+
+    # Resolver sucursal
+    from catalogs.models import Sucursal
+    user = request.user
+    sucursal_base = None
+    if not (user.is_superuser or user.es_admin_principal):
+        sucursal_base = user.sucursal
+    elif branch_id:
+        sucursal_base = Sucursal.objects.filter(pk=branch_id, activa=True).first()
+        if not sucursal_base:
+            errors["branchId"] = "La sucursal seleccionada no es valida."
 
     if errors:
         return None
@@ -1501,6 +1549,8 @@ def _parse_staff_payload(payload, errors, *, instance=None):
     especialista.ci = ci
     especialista.telefono = telefono
     especialista.observaciones = observaciones
+    if sucursal_base:
+        especialista.sucursal_base = sucursal_base
 
     return {
         "usuario": usuario,
@@ -1589,19 +1639,30 @@ def admin_dashboard(request):
     """Retorna solo las metricas basicas y alertas del dashboard"""
     mark_expired_programmed_appointments_as_no_show()
     today = timezone.localdate()
+    branch = _get_user_branch(request)
 
     operations_qs = Operacion.objects.filter(estado=Operacion.Estado.EN_PROCESO)
+    if branch:
+        operations_qs = operations_qs.filter(citas__sucursal=branch).distinct()
+
     prospectos_qs = Prospecto.objects.all()
 
-    pending_payments_count = PagoRealizado.objects.filter(
+    payments_qs = PagoRealizado.objects.all()
+    if branch:
+        payments_qs = payments_qs.filter(operacion__citas__sucursal=branch).distinct()
+
+    pending_payments_count = payments_qs.filter(
         estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE
     ).count()
-    payments_today = PagoRealizado.objects.filter(created_at__date=today).count()
+    payments_today = payments_qs.filter(created_at__date=today).count()
 
-    operations_started_this_month = Operacion.objects.filter(
+    operations_started_qs = Operacion.objects.filter(
         created_at__year=today.year,
         created_at__month=today.month,
-    ).count()
+    )
+    if branch:
+        operations_started_qs = operations_started_qs.filter(citas__sucursal=branch).distinct()
+    operations_started_this_month = operations_started_qs.count()
 
     converted_prospects = Prospecto.objects.filter(estado=Prospecto.Estado.CONVERTIDO).count()
     total_prospects = Prospecto.objects.count()
@@ -1611,10 +1672,16 @@ def admin_dashboard(request):
         else "Sin conversiones aun"
     )
 
-    appointments_today = CitaMedica.objects.filter(fecha_hora__date=today).count()
-    pending_biometric = CitaMedica.objects.filter(
+    appointments_today_qs = CitaMedica.objects.filter(fecha_hora__date=today)
+    pending_biometric_qs = CitaMedica.objects.filter(
         estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
-    ).count()
+    )
+    if branch:
+        appointments_today_qs = appointments_today_qs.filter(sucursal=branch)
+        pending_biometric_qs = pending_biometric_qs.filter(sucursal=branch)
+
+    appointments_today = appointments_today_qs.count()
+    pending_biometric = pending_biometric_qs.count()
 
     data = {
         "metrics": [
@@ -1649,6 +1716,8 @@ def admin_dashboard_payments(request):
     if month == today.month and year == today.year:
         range_start = today
 
+    branch = _get_user_branch(request)
+
     upcoming_quotas = CuotaPlanPago.objects.select_related(
         "operacion__paciente__usuario",
         "operacion__servicio_config__proc_estetico"
@@ -1656,6 +1725,8 @@ def admin_dashboard_payments(request):
         fecha_vencimiento__range=(range_start, end),
         estado__in=[CuotaPlanPago.Estado.PENDIENTE, CuotaPlanPago.Estado.VENCIDA]
     ).order_by("fecha_vencimiento")
+    if branch:
+        upcoming_quotas = upcoming_quotas.filter(operacion__citas_medicas__sucursal=branch).distinct()
 
     start_of_week = today - timedelta(days=today.weekday())
     end_of_week = start_of_week + timedelta(days=6)
@@ -1704,6 +1775,8 @@ def admin_dashboard_agenda(request):
     if month == today.month and year == today.year:
         range_start = today
 
+    branch = _get_user_branch(request)
+
     agenda_qs = (
         CitaMedica.objects.select_related(
             "operacion__paciente__usuario",
@@ -1715,6 +1788,8 @@ def admin_dashboard_agenda(request):
         )
         .order_by("fecha_hora")
     )
+    if branch:
+        agenda_qs = agenda_qs.filter(sucursal=branch)
 
     start_of_week = today - timedelta(days=today.weekday())
     end_of_week = start_of_week + timedelta(days=6)
@@ -1747,6 +1822,7 @@ def admin_dashboard_agenda(request):
 @_admin_required
 def admin_prospectos(request):
     mark_expired_programmed_appointments_as_no_show()
+    branch = _get_user_branch(request)
     prospectos_qs = (
         Prospecto.objects.select_related("registrado_por")
         .prefetch_related(
@@ -1776,6 +1852,8 @@ def admin_prospectos(request):
             "analisis_esteticos",
         ).order_by("usuario__primer_nombre", "usuario__apellido_paterno")
     )
+    if branch:
+        clientes_qs = clientes_qs.filter(operaciones__citas_medicas__sucursal=branch).distinct()
 
     data = {
         "metrics": [
@@ -2470,6 +2548,7 @@ def admin_crear_prospecto(request):
 @_admin_required
 def admin_operaciones(request):
     mark_expired_programmed_appointments_as_no_show()
+    branch = _get_user_branch(request)
     operaciones_qs = (
         Operacion.objects.select_related(
             "paciente__usuario",
@@ -2487,6 +2566,8 @@ def admin_operaciones(request):
             ),
         ).order_by("-created_at")
     )
+    if branch:
+        operaciones_qs = operaciones_qs.filter(citas_medicas__sucursal=branch).distinct()
     blocked_reservations = sum(
         1
         for operacion in operaciones_qs
@@ -2720,6 +2801,7 @@ def admin_update_operation_price_plan(request, operacion_id):
 @require_GET
 @_admin_required
 def admin_pagos(request):
+    branch = _get_user_branch(request)
     pagos_qs = (
         PagoRealizado.objects.select_related(
             "cuota__operacion__paciente__usuario",
@@ -2727,6 +2809,8 @@ def admin_pagos(request):
             "verificado_por",
         ).order_by("-created_at")
     )
+    if branch:
+        pagos_qs = pagos_qs.filter(cuota__operacion__citas_medicas__sucursal=branch).distinct()
     pending_amount = sum(
         payment.monto_pagado
         for payment in pagos_qs
@@ -2929,7 +3013,7 @@ def admin_catalogo_detalle(request, catalog_key):
 
 
 @require_POST
-@_admin_required
+@_admin_principal_required
 def admin_catalogo_crear(request, catalog_key):
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -2957,7 +3041,7 @@ def admin_catalogo_crear(request, catalog_key):
 
 
 @require_POST
-@_admin_required
+@_admin_principal_required
 def admin_catalogo_actualizar(request, catalog_key, item_id):
     instance = _catalog_get_instance(catalog_key, item_id)
     if not instance:
@@ -2988,7 +3072,7 @@ def admin_catalogo_actualizar(request, catalog_key, item_id):
 
 
 @require_POST
-@_admin_required
+@_admin_principal_required
 def admin_catalogo_estado(request, catalog_key, item_id):
     instance = _catalog_get_instance(catalog_key, item_id)
     if not instance:
@@ -3017,6 +3101,7 @@ def admin_catalogo_estado(request, catalog_key, item_id):
 @require_GET
 @_admin_required
 def admin_equipo(request):
+    branch = _get_user_branch(request)
     staff_qs = (
         Especialista.objects.select_related("usuario")
         .prefetch_related(
@@ -3024,10 +3109,19 @@ def admin_equipo(request):
         )
         .order_by("-usuario__is_active", "usuario__primer_nombre", "usuario__apellido_paterno")
     )
-    upcoming_appointments = CitaMedica.objects.filter(fecha_hora__gte=timezone.now()).count()
-    pending_biometric = CitaMedica.objects.filter(
+    
+    if branch:
+        staff_qs = staff_qs.filter(sucursal_base=branch)
+
+    upcoming_appointments_qs = CitaMedica.objects.filter(fecha_hora__gte=timezone.now())
+    pending_biometric_qs = CitaMedica.objects.filter(
         estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
-    ).count()
+    )
+    
+    if branch:
+        upcoming_appointments_qs = upcoming_appointments_qs.filter(sucursal=branch)
+        pending_biometric_qs = pending_biometric_qs.filter(sucursal=branch)
+
     active_staff = staff_qs.filter(usuario__is_active=True).count()
     inactive_staff = staff_qs.filter(usuario__is_active=False).count()
 
@@ -3050,14 +3144,14 @@ def admin_equipo(request):
             _metric(
                 "team-agenda",
                 "Citas futuras",
-                upcoming_appointments,
+                upcoming_appointments_qs.count(),
                 "Carga agendada a partir de hoy",
                 "warning",
             ),
             _metric(
                 "team-biometric",
                 "Pendientes de biometria",
-                pending_biometric,
+                pending_biometric_qs.count(),
                 "Citas realizadas sin cierre final",
                 "danger",
             ),
@@ -3088,7 +3182,7 @@ def admin_crear_especialista(request):
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     errors = {}
-    parsed = _parse_staff_payload(payload, errors)
+    parsed = _parse_staff_payload(request, payload, errors)
     if errors:
         return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
 
@@ -3148,7 +3242,7 @@ def admin_actualizar_especialista(request, specialist_id):
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     errors = {}
-    parsed = _parse_staff_payload(payload, errors, instance=especialista)
+    parsed = _parse_staff_payload(request, payload, errors, instance=especialista)
     if errors:
         return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
 
@@ -3224,3 +3318,80 @@ def admin_estado_especialista(request, specialist_id):
             "staffMember": _staff_item(especialista),
         }
     )
+
+@require_POST
+@_admin_principal_required
+@transaction.atomic
+def admin_prospecto_migrar(request, prospecto_id):
+    from customers.models import Prospecto
+    from catalogs.models import Sucursal
+    prospecto = get_object_or_404(Prospecto, pk=prospecto_id)
+    
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        branch_id = payload.get("branchId")
+    except:
+        return _json({"detail": "Payload invalido."}, status=400)
+        
+    branch = get_object_or_404(Sucursal, pk=branch_id)
+    prospecto.sucursal_registro = branch
+    prospecto.save(update_fields=["sucursal_registro", "updated_at"])
+    
+    return _json({
+        "detail": f"Prospecto migrado exitosamente a {branch.nombre}.",
+        "branch": {"id": branch.id, "name": branch.nombre}
+    })
+
+@require_POST
+@_admin_principal_required
+@transaction.atomic
+def admin_cliente_migrar(request, client_id):
+    from customers.models import Cliente
+    from catalogs.models import Sucursal
+    cliente = get_object_or_404(Cliente, pk=client_id)
+    
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        branch_id = payload.get("branchId")
+    except:
+        return _json({"detail": "Payload invalido."}, status=400)
+        
+    branch = get_object_or_404(Sucursal, pk=branch_id)
+    cliente.sucursal_registro = branch
+    cliente.save(update_fields=["sucursal_registro", "updated_at"])
+    
+    return _json({
+        "detail": f"Cliente migrado exitosamente a {branch.nombre}.",
+        "branch": {"id": branch.id, "name": branch.nombre}
+    })
+
+@require_POST
+@_admin_principal_required
+@transaction.atomic
+def admin_equipo_cambiar_sucursal(request, user_id):
+    from accounts.models import Usuario
+    from catalogs.models import Sucursal
+    user_to_move = get_object_or_404(Usuario, pk=user_id)
+    
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        branch_id = payload.get("branchId")
+    except:
+        return _json({"detail": "Payload invalido."}, status=400)
+        
+    branch = get_object_or_404(Sucursal, pk=branch_id)
+    
+    # Si es un usuario (Admin de sucursal)
+    user_to_move.sucursal = branch
+    user_to_move.save(update_fields=["sucursal", "updated_at"])
+    
+    # Si tambien tiene perfil de especialista, actualizar su sucursal base
+    if hasattr(user_to_move, "especialista"):
+        especialista = user_to_move.especialista
+        especialista.sucursal_base = branch
+        especialista.save(update_fields=["sucursal_base", "updated_at"])
+        
+    return _json({
+        "detail": f"Usuario movido exitosamente a {branch.nombre}.",
+        "branch": {"id": branch.id, "name": branch.nombre}
+    })

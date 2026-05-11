@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 
 import { DataState } from '../../components/admin/DataState'
 import { MetricCard } from '../../components/admin/MetricCard'
@@ -7,6 +7,7 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
+import { useBranchContext } from '../../providers/BranchProvider'
 import {
   getAdminPayments,
   updateAdminPaymentQrConfig,
@@ -15,13 +16,17 @@ import {
 import type { UpdateAdminPaymentStatusPayload } from '../../types/admin'
 
 export function AdminPaymentsPage() {
+  const { activeBranch } = useBranchContext()
+  const branchId = activeBranch?.id ?? null
   const [instructions, setInstructions] = useState('')
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [paymentNotes, setPaymentNotes] = useState<Record<number, string>>({})
   const [paymentActionId, setPaymentActionId] = useState<number | null>(null)
-  const { data, isLoading, error, reload } = useApiResource(getAdminPayments)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const loader = useCallback(() => getAdminPayments(), [branchId])
+  const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
 
   useEffect(() => {

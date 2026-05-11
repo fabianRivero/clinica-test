@@ -4,11 +4,17 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useBranchContext } from '../../providers/BranchProvider'
 import { getAdminOperations } from '../../services/api/admin'
 import { Link } from 'react-router-dom'
+import { useCallback } from 'react'
 
 export function AdminOperationsPage() {
-  const { data, isLoading, error } = useApiResource(getAdminOperations)
+  const { activeBranch } = useBranchContext()
+  const branchId = activeBranch?.id ?? null
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const loader = useCallback(() => getAdminOperations(), [branchId])
+  const { data, isLoading, error } = useApiResource(loader)
 
   return (
     <div className="page-stack">

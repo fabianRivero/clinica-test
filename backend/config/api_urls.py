@@ -23,6 +23,7 @@ from config.api_views import (
     admin_cliente_detalle,
     admin_cliente_free_medical_availability,
     admin_cliente_inactivate,
+    admin_cliente_migrar,
     admin_cliente_reservation_availability,
     admin_confirm_appointment_biometric,
     admin_mark_appointment_pending_biometric,
@@ -35,12 +36,14 @@ from config.api_views import (
     admin_dashboard_payments,
     admin_dashboard_agenda,
     admin_equipo,
+    admin_equipo_cambiar_sucursal,
     admin_estado_especialista,
     admin_operacion_detalle,
     admin_operaciones,
     admin_pagos,
     admin_prospect_medical_availability,
     admin_prospectos,
+    admin_prospecto_migrar,
     admin_update_operation_details,
     admin_update_operation_price_plan,
     admin_update_payment_status,
@@ -68,6 +71,7 @@ urlpatterns = [
     path("dashboard/agenda/", admin_dashboard_agenda, name="admin-dashboard-agenda-api"),
     path("prospectos/", admin_prospectos, name="admin-prospectos-api"),
     path("prospectos/<int:prospecto_id>/actualizar/", admin_update_prospect, name="admin-prospectos-update-api"),
+    path("prospectos/<int:prospecto_id>/migrar/", admin_prospecto_migrar, name="admin-prospectos-migrar-api"),
     path(
         "prospectos/<int:prospecto_id>/cita-medica/disponibilidad/",
         admin_prospect_medical_availability,
@@ -93,6 +97,11 @@ urlpatterns = [
         "clientes/<int:client_id>/inactivar/",
         admin_cliente_inactivate,
         name="admin-client-inactivate-api",
+    ),
+    path(
+        "clientes/<int:client_id>/migrar/",
+        admin_cliente_migrar,
+        name="admin-client-migrar-api",
     ),
     path(
         "clientes/<int:client_id>/operaciones/<int:operation_id>/disponibilidad/",
@@ -282,5 +291,10 @@ urlpatterns = [
         "equipo/<int:specialist_id>/estado/",
         admin_estado_especialista,
         name="admin-equipo-status-api",
+    ),
+    path(
+        "equipo/<int:user_id>/cambiar-sucursal/",
+        admin_equipo_cambiar_sucursal,
+        name="admin-equipo-change-branch-api",
     ),
 ]

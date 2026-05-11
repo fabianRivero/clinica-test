@@ -4,7 +4,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../providers/AuthProvider'
 import { BranchProvider, useBranchContext } from '../providers/BranchProvider'
 
-const navigation = [
+const fullNavigation = [
   { to: '/admin', label: 'Resumen' },
   {
     label: 'Prospectos y clientes',
@@ -24,6 +24,7 @@ const navigation = [
   { to: '/admin/pagos', label: 'Pagos' },
   {
     label: 'Catalogos',
+    mainAdminOnly: true,
     children: [
       { to: '/admin/catalogos/todos-los-servicios', label: 'Todos los servicios' },
       { to: '/admin/catalogos/procedimientos-esteticos', label: 'Procedimientos esteticos' },
@@ -40,6 +41,8 @@ const navigation = [
     ],
   },
 ] as const
+
+type NavItem = (typeof fullNavigation)[number]
 
 function BranchSelector() {
   const { branches, activeBranch, isLoading, setActiveBranch } = useBranchContext()
@@ -73,6 +76,13 @@ function AdminLayoutInner() {
   const location = useLocation()
   const { user, logout } = useAuth()
   const activePath = location.pathname
+  const isMainAdmin = user?.isMainAdmin ?? false
+
+  const navigation = useMemo(() => {
+    if (isMainAdmin) return fullNavigation
+    return fullNavigation.filter((item) => !('mainAdminOnly' in item && item.mainAdminOnly))
+  }, [isMainAdmin]) as readonly NavItem[]
+
   const openGroups = useMemo(
     () =>
       new Set(
@@ -80,7 +90,7 @@ function AdminLayoutInner() {
           .filter((item) => 'children' in item && item.children.some((child) => activePath.startsWith(child.to)))
           .map((item) => item.label),
       ),
-    [activePath],
+    [activePath, navigation],
   )
 
   return (
@@ -157,10 +167,10 @@ function AdminLayoutInner() {
               <span />
             </button>
             <div>
-              <span className="topbar__eyebrow">Administracion clinica</span>
+              <span className="topbar__eyebrow">{isMainAdmin ? 'Administracion clinica' : `Sucursal: ${user?.branchName || ''}`}</span>
               <strong>{user?.fullName || 'Administrador'}</strong>
             </div>
-            <BranchSelector />
+            {isMainAdmin ? <BranchSelector /> : null}
           </div>
 
           <div className="topbar__right">

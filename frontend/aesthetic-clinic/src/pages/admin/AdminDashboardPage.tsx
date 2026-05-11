@@ -6,6 +6,7 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { getAdminDashboard, getAdminDashboardPayments, getAdminDashboardAgenda } from '../../services/api/admin'
+import { useBranchContext } from '../../providers/BranchProvider'
 import { Link } from 'react-router-dom'
 
 const agendaTone = {
@@ -15,20 +16,24 @@ const agendaTone = {
 } as const
 
 export function AdminDashboardPage() {
+  const { activeBranch } = useBranchContext()
+  const branchId = activeBranch?.id ?? null
   const [pMonth, setPMonth] = useState(new Date().getMonth() + 1)
   const [pYear, setPYear] = useState(new Date().getFullYear())
   const [aMonth, setAMonth] = useState(new Date().getMonth() + 1)
   const [aYear, setAYear] = useState(new Date().getFullYear())
 
-  // Metricas generales (estaticas)
-  const { data: metricsData, isLoading: loadingMetrics } = useApiResource(getAdminDashboard)
+  // Metricas generales — se recargan al cambiar sucursal
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const metricsLoader = useCallback(() => getAdminDashboard(), [branchId])
+  const { data: metricsData, isLoading: loadingMetrics } = useApiResource(metricsLoader)
   
   // Pagos independientes
-  const paymentsLoader = useCallback(() => getAdminDashboardPayments(pMonth, pYear), [pMonth, pYear])
+  const paymentsLoader = useCallback(() => getAdminDashboardPayments(pMonth, pYear), [pMonth, pYear, branchId])
   const { data: paymentsData, isLoading: loadingPayments } = useApiResource(paymentsLoader)
 
   // Agenda independiente
-  const agendaLoader = useCallback(() => getAdminDashboardAgenda(aMonth, aYear), [aMonth, aYear])
+  const agendaLoader = useCallback(() => getAdminDashboardAgenda(aMonth, aYear), [aMonth, aYear, branchId])
   const { data: agendaData, isLoading: loadingAgenda } = useApiResource(agendaLoader)
 
   const monthNames = [

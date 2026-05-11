@@ -26,16 +26,21 @@ def _dashboard_path(user):
 
 def _serialize_user(user):
     role_name = user.rol.rol if user.rol else ""
+    # Ambos tipos de admin se exponen como ADMINISTRADOR al frontend
+    frontend_role = "ADMINISTRADOR" if (user.is_superuser or user.es_administrador) else role_name
     return {
         "id": user.id,
         "username": user.username,
         "fullName": user.nombre_completo or user.username,
         "email": user.email,
-        "role": role_name,
+        "role": frontend_role,
         "dashboardPath": _dashboard_path(user),
         "isAdmin": bool(user.is_superuser or user.es_administrador),
+        "isMainAdmin": bool(user.is_superuser or user.es_admin_principal),
         "isWorker": bool(user.es_trabajador),
         "isClient": bool(user.es_cliente),
+        "branchId": user.sucursal_id,
+        "branchName": user.sucursal.nombre if user.sucursal else "",
     }
 
 

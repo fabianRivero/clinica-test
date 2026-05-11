@@ -48,11 +48,19 @@ import type {
   ProspectConversionUserData,
 } from '../../types/prospectConversion'
 import { ensureCsrfCookie } from './auth'
+import { getActiveBranchId } from './activeBranch'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
+function _appendBranchId(path: string): string {
+  const branchId = getActiveBranchId()
+  if (!branchId) return path
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}branchId=${branchId}`
+}
+
 async function requestJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${_appendBranchId(path)}`, {
     credentials: 'include',
     headers: {
       Accept: 'application/json',
@@ -69,7 +77,7 @@ async function requestJson<T>(path: string): Promise<T> {
 async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
   const csrfToken = await ensureCsrfCookie()
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${_appendBranchId(path)}`, {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -100,7 +108,7 @@ async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
 async function requestFormDataWithBody<T>(path: string, body: FormData): Promise<T> {
   const csrfToken = await ensureCsrfCookie()
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${_appendBranchId(path)}`, {
     method: 'POST',
     credentials: 'include',
     headers: {
@@ -532,3 +540,27 @@ export function finalizeAdminClientReactivation(clientId: string, pdfFile?: File
   return requestFormDataWithBody<ProspectConversionFinalizeResponse>(`/api/admin/clientes/${clientId}/reactivar/finalizar/`, formData)
 }
 
+
+export async function migrateAdminClient(clientId: string | number, branchId: number) {
+  return requestJsonWithBody<{ detail: string; branch: { id: number; name: string } }>(
+    `clientes/${clientId}/migrar/`,
+    'POST',
+    { branchId }
+  )
+}
+
+export async function migrateAdminProspect(prospectoId: string | number, branchId: number) {
+  return requestJsonWithBody<{ detail: string; branch: { id: number; name: string } }>(
+    `prospectos/${prospectoId}/migrar/`,
+    'POST',
+    { branchId }
+  )
+}
+
+export async function changeAdminStaffBranch(userId: string | number, branchId: number) {
+  return requestJsonWithBody<{ detail: string; branch: { id: number; name: string } }>(
+    `equipo/${userId}/cambiar-sucursal/`,
+    'POST',
+    { branchId }
+  )
+}

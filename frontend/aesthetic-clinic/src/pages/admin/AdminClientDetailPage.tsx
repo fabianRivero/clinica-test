@@ -23,7 +23,8 @@ import type {
   AdminConcurrencyCheckResponse,
 } from '../../types/admin'
 import { useBranchContext } from '../../providers/BranchProvider'
-import { checkAdminConcurrency } from '../../services/api/admin'
+import { checkAdminConcurrency, migrateAdminClient } from '../../services/api/admin'
+import { useAuth } from '../../providers/AuthProvider'
 
 export function AdminClientDetailPage() {
   const navigate = useNavigate()
@@ -46,6 +47,10 @@ export function AdminClientDetailPage() {
   const [isFreeBookingKey, setIsFreeBookingKey] = useState<string | null>(null)
   const [isInactivating, setIsInactivating] = useState(false)
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
+  const [isMigrating, setIsMigrating] = useState(false)
+  const { user } = useAuth()
+  const isMainAdmin = user?.isMainAdmin || user?.isSuperuser
+  const { branches } = useBranchContext()
 
   const reservableOperations = useMemo(
     () => data?.operations.filter((operation: any) => operation.status === 'En proceso') ?? [],
@@ -253,6 +258,28 @@ export function AdminClientDetailPage() {
     }
   }
 
+  async function handleMigrateClient(branchId: number) {
+    if (!data) return
+    const branchName = branches.find(b => b.id === branchId)?.nombre || 'esta sucursal'
+    const confirmed = window.confirm(`¿Seguro que deseas migrar este cliente a la sucursal ${branchName}? Podra ser gestionado por los administradores de esa sucursal.`)
+    if (!confirmed) return
+
+    setIsMigrating(true)
+    try {
+      const response = await migrateAdminClient(data.client.rawId, branchId)
+      showNotification({ title: 'Cliente migrado', message: response.detail, tone: 'success' })
+      reload()
+    } catch (requestError: any) {
+      showNotification({
+        title: 'Error al migrar',
+        message: requestError.message,
+        tone: 'danger',
+      })
+    } finally {
+      setIsMigrating(false)
+    }
+  }
+
   if (isLoading && !data) {
     return (
       <div className="page-stack">
@@ -286,6 +313,21 @@ export function AdminClientDetailPage() {
           ...(data.client.status === 'Inactivo' ? [{
             label: 'Reactivar / Nuevo tratamiento',
             onClick: () => navigate(`/admin/clientes/${clientId}/reactivar`)
+          }] : []),
+          ...(isMainAdmin ? [{
+            label: isMigrating ? 'Migrando...' : 'Migrar sucursal',
+            variant: 'secondary' as const,
+            disabled: isMigrating,
+            onClick: () => {
+              const currentBranchId = data.client.branchId || data.client.sucursalId
+              const targetBranchId = window.prompt(
+                `Ingresa el ID de la sucursal destino:\n\n` +
+                branches.filter(b => b.id !== currentBranchId).map(b => `[ \${b.id} ] - \${b.nombre}`).join('\n')
+              )
+              if (targetBranchId) {
+                handleMigrateClient(Number(targetBranchId))
+              }
+            }
           }] : [])
         ]}
       />

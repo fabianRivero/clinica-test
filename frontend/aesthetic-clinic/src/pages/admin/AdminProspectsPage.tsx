@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { DataState } from '../../components/admin/DataState'
 import { AdminRelationshipTabs } from '../../components/admin/AdminRelationshipTabs'
@@ -14,7 +14,9 @@ import {
   getAdminProspectMedicalAvailability,
   getAdminProspects,
   updateAdminProspect,
+  migrateAdminProspect,
 } from '../../services/api/admin'
+import { useAuth } from '../../providers/AuthProvider'
 import type {
   AdminProspectMedicalAvailabilityResponse,
   AdminConcurrencyCheckResponse,
@@ -31,10 +33,11 @@ const PROSPECT_STATUS_OPTIONS = ['Pasajero', 'Convertido', 'Descartado']
 export function AdminProspectsPage() {
   const location = useLocation()
   const { showNotification } = useNotifications()
-
-
-  const { data, isLoading, error, reload } = useApiResource(getAdminProspects)
   const { activeBranch } = useBranchContext()
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const loader = useCallback(() => getAdminProspects(), [activeBranch?.id])
+  const { data, isLoading, error, reload } = useApiResource(loader)
   const [bookingProspect, setBookingProspect] = useState<ProspectLead | null>(null)
 
   const [selectedDate, setSelectedDate] = useState('')
@@ -46,6 +49,10 @@ export function AdminProspectsPage() {
   const [bookingError, setBookingError] = useState<string | null>(null)
   const [isLoadingAvailability, setIsLoadingAvailability] = useState(false)
   const [isBookingKey, setIsBookingKey] = useState<string | null>(null)
+  const [isMigratingKey, setIsMigratingKey] = useState<number | null>(null)
+  const { user } = useAuth()
+  const isMainAdmin = user?.isMainAdmin || user?.isSuperuser
+  const { branches } = useBranchContext()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('TODOS')
   const [editingProspect, setEditingProspect] = useState<ProspectLead | null>(null)
@@ -155,6 +162,27 @@ export function AdminProspectsPage() {
         message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
         tone: 'danger',
       })
+    }
+  }
+
+  async function handleMigrateProspect(prospectId: number, branchId: number) {
+    const branchName = branches.find(b => b.id === branchId)?.nombre || 'esta sucursal'
+    const confirmed = window.confirm(`¿Seguro que deseas migrar este prospecto a la sucursal \${branchName}?`)
+    if (!confirmed) return
+
+    setIsMigratingKey(prospectId)
+    try {
+      const response = await migrateAdminProspect(prospectId, branchId)
+      showNotification({ title: 'Prospecto migrado', message: response.detail, tone: 'success' })
+      reload()
+    } catch (requestError: any) {
+      showNotification({
+        title: 'Error al migrar',
+        message: requestError.message,
+        tone: 'danger',
+      })
+    } finally {
+      setIsMigratingKey(null)
     }
   }
 
@@ -296,6 +324,24 @@ export function AdminProspectsPage() {
                                       onClick={() => void handleOpenBooking(lead)}
                                     >
                                       Agendar cita
+                                    </button>
+                                  )}
+                                  {isMainAdmin && (
+                                    <button
+                                      className="button button--ghost button--compact"
+                                      type="button"
+                                      disabled={isMigratingKey === lead.rawId}
+                                      onClick={() => {
+                                        const targetBranchId = window.prompt(
+                                          `Ingresa el ID de la sucursal destino:\n\n` +
+                                          branches.filter(b => b.id !== activeBranch?.id).map(b => `[ \${b.id} ] - \${b.nombre}`).join('\n')
+                                        )
+                                        if (targetBranchId) {
+                                          handleMigrateProspect(lead.rawId, Number(targetBranchId))
+                                        }
+                                      }}
+                                    >
+                                      {isMigratingKey === lead.rawId ? 'Migrando...' : 'Migrar'}
                                     </button>
                                   )}
                                 </div>

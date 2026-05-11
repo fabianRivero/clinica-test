@@ -6,14 +6,19 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
+import { useBranchContext } from '../../providers/BranchProvider'
 import { cancelAdminAppointment, getAdminProspects } from '../../services/api/admin'
 import { Link } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 const CLIENT_STATUS_OPTIONS = ['Activo', 'Inactivo']
 
 export function AdminClientsPage() {
-  const { data, isLoading, error, reload } = useApiResource(getAdminProspects)
+  const { activeBranch } = useBranchContext()
+  const branchId = activeBranch?.id ?? null
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const loader = useCallback(() => getAdminProspects(), [branchId])
+  const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('TODOS')

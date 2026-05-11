@@ -8,8 +8,11 @@ export type AuthUser = {
   role: RoleKey
   dashboardPath: string
   isAdmin: boolean
+  isMainAdmin: boolean
   isWorker: boolean
   isClient: boolean
+  branchId: number | null
+  branchName: string
 }
 
 export type AuthResponse = {
