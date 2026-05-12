@@ -29,7 +29,7 @@ if DEBUG:
 
 CSRF_TRUSTED_ORIGINS = env_list(
     "DJANGO_CSRF_TRUSTED_ORIGINS",
-    "http://127.0.0.1:5173,http://localhost:5173",
+    "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174",
 )
 
 
@@ -81,19 +81,29 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": DB_ENGINE,
-        "NAME": os.getenv("DJANGO_DB_NAME", "postgres"),
-        "USER": os.getenv("DJANGO_DB_USER", ""),
-        "PASSWORD": os.getenv("DJANGO_DB_PASSWORD", ""),
-        "HOST": os.getenv("DJANGO_DB_HOST", ""),
-        "PORT": os.getenv("DJANGO_DB_PORT", ""),
-        "OPTIONS": {
-            "sslmode": os.getenv("DJANGO_DB_SSLMODE", "require"),
-        } if DB_ENGINE == "django.db.backends.postgresql" else {},
+USE_LOCAL_DB = env_bool("DJANGO_USE_LOCAL_DB", False)
+
+if USE_LOCAL_DB:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": DB_ENGINE,
+            "NAME": os.getenv("DJANGO_DB_NAME", "postgres"),
+            "USER": os.getenv("DJANGO_DB_USER", ""),
+            "PASSWORD": os.getenv("DJANGO_DB_PASSWORD", ""),
+            "HOST": os.getenv("DJANGO_DB_HOST", ""),
+            "PORT": os.getenv("DJANGO_DB_PORT", ""),
+            "OPTIONS": {
+                "sslmode": os.getenv("DJANGO_DB_SSLMODE", "require"),
+            } if DB_ENGINE == "django.db.backends.postgresql" else {},
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -135,7 +145,7 @@ LOGIN_URL = "/admin/login/"
 
 CORS_ALLOWED_ORIGINS = env_list(
     "DJANGO_CORS_ALLOWED_ORIGINS",
-    "http://127.0.0.1:5173,http://localhost:5173",
+    "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174",
 )
 
 CORS_ALLOW_CREDENTIALS = True
