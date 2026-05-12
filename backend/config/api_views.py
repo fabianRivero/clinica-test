@@ -1643,13 +1643,13 @@ def admin_dashboard(request):
 
     operations_qs = Operacion.objects.filter(estado=Operacion.Estado.EN_PROCESO)
     if branch:
-        operations_qs = operations_qs.filter(citas__sucursal=branch).distinct()
+        operations_qs = operations_qs.filter(citas_medicas__sucursal=branch).distinct()
 
     prospectos_qs = Prospecto.objects.all()
 
     payments_qs = PagoRealizado.objects.all()
     if branch:
-        payments_qs = payments_qs.filter(operacion__citas__sucursal=branch).distinct()
+        payments_qs = payments_qs.filter(cuota__operacion__citas_medicas__sucursal=branch).distinct()
 
     pending_payments_count = payments_qs.filter(
         estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE
@@ -1661,7 +1661,7 @@ def admin_dashboard(request):
         created_at__month=today.month,
     )
     if branch:
-        operations_started_qs = operations_started_qs.filter(citas__sucursal=branch).distinct()
+        operations_started_qs = operations_started_qs.filter(citas_medicas__sucursal=branch).distinct()
     operations_started_this_month = operations_started_qs.count()
 
     converted_prospects = Prospecto.objects.filter(estado=Prospecto.Estado.CONVERTIDO).count()
