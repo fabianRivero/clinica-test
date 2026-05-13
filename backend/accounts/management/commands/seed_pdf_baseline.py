@@ -107,11 +107,21 @@ class Command(BaseCommand):
                 admin_user.save(update_fields=changed_fields)
 
     def _seed_branches(self):
+        main_branch, _ = Sucursal.objects.update_or_create(
+            nombre="Sede Principal",
+            defaults={
+                "ciudad": "La Paz",
+                "direccion": "Sede administrativa principal",
+                "es_principal": True,
+                "activa": True,
+            }
+        )
         branch_a, _ = Sucursal.objects.update_or_create(
             nombre="Sucursal Norte",
             defaults={
                 "ciudad": "La Paz",
                 "direccion": "Avenida Siempre Viva 123",
+                "es_principal": False,
                 "activa": True
             }
         )
@@ -120,10 +130,12 @@ class Command(BaseCommand):
             defaults={
                 "ciudad": "Santa Cruz",
                 "direccion": "Calle Falsa 456",
+                "es_principal": False,
                 "activa": True
             }
         )
-        return {"A": branch_a, "B": branch_b}
+        Sucursal.objects.exclude(pk=main_branch.pk).filter(es_principal=True).update(es_principal=False)
+        return {"principal": main_branch, "A": branch_a, "B": branch_b}
 
     def _seed_admins(self, roles, branches):
         # Admin General (principal)
@@ -134,7 +146,7 @@ class Command(BaseCommand):
                 "apellido_paterno": "General",
                 "email": "admin.general@clinic.local",
                 "rol": roles["ADMIN_PRINCIPAL"],
-                "sucursal": branches["A"],
+                "sucursal": branches["principal"],
                 "is_active": True,
                 "is_staff": True,
                 "is_superuser": True,
