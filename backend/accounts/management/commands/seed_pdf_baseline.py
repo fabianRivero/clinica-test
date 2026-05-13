@@ -681,12 +681,13 @@ class Command(BaseCommand):
             }
         )
 
-        # Crear prospecto de origen
-        Prospecto.objects.get_or_create(
-            nombres="Paciente",
-            apellidos="Demo",
+        # Crear o normalizar prospecto de origen. convertido_a_cliente es OneToOne,
+        # asi que debe ser la clave de idempotencia del seed.
+        Prospecto.objects.update_or_create(
             convertido_a_cliente=cliente_demo,
             defaults={
+                "nombres": "Paciente",
+                "apellidos": "Demo",
                 "telefono": "78888888",
                 "sucursal_registro": branches["A"],
                 "estado": Prospecto.Estado.CONVERTIDO,
