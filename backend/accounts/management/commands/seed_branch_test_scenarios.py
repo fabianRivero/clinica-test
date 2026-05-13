@@ -133,9 +133,10 @@ class Command(BaseCommand):
             services["depilacion"],
             "Tratamiento activo Norte",
             Decimal("500.00"),
-            days_offset=1,
+            days_offset=-12,
             paid=False,
             admin_user=admin_user,
+            appointment_status=CitaMedica.Estado.CONFIRMADA,
         )
         self._create_operation(
             multi,
@@ -143,9 +144,10 @@ class Command(BaseCommand):
             services["manchas"],
             "Tratamiento activo Sur",
             Decimal("650.00"),
-            days_offset=2,
+            days_offset=-8,
             paid=True,
             admin_user=admin_user,
+            appointment_status=CitaMedica.Estado.CONFIRMADA,
         )
 
         importable = self._upsert_client(
@@ -284,6 +286,7 @@ class Command(BaseCommand):
         paid,
         admin_user,
         status=Operacion.Estado.EN_PROCESO,
+        appointment_status=None,
     ):
         start = timezone.localdate()
         operation_kwargs = {
@@ -323,15 +326,21 @@ class Command(BaseCommand):
                 detalles_pago=f"Pago aprobado para {branch.nombre}.",
             )
 
+        appointment_status = appointment_status or (
+            CitaMedica.Estado.CONFIRMADA
+            if status == Operacion.Estado.FINALIZADA
+            else CitaMedica.Estado.PROGRAMADA
+        )
+        is_confirmed_appointment = appointment_status == CitaMedica.Estado.CONFIRMADA
         CitaMedica.objects.create(
             operacion=operacion,
             sucursal=branch,
             fecha_hora=timezone.now().replace(hour=9, minute=0, second=0, microsecond=0)
             + timedelta(days=days_offset),
-            estado=CitaMedica.Estado.CONFIRMADA if status == Operacion.Estado.FINALIZADA else CitaMedica.Estado.PROGRAMADA,
-            verif_biometria=status == Operacion.Estado.FINALIZADA,
+            estado=appointment_status,
+            verif_biometria=is_confirmed_appointment,
             fecha_confirmacion_biometrica=timezone.now() + timedelta(days=days_offset)
-            if status == Operacion.Estado.FINALIZADA
+            if is_confirmed_appointment
             else None,
             detalles_cita=f"Cita demo en {branch.nombre}.",
         )
