@@ -34,6 +34,9 @@ export type VerificationPayment = {
   status: 'pendiente' | 'observado' | 'aprobado'
   quota?: string
   note?: string
+  dueDate?: string
+  receiptUrl?: string
+  verifier?: string
 }
 
 export type UpcomingPayment = {
@@ -61,6 +64,7 @@ export type AgendaItem = {
   time: string
   dateLabel: string
   patient: string
+  clientId: number
   procedure: string
   operationId: number
   specialist: string
@@ -146,6 +150,8 @@ export type StaffCapacityItem = {
 export type ClientSnapshot = {
   id: string
   rawId: number
+  branchId?: number | null
+  sucursalId?: number | null
   name: string
   phone: string
   ci: string

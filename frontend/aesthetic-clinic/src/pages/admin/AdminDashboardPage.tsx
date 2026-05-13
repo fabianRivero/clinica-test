@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react'
 import { DataState } from '../../components/admin/DataState'
 import { MetricCard } from '../../components/admin/MetricCard'
-import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
@@ -26,7 +25,7 @@ export function AdminDashboardPage() {
   // Metricas generales — se recargan al cambiar sucursal
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const metricsLoader = useCallback(() => getAdminDashboard(), [branchId])
-  const { data: metricsData, isLoading: loadingMetrics } = useApiResource(metricsLoader)
+  const { data: metricsData } = useApiResource(metricsLoader)
   
   // Pagos independientes
   const paymentsLoader = useCallback(() => getAdminDashboardPayments(pMonth, pYear), [pMonth, pYear, branchId])

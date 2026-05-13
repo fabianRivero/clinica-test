@@ -7,7 +7,8 @@ type PageHeaderProps = {
   children?: React.ReactNode
   actions?: Array<{
     label: string
-    variant?: 'primary' | 'ghost'
+    variant?: 'primary' | 'ghost' | 'secondary'
+    disabled?: boolean
     to?: string
     onClick?: () => void
   }>
@@ -34,7 +35,7 @@ export function PageHeader({
             action.to ? (
               <Link
                 key={action.label}
-                className={`button ${action.variant === 'ghost' ? 'button--ghost' : ''}`}
+                className={`button ${action.variant === 'ghost' ? 'button--ghost' : action.variant === 'secondary' ? 'button--secondary' : ''}`}
                 to={action.to}
               >
                 {action.label}
@@ -42,8 +43,9 @@ export function PageHeader({
             ) : (
               <button
                 key={action.label}
-                className={`button ${action.variant === 'ghost' ? 'button--ghost' : ''}`}
+                className={`button ${action.variant === 'ghost' ? 'button--ghost' : action.variant === 'secondary' ? 'button--secondary' : ''}`}
                 type="button"
+                disabled={action.disabled}
                 onClick={action.onClick}
               >
                 {action.label}

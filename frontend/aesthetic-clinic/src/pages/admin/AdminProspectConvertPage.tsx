@@ -13,7 +13,6 @@ import {
   saveAdminProspectConversionOperationStep,
   saveAdminProspectConversionUserStep,
   initializeAdminClientReactivation,
-  getAdminClientReactivation,
   cancelAdminClientReactivation,
   saveAdminClientReactivationUserStep,
   saveAdminClientReactivationOperationStep,
@@ -106,7 +105,6 @@ export function AdminProspectConvertPage() {
   const navigate = useNavigate()
   const { prospectId = '', clientId = '' } = useParams()
   const isReactivation = !!clientId
-  const targetId = isReactivation ? clientId : prospectId
 
   const [data, setData] = useState<ProspectConversionResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -467,7 +465,7 @@ export function AdminProspectConvertPage() {
     try {
       const device = await checkMockFingerprintDevice()
       setBiometricStatus(device.message)
-      const capture = await enrollMockFingerprint(`${userForm?.username || data?.prospect.name || prospectId}`)
+      const capture = await enrollMockFingerprint(`${userForm?.username || data?.prospect?.name || prospectId}`)
       setBiometricForm({
         provider: capture.provider,
         template: capture.template,

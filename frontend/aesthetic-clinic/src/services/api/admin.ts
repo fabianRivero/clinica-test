@@ -21,6 +21,8 @@ import type {
   CreateAdminAvailabilityExceptionPayload,
   CreateAdminProspectPayload,
   CreateAdminProspectResponse,
+  DashboardAgendaResponse,
+  DashboardPaymentsResponse,
   DashboardResponse,
   ManageAdminGlobalAvailabilityPayload,
   OperationDetailResponse,

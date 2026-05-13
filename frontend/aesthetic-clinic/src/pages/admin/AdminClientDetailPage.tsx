@@ -322,7 +322,7 @@ export function AdminClientDetailPage() {
               const currentBranchId = data.client.branchId || data.client.sucursalId
               const targetBranchId = window.prompt(
                 `Ingresa el ID de la sucursal destino:\n\n` +
-                branches.filter(b => b.id !== currentBranchId).map(b => `[ \${b.id} ] - \${b.nombre}`).join('\n')
+                branches.filter((branch) => branch.id !== currentBranchId).map((branch) => `[ ${branch.id} ] - ${branch.nombre}`).join('\n')
               )
               if (targetBranchId) {
                 handleMigrateClient(Number(targetBranchId))

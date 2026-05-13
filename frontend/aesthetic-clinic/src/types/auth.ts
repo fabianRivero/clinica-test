@@ -9,6 +9,7 @@ export type AuthUser = {
   dashboardPath: string
   isAdmin: boolean
   isMainAdmin: boolean
+  isSuperuser?: boolean
   isWorker: boolean
   isClient: boolean
   branchId: number | null

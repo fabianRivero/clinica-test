@@ -167,7 +167,7 @@ export function AdminProspectsPage() {
 
   async function handleMigrateProspect(prospectId: number, branchId: number) {
     const branchName = branches.find(b => b.id === branchId)?.nombre || 'esta sucursal'
-    const confirmed = window.confirm(`¿Seguro que deseas migrar este prospecto a la sucursal \${branchName}?`)
+    const confirmed = window.confirm(`¿Seguro que deseas migrar este prospecto a la sucursal ${branchName}?`)
     if (!confirmed) return
 
     setIsMigratingKey(prospectId)
@@ -334,9 +334,9 @@ export function AdminProspectsPage() {
                                       onClick={() => {
                                         const targetBranchId = window.prompt(
                                           `Ingresa el ID de la sucursal destino:\n\n` +
-                                          branches.filter(b => b.id !== activeBranch?.id).map(b => `[ \${b.id} ] - \${b.nombre}`).join('\n')
+                                          branches.filter(b => b.id !== activeBranch?.id).map(b => `[ ${b.id} ] - ${b.nombre}`).join('\n')
                                         )
-                                        if (targetBranchId) {
+                                        if (targetBranchId && lead.rawId) {
                                           handleMigrateProspect(lead.rawId, Number(targetBranchId))
                                         }
                                       }}

@@ -166,6 +166,7 @@ export type ProspectConversionResponse = {
   serviceConfigs: ProspectConversionServiceConfig[]
   operationStates: ProspectConversionStateOption[]
   medicalConfig: ProspectConversionMedicalConfig
+  crossCityWarning?: string | null
 }
 
 export type ProspectConversionFinalizeResponse = {
