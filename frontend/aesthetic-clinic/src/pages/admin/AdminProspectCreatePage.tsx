@@ -1,11 +1,11 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react'
+import { useState, useEffect, type ChangeEvent, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
-import { createAdminProspect } from '../../services/api/admin'
-import type { CreateAdminProspectPayload } from '../../types/admin'
+import { createAdminProspect, checkAdminProspectDuplicates } from '../../services/api/admin'
+import type { CreateAdminProspectPayload, CheckAdminProspectDuplicatesResponse } from '../../types/admin'
 
 const initialForm: CreateAdminProspectPayload = {
   nombres: '',
@@ -23,6 +23,29 @@ export function AdminProspectCreatePage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [duplicateCheck, setDuplicateCheck] = useState<CheckAdminProspectDuplicatesResponse | null>(null)
+
+  useEffect(() => {
+    const nombres = form.nombres.trim()
+    const apellidos = form.apellidos.trim()
+    const telefono = form.telefono.trim()
+
+    if (nombres.length < 3 || apellidos.length < 3) {
+      setDuplicateCheck(null)
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const result = await checkAdminProspectDuplicates({ nombres, apellidos, telefono })
+        setDuplicateCheck(result)
+      } catch (error) {
+        console.error('Error al verificar duplicados:', error)
+      }
+    }, 600)
+
+    return () => clearTimeout(timer)
+  }, [form.nombres, form.apellidos, form.telefono])
 
   const handleChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = event.target
@@ -154,6 +177,16 @@ export function AdminProspectCreatePage() {
               value={form.observaciones}
             />
           </label>
+
+          {duplicateCheck?.exists ? (
+            <div className="field--full">
+              <DataState 
+                title="Posible duplicado detectado" 
+                message={duplicateCheck.message || ''} 
+                tone="warning" 
+              />
+            </div>
+          ) : null}
 
           {submitError ? (
             <div className="field--full">

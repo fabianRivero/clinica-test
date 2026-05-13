@@ -7,9 +7,13 @@ import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
-import { cancelAdminAppointment, getAdminProspects } from '../../services/api/admin'
+import { 
+  getAdminProspects, 
+  searchAdminClientsGlobal, 
+  migrateAdminClient 
+} from '../../services/api/admin'
 import { Link } from 'react-router-dom'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, useEffect } from 'react'
 
 const CLIENT_STATUS_OPTIONS = ['Activo', 'Inactivo']
 
@@ -23,6 +27,56 @@ export function AdminClientsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('TODOS')
 
+  // Global search state
+  const [globalSearch, setGlobalSearch] = useState('')
+  const [globalResults, setGlobalResults] = useState<any[]>([])
+  const [isSearchingGlobal, setIsSearchingGlobal] = useState(false)
+
+  useEffect(() => {
+    if (globalSearch.trim().length < 3) {
+      setGlobalResults([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingGlobal(true)
+      try {
+        const response = await searchAdminClientsGlobal(globalSearch)
+        const currentIds = (data?.clients ?? []).map((c: any) => c.rawId)
+        setGlobalResults(response.clients.filter(c => !currentIds.includes(c.id)))
+      } catch (err) {
+        console.error('Error en busqueda global:', err)
+      } finally {
+        setIsSearchingGlobal(false)
+      }
+    }, 600)
+
+    return () => clearTimeout(timer)
+  }, [globalSearch, data?.clients])
+
+  const handleImportClient = async (clientId: number, clientName: string) => {
+    if (!branchId) return
+    const confirmed = window.confirm(`¿Seguro que deseas importar a ${clientName} a esta sucursal?`)
+    if (!confirmed) return
+
+    try {
+      await migrateAdminClient(clientId, branchId)
+      showNotification({
+        title: 'Cliente importado',
+        message: `${clientName} ahora pertenece a esta sucursal.`,
+        tone: 'success'
+      })
+      setGlobalSearch('')
+      reload()
+    } catch (err: any) {
+      showNotification({
+        title: 'Error al importar',
+        message: err.message,
+        tone: 'danger'
+      })
+    }
+  }
+
   const filteredClients = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase()
     return (data?.clients ?? []).filter((client) => {
@@ -34,7 +88,6 @@ export function AdminClientsPage() {
       return matchesSearch && matchesStatus
     })
   }, [data, searchTerm, statusFilter])
-
 
   return (
     <div className="page-stack">
@@ -69,6 +122,59 @@ export function AdminClientsPage() {
               <MetricCard key={metric.id} metric={metric} />
             ))}
           </section>
+
+          <SectionCard
+            eyebrow="Red global"
+            title="Buscar e importar de otra sucursal"
+            description="Si el cliente ya tiene cuenta en otra sede, buscalo por CI o Nombre para importarlo a esta sucursal."
+          >
+            <div className="field">
+              <input
+                className="input"
+                placeholder="Ingresa CI o Nombre para buscar globalmente..."
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+              />
+            </div>
+
+            {isSearchingGlobal ? (
+              <p className="table-muted">Buscando en la red global...</p>
+            ) : globalResults.length > 0 ? (
+              <div className="table-card" style={{ marginTop: '1rem' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Nombre</th>
+                      <th>CI</th>
+                      <th>Sucursal Origen</th>
+                      <th>Ciudad</th>
+                      <th>Accion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {globalResults.map((c) => (
+                      <tr key={c.id}>
+                        <td>{c.name}</td>
+                        <td>{c.ci}</td>
+                        <td>{c.branchName}</td>
+                        <td>{c.cityName}</td>
+                        <td>
+                          <button 
+                            className="button button--compact button--secondary"
+                            onClick={() => handleImportClient(c.id, c.name)}
+                          >
+                            Importar a esta sede
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : globalSearch.length >= 3 ? (
+              <p className="table-muted" style={{ marginTop: '1rem' }}>No se encontraron clientes para importar con esos datos.</p>
+            ) : null}
+          </SectionCard>
 
           <SectionCard
             eyebrow="Clientes"

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 
 import { AdminAvailabilityTabs } from '../../components/admin/AdminAvailabilityTabs'
@@ -60,9 +60,11 @@ export function AdminAvailabilityVisiblePage() {
 }
 
 export function AdminAvailabilityBlocksPage() {
-  const { data, isLoading, error, reload } = useApiResource(getAdminAvailability)
   const { showNotification } = useNotifications()
   const { activeBranch } = useBranchContext()
+  const branchId = activeBranch?.id ?? null
+  const loader = useCallback(() => getAdminAvailability(branchId), [branchId])
+  const { data, isLoading, error, reload } = useApiResource(loader)
 
   const [globalForm, setGlobalForm] = useState({ date: '', detail: '' })
   const [exceptionForm, setExceptionForm] = useState(buildEmptyExceptionForm(activeBranch?.id || 1))
@@ -70,6 +72,11 @@ export function AdminAvailabilityBlocksPage() {
 
   // Filtrar los datos por la sucursal activa
   const branchExceptions = data?.exceptions.filter((e) => e.branchId === activeBranch?.id) || []
+
+  useEffect(() => {
+    setExceptionForm(buildEmptyExceptionForm(activeBranch?.id || 1))
+    setGlobalForm({ date: '', detail: '' })
+  }, [activeBranch?.id])
 
   async function handleGlobalBlock(e: FormEvent) {
     e.preventDefault()
@@ -301,7 +308,7 @@ export function AdminAvailabilityBlocksPage() {
               </form>
             </SectionCard>
 
-            <SectionCard title="Cierre Global de Clinica" description="Bloquea dias festivos o cierres generales. Afecta a TODAS las sucursales.">
+            <SectionCard title={`Cierre de ${activeBranch.nombre}`} description="Bloquea dias festivos o cierres generales solo para la sucursal seleccionada.">
               <form className="form-stack" onSubmit={(e) => void handleGlobalBlock(e)}>
                 <div className="form-group">
                   <label>Fecha a bloquear</label>
@@ -324,7 +331,7 @@ export function AdminAvailabilityBlocksPage() {
                   />
                 </div>
                 <button className="button button--secondary" type="submit" disabled={isSubmitting}>
-                  Bloquear dia global
+                  Bloquear dia de sucursal
                 </button>
               </form>
             </SectionCard>
@@ -377,7 +384,7 @@ export function AdminAvailabilityBlocksPage() {
               )}
             </SectionCard>
 
-            <SectionCard title="Dias de Cierre Global">
+            <SectionCard title={`Dias de Cierre - ${activeBranch.nombre}`}>
               {data.globalBlocks.length ? (
                 <div className="table-card">
                   <table>
@@ -404,7 +411,7 @@ export function AdminAvailabilityBlocksPage() {
                   </table>
                 </div>
               ) : (
-                <DataState title="Sin cierres globales" message="La clinica opera normalmente." />
+                <DataState title="Sin cierres de sucursal" message="Esta sucursal opera normalmente." />
               )}
             </SectionCard>
           </div>
@@ -415,9 +422,11 @@ export function AdminAvailabilityBlocksPage() {
 }
 
 export function AdminAvailabilitySchedulesPage() {
-  const { data, isLoading, error, reload } = useApiResource(getAdminAvailability)
   const { showNotification } = useNotifications()
   const { activeBranch } = useBranchContext()
+  const branchId = activeBranch?.id ?? null
+  const loader = useCallback(() => getAdminAvailability(branchId), [branchId])
+  const { data, isLoading, error, reload } = useApiResource(loader)
 
   const [habitualForm, setHabitualForm] = useState(buildEmptyHabitualForm(activeBranch?.id || 1))
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -425,6 +434,11 @@ export function AdminAvailabilitySchedulesPage() {
 
   // Filtrar los datos por la sucursal activa
   const branchHabitualRules = data?.habitualRules.filter((r) => r.branchId === activeBranch?.id) || []
+
+  useEffect(() => {
+    setHabitualForm(buildEmptyHabitualForm(activeBranch?.id || 1))
+    setEditingHabitualId(null)
+  }, [activeBranch?.id])
 
   async function handleHabitualSubmit(e: FormEvent) {
     e.preventDefault()

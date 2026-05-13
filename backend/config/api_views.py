@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Prefetch, Q
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
@@ -56,6 +57,22 @@ def _load_payload(request):
         return None
 
 
+def _client_has_pending_reservations(cliente):
+    now = timezone.now()
+    return (
+        CitaMedica.objects.filter(
+            operacion__paciente=cliente,
+            estado=CitaMedica.Estado.PROGRAMADA,
+            fecha_hora__gte=now,
+        ).exists()
+        or CitaClienteLibre.objects.filter(
+            cliente=cliente,
+            estado=CitaClienteLibre.Estado.PROGRAMADA,
+            fecha_hora__gte=now,
+        ).exists()
+    )
+
+
 def _admin_required(view_func):
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
@@ -82,6 +99,26 @@ def _admin_principal_required(view_func):
     return wrapped
 
 
+@require_POST
+@_admin_required
+def admin_set_session_branch(request):
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+        branch_id = payload.get("branchId")
+        if not branch_id:
+            return _json({"detail": "branchId es obligatorio."}, status=400)
+        
+        from catalogs.models import Sucursal
+        branch = Sucursal.objects.filter(pk=int(branch_id), activa=True).first()
+        if not branch:
+            return _json({"detail": "Sucursal no encontrada o inactiva."}, status=404)
+        
+        request.session["selected_branch_id"] = branch.pk
+        return _json({"detail": f"Sucursal activa cambiada a {branch.nombre}.", "branchId": branch.pk})
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return _json({"detail": "Datos invalidos."}, status=400)
+
+
 def _get_user_branch(request):
     """Retorna la sucursal efectiva para filtrar datos.
 
@@ -94,14 +131,38 @@ def _get_user_branch(request):
         # Admin de sucursal: su sucursal esta fija
         return user.sucursal
 
-    # Admin principal: filtro opcional por branchId del selector
-    branch_id = request.GET.get("branchId") or request.POST.get("branchId")
+    # Admin principal: filtro por sucursal persistente en sesion
+    # 1. Si viene por header/GET/POST (cambio explicito), actualizamos sesion
+    branch_id = (
+        request.headers.get("X-Selected-Branch-Id") or 
+        request.GET.get("branchId") or 
+        request.POST.get("branchId")
+    )
+    
     if branch_id:
         try:
             from catalogs.models import Sucursal
-            return Sucursal.objects.filter(pk=int(branch_id), activa=True).first()
+            branch = Sucursal.objects.filter(pk=int(branch_id), activa=True).first()
+            if branch:
+                request.session["selected_branch_id"] = branch.pk
+                return branch
         except (ValueError, TypeError):
             pass
+
+    # 2. Si no viene en la peticion, buscamos en la sesion
+    session_branch_id = request.session.get("selected_branch_id")
+    from catalogs.models import Sucursal
+    if session_branch_id:
+        branch = Sucursal.objects.filter(pk=session_branch_id, activa=True).first()
+        if branch:
+            return branch
+
+    # 3. Por defecto, si es admin general, devolver la principal
+    main_branch = Sucursal.objects.filter(es_principal=True, activa=True).first()
+    if main_branch:
+        request.session["selected_branch_id"] = main_branch.pk
+        return main_branch
+
     return None
 
 
@@ -1642,30 +1703,28 @@ def admin_dashboard(request):
     branch = _get_user_branch(request)
 
     operations_qs = Operacion.objects.filter(estado=Operacion.Estado.EN_PROCESO)
-    if branch:
-        operations_qs = operations_qs.filter(citas_medicas__sucursal=branch).distinct()
-
     prospectos_qs = Prospecto.objects.all()
-
     payments_qs = PagoRealizado.objects.all()
+    operations_started_qs = Operacion.objects.filter(
+        created_at__year=today.year,
+        created_at__month=today.month,
+    )
+
     if branch:
-        payments_qs = payments_qs.filter(cuota__operacion__citas_medicas__sucursal=branch).distinct()
+        operations_qs = operations_qs.filter(paciente__sucursal_registro=branch).distinct()
+        prospectos_qs = prospectos_qs.filter(sucursal_registro=branch)
+        payments_qs = payments_qs.filter(cuota__operacion__paciente__sucursal_registro=branch).distinct()
+        operations_started_qs = operations_started_qs.filter(paciente__sucursal_registro=branch).distinct()
 
     pending_payments_count = payments_qs.filter(
         estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE
     ).count()
     payments_today = payments_qs.filter(created_at__date=today).count()
 
-    operations_started_qs = Operacion.objects.filter(
-        created_at__year=today.year,
-        created_at__month=today.month,
-    )
-    if branch:
-        operations_started_qs = operations_started_qs.filter(citas_medicas__sucursal=branch).distinct()
     operations_started_this_month = operations_started_qs.count()
 
-    converted_prospects = Prospecto.objects.filter(estado=Prospecto.Estado.CONVERTIDO).count()
-    total_prospects = Prospecto.objects.count()
+    converted_prospects = prospectos_qs.filter(estado=Prospecto.Estado.CONVERTIDO).count()
+    total_prospects = prospectos_qs.count()
     prospect_delta = (
         f"{round((converted_prospects / total_prospects) * 100)}% convertidos"
         if total_prospects
@@ -1818,6 +1877,82 @@ def admin_dashboard_agenda(request):
     })
 
 
+@require_POST
+@_admin_required
+def admin_prospect_check_duplicates(request):
+    payload = _load_payload(request)
+    if not payload:
+        return _json({"detail": "Datos invalidos."}, status=400)
+
+    nombres = (payload.get("nombres") or "").strip()
+    apellidos = (payload.get("apellidos") or "").strip()
+    telefono = (payload.get("telefono") or "").strip()
+
+    if not nombres or not apellidos:
+        return _json({"detail": "Nombres y apellidos son requeridos."}, status=400)
+
+    # Buscar coincidencias exactas o similares
+    # Filtramos por nombre + apellido o por telefono
+    duplicate_filter = Q(nombres__iexact=nombres, apellidos__iexact=apellidos)
+    if telefono:
+        duplicate_filter |= Q(telefono=telefono)
+    duplicates = Prospecto.objects.filter(duplicate_filter).exclude(estado=Prospecto.Estado.CONVERTIDO)
+
+    if duplicates.exists():
+        match = duplicates.first()
+        branch = match.sucursal_registro
+        branch_info = f"{branch.nombre} ({branch.ciudad})" if branch else "otra sucursal"
+        
+        return _json({
+            "exists": True,
+            "message": f"Atencion: Ya existe un prospecto con datos similares ({match.nombres} {match.apellidos}) registrado en {branch_info}.",
+            "match": {
+                "id": match.pk,
+                "name": f"{match.nombres} {match.apellidos}",
+                "branch": branch_info
+            }
+        })
+
+    return _json({"exists": False})
+
+
+@require_GET
+@_admin_required
+def admin_clientes_global_search(request):
+    query = request.GET.get("q", "").strip()
+    if len(query) < 3:
+        return _json({"clients": []})
+
+    # Buscamos en todos los clientes (global)
+    clients_qs = Cliente.objects.select_related("usuario", "sucursal_registro").filter(
+        Q(ci__icontains=query) |
+        Q(usuario__primer_nombre__icontains=query) |
+        Q(usuario__apellido_paterno__icontains=query) |
+        Q(usuario__username__icontains=query)
+    ).exclude(
+        operaciones__citas_medicas__estado=CitaMedica.Estado.PROGRAMADA,
+        operaciones__citas_medicas__fecha_hora__gte=timezone.now(),
+    ).exclude(
+        citas_medicas_libres__estado=CitaClienteLibre.Estado.PROGRAMADA,
+        citas_medicas_libres__fecha_hora__gte=timezone.now(),
+    ).distinct()[:10]
+
+    return _json({
+        "clients": [
+            {
+                "id": c.pk,
+                "name": c.usuario.nombre_completo,
+                "ci": c.ci,
+                "phone": c.telefono,
+                "branchId": c.sucursal_registro_id,
+                "branchName": c.sucursal_registro.nombre if c.sucursal_registro else "Sin sucursal",
+                "cityName": c.sucursal_registro.ciudad if c.sucursal_registro else "Sin ciudad"
+            }
+            for c in clients_qs
+        ]
+    })
+
+
 @require_GET
 @_admin_required
 def admin_prospectos(request):
@@ -1833,8 +1968,11 @@ def admin_prospectos(request):
                 ).order_by("fecha_hora"),
             )
         )
-        .order_by("-created_at")
     )
+    if branch:
+        prospectos_qs = prospectos_qs.filter(sucursal_registro=branch)
+    
+    prospectos_qs = prospectos_qs.order_by("-created_at")
     clientes_qs = (
         Cliente.objects.select_related("usuario")
         .prefetch_related(
@@ -1853,7 +1991,10 @@ def admin_prospectos(request):
         ).order_by("usuario__primer_nombre", "usuario__apellido_paterno")
     )
     if branch:
-        clientes_qs = clientes_qs.filter(operaciones__citas_medicas__sucursal=branch).distinct()
+        clientes_qs = clientes_qs.filter(
+            Q(sucursal_registro=branch)
+            | Q(operaciones__citas_medicas__sucursal=branch)
+        ).distinct()
 
     data = {
         "metrics": [
@@ -3242,6 +3383,7 @@ def admin_actualizar_especialista(request, specialist_id):
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     errors = {}
+    old_branch_id = especialista.sucursal_base_id
     parsed = _parse_staff_payload(request, payload, errors, instance=especialista)
     if errors:
         return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
@@ -3255,6 +3397,11 @@ def admin_actualizar_especialista(request, specialist_id):
         usuario.save()
         especialista.full_clean()
         especialista.save()
+        
+        # Limpiar horarios si la sucursal cambio
+        if old_branch_id and especialista.sucursal_base_id != old_branch_id:
+            _clear_specialist_availability(especialista)
+            
     except ValidationError as exc:
         return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
     except IntegrityError:
@@ -3357,6 +3504,17 @@ def admin_cliente_migrar(request, client_id):
         return _json({"detail": "Payload invalido."}, status=400)
         
     branch = get_object_or_404(Sucursal, pk=branch_id)
+    if _client_has_pending_reservations(cliente):
+        return _json(
+            {
+                "detail": (
+                    "No se puede importar este cliente porque tiene reservas pendientes. "
+                    "Cancela o completa sus citas programadas antes de cambiarlo de sucursal."
+                )
+            },
+            status=400,
+        )
+
     cliente.sucursal_registro = branch
     cliente.save(update_fields=["sucursal_registro", "updated_at"])
     
@@ -3369,9 +3527,14 @@ def admin_cliente_migrar(request, client_id):
 @_admin_principal_required
 @transaction.atomic
 def admin_equipo_cambiar_sucursal(request, user_id):
-    from accounts.models import Usuario
     from catalogs.models import Sucursal
-    user_to_move = get_object_or_404(Usuario, pk=user_id)
+    especialista = Especialista.objects.select_related("usuario").filter(pk=user_id).first()
+    if especialista:
+        user_to_move = especialista.usuario
+    else:
+        user_to_move = get_object_or_404(Usuario, pk=user_id)
+        if hasattr(user_to_move, "especialista"):
+            especialista = user_to_move.especialista
     
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -3386,10 +3549,19 @@ def admin_equipo_cambiar_sucursal(request, user_id):
     user_to_move.save(update_fields=["sucursal", "updated_at"])
     
     # Si tambien tiene perfil de especialista, actualizar su sucursal base
-    if hasattr(user_to_move, "especialista"):
-        especialista = user_to_move.especialista
+    if especialista:
+        old_branch_id = especialista.sucursal_base_id
         especialista.sucursal_base = branch
         especialista.save(update_fields=["sucursal_base", "updated_at"])
+        if old_branch_id and old_branch_id != branch.pk:
+            AgendaHabitualEspecialista.objects.filter(
+                especialista=especialista,
+                sucursal_id=old_branch_id,
+            ).delete()
+            AgendaExcepcionEspecialista.objects.filter(
+                especialista=especialista,
+                sucursal_id=old_branch_id,
+            ).delete()
         
     return _json({
         "detail": f"Usuario movido exitosamente a {branch.nombre}.",

@@ -6,6 +6,7 @@ from common.models import CatalogoEditableModel, TimeStampedModel
 
 class Sucursal(TimeStampedModel):
     nombre = models.CharField(max_length=120, unique=True)
+    ciudad = models.CharField(max_length=100, blank=True)
     direccion = models.CharField(max_length=255, blank=True)
     es_principal = models.BooleanField(default=False)
     activa = models.BooleanField(default=True)

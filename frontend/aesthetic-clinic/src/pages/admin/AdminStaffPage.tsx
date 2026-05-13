@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
 import { AdminStaffTabs } from '../../components/admin/AdminStaffTabs'
@@ -367,7 +367,10 @@ function StaffEditorForm({
 }
 
 export function AdminStaffCreatePage() {
-  const { data, isLoading, error, reload } = useApiResource(getAdminStaff)
+  const { activeBranch } = useBranchContext()
+  const branchId = activeBranch?.id ?? null
+  const loader = useCallback(() => getAdminStaff(branchId), [branchId])
+  const { data, isLoading, error, reload } = useApiResource(loader)
   const [searchParams, setSearchParams] = useSearchParams()
   const editingStaffId = Number(searchParams.get('editar') || '') || null
 
@@ -427,16 +430,21 @@ export function AdminStaffCreatePage() {
 }
 
 export function AdminStaffManagePage() {
-  const { data, isLoading, error, reload } = useApiResource(getAdminStaff)
+  const { activeBranch, branches } = useBranchContext()
+  const branchId = activeBranch?.id ?? null
+  const loader = useCallback(() => getAdminStaff(branchId), [branchId])
+  const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
   const { user } = useAuth()
   const isMainAdmin = user?.isMainAdmin || user?.isSuperuser
-  const { branches } = useBranchContext()
   const [isChangingBranchId, setIsChangingBranchId] = useState<number | null>(null)
 
   async function handleChangeBranch(staffMember: StaffCapacityItem, branchId: number) {
     const branchName = branches.find(b => b.id === branchId)?.nombre || 'esta sucursal'
-    const confirmed = window.confirm(`¿Seguro que deseas mover a ${staffMember.specialist} a la sucursal ${branchName}?`)
+    const confirmed = window.confirm(
+      `¿Seguro que deseas mover a ${staffMember.specialist} a la sucursal ${branchName}?\n\n` +
+      `¡ATENCIÓN!: Al cambiar de sucursal, TODOS los horarios de disponibilidad y excepciones de este especialista en la sucursal actual se ELIMINARÁN automáticamente.`
+    )
     if (!confirmed) return
 
     setIsChangingBranchId(staffMember.rawId)

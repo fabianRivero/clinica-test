@@ -109,11 +109,19 @@ class Command(BaseCommand):
     def _seed_branches(self):
         branch_a, _ = Sucursal.objects.update_or_create(
             nombre="Sucursal Norte",
-            defaults={"direccion": "Avenida Siempre Viva 123", "activa": True}
+            defaults={
+                "ciudad": "La Paz",
+                "direccion": "Avenida Siempre Viva 123",
+                "activa": True
+            }
         )
         branch_b, _ = Sucursal.objects.update_or_create(
             nombre="Sucursal Sur",
-            defaults={"direccion": "Calle Falsa 456", "activa": True}
+            defaults={
+                "ciudad": "Santa Cruz",
+                "direccion": "Calle Falsa 456",
+                "activa": True
+            }
         )
         return {"A": branch_a, "B": branch_b}
 

@@ -36,7 +36,7 @@ export function AdminProspectsPage() {
   const { activeBranch } = useBranchContext()
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const loader = useCallback(() => getAdminProspects(), [activeBranch?.id])
+  const loader = useCallback(() => getAdminProspects(activeBranch?.id), [activeBranch?.id])
   const { data, isLoading, error, reload } = useApiResource(loader)
   const [bookingProspect, setBookingProspect] = useState<ProspectLead | null>(null)
 

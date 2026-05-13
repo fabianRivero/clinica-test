@@ -36,18 +36,65 @@ def _admin_required(view_func):
         return view_func(request, *args, **kwargs)
     return wrapped
 
+
+def _get_user_branch(request):
+    user = request.user
+    if not (user.is_superuser or user.es_admin_principal):
+        return user.sucursal
+
+    branch_id = (
+        request.headers.get("X-Selected-Branch-Id")
+        or request.GET.get("branchId")
+        or request.POST.get("branchId")
+    )
+    if branch_id:
+        try:
+            branch = Sucursal.objects.filter(pk=int(branch_id), activa=True).first()
+            if branch:
+                request.session["selected_branch_id"] = branch.pk
+                return branch
+        except (TypeError, ValueError):
+            pass
+
+    session_branch_id = request.session.get("selected_branch_id")
+    if session_branch_id:
+        branch = Sucursal.objects.filter(pk=session_branch_id, activa=True).first()
+        if branch:
+            return branch
+
+    branch = Sucursal.objects.filter(es_principal=True, activa=True).first()
+    if branch:
+        request.session["selected_branch_id"] = branch.pk
+    return branch
+
+
+def _specialists_for_branch(branch):
+    qs = Especialista.objects.select_related("usuario").filter(usuario__is_active=True)
+    if branch:
+        qs = qs.filter(sucursal_base=branch)
+    return qs.order_by("usuario__primer_nombre", "usuario__apellido_paterno")
+
+
+def _validate_branch_specialists(branch, specialist_ids):
+    valid_ids = set(_specialists_for_branch(branch).filter(pk__in=specialist_ids).values_list("id", flat=True))
+    requested_ids = {int(item) for item in specialist_ids}
+    if requested_ids != valid_ids:
+        raise ValueError("Solo puedes gestionar especialistas de la sucursal activa.")
+
 @require_GET
 @_admin_required
 def admin_availability(request):
     """
     Returns data aligned with frontend AdminAvailabilityResponse type.
     """
+    branch = _get_user_branch(request)
+
     # 1. Branches
     branches = list(Sucursal.objects.filter(activa=True).values("id", "nombre", "es_principal"))
 
     # 2. Filters
     specialists = []
-    for sp in Especialista.objects.select_related("usuario").filter(usuario__is_active=True):
+    for sp in _specialists_for_branch(branch):
         specialists.append({
             "id": sp.id,
             "label": f"{sp.usuario.primer_nombre} {sp.usuario.apellido_paterno}",
@@ -58,20 +105,33 @@ def admin_availability(request):
         {"value": d.value, "label": d.label} for d in DiaSemana
     ]
 
-    # 3. Global Blocks
+    # 3. Branch Blocks
     global_blocks = []
-    for gb in DiaBloqueadoAgendaGlobal.objects.all().order_by("-fecha"):
+    branch_block_qs = AgendaExcepcionEspecialista.objects.filter(
+        activo=True,
+        tipo_excepcion=AgendaExcepcionEspecialista.TipoExcepcion.BLOQUEAR,
+        detalle__startswith="[CIERRE_SUCURSAL]",
+    )
+    if branch:
+        branch_block_qs = branch_block_qs.filter(sucursal=branch)
+    seen_block_dates = set()
+    for gb in branch_block_qs.order_by("-fecha", "id"):
+        if gb.fecha in seen_block_dates:
+            continue
+        seen_block_dates.add(gb.fecha)
         global_blocks.append({
-            "id": gb.id,
+            "id": gb.pk,
             "date": str(gb.fecha),
             "dateLabel": gb.fecha.strftime("%d/%m/%Y"),
             "active": gb.activo,
-            "detail": gb.detalle
+            "detail": gb.detalle.replace("[CIERRE_SUCURSAL]", "").strip(),
         })
 
     # 4. Habitual Rules
     habitual_rules = []
     rules = AgendaHabitualEspecialista.objects.filter(activo=True).prefetch_related("dias")
+    if branch:
+        rules = rules.filter(sucursal=branch, especialista__sucursal_base=branch)
     for r in rules:
         habitual_rules.append({
             "id": r.id,
@@ -89,7 +149,11 @@ def admin_availability(request):
 
     # 5. Exceptions
     exceptions = []
-    exs = AgendaExcepcionEspecialista.objects.filter(activo=True)
+    exs = AgendaExcepcionEspecialista.objects.filter(activo=True).exclude(
+        detalle__startswith="[CIERRE_SUCURSAL]"
+    )
+    if branch:
+        exs = exs.filter(sucursal=branch, especialista__sucursal_base=branch)
     for e in exs:
         exceptions.append({
             "id": e.id,
@@ -129,6 +193,13 @@ def admin_create_habitual_schedule(request):
         if not specialist_ids:
             return _json({"detail": "Debes seleccionar al menos un especialista."}, status=400)
 
+        branch = _get_user_branch(request)
+        if not branch:
+            return _json({"detail": "Debes seleccionar una sucursal activa."}, status=400)
+        if int(data.get("branchId") or 0) != branch.pk:
+            return _json({"detail": "La sucursal enviada no coincide con la sucursal activa."}, status=400)
+        _validate_branch_specialists(branch, specialist_ids)
+
         with transaction.atomic():
             for sp_id in specialist_ids:
                 agenda = AgendaHabitualEspecialista.objects.create(
@@ -151,9 +222,13 @@ def admin_create_habitual_schedule(request):
 def admin_update_habitual_schedule(request, rule_id):
     try:
         data = json.loads(request.body)
-        agenda = AgendaHabitualEspecialista.objects.get(pk=rule_id)
+        branch = _get_user_branch(request)
+        agenda = AgendaHabitualEspecialista.objects.get(pk=rule_id, sucursal=branch)
+        if agenda.especialista.sucursal_base_id != branch.pk:
+            return _json({"detail": "Solo puedes gestionar especialistas de la sucursal activa."}, status=400)
         with transaction.atomic():
-            if "branchId" in data: agenda.sucursal_id = data["branchId"]
+            if "branchId" in data and int(data["branchId"]) != branch.pk:
+                return _json({"detail": "No puedes mover una agenda a otra sucursal desde esta pantalla."}, status=400)
             if "startDate" in data: agenda.fecha_inicio = data["startDate"]
             if "endDate" in data: agenda.fecha_fin = data["endDate"]
             if "startTime" in data: agenda.hora_inicio = data["startTime"]
@@ -173,7 +248,8 @@ def admin_update_habitual_schedule(request, rule_id):
 @_admin_required
 def admin_delete_habitual_schedule(request, rule_id):
     try:
-        AgendaHabitualEspecialista.objects.filter(pk=rule_id).delete()
+        branch = _get_user_branch(request)
+        AgendaHabitualEspecialista.objects.filter(pk=rule_id, sucursal=branch).delete()
         return _json({"detail": "Agenda eliminada"})
     except Exception as e:
         return _json({"detail": str(e)}, status=400)
@@ -189,6 +265,13 @@ def admin_create_specialist_exception(request):
         
         if not specialist_ids:
             return _json({"detail": "Debes seleccionar al menos un especialista."}, status=400)
+
+        branch = _get_user_branch(request)
+        if not branch:
+            return _json({"detail": "Debes seleccionar una sucursal activa."}, status=400)
+        if int(data.get("branchId") or 0) != branch.pk:
+            return _json({"detail": "La sucursal enviada no coincide con la sucursal activa."}, status=400)
+        _validate_branch_specialists(branch, specialist_ids)
 
         with transaction.atomic():
             for sp_id in specialist_ids:
@@ -210,7 +293,8 @@ def admin_create_specialist_exception(request):
 @_admin_required
 def admin_delete_specialist_exception(request, exception_id):
     try:
-        AgendaExcepcionEspecialista.objects.filter(pk=exception_id).delete()
+        branch = _get_user_branch(request)
+        AgendaExcepcionEspecialista.objects.filter(pk=exception_id, sucursal=branch).delete()
         return _json({"detail": "Excepcion eliminada"})
     except Exception as e:
         return _json({"detail": str(e)}, status=400)
@@ -222,14 +306,38 @@ def admin_manage_global_day(request):
         data = json.loads(request.body)
         action = data.get("action", "BLOQUEAR")
         date = data["date"]
+        branch = _get_user_branch(request)
+        if not branch:
+            return _json({"detail": "Debes seleccionar una sucursal activa."}, status=400)
+
+        specialists = list(_specialists_for_branch(branch))
+        detail = f"[CIERRE_SUCURSAL] {data.get('detail', '')}".strip()
         if action == "BLOQUEAR":
-            DiaBloqueadoAgendaGlobal.objects.update_or_create(
-                fecha=date,
-                defaults={"activo": True, "detalle": data.get("detail", "")}
-            )
+            if not specialists:
+                return _json({"detail": "No hay especialistas activos en esta sucursal para aplicar el cierre."}, status=400)
+            with transaction.atomic():
+                for specialist in specialists:
+                    AgendaExcepcionEspecialista.objects.update_or_create(
+                        especialista=specialist,
+                        sucursal=branch,
+                        fecha=date,
+                        tipo_excepcion=AgendaExcepcionEspecialista.TipoExcepcion.BLOQUEAR,
+                        detalle__startswith="[CIERRE_SUCURSAL]",
+                        defaults={
+                            "hora_inicio": None,
+                            "hora_fin": None,
+                            "activo": True,
+                            "detalle": detail,
+                        },
+                    )
         else:
-            DiaBloqueadoAgendaGlobal.objects.filter(fecha=date).update(activo=False)
-        return _json({"detail": "Dia global actualizado"})
+            AgendaExcepcionEspecialista.objects.filter(
+                sucursal=branch,
+                fecha=date,
+                tipo_excepcion=AgendaExcepcionEspecialista.TipoExcepcion.BLOQUEAR,
+                detalle__startswith="[CIERRE_SUCURSAL]",
+            ).update(activo=False)
+        return _json({"detail": "Dia de cierre de sucursal actualizado"})
     except Exception as e:
         return _json({"detail": str(e)}, status=400)
 
@@ -280,4 +388,3 @@ def admin_check_concurrency(request):
 def admin_get_branches(request):
     sucursales = list(Sucursal.objects.values('id', 'nombre', 'es_principal'))
     return _json({'branches': sucursales})
-

@@ -48,9 +48,12 @@ from config.api_views import (
     admin_update_operation_price_plan,
     admin_update_payment_status,
     admin_update_payment_qr_config,
-    admin_update_prospect,
     admin_update_prospect_medical_appointment,
     admin_update_appointment_status,
+    admin_update_prospect,
+    admin_prospect_check_duplicates,
+    admin_clientes_global_search,
+    admin_set_session_branch,
 )
 from config.prospect_conversion_views import (
     admin_prospect_conversion_cancel,
@@ -66,6 +69,7 @@ from config.prospect_conversion_views import (
 
 
 urlpatterns = [
+    path("disponibilidad/sucursales/cambiar/", admin_set_session_branch, name="admin-set-session-branch-api"),
     path("dashboard/", admin_dashboard, name="admin-dashboard-api"),
     path("dashboard/payments/", admin_dashboard_payments, name="admin-dashboard-payments-api"),
     path("dashboard/agenda/", admin_dashboard_agenda, name="admin-dashboard-agenda-api"),
@@ -92,6 +96,7 @@ urlpatterns = [
         admin_cancel_prospect_medical_appointment,
         name="admin-prospect-medical-cancel-api",
     ),
+    path("clientes/buscar-global/", admin_clientes_global_search, name="admin-clientes-global-search-api"),
     path("clientes/<int:client_id>/", admin_cliente_detalle, name="admin-client-detail-api"),
     path(
         "clientes/<int:client_id>/inactivar/",
@@ -163,6 +168,7 @@ urlpatterns = [
         admin_prospect_conversion_finalize,
         name="admin-client-reactivation-finalize-api",
     ),
+    path("prospectos/verificar-duplicados/", admin_prospect_check_duplicates, name="admin-prospectos-check-duplicates-api"),
     path("prospectos/crear/", admin_crear_prospecto, name="admin-prospectos-create-api"),
     path(
         "prospectos/<int:prospecto_id>/conversion/",

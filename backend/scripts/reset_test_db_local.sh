@@ -30,5 +30,6 @@ $PYTHON manage.py migrate --no-input
 
 # Sembrar datos iniciales
 $PYTHON manage.py seed_pdf_baseline
+$PYTHON manage.py seed_branch_test_scenarios
 
 echo -e "${GREEN}[local_reset] Base de datos SQLite lista para tests.${NC}"

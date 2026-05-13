@@ -47,6 +47,36 @@ def _load_payload(request):
         return None
 
 
+def _check_cross_city_procedures(request, prospecto=None, cliente=None):
+    from config.api_views import _get_user_branch
+    
+    current_branch = _get_user_branch(request)
+    if not current_branch or not current_branch.ciudad:
+        return None
+
+    # Si es prospecto, buscamos si ya existe como cliente por CI
+    if prospecto and not cliente:
+        if not prospecto.ci:
+            return None
+        cliente = Cliente.objects.filter(ci=prospecto.ci).first()
+    
+    if not cliente:
+        return None
+
+    # Buscamos operaciones activas en otras ciudades
+    active_ops = Operacion.objects.filter(
+        paciente=cliente,
+        estado=Operacion.Estado.EN_PROCESO
+    ).exclude(citas_medicas__sucursal__ciudad=current_branch.ciudad).distinct()
+
+    if active_ops.exists():
+        other_cities = list(active_ops.values_list("citas_medicas__sucursal__ciudad", flat=True).distinct())
+        cities_str = ", ".join([c for c in other_cities if c])
+        return f"Atencion: Este paciente tiene procedimientos activos en otra ciudad ({cities_str})."
+    
+    return None
+
+
 def _get_required_pdf_file(request, draft=None):
     document = request.FILES.get("documento_escaneado_pdf") or request.FILES.get("documentoFichaPdf")
     if not document and draft and draft.documento_pdf:
@@ -502,9 +532,12 @@ def admin_prospect_conversion_initialize(request, prospecto_id):
     if error:
         return _json({"detail": error}, status=400)
 
+    warning = _check_cross_city_procedures(request, prospecto=draft.prospecto)
+
     return _json(
         {
             "draft": _serialize_draft(draft),
+            "crossCityWarning": warning,
             "catalogs": {
                 "serviceConfigs": _serialize_service_configs(),
             },
@@ -519,7 +552,11 @@ def admin_client_reactivation_initialize(request, cliente_id):
     if error:
         return _json({"detail": error}, status=400)
 
-    return _json(_admin_conversion_detail(draft))
+    warning = _check_cross_city_procedures(request, cliente=draft.cliente)
+    detail = _admin_conversion_detail(draft)
+    detail["crossCityWarning"] = warning
+
+    return _json(detail)
 
 
 def _serialize_conversion_payload(prospecto, draft):
@@ -574,7 +611,8 @@ def _validate_user_step(payload, draft):
         if existing_client:
             is_own_ci = draft.cliente and draft.cliente.pk == existing_client.pk
             if not is_own_ci:
-                errors["ci"] = "Ya existe un cliente registrado con esta Cedula de Identidad."
+                branch_name = existing_client.sucursal_registro.nombre if existing_client.sucursal_registro else "el sistema"
+                errors["ci"] = f"Ya existe un cliente registrado con este CI en {branch_name}."
 
     existing_hash = (draft.datos_usuario or {}).get("passwordHash")
     if not password and not existing_hash:

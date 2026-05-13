@@ -455,6 +455,16 @@ export type CreateAdminProspectResponse = {
   prospect: ProspectLead
 }
 
+export type CheckAdminProspectDuplicatesResponse = {
+  exists: boolean
+  message?: string
+  match?: {
+    id: number
+    name: string
+    branch: string
+  }
+}
+
 export type AdminAvailabilityOption = {
   id: number
   label: string

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 
-import { getAdminBranches } from '../services/api/admin'
+import { getAdminBranches, setAdminSessionBranch } from '../services/api/admin'
 import { setActiveBranchId } from '../services/api/activeBranch'
 import { useAuth } from './AuthProvider'
 import type { AdminBranch } from '../types/admin'
@@ -28,10 +28,10 @@ export function BranchProvider({ children }: { children: ReactNode }) {
   const isBranchLocked = Boolean(user && !user.isMainAdmin && user.branchId)
   const lockedBranchId = isBranchLocked ? user!.branchId : null
 
-  // Sincronizar branchId activo con el store compartido para las funciones API
-  useEffect(() => {
-    setActiveBranchId(activeBranch?.id ?? null)
-  }, [activeBranch])
+  const applyActiveBranch = useCallback((branch: AdminBranch | null) => {
+    setActiveBranchId(branch?.id ?? null)
+    setActiveBranchState(branch)
+  }, [])
 
   const fetchBranches = useCallback(async () => {
     setIsLoading(true)
@@ -44,28 +44,28 @@ export function BranchProvider({ children }: { children: ReactNode }) {
         if (lockedBranchId) {
           // Admin de sucursal: fijar a su sucursal
           const locked = response.branches.find((b) => b.id === lockedBranchId)
-          setActiveBranchState(locked || response.branches[0])
+          applyActiveBranch(locked || response.branches[0])
         } else if (!activeBranch) {
           const principal = response.branches.find((b) => b.es_principal)
-          setActiveBranchState(principal || response.branches[0])
+          applyActiveBranch(principal || response.branches[0])
         } else {
           const stillExists = response.branches.find((b) => b.id === activeBranch.id)
           if (!stillExists) {
             const principal = response.branches.find((b) => b.es_principal)
-            setActiveBranchState(principal || response.branches[0])
+            applyActiveBranch(principal || response.branches[0])
           } else {
-             setActiveBranchState(stillExists)
+            applyActiveBranch(stillExists)
           }
         }
       } else {
-        setActiveBranchState(null)
+        applyActiveBranch(null)
       }
     } catch (err: any) {
       setError(err.message || 'Error al cargar sucursales')
     } finally {
       setIsLoading(false)
     }
-  }, [activeBranch, lockedBranchId])
+  }, [activeBranch, applyActiveBranch, lockedBranchId])
 
   useEffect(() => {
     void fetchBranches()
@@ -73,15 +73,23 @@ export function BranchProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setActiveBranch = useCallback(
-    (branchId: number) => {
-      // No permitir cambio si la sucursal está fija
+    async (branchId: number) => {
       if (isBranchLocked) return
       const branch = branches.find((b) => b.id === branchId)
       if (branch) {
-        setActiveBranchState(branch)
+        try {
+          // Primero avisar al backend para que fije la sesion
+          await setAdminSessionBranch(branchId)
+          // Luego actualizar el estado local
+          applyActiveBranch(branch)
+        } catch (err) {
+          console.error('No se pudo sincronizar la sucursal con el servidor:', err)
+          // Aun asi actualizamos localmente por si es un error temporal
+          applyActiveBranch(branch)
+        }
       }
     },
-    [branches, isBranchLocked],
+    [applyActiveBranch, branches, isBranchLocked],
   )
 
   return (

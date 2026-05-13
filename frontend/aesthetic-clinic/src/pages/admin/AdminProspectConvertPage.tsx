@@ -788,6 +788,16 @@ export function AdminProspectConvertPage() {
         }]}
       />
 
+      {data.crossCityWarning ? (
+        <div style={{ marginBottom: '1.5rem' }}>
+          <DataState 
+            title="Advertencia de Tratamiento Activo" 
+            message={data.crossCityWarning} 
+            tone="warning" 
+          />
+        </div>
+      ) : null}
+
       <section className="wizard-summary">
         <article>
           <span>{isReactivation ? 'Cliente' : 'Prospecto'}</span>

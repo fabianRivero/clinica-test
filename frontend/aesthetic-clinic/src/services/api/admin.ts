@@ -38,6 +38,7 @@ import type {
   UpdateAdminPaymentStatusPayload,
   UpdateAdminPaymentStatusResponse,
   AdminConcurrencyCheckResponse,
+  CheckAdminProspectDuplicatesResponse,
 } from '../../types/admin'
 import type {
   ProspectConversionFinalizeResponse,
@@ -53,17 +54,17 @@ import { getActiveBranchId } from './activeBranch'
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
 function _appendBranchId(path: string): string {
-  const branchId = getActiveBranchId()
-  if (!branchId) return path
-  const separator = path.includes('?') ? '&' : '?'
-  return `${path}${separator}branchId=${branchId}`
+  // Ya no añadimos branchId a la URL porque usamos el encabezado X-Selected-Branch-Id
+  return path
 }
 
 async function requestJson<T>(path: string): Promise<T> {
+  const branchId = getActiveBranchId()
   const response = await fetch(`${API_BASE_URL}${_appendBranchId(path)}`, {
     credentials: 'include',
     headers: {
       Accept: 'application/json',
+      'X-Selected-Branch-Id': branchId ? String(branchId) : '',
     },
   })
 
@@ -76,6 +77,7 @@ async function requestJson<T>(path: string): Promise<T> {
 
 async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
   const csrfToken = await ensureCsrfCookie()
+  const branchId = getActiveBranchId()
 
   const response = await fetch(`${API_BASE_URL}${_appendBranchId(path)}`, {
     method: 'POST',
@@ -84,6 +86,7 @@ async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
       Accept: 'application/json',
       'Content-Type': 'application/json',
       'X-CSRFToken': csrfToken,
+      'X-Selected-Branch-Id': branchId ? String(branchId) : '',
     },
     body: JSON.stringify(body),
   })
@@ -107,6 +110,7 @@ async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
 
 async function requestFormDataWithBody<T>(path: string, body: FormData): Promise<T> {
   const csrfToken = await ensureCsrfCookie()
+  const branchId = getActiveBranchId()
 
   const response = await fetch(`${API_BASE_URL}${_appendBranchId(path)}`, {
     method: 'POST',
@@ -114,6 +118,7 @@ async function requestFormDataWithBody<T>(path: string, body: FormData): Promise
     headers: {
       Accept: 'application/json',
       'X-CSRFToken': csrfToken,
+      'X-Selected-Branch-Id': branchId ? String(branchId) : '',
     },
     body,
   })
@@ -147,7 +152,8 @@ export function getAdminDashboardAgenda(month: number, year: number) {
   return requestJson<DashboardAgendaResponse>(`/api/admin/dashboard/agenda/?month=${month}&year=${year}`)
 }
 
-export function getAdminProspects() {
+export function getAdminProspects(_branchId?: number) {
+  // El branchId ahora viaja por el encabezado X-Selected-Branch-Id inyectado en requestJson
   return requestJson<ProspectsResponse>('/api/admin/prospectos/')
 }
 
@@ -276,7 +282,7 @@ export function updateAdminOperationPricePlan(
   )
 }
 
-export function getAdminAvailability() {
+export function getAdminAvailability(_branchId?: number | null) {
   return requestJson<AdminAvailabilityResponse>('/api/admin/disponibilidad/')
 }
 
@@ -352,7 +358,7 @@ export function updateAdminCatalogItemState(
   )
 }
 
-export function getAdminStaff() {
+export function getAdminStaff(_branchId?: number | null) {
   return requestJson<StaffResponse>('/api/admin/equipo/')
 }
 
@@ -379,6 +385,10 @@ export function updateAdminStaffStatus(
 
 export function createAdminProspect(payload: CreateAdminProspectPayload) {
   return requestJsonWithBody<CreateAdminProspectResponse>('/api/admin/prospectos/crear/', payload)
+}
+
+export function checkAdminProspectDuplicates(payload: { nombres: string; apellidos: string; telefono?: string }) {
+  return requestJsonWithBody<CheckAdminProspectDuplicatesResponse>('/api/admin/prospectos/verificar-duplicados/', payload)
 }
 
 export function checkAdminConcurrency(
@@ -447,6 +457,12 @@ export function getAdminProspectConversion(prospectId: string) {
   return requestJson<ProspectConversionResponse>(`/api/admin/prospectos/${prospectId}/conversion/`)
 }
 
+export function searchAdminClientsGlobal(query: string) {
+  return requestJson<{ clients: Array<{ id: number; name: string; ci: string; phone: string; branchName: string; cityName: string }> }>(
+    `/api/admin/clientes/buscar-global/?q=${encodeURIComponent(query)}`
+  )
+}
+
 export function cancelAdminProspectConversion(prospectId: string) {
   return requestJsonWithBody<{ detail: string }>(
     `/api/admin/prospectos/${prospectId}/conversion/cancelar/`,
@@ -496,6 +512,10 @@ export function getAdminBranches() {
   return requestJson<{ branches: AdminBranch[] }>('/api/admin/disponibilidad/sucursales/')
 }
 
+export function setAdminSessionBranch(branchId: number) {
+  return requestJsonWithBody<{ detail: string; branchId: number }>('/api/admin/disponibilidad/sucursales/cambiar/', { branchId })
+}
+
 // Client Reactivation
 export function initializeAdminClientReactivation(clientId: string) {
   return requestJson<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/initialize/`)
@@ -543,24 +563,21 @@ export function finalizeAdminClientReactivation(clientId: string, pdfFile?: File
 
 export async function migrateAdminClient(clientId: string | number, branchId: number) {
   return requestJsonWithBody<{ detail: string; branch: { id: number; name: string } }>(
-    `clientes/${clientId}/migrar/`,
-    'POST',
+    `/api/admin/clientes/${clientId}/migrar/`,
     { branchId }
   )
 }
 
 export async function migrateAdminProspect(prospectoId: string | number, branchId: number) {
   return requestJsonWithBody<{ detail: string; branch: { id: number; name: string } }>(
-    `prospectos/${prospectoId}/migrar/`,
-    'POST',
+    `/api/admin/prospectos/${prospectoId}/migrar/`,
     { branchId }
   )
 }
 
 export async function changeAdminStaffBranch(userId: string | number, branchId: number) {
   return requestJsonWithBody<{ detail: string; branch: { id: number; name: string } }>(
-    `equipo/${userId}/cambiar-sucursal/`,
-    'POST',
+    `/api/admin/equipo/${userId}/cambiar-sucursal/`,
     { branchId }
   )
 }
