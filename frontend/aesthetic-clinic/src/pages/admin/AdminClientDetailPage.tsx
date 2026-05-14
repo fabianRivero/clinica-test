@@ -3,7 +3,6 @@ import { Link, useParams, useNavigate } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
 import { AdminRelationshipTabs } from '../../components/admin/AdminRelationshipTabs'
-import { MetricCard } from '../../components/admin/MetricCard'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
@@ -333,12 +332,6 @@ export function AdminClientDetailPage() {
       />
 
       <AdminRelationshipTabs />
-
-      <section className="metrics-grid metrics-grid--compact">
-        {data.metrics.map((metric) => (
-          <MetricCard key={metric.id} metric={metric} />
-        ))}
-      </section>
 
       <SectionCard eyebrow="Estado" title="Gestion del cliente" description="Permite retirar al cliente de sus procedimientos vigentes cuando corresponde.">
         <div className="client-inline-meta">

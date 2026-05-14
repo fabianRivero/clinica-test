@@ -24,7 +24,7 @@ const fullNavigation = [
   {
     label: 'Disponibilidad',
     children: [
-      { to: '/admin/disponibilidad/bloques', label: 'Bloques de horarios' },
+      { to: '/admin/disponibilidad/bloques', label: 'Excepciones de horarios' },
       { to: '/admin/disponibilidad/gestionar', label: 'Gestionar horarios' },
     ],
   },

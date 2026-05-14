@@ -2,7 +2,6 @@ import { useMemo, useState, type FormEvent } from 'react'
 
 import { AdminCatalogTabs } from '../../components/admin/AdminCatalogTabs'
 import { DataState } from '../../components/admin/DataState'
-import { MetricCard } from '../../components/admin/MetricCard'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
@@ -442,12 +441,6 @@ function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
 
       {data ? (
         <>
-          <section className="metrics-grid metrics-grid--compact">
-            {data.metrics.map((metric) => (
-              <MetricCard key={metric.id} metric={metric} />
-            ))}
-          </section>
-
           <CatalogEditorForm
             key={editingItem ? `edit-${editingItem.id}` : `create-${editorVersion}`}
             catalogKey={catalogKey}

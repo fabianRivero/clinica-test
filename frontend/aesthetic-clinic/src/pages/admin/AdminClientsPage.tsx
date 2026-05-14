@@ -1,6 +1,5 @@
 import { DataState } from '../../components/admin/DataState'
 import { AdminRelationshipTabs } from '../../components/admin/AdminRelationshipTabs'
-import { MetricCard } from '../../components/admin/MetricCard'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
@@ -117,12 +116,6 @@ export function AdminClientsPage() {
 
       {data ? (
         <>
-          <section className="metrics-grid metrics-grid--compact">
-            {data.metrics.slice(2).map((metric) => (
-              <MetricCard key={metric.id} metric={metric} />
-            ))}
-          </section>
-
           <SectionCard
             eyebrow="Red global"
             title="Buscar e importar de otra sucursal"

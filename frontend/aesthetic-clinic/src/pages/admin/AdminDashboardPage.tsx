@@ -1,10 +1,9 @@
 import { useCallback, useState } from 'react'
 import { DataState } from '../../components/admin/DataState'
-import { MetricCard } from '../../components/admin/MetricCard'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
-import { getAdminDashboard, getAdminDashboardPayments, getAdminDashboardAgenda } from '../../services/api/admin'
+import { getAdminDashboardPayments, getAdminDashboardAgenda } from '../../services/api/admin'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { Link } from 'react-router-dom'
 
@@ -22,11 +21,6 @@ export function AdminDashboardPage() {
   const [aMonth, setAMonth] = useState(new Date().getMonth() + 1)
   const [aYear, setAYear] = useState(new Date().getFullYear())
 
-  // Metricas generales — se recargan al cambiar sucursal
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const metricsLoader = useCallback(() => getAdminDashboard(), [branchId])
-  const { data: metricsData } = useApiResource(metricsLoader)
-  
   // Pagos independientes
   const paymentsLoader = useCallback(() => getAdminDashboardPayments(pMonth, pYear), [pMonth, pYear, branchId])
   const { data: paymentsData, isLoading: loadingPayments } = useApiResource(paymentsLoader)
@@ -97,15 +91,6 @@ export function AdminDashboardPage() {
 
       <div className="page-stack" style={{ maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
         
-        {/* Metricas generales */}
-        {metricsData?.metrics && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-            {metricsData.metrics.map((m) => (
-              <MetricCard key={m.id} metric={m} />
-            ))}
-          </div>
-        )}
-
         <SectionCard
           eyebrow="Cobros"
           title="Pagos proximos"

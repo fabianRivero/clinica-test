@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { DataState } from '../../components/admin/DataState'
-import { MetricCard } from '../../components/admin/MetricCard'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
@@ -72,12 +71,6 @@ export function ClientReservationsPage() {
 
       {data ? (
         <>
-          <section className="metrics-grid">
-            {data.metrics.map((metric) => (
-              <MetricCard key={metric.id} metric={metric} />
-            ))}
-          </section>
-
           <section className="dashboard-grid">
             <SectionCard
               eyebrow="Agenda"

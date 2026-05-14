@@ -1,5 +1,4 @@
 import { DataState } from '../../components/admin/DataState'
-import { MetricCard } from '../../components/admin/MetricCard'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
@@ -54,12 +53,6 @@ export function ClientDashboardPage() {
                 <strong>{data.welcome.totalOperations}</strong>
               </article>
             </div>
-          </section>
-
-          <section className="metrics-grid">
-            {data.metrics.map((metric) => (
-              <MetricCard key={metric.id} metric={metric} />
-            ))}
           </section>
 
           <section className="dashboard-grid">

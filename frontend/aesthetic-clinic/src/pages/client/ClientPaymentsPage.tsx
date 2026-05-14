@@ -1,7 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 
 import { DataState } from '../../components/admin/DataState'
-import { MetricCard } from '../../components/admin/MetricCard'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
@@ -114,12 +113,6 @@ export function ClientPaymentsPage() {
 
       {pageData ? (
         <>
-          <section className="metrics-grid">
-            {pageData.metrics.map((metric) => (
-              <MetricCard key={metric.id} metric={metric} />
-            ))}
-          </section>
-
           <SectionCard
             eyebrow="Pago por QR"
             title="Escanea y paga"

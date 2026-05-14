@@ -3,7 +3,6 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import { AdminStaffTabs } from '../../components/admin/AdminStaffTabs'
 import { DataState } from '../../components/admin/DataState'
-import { MetricCard } from '../../components/admin/MetricCard'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
@@ -85,16 +84,6 @@ function StaffPageShell({
       <AdminStaffTabs />
       {children}
     </div>
-  )
-}
-
-function StaffMetrics({ data }: { data: StaffResponse }) {
-  return (
-    <section className="metrics-grid">
-      {data.metrics.map((metric) => (
-        <MetricCard key={metric.id} metric={metric} />
-      ))}
-    </section>
   )
 }
 
@@ -412,7 +401,6 @@ export function AdminStaffCreatePage() {
 
       {data ? (
         <>
-          <StaffMetrics data={data} />
           <StaffEditorForm
             key={editingStaffMember ? `edit-${editingStaffMember.rawId}` : 'create'}
             data={data}
@@ -507,8 +495,6 @@ export function AdminStaffManagePage() {
 
       {data ? (
         <>
-          <StaffMetrics data={data} />
-
           <SectionCard
             eyebrow="Capacidad"
             title="Especialistas actuales"

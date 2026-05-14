@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState, type ChangeEvent, type FormEvent } from
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
-import { MetricCard } from '../../components/admin/MetricCard'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { useApiResource } from '../../hooks/useApiResource'
@@ -385,31 +384,26 @@ export function AdminExpensesPage() {
 
           {activeTab === 'list' ? (
             <>
-              <SectionCard title="Periodo">
-                <div className="filters-row">
-                  <button className="button button--ghost" type="button" onClick={() => changeMonth(-1)}>
-                    ←
-                  </button>
-                  <div>
-                    <span className="eyebrow">Mes seleccionado</span>
-                    <h3>{viewedMonthLabel}</h3>
+              <SectionCard
+                title={`Gastos de ${monthNames[data.month - 1]} ${data.year}`}
+                action={
+                  <div className="expense-period-controls">
+                    <button className="button button--ghost" type="button" onClick={() => changeMonth(-1)}>
+                      ←
+                    </button>
+                    <div>
+                      <span className="eyebrow">Mes seleccionado</span>
+                      <h3>{viewedMonthLabel}</h3>
+                    </div>
+                    <button className="button button--ghost" type="button" onClick={() => changeMonth(1)}>
+                      →
+                    </button>
                   </div>
-                  <button className="button button--ghost" type="button" onClick={() => changeMonth(1)}>
-                    →
-                  </button>
-                </div>
-              </SectionCard>
-
-              <section className="metrics-grid">
-                {data.metrics.map((metric) => (
-                  <MetricCard key={metric.id} metric={metric} />
-                ))}
-              </section>
-
-              <SectionCard title={`Gastos de ${monthNames[data.month - 1]} ${data.year}`}>
+                }
+              >
                 {data.expenses.length ? (
-                  <div className="table-wrapper">
-                    <table className="admin-table">
+                  <div className="table-wrapper expense-table-wrapper">
+                    <table className="admin-table admin-table--expenses">
                       <thead>
                         <tr>
                           <th>Fecha</th>
@@ -837,31 +831,26 @@ export function AdminExpenseListPage() {
 
       {data ? (
         <>
-          <SectionCard title="Periodo">
-            <div className="filters-row">
-              <button className="button button--ghost" type="button" onClick={() => changeMonth(-1)}>
-                ←
-              </button>
-              <div>
-                <span className="eyebrow">Mes seleccionado</span>
-                <h3>{viewedMonthLabel}</h3>
+          <SectionCard
+            title={`Gastos de ${monthNames[data.month - 1]} ${data.year}`}
+            action={
+              <div className="expense-period-controls">
+                <button className="button button--ghost" type="button" onClick={() => changeMonth(-1)}>
+                  ←
+                </button>
+                <div>
+                  <span className="eyebrow">Mes seleccionado</span>
+                  <h3>{viewedMonthLabel}</h3>
+                </div>
+                <button className="button button--ghost" type="button" onClick={() => changeMonth(1)}>
+                  →
+                </button>
               </div>
-              <button className="button button--ghost" type="button" onClick={() => changeMonth(1)}>
-                →
-              </button>
-            </div>
-          </SectionCard>
-
-          <section className="metrics-grid">
-            {data.metrics.map((metric) => (
-              <MetricCard key={metric.id} metric={metric} />
-            ))}
-          </section>
-
-          <SectionCard title={`Gastos de ${monthNames[data.month - 1]} ${data.year}`}>
+            }
+          >
             {data.expenses.length ? (
-              <div className="table-wrapper">
-                <table className="admin-table">
+              <div className="table-wrapper expense-table-wrapper">
+                <table className="admin-table admin-table--expenses">
                   <thead>
                     <tr>
                       <th>Fecha</th>
