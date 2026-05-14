@@ -4,6 +4,7 @@ import { AdminLayout } from './layouts/AdminLayout'
 import { ClientLayout } from './layouts/ClientLayout'
 import {
   AdminAllServicesCatalogPage,
+  AdminExpenseCategoriesCatalogPage,
   AdminProceduresCatalogPage,
   AdminServiceTypesCatalogPage,
   AdminSkinPathologiesCatalogPage,
@@ -17,6 +18,7 @@ import {
 import { AdminClientDetailPage } from './pages/admin/AdminClientDetailPage'
 import { AdminClientsPage } from './pages/admin/AdminClientsPage'
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
+import { AdminExpenseCreatePage, AdminExpenseListPage } from './pages/admin/AdminExpensesPage'
 import { AdminOperationDetailPage } from './pages/admin/AdminOperationDetailPage'
 import { AdminOperationsPage } from './pages/admin/AdminOperationsPage'
 import { AdminPaymentsPage } from './pages/admin/AdminPaymentsPage'
@@ -108,6 +110,9 @@ function App() {
           <Route path="prospectos/:prospectId/convertir" element={<AdminProspectConvertPage />} />
           <Route path="operaciones" element={<AdminOperationsPage />} />
           <Route path="operaciones/:operationId" element={<AdminOperationDetailPage />} />
+          <Route path="gastos" element={<Navigate to="/admin/gastos/lista" replace />} />
+          <Route path="gastos/crear" element={<AdminExpenseCreatePage />} />
+          <Route path="gastos/lista" element={<AdminExpenseListPage />} />
           <Route
             path="disponibilidad"
             element={<Navigate to="/admin/disponibilidad/visibles" replace />}
@@ -125,6 +130,7 @@ function App() {
           <Route path="catalogos/tipos-servicio" element={<AdminServiceTypesCatalogPage />} />
           <Route path="catalogos/patologias-cutaneas" element={<AdminSkinPathologiesCatalogPage />} />
           <Route path="catalogos/especialidades" element={<AdminSpecialtiesCatalogPage />} />
+          <Route path="catalogos/categorias-gasto" element={<AdminExpenseCategoriesCatalogPage />} />
           <Route path="equipo" element={<Navigate to="/admin/equipo/gestionar" replace />} />
           <Route path="equipo/crear" element={<AdminStaffCreatePage />} />
           <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />

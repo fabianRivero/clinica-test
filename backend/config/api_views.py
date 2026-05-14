@@ -6,6 +6,7 @@ from functools import wraps
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.db import models
 from django.db.models import Prefetch, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -13,7 +14,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from accounts.models import Rol, Usuario
-from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
+from billing.models import CategoriaGasto, ConfiguracionPagoQR, CuotaPlanPago, GastoSucursal, PagoRealizado
 from catalogs.models import (
     GrupoOpciones,
     OpcionCatalogo,
@@ -21,6 +22,7 @@ from catalogs.models import (
     ProcEstetico,
     ProcEsteticosTipo,
     ServicioConfig,
+    Sucursal,
     TipoServicio,
 )
 from customers.models import Cliente, HuellaBiometricaCliente, Prospecto
@@ -724,6 +726,123 @@ def _payment_qr_config_item(config):
     }
 
 
+def _expense_category_item(category):
+    return {
+        "id": category.pk,
+        "name": category.nombre,
+        "description": category.descripcion,
+    }
+
+
+def _expense_categories_queryset(*, active_only=False):
+    queryset = CategoriaGasto.objects.all()
+    if active_only:
+        queryset = queryset.filter(activo=True)
+    return queryset.order_by(
+        models.Case(
+            models.When(nombre__iexact="Otros", then=0),
+            default=1,
+            output_field=models.IntegerField(),
+        ),
+        "nombre",
+    )
+
+
+def _expense_item(expense):
+    return {
+        "id": f"GAS-{expense.pk:04d}",
+        "rawId": expense.pk,
+        "date": expense.fecha.isoformat(),
+        "dateLabel": _date_label(expense.fecha),
+        "categoryId": expense.categoria_id,
+        "category": expense.categoria.nombre,
+        "concept": expense.concepto,
+        "units": str(expense.unidades),
+        "unitCost": str(expense.costo_unidad),
+        "total": str(expense.gasto_total),
+        "totalLabel": _currency(expense.gasto_total),
+        "provider": expense.proveedor,
+        "invoiceUrl": expense.factura.url if expense.factura else "",
+        "invoiceName": PurePosixPath(expense.factura.name).name if expense.factura else "",
+        "details": expense.detalles,
+        "branchId": expense.sucursal_id,
+        "branchName": expense.sucursal.nombre,
+        "registeredBy": _full_name(expense.registrado_por) if expense.registrado_por else "Sin registrar",
+    }
+
+
+def _parse_expense_payload(request, *, instance=None):
+    errors = {}
+
+    def text_value(field_name):
+        return (request.POST.get(field_name) or "").strip()
+
+    def decimal_value(field_name, *, required=False, minimum=Decimal("0")):
+        raw = request.POST.get(field_name)
+        if raw in (None, ""):
+            if required:
+                errors[field_name] = "Este campo es obligatorio."
+            return None
+        try:
+            value = Decimal(str(raw))
+        except (InvalidOperation, TypeError, ValueError):
+            errors[field_name] = "Debes enviar un numero valido."
+            return None
+        if value < minimum:
+            errors[field_name] = f"El valor minimo permitido es {minimum}."
+            return None
+        return value
+
+    raw_date = text_value("date")
+    expense_date = None
+    if not raw_date:
+        errors["date"] = "La fecha es obligatoria."
+    else:
+        try:
+            expense_date = date.fromisoformat(raw_date)
+        except ValueError:
+            errors["date"] = "Debes enviar una fecha valida."
+
+    raw_category_id = text_value("categoryId")
+    category = None
+    if not raw_category_id:
+        errors["categoryId"] = "La categoria es obligatoria."
+    else:
+        try:
+            category_id = int(raw_category_id)
+        except ValueError:
+            errors["categoryId"] = "Selecciona una categoria valida."
+        else:
+            category = CategoriaGasto.objects.filter(pk=category_id, activo=True).first()
+            if not category:
+                errors["categoryId"] = "Selecciona una categoria activa."
+
+    concept = text_value("concept")
+    if not concept:
+        errors["concept"] = "El concepto es obligatorio."
+
+    units = decimal_value("units", required=True)
+    unit_cost = decimal_value("unitCost", required=True)
+    total = decimal_value("total", required=True)
+
+    if errors:
+        raise ValidationError(errors)
+
+    expense = instance or GastoSucursal()
+    expense.fecha = expense_date
+    expense.categoria = category
+    expense.concepto = concept
+    expense.unidades = units
+    expense.costo_unidad = unit_cost
+    expense.gasto_total = total
+    expense.proveedor = text_value("provider")
+    expense.detalles = text_value("details")
+    invoice_file = request.FILES.get("invoice")
+    if invoice_file:
+        expense.factura = invoice_file
+    return expense
+
+
 def _catalog_item(identifier, name, count, note):
     return {
         "id": identifier,
@@ -799,6 +918,7 @@ def _catalog_key_to_slug(catalog_key):
         "patologias-cutaneas",
         "especialidades",
         "grupos-opciones",
+        "categorias-gasto",
     }:
         return catalog_key
     raise KeyError(catalog_key)
@@ -840,6 +960,11 @@ def _catalog_summary_descriptor():
             "key": "grupos-opciones",
             "title": "Grupos de opciones",
             "description": "Grupos reutilizables para respuestas de seleccion unica o multiple.",
+        },
+        {
+            "key": "categorias-gasto",
+            "title": "Categorias de gasto",
+            "description": "Categorias administrativas usadas al registrar gastos de sucursal.",
         },
     ]
 
@@ -1284,6 +1409,47 @@ def _catalog_page_data(catalog_key):
             "items": items,
         }
 
+    if catalog_key == "categorias-gasto":
+        queryset = _expense_categories_queryset()
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.nombre,
+                "Categoria administrativa de gasto",
+                item.activo,
+                [
+                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {"label": "Gastos vinculados", "value": str(item.gastos.count())},
+                ],
+                {
+                    "name": item.nombre,
+                    "description": item.descripcion,
+                },
+            )
+            for item in queryset
+        ]
+        active_count = queryset.filter(activo=True).count()
+        total_count = queryset.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Categorias de gasto",
+                "description": "Administra las categorias disponibles para clasificar gastos de sucursal.",
+                "createLabel": "Crear categoria",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{GastoSucursal.objects.count()} gasto(s) registrados",
+            ),
+            "fields": [
+                _catalog_field("name", "Categoria", "text", required=True, placeholder="Ej. Insumos"),
+                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas o alcance"),
+            ],
+            "items": items,
+        }
+
     raise KeyError(catalog_key)
 
 
@@ -1463,6 +1629,17 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         obj.descripcion = text_value("description")
         return obj
 
+    if catalog_key == "categorias-gasto":
+        name = text_value("name")
+        if not name:
+            errors["name"] = "El nombre de la categoria es obligatorio."
+        if errors:
+            raise ValidationError(errors)
+        obj = instance or CategoriaGasto()
+        obj.nombre = name
+        obj.descripcion = text_value("description")
+        return obj
+
     raise KeyError(catalog_key)
 
 
@@ -1476,6 +1653,7 @@ def _catalog_get_instance(catalog_key, item_id):
         "patologias-cutaneas": PatologiaCutanea,
         "especialidades": Especialidad,
         "grupos-opciones": GrupoOpciones,
+        "categorias-gasto": CategoriaGasto,
     }
     return model_map[catalog_key].objects.filter(pk=item_id).first()
 
@@ -3088,6 +3266,134 @@ def admin_update_payment_status(request, payment_id):
 
 @require_GET
 @_admin_required
+def admin_gastos(request):
+    branch = _get_user_branch(request)
+    if not branch:
+        return _json({"detail": "Selecciona una sucursal para consultar gastos."}, status=400)
+
+    today = timezone.localdate()
+    try:
+        month = int(request.GET.get("month") or today.month)
+        year = int(request.GET.get("year") or today.year)
+        start = date(year, month, 1)
+    except (TypeError, ValueError):
+        return _json({"detail": "Mes o anio invalido."}, status=400)
+
+    if month == 12:
+        end = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end = date(year, month + 1, 1) - timedelta(days=1)
+
+    expenses_qs = (
+        GastoSucursal.objects.select_related("categoria", "sucursal", "registrado_por")
+        .filter(sucursal=branch, fecha__range=(start, end))
+        .order_by("-fecha", "-created_at")
+    )
+    expenses = list(expenses_qs)
+    total_amount = sum((expense.gasto_total for expense in expenses), Decimal("0"))
+    average_amount = total_amount / len(expenses) if expenses else Decimal("0")
+    categories_count = len({expense.categoria_id for expense in expenses})
+
+    return _json(
+        {
+            "month": month,
+            "year": year,
+            "branch": {"id": branch.pk, "name": branch.nombre},
+            "metrics": [
+                _metric("expenses-total", "Gasto del mes", _currency(total_amount), f"{len(expenses)} registro(s)", "danger"),
+                _metric("expenses-count", "Gastos registrados", len(expenses), f"{categories_count} categoria(s)", "primary"),
+                _metric("expenses-average", "Promedio por gasto", _currency(average_amount), "Calculado sobre el mes", "warning"),
+            ],
+            "categories": [
+                _expense_category_item(category)
+                for category in _expense_categories_queryset(active_only=True)
+            ],
+            "expenses": [_expense_item(expense) for expense in expenses],
+        }
+    )
+
+
+@require_GET
+@_admin_required
+def admin_gastos_categorias(request):
+    return _json(
+        {
+            "categories": [
+                _expense_category_item(category)
+                for category in _expense_categories_queryset(active_only=True)
+            ]
+        }
+    )
+
+
+@require_POST
+@_admin_required
+def admin_gasto_crear(request):
+    branch = _get_user_branch(request)
+    if not branch:
+        return _json({"detail": "Selecciona una sucursal para registrar gastos."}, status=400)
+
+    try:
+        expense = _parse_expense_payload(request)
+        expense.sucursal = branch
+        expense.registrado_por = request.user
+        expense.save()
+    except ValidationError as exc:
+        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+
+    expense = GastoSucursal.objects.select_related("categoria", "sucursal", "registrado_por").get(pk=expense.pk)
+    return _json(
+        {
+            "detail": "Gasto registrado correctamente.",
+            "expense": _expense_item(expense),
+        },
+        status=201,
+    )
+
+
+@require_POST
+@_admin_required
+def admin_gasto_actualizar(request, expense_id):
+    branch = _get_user_branch(request)
+    if not branch:
+        return _json({"detail": "Selecciona una sucursal para actualizar gastos."}, status=400)
+
+    expense = GastoSucursal.objects.filter(pk=expense_id, sucursal=branch).first()
+    if not expense:
+        return _json({"detail": "No encontramos el gasto solicitado en esta sucursal."}, status=404)
+
+    try:
+        expense = _parse_expense_payload(request, instance=expense)
+        expense.save()
+    except ValidationError as exc:
+        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+
+    expense = GastoSucursal.objects.select_related("categoria", "sucursal", "registrado_por").get(pk=expense.pk)
+    return _json(
+        {
+            "detail": "Gasto actualizado correctamente.",
+            "expense": _expense_item(expense),
+        }
+    )
+
+
+@require_POST
+@_admin_required
+def admin_gasto_eliminar(request, expense_id):
+    branch = _get_user_branch(request)
+    if not branch:
+        return _json({"detail": "Selecciona una sucursal para eliminar gastos."}, status=400)
+
+    expense = GastoSucursal.objects.filter(pk=expense_id, sucursal=branch).first()
+    if not expense:
+        return _json({"detail": "No encontramos el gasto solicitado en esta sucursal."}, status=404)
+
+    expense.delete()
+    return _json({"detail": "Gasto eliminado correctamente."})
+
+
+@require_GET
+@_admin_required
 def admin_catalogos(request):
     active_services = ServicioConfig.objects.filter(activo=True).count()
     active_service_types = TipoServicio.objects.filter(activo=True).count()
@@ -3137,6 +3443,12 @@ def admin_catalogos(request):
                 "Especialidades",
                 Especialidad.objects.filter(activo=True).count(),
                 "Catalogo usado para especialistas y asignaciones del equipo",
+            ),
+            _catalog_item(
+                "categorias-gasto",
+                "Categorias de gasto",
+                CategoriaGasto.objects.filter(activo=True).count(),
+                "Clasificacion administrativa para gastos por sucursal",
             ),
         ],
     }

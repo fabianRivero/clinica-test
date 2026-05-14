@@ -59,6 +59,11 @@ const catalogFallbackInfo: Record<
     description: 'Define las especialidades que puede tener el equipo operativo y medico.',
     createLabel: 'Crear especialidad',
   },
+  'categorias-gasto': {
+    title: 'Categorias de gasto',
+    description: 'Define las categorias usadas para clasificar gastos de cada sucursal.',
+    createLabel: 'Crear categoria',
+  },
   'grupos-opciones': {
     title: 'Grupos de opciones',
     description:
@@ -539,6 +544,10 @@ export function AdminSkinPathologiesCatalogPage() {
 
 export function AdminSpecialtiesCatalogPage() {
   return <CatalogPage catalogKey="especialidades" />
+}
+
+export function AdminExpenseCategoriesCatalogPage() {
+  return <CatalogPage catalogKey="categorias-gasto" />
 }
 
 export function AdminOptionGroupsCatalogPage() {

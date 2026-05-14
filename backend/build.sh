@@ -9,6 +9,9 @@ pip install -r requirements.txt
 echo "=== Running database migrations ==="
 python manage.py migrate --noinput
 
+echo "=== Ensuring main branch and base expense categories ==="
+python manage.py ensure_main_branch
+
 echo "=== Installing frontend dependencies ==="
 cd "$SCRIPT_DIR/../frontend/aesthetic-clinic"
 npm install

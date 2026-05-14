@@ -1,6 +1,20 @@
 from django.contrib import admin
 
-from billing.models import CuotaPlanPago, PagoRealizado
+from billing.models import CategoriaGasto, CuotaPlanPago, GastoSucursal, PagoRealizado
+
+
+@admin.register(CategoriaGasto)
+class CategoriaGastoAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "orden", "activo")
+    list_filter = ("activo",)
+    search_fields = ("nombre", "descripcion")
+
+
+@admin.register(GastoSucursal)
+class GastoSucursalAdmin(admin.ModelAdmin):
+    list_display = ("fecha", "sucursal", "categoria", "concepto", "gasto_total", "proveedor")
+    list_filter = ("sucursal", "categoria", "fecha")
+    search_fields = ("concepto", "proveedor", "detalles")
 
 
 @admin.register(PagoRealizado)

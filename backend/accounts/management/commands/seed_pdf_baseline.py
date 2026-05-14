@@ -32,7 +32,7 @@ from operations.models import (
     Operacion,
     CitaMedica,
 )
-from billing.models import CuotaPlanPago, PagoRealizado
+from billing.models import CategoriaGasto, CuotaPlanPago, PagoRealizado
 from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
 
 
@@ -354,6 +354,22 @@ class Command(BaseCommand):
                 defaults={"descripcion": description, "orden": order, "activo": True},
             )
             catalogs["tipo_servicio"][key] = item
+
+        expense_category_specs = [
+            ("Alquiler", "Gastos de alquiler de ambientes y espacios operativos."),
+            ("Servicios", "Agua, electricidad, internet y otros servicios recurrentes."),
+            ("Insumos", "Materiales e insumos usados por la sucursal."),
+            ("Equipamiento", "Compra o reposicion de equipos y herramientas."),
+            ("Marketing", "Publicidad, pauta y materiales comerciales."),
+            ("Sueldos", "Pagos administrativos relacionados con personal."),
+            ("Mantenimiento", "Reparaciones, limpieza y mantenimiento general."),
+            ("Otros", "Gastos administrativos no clasificados."),
+        ]
+        for name, description in expense_category_specs:
+            CategoriaGasto.objects.update_or_create(
+                nombre=name,
+                defaults={"descripcion": description, "activo": True},
+            )
 
         procedure_type, _ = ProcEsteticosTipo.objects.update_or_create(
             tipo="Laser",

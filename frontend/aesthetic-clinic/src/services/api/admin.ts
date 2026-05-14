@@ -8,6 +8,8 @@ import type {
   AdminAvailabilityMutationResponse,
   AdminCancelAppointmentResponse,
   AdminClientDetailResponse,
+  AdminExpenseDeleteResponse,
+  AdminExpenseMutationResponse,
   AdminClientFreeMedicalAvailabilityResponse,
   AdminClientInactivateResponse,
   AdminClientReservationAvailabilityResponse,
@@ -24,6 +26,7 @@ import type {
   DashboardAgendaResponse,
   DashboardPaymentsResponse,
   DashboardResponse,
+  ExpensesResponse,
   ManageAdminGlobalAvailabilityPayload,
   OperationDetailResponse,
   OperationsResponse,
@@ -36,6 +39,7 @@ import type {
   UpdateAdminStaffPayload,
   UpdateAdminStaffStatusPayload,
   UpsertAdminHabitualSchedulePayload,
+  UpsertAdminExpensePayload,
   UpdateAdminPaymentQrConfigResponse,
   UpdateAdminPaymentStatusPayload,
   UpdateAdminPaymentStatusResponse,
@@ -317,6 +321,47 @@ export function updateAdminPaymentStatus(
   return requestJsonWithBody<UpdateAdminPaymentStatusResponse>(
     `/api/admin/pagos/${paymentId}/estado/`,
     payload,
+  )
+}
+
+function expensePayloadToFormData(payload: UpsertAdminExpensePayload) {
+  const formData = new FormData()
+  formData.append('date', payload.date)
+  formData.append('categoryId', String(payload.categoryId))
+  formData.append('concept', payload.concept)
+  formData.append('units', payload.units)
+  formData.append('unitCost', payload.unitCost)
+  formData.append('total', payload.total)
+  formData.append('provider', payload.provider)
+  formData.append('details', payload.details)
+  if (payload.invoice) {
+    formData.append('invoice', payload.invoice)
+  }
+  return formData
+}
+
+export function getAdminExpenses(month: number, year: number) {
+  return requestJson<ExpensesResponse>(`/api/admin/gastos/?month=${month}&year=${year}`)
+}
+
+export function createAdminExpense(payload: UpsertAdminExpensePayload) {
+  return requestFormDataWithBody<AdminExpenseMutationResponse>(
+    '/api/admin/gastos/crear/',
+    expensePayloadToFormData(payload),
+  )
+}
+
+export function updateAdminExpense(expenseId: number, payload: UpsertAdminExpensePayload) {
+  return requestFormDataWithBody<AdminExpenseMutationResponse>(
+    `/api/admin/gastos/${expenseId}/actualizar/`,
+    expensePayloadToFormData(payload),
+  )
+}
+
+export function deleteAdminExpense(expenseId: number) {
+  return requestJsonWithBody<AdminExpenseDeleteResponse>(
+    `/api/admin/gastos/${expenseId}/eliminar/`,
+    {},
   )
 }
 

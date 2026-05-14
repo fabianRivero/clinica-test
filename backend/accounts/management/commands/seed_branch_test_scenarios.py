@@ -1,4 +1,4 @@
-from datetime import time, timedelta
+from datetime import date, time, timedelta
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
@@ -6,7 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from accounts.models import Rol, Usuario
-from billing.models import CuotaPlanPago, PagoRealizado
+from billing.models import CategoriaGasto, CuotaPlanPago, GastoSucursal, PagoRealizado
 from catalogs.models import ProcEstetico, ServicioConfig, Sucursal
 from customers.models import Cliente, Prospecto
 from operations.models import (
@@ -32,6 +32,8 @@ SCENARIO_SPECIALISTS = {
     "especialista.movible.sur",
 }
 
+EXPENSE_SCENARIO_PREFIX = "[ESCENARIO_GASTOS]"
+
 
 class Command(BaseCommand):
     help = "Carga escenarios locales para probar administracion multi-sucursal."
@@ -47,6 +49,7 @@ class Command(BaseCommand):
         self._seed_prospects(branches)
         self._seed_clients(roles["CLIENTE"], branches, services, admin_user)
         self._seed_specialists(roles["TRABAJADOR"], branches)
+        self._seed_expenses(branches, admin_user)
 
         self.stdout.write(self.style.SUCCESS("Escenarios multi-sucursal cargados correctamente."))
         self.stdout.write(
@@ -96,6 +99,7 @@ class Command(BaseCommand):
         specialists = Especialista.objects.filter(usuario__username__in=SCENARIO_SPECIALISTS)
         AgendaExcepcionEspecialista.objects.filter(especialista__in=specialists).delete()
         AgendaHabitualEspecialista.objects.filter(especialista__in=specialists).delete()
+        GastoSucursal.objects.filter(detalles__startswith=EXPENSE_SCENARIO_PREFIX).delete()
 
     def _seed_prospects(self, branches):
         prospect_specs = [
@@ -437,3 +441,53 @@ class Command(BaseCommand):
                 "detalle": f"Excepcion demo para validar limpieza en {branch.nombre}",
             },
         )
+
+    def _get_expense_categories(self):
+        category_specs = [
+            ("Alquiler", "Gastos de alquiler de ambientes y espacios operativos."),
+            ("Servicios", "Agua, electricidad, internet y otros servicios recurrentes."),
+            ("Insumos", "Materiales e insumos usados por la sucursal."),
+            ("Equipamiento", "Compra o reposicion de equipos y herramientas."),
+            ("Marketing", "Publicidad, pauta y materiales comerciales."),
+            ("Sueldos", "Pagos administrativos relacionados con personal."),
+            ("Mantenimiento", "Reparaciones, limpieza y mantenimiento general."),
+            ("Otros", "Gastos administrativos no clasificados."),
+        ]
+        categories = {}
+        for name, description in category_specs:
+            category, _ = CategoriaGasto.objects.update_or_create(
+                nombre=name,
+                defaults={"descripcion": description, "activo": True},
+            )
+            categories[name] = category
+        return categories
+
+    def _seed_expenses(self, branches, admin_user):
+        categories = self._get_expense_categories()
+        expense_specs = [
+            (branches["norte"], date(2026, 4, 3), "Insumos", "Guantes nitrilo caja x100", Decimal("4"), Decimal("48.00"), "Distribuidora Medica Norte"),
+            (branches["norte"], date(2026, 4, 12), "Servicios", "Servicio electrico consultorios", Decimal("1"), Decimal("385.50"), "Empresa Electrica"),
+            (branches["norte"], date(2026, 4, 24), "Marketing", "Campania abril redes sociales", Decimal("1"), Decimal("620.00"), "Agencia Digital Demo"),
+            (branches["norte"], date(2026, 5, 4), "Insumos", "Gel conductor para laser", Decimal("6"), Decimal("35.00"), "Laser Supplies SRL"),
+            (branches["norte"], date(2026, 5, 15), "Mantenimiento", "Revision equipo laser", Decimal("1"), Decimal("780.00"), "Tecnicos Laser Norte"),
+            (branches["norte"], date(2026, 5, 26), "Alquiler", "Alquiler mensual sucursal norte", Decimal("1"), Decimal("3200.00"), "Inmobiliaria Norte"),
+            (branches["sur"], date(2026, 4, 5), "Insumos", "Mascarillas descartables", Decimal("8"), Decimal("22.50"), "Proveedor Clinico Sur"),
+            (branches["sur"], date(2026, 4, 18), "Servicios", "Internet sucursal sur", Decimal("1"), Decimal("250.00"), "Telecom Demo"),
+            (branches["sur"], date(2026, 4, 28), "Equipamiento", "Lampara auxiliar cabina", Decimal("1"), Decimal("540.00"), "Equipos Esteticos Sur"),
+            (branches["sur"], date(2026, 5, 7), "Marketing", "Volantes promocion manchas", Decimal("500"), Decimal("0.85"), "Imprenta Sur"),
+            (branches["sur"], date(2026, 5, 16), "Mantenimiento", "Limpieza profunda cabinas", Decimal("1"), Decimal("360.00"), "Servicios Limpieza Sur"),
+            (branches["sur"], date(2026, 5, 29), "Alquiler", "Alquiler mensual sucursal sur", Decimal("1"), Decimal("2900.00"), "Inmobiliaria Sur"),
+        ]
+        for branch, expense_date, category_name, concept, units, unit_cost, provider in expense_specs:
+            GastoSucursal.objects.create(
+                sucursal=branch,
+                categoria=categories[category_name],
+                fecha=expense_date,
+                concepto=concept,
+                unidades=units,
+                costo_unidad=unit_cost,
+                gasto_total=(units * unit_cost).quantize(Decimal("0.01")),
+                proveedor=provider,
+                detalles=f"{EXPENSE_SCENARIO_PREFIX} Gasto demo para validar filtros de abril y mayo 2026.",
+                registrado_por=admin_user,
+            )

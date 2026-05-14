@@ -15,6 +15,13 @@ const fullNavigation = [
   },
   { to: '/admin/operaciones', label: 'Operaciones' },
   {
+    label: 'Gastos',
+    children: [
+      { to: '/admin/gastos/crear', label: 'Crear gastos' },
+      { to: '/admin/gastos/lista', label: 'Lista de gastos' },
+    ],
+  },
+  {
     label: 'Disponibilidad',
     children: [
       { to: '/admin/disponibilidad/bloques', label: 'Bloques de horarios' },
@@ -31,6 +38,7 @@ const fullNavigation = [
       { to: '/admin/catalogos/tipos-servicio', label: 'Tipos de servicio' },
       { to: '/admin/catalogos/patologias-cutaneas', label: 'Patologias cutaneas' },
       { to: '/admin/catalogos/especialidades', label: 'Especialidades' },
+      { to: '/admin/catalogos/categorias-gasto', label: 'Categorias de gasto' },
     ],
   },
   {

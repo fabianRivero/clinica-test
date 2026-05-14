@@ -59,6 +59,66 @@ export type PaymentQrConfig = {
   instructions: string
 }
 
+export type ExpenseCategory = {
+  id: number
+  name: string
+  description: string
+}
+
+export type ExpenseItem = {
+  id: string
+  rawId: number
+  date: string
+  dateLabel: string
+  categoryId: number
+  category: string
+  concept: string
+  units: string
+  unitCost: string
+  total: string
+  totalLabel: string
+  provider: string
+  invoiceUrl: string
+  invoiceName: string
+  details: string
+  branchId: number
+  branchName: string
+  registeredBy: string
+}
+
+export type ExpensesResponse = {
+  month: number
+  year: number
+  branch: {
+    id: number
+    name: string
+  }
+  metrics: AdminMetric[]
+  categories: ExpenseCategory[]
+  expenses: ExpenseItem[]
+}
+
+export type UpsertAdminExpensePayload = {
+  date: string
+  categoryId: number | string
+  concept: string
+  units: string
+  unitCost: string
+  total: string
+  provider: string
+  details: string
+  invoice?: File | null
+}
+
+export type AdminExpenseMutationResponse = {
+  detail: string
+  expense: ExpenseItem
+}
+
+export type AdminExpenseDeleteResponse = {
+  detail: string
+}
+
 export type AgendaItem = {
   id: string
   time: string
@@ -354,6 +414,7 @@ export type AdminCatalogKey =
   | 'patologias-cutaneas'
   | 'especialidades'
   | 'grupos-opciones'
+  | 'categorias-gasto'
 
 export type AdminCatalogFormValue = string | number | boolean | null
 

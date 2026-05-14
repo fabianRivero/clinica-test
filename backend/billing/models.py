@@ -8,7 +8,7 @@ from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 
-from common.models import TimeStampedModel
+from common.models import CatalogoEditableModel, TimeStampedModel
 
 
 def _safe_delete_file(file_name):
@@ -169,6 +169,82 @@ class PagoRealizado(TimeStampedModel):
         return f"Pago #{self.pk} - Cuota #{self.cuota_id}"
 
 
+class CategoriaGasto(CatalogoEditableModel):
+    nombre = models.CharField(max_length=120, unique=True)
+
+    class Meta:
+        db_table = "categorias_gasto"
+        ordering = ("orden", "nombre")
+
+    def __str__(self):
+        return self.nombre
+
+
+class GastoSucursal(TimeStampedModel):
+    sucursal = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.PROTECT,
+        related_name="gastos",
+    )
+    categoria = models.ForeignKey(
+        "billing.CategoriaGasto",
+        on_delete=models.PROTECT,
+        related_name="gastos",
+    )
+    fecha = models.DateField()
+    concepto = models.CharField(max_length=180)
+    unidades = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+    )
+    costo_unidad = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+    )
+    gasto_total = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+    )
+    proveedor = models.CharField(max_length=160, blank=True)
+    factura = models.FileField(
+        upload_to="facturas_gastos/%Y/%m/",
+        blank=True,
+        validators=[FileExtensionValidator(["png", "jpg", "jpeg", "webp", "pdf"])],
+    )
+    detalles = models.TextField(blank=True)
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="gastos_registrados",
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        db_table = "gastos_sucursal"
+        ordering = ("-fecha", "-created_at")
+
+    def save(self, *args, **kwargs):
+        previous_file_name = None
+        if self.pk:
+            previous_file_name = (
+                GastoSucursal.objects.filter(pk=self.pk)
+                .values_list("factura", flat=True)
+                .first()
+            )
+
+        self.full_clean()
+        super().save(*args, **kwargs)
+        if previous_file_name and previous_file_name != self.factura.name:
+            _safe_delete_file(previous_file_name)
+
+    def __str__(self):
+        return f"{self.concepto} - {self.sucursal}"
+
+
 class ConfiguracionPagoQR(TimeStampedModel):
     instrucciones = models.TextField(
         blank=True,
@@ -212,6 +288,12 @@ def actualizar_cuota_tras_eliminar_pago(sender, instance, **kwargs):
         _safe_delete_file(instance.comprobante_url.name)
     instance.cuota.actualizar_estado_por_pagos()
     instance.cuota.operacion.paciente.actualizar_estado_automaticamente()
+
+
+@receiver(post_delete, sender=GastoSucursal)
+def eliminar_factura_gasto(sender, instance, **kwargs):
+    if instance.factura:
+        _safe_delete_file(instance.factura.name)
 
 
 @receiver(post_delete, sender=ConfiguracionPagoQR)
