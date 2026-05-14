@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
+import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
+import { StatusBadge } from '../../components/admin/StatusBadge'
 
 type WeekdayAvailability = {
   date: string
@@ -27,36 +29,106 @@ export function SpecialistPortalPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader eyebrow="Portal de especialista" title="Agenda abierta y comunicacion de sucursal" description="Consulta tu disponibilidad semanal y comunicate con administracion en formato tipo correo." />
-      <div className="section-tabs" aria-label="Pestañas especialista">
-        <button className={`section-tabs__item ${activeTab === 'AGENDA' ? 'is-active' : ''}`} type="button" onClick={() => setActiveTab('AGENDA')}>Agenda semanal</button>
-        <button className={`section-tabs__item ${activeTab === 'MENSAJES' ? 'is-active' : ''}`} type="button" onClick={() => setActiveTab('MENSAJES')}>Mensajes a administracion</button>
-      </div>
+      <PageHeader
+        eyebrow="Portal de especialista"
+        title="Agenda semanal y mensajeria"
+        description="Interfaz operativa alineada al modelo de agenda abierta de la sucursal."
+      />
+
+      <nav className="section-tabs" aria-label="Subsecciones de especialista">
+        <button className={`section-tabs__item ${activeTab === 'AGENDA' ? 'is-active' : ''}`} type="button" onClick={() => setActiveTab('AGENDA')}>
+          Agenda semanal
+        </button>
+        <button className={`section-tabs__item ${activeTab === 'MENSAJES' ? 'is-active' : ''}`} type="button" onClick={() => setActiveTab('MENSAJES')}>
+          Mensajeria interna
+        </button>
+      </nav>
+
       {activeTab === 'AGENDA' ? (
-        <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr 1.4fr' }}>
-          <SectionCard title="Calendario semanal" description="Selecciona un dia para ver detalle de disponibilidad.">
-            <div className="form-stack">
-              {WEEK_AVAILABILITY.map((day) => <button key={day.date} type="button" className={`button ${day.date === selectedDate ? '' : 'button--ghost'}`} onClick={() => setSelectedDate(day.date)}>{day.weekdayLabel} · {day.date}</button>)}
+        <section className="dashboard-grid">
+          <SectionCard eyebrow="Semana" title="Calendario de disponibilidad" description="Selecciona un dia para revisar horarios y excepciones.">
+            <div className="capacity-list">
+              {WEEK_AVAILABILITY.map((day) => {
+                const active = day.date === selectedDate
+                const hasShifts = day.shifts.length > 0
+                return (
+                  <article className="capacity-item" key={day.date}>
+                    <div className="capacity-item__header">
+                      <div>
+                        <strong>{day.weekdayLabel}</strong>
+                        <p>{day.date}</p>
+                      </div>
+                      <StatusBadge tone={hasShifts ? 'success' : 'warning'}>{hasShifts ? 'Con turno' : 'Sin turno'}</StatusBadge>
+                    </div>
+                    <button className={`button ${active ? '' : 'button--ghost'} button--compact`} type="button" onClick={() => setSelectedDate(day.date)}>
+                      {active ? 'Dia seleccionado' : 'Ver detalle'}
+                    </button>
+                  </article>
+                )
+              })}
             </div>
           </SectionCard>
-          <SectionCard title={`Disponibilidad del ${selectedDay.weekdayLabel}`} description="La agenda es abierta: las reservas se atienden por cualquier especialista disponible en turno.">
-            <p><strong>Sucursal:</strong> {selectedDay.branch}</p>
-            <h4>Bloques disponibles</h4>
-            {selectedDay.shifts.length ? <ul>{selectedDay.shifts.map((shift) => <li key={`${shift.start}-${shift.end}`}>{shift.start} - {shift.end} ({shift.source === 'HABITUAL' ? 'Agenda habitual' : 'Excepcion AGREGAR'})</li>)}</ul> : <p>No hay bloques de disponibilidad para este dia.</p>}
-            <h4>Bloqueos / observaciones</h4>
-            {selectedDay.blocks.length ? <ul>{selectedDay.blocks.map((block) => <li key={block.reason}>{block.reason}</li>)}</ul> : <p>Sin bloqueos registrados.</p>}
+
+          <SectionCard eyebrow="Detalle diario" title={`${selectedDay.weekdayLabel} · ${selectedDay.date}`} description="La reserva la atiende cualquier especialista presente en la franja horaria.">
+            <div className="table-card">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Sucursal</th>
+                    <th>Bloque</th>
+                    <th>Origen</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedDay.shifts.map((shift) => (
+                    <tr key={`${shift.start}-${shift.end}`}>
+                      <td>{selectedDay.branch}</td>
+                      <td>{shift.start} - {shift.end}</td>
+                      <td>{shift.source === 'HABITUAL' ? 'Agenda habitual' : 'Excepcion AGREGAR'}</td>
+                      <td><StatusBadge tone="success">Disponible</StatusBadge></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!selectedDay.shifts.length ? <DataState title="Sin bloques disponibles" message="No hay franjas activas para este dia." tone="warning" /> : null}
+            {selectedDay.blocks.length ? (
+              <div className="alert-list" style={{ marginTop: '1rem' }}>
+                {selectedDay.blocks.map((block) => (
+                  <article className="alert-card alert-card--warning" key={block.reason}>
+                    <div>
+                      <strong>Bloqueo / observacion</strong>
+                      <p>{block.reason}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
           </SectionCard>
-        </div>
+        </section>
       ) : (
-        <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr 1.2fr' }}>
-          <SectionCard title="Bandeja" description="Conversaciones con administracion de tu sucursal.">
-            <ul>
-              <li><strong>[NUEVO]</strong> Ajuste de horarios por mantenimiento (Admin Norte)</li>
-              <li>Confirmacion de cobertura de turno sabado (Admin Norte)</li>
-              <li>Solicitud de respaldo de documento clinico (Admin Norte)</li>
-            </ul>
+        <section className="dashboard-grid dashboard-grid--secondary">
+          <SectionCard eyebrow="Bandeja" title="Mensajes con administracion" description="Comunicacion interna por sucursal con formato tipo correo.">
+            <div className="table-card">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Estado</th>
+                    <th>Asunto</th>
+                    <th>Remitente</th>
+                    <th>Fecha</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td><StatusBadge tone="warning">Nuevo</StatusBadge></td><td>Ajuste de horarios por mantenimiento</td><td>Admin Norte</td><td>2026-05-14 09:20</td></tr>
+                  <tr><td><StatusBadge tone="neutral">Leido</StatusBadge></td><td>Confirmacion de cobertura sabado</td><td>Admin Norte</td><td>2026-05-13 16:45</td></tr>
+                </tbody>
+              </table>
+            </div>
           </SectionCard>
-          <SectionCard title="Nuevo mensaje" description="Formato tipo correo con adjuntos.">
+
+          <SectionCard eyebrow="Redactar" title="Nuevo mensaje" description="Puedes adjuntar documentos e imagenes para coordinacion interna.">
             <form className="form-stack" onSubmit={(e) => e.preventDefault()}>
               <div className="form-group"><label>Para</label><input className="input" value="Administrador Sucursal Norte" readOnly /></div>
               <div className="form-group"><label>Asunto</label><input className="input" placeholder="Escribe el asunto" /></div>
@@ -65,7 +137,7 @@ export function SpecialistPortalPage() {
               <button className="button" type="submit">Enviar mensaje</button>
             </form>
           </SectionCard>
-        </div>
+        </section>
       )}
     </div>
   )
