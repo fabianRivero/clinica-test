@@ -31,7 +31,9 @@ import { ClientDashboardPage } from './pages/client/ClientDashboardPage'
 import { ClientPaymentsPage } from './pages/client/ClientPaymentsPage'
 import { ClientReservationsPage } from './pages/client/ClientReservationsPage'
 import { ClientTreatmentsPage } from './pages/client/ClientTreatmentsPage'
-import { SpecialistPortalPage } from './pages/specialist/SpecialistPortalPage'
+import { SpecialistLayout } from './layouts/SpecialistLayout'
+import { SpecialistAgendaPage } from './pages/specialist/SpecialistAgendaPage'
+import { SpecialistMessagesPage } from './pages/specialist/SpecialistMessagesPage'
 import { useAuth } from './providers/AuthProvider'
 import type { RoleKey } from './types/auth'
 
@@ -137,7 +139,11 @@ function App() {
         </Route>
       </Route>
       <Route element={<RequireRole allowedRoles={['TRABAJADOR']} />}>
-        <Route path="/trabajador" element={<SpecialistPortalPage />} />
+        <Route path="/trabajador" element={<SpecialistLayout />}>
+          <Route index element={<Navigate to="/trabajador/agenda" replace />} />
+          <Route path="agenda" element={<SpecialistAgendaPage />} />
+          <Route path="mensajes" element={<SpecialistMessagesPage />} />
+        </Route>
       </Route>
       <Route element={<RequireRole allowedRoles={['CLIENTE']} />}>
         <Route path="/cliente" element={<ClientLayout />}>
