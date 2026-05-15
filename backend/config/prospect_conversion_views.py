@@ -21,7 +21,7 @@ from catalogs.models import (
     TipoPiel,
 )
 from clinical.models import AnalisisEstetico, PatologiaPorAnalisis
-from config.api_views import _admin_required, _get_user_branch, _prospect_item
+from config.api_views import _admin_required, _prospect_item
 from customers.models import Cliente, HuellaBiometricaCliente, Prospecto, ProspectoConversionBorrador
 from operations.models import (
     FichaAntecedenteMedico,
@@ -38,6 +38,14 @@ from operations.models import (
 
 def _json(data, status=200):
     return JsonResponse(data, status=status, json_dumps_params={"ensure_ascii": False})
+
+
+def _get_branch_for_scope_check(request):
+    """Sucursal para control de alcance en conversiones (sin depender de sesión)."""
+    user = request.user
+    if user.is_superuser or user.es_admin_principal:
+        return None
+    return user.sucursal
 
 
 def _load_payload(request):
@@ -499,8 +507,8 @@ def _serialize_medical_config(service_config):
 
 def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
     user = request.user
-    branch = _get_user_branch(request)
-    enforce_branch = bool(branch and not (user.is_superuser or user.es_admin_principal))
+    branch = _get_branch_for_scope_check(request)
+    enforce_branch = bool(branch)
 
     if prospecto_id:
         prospecto = Prospecto.objects.filter(pk=prospecto_id).first()
@@ -1269,7 +1277,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             password=user_data["passwordHash"],
         )
 
-        target_branch = draft.prospecto.sucursal_registro or _get_user_branch(request)
+        target_branch = draft.prospecto.sucursal_registro or _get_branch_for_scope_check(request)
         if not target_branch:
             return _json({"detail": "No encontramos una sucursal activa para completar la conversión."}, status=400)
 
