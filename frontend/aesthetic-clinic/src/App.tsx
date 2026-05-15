@@ -22,7 +22,7 @@ import { AdminExpenseCreatePage, AdminExpenseListPage } from './pages/admin/Admi
 import { AdminOperationDetailPage } from './pages/admin/AdminOperationDetailPage'
 import { AdminOperationsPage } from './pages/admin/AdminOperationsPage'
 import { AdminPaymentsPage } from './pages/admin/AdminPaymentsPage'
-import { AdminTicketsPage } from './pages/admin/AdminTicketsPage'
+import { AdminMessagingPermissionsPage, AdminMessagingTicketsPage } from './pages/admin/AdminTicketsPage'
 import { AdminTicketDetailPage } from './pages/admin/AdminTicketDetailPage'
 import { AdminProspectConvertPage } from './pages/admin/AdminProspectConvertPage'
 import { AdminProspectCreatePage } from './pages/admin/AdminProspectCreatePage'
@@ -125,7 +125,9 @@ function App() {
           <Route path="disponibilidad/bloques" element={<AdminAvailabilityBlocksPage />} />
           <Route path="disponibilidad/gestionar" element={<AdminAvailabilitySchedulesPage />} />
           <Route path="pagos" element={<AdminPaymentsPage />} />
-          <Route path="mensajes" element={<AdminTicketsPage />} />
+          <Route path="mensajes" element={<Navigate to="/admin/mensajes/permisos" replace />} />
+          <Route path="mensajes/permisos" element={<AdminMessagingPermissionsPage />} />
+          <Route path="mensajes/fichas" element={<AdminMessagingTicketsPage />} />
           <Route path="mensajes/:ticketId" element={<AdminTicketDetailPage />} />
           <Route
             path="catalogos"

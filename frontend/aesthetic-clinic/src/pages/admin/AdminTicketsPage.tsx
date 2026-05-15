@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { AdminMessagingTabs } from '../../components/admin/AdminMessagingTabs'
 import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
@@ -14,24 +15,19 @@ import {
   type TicketStatus,
 } from '../../services/api/tickets'
 
-type MessagingTab = 'PERMISOS' | 'FICHAS'
-
-export function AdminTicketsPage() {
-  const [activeTab, setActiveTab] = useState<MessagingTab>('PERMISOS')
-  const [status, setStatus] = useState<TicketStatus | ''>('')
-  const [tickets, setTickets] = useState<Ticket[]>([])
+export function AdminMessagingPermissionsPage() {
   const [specialists, setSpecialists] = useState<SpecialistOpenPermission[]>([])
   const [summary, setSummary] = useState<PermissionSummary>('MIXED')
 
-  const loadTickets = async () => setTickets((await getTickets(status || undefined)).tickets)
   const loadPermissions = async () => {
     const data = await getOpenPermissionStatus()
     setSpecialists(data.specialists)
     setSummary(data.summary)
   }
 
-  useEffect(() => { void loadTickets() }, [status])
-  useEffect(() => { void loadPermissions() }, [])
+  useEffect(() => {
+    void loadPermissions()
+  }, [])
 
   const summaryLabel = useMemo(() => {
     if (summary === 'ALL_ENABLED') return 'Todos los especialistas estan habilitados para abrir fichas.'
@@ -52,19 +48,29 @@ export function AdminTicketsPage() {
     await loadPermissions()
   }
 
-  return <div className='page-stack'>
-    <PageHeader eyebrow='Administracion' title='Fichas de mensajeria' description='Responde mensajes de especialistas y gestiona estado abierto/cerrado.' />
-    
-    {activeTab === 'PERMISOS' ? (
-      <SectionCard eyebrow='Permisos' title='Apertura de fichas por especialistas' description='Control masivo e individual por especialista.'>
-        <div style={{display:'flex', gap:'0.5rem', marginBottom:'0.5rem'}}>
-          <button className='button' onClick={() => void onMassUpdate(true)}>Habilitar a todos</button>
-          <button className='button button--ghost' onClick={() => void onMassUpdate(false)}>Bloquear a todos</button>
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Administracion"
+        title="Mensajeria interna"
+        description="Gestiona permisos para apertura de fichas y revisa fichas existentes."
+      />
+      <AdminMessagingTabs />
+      <SectionCard
+        eyebrow="Permisos"
+        title="Apertura de fichas por especialistas"
+        description="Control masivo e individual por especialista."
+      >
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+          <button className="button" onClick={() => void onMassUpdate(true)}>Habilitar a todos</button>
+          <button className="button button--ghost" onClick={() => void onMassUpdate(false)}>Bloquear a todos</button>
         </div>
-        {summaryLabel ? <p style={{marginTop:0, color:'var(--c-neutral-700)'}}>{summaryLabel}</p> : null}
+        {summaryLabel ? <p style={{ marginTop: 0, color: 'var(--c-neutral-700)' }}>{summaryLabel}</p> : null}
 
-        {!specialists.length ? <DataState title='Sin especialistas' message='No hay especialistas activos en esta sucursal.' /> : (
-          <div className='table-card'>
+        {!specialists.length ? (
+          <DataState title="Sin especialistas" message="No hay especialistas activos en esta sucursal." />
+        ) : (
+          <div className="table-card">
             <table>
               <thead><tr><th>Especialista</th><th>Permiso</th><th>Accion</th></tr></thead>
               <tbody>
@@ -72,9 +78,9 @@ export function AdminTicketsPage() {
                   <tr key={s.specialistId}>
                     <td>{s.specialistName}</td>
                     <td><StatusBadge tone={s.enabled ? 'success' : 'warning'}>{s.enabled ? 'Habilitado' : 'Bloqueado'}</StatusBadge></td>
-                    <td style={{display:'flex', gap:'0.5rem'}}>
-                      <button className='button button--ghost button--compact' disabled={s.enabled} onClick={() => void onSingleUpdate(s.specialistId, true)}>Habilitar</button>
-                      <button className='button button--ghost button--compact' disabled={!s.enabled} onClick={() => void onSingleUpdate(s.specialistId, false)}>Bloquear</button>
+                    <td style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button className="button button--ghost button--compact" disabled={s.enabled} onClick={() => void onSingleUpdate(s.specialistId, true)}>Habilitar</button>
+                      <button className="button button--ghost button--compact" disabled={!s.enabled} onClick={() => void onSingleUpdate(s.specialistId, false)}>Bloquear</button>
                     </td>
                   </tr>
                 ))}
@@ -83,13 +89,56 @@ export function AdminTicketsPage() {
           </div>
         )}
       </SectionCard>
-    ) : (
-      <SectionCard eyebrow='Bandeja' title='Listado de fichas' description='Filtra y entra al detalle para responder o cerrar/reabrir.'>
-        <select className='input' value={status} onChange={(e)=>setStatus(e.target.value as TicketStatus | '')}><option value=''>Todos</option><option value='ABIERTO'>Abierto</option><option value='CERRADO'>Cerrado</option></select>
-        <div className='table-card'><table><thead><tr><th>Estado</th><th>Asunto</th><th>Especialista</th><th></th></tr></thead><tbody>
-        {tickets.map((t)=><tr key={t.id}><td><StatusBadge tone={t.status === 'ABIERTO' ? 'success':'warning'}>{t.status}</StatusBadge></td><td>{t.subject}</td><td>{t.specialistName}</td><td><Link className='button button--ghost button--compact' to={`/admin/mensajes/${t.id}`}>Abrir</Link></td></tr>)}
-        </tbody></table></div>
+    </div>
+  )
+}
+
+export function AdminMessagingTicketsPage() {
+  const [status, setStatus] = useState<TicketStatus | ''>('')
+  const [tickets, setTickets] = useState<Ticket[]>([])
+
+  useEffect(() => {
+    void getTickets(status || undefined).then((result) => setTickets(result.tickets))
+  }, [status])
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Administracion"
+        title="Mensajeria interna"
+        description="Gestiona permisos para apertura de fichas y revisa fichas existentes."
+      />
+      <AdminMessagingTabs />
+      <SectionCard
+        eyebrow="Bandeja"
+        title="Listado de fichas"
+        description="Filtra y entra al detalle para responder o cerrar/reabrir."
+      >
+        <select className="input" value={status} onChange={(e) => setStatus(e.target.value as TicketStatus | '')}>
+          <option value="">Todos</option>
+          <option value="ABIERTO">Abierto</option>
+          <option value="CERRADO">Cerrado</option>
+        </select>
+        <div className="table-card">
+          <table>
+            <thead><tr><th>Estado</th><th>Asunto</th><th>Especialista</th><th>Acciones</th></tr></thead>
+            <tbody>
+              {tickets.map((t) => (
+                <tr key={t.id}>
+                  <td><StatusBadge tone={t.status === 'ABIERTO' ? 'success' : 'warning'}>{t.status}</StatusBadge></td>
+                  <td>{t.subject}</td>
+                  <td>{t.specialistName}</td>
+                  <td>
+                    <Link className="button button--ghost button--compact" to={`/admin/mensajes/${t.id}`}>
+                      Ver mensajes y detalles
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </SectionCard>
-    )}
-  </div>
+    </div>
+  )
 }

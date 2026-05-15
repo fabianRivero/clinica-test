@@ -29,7 +29,13 @@ const fullNavigation = [
     ],
   },
   { to: '/admin/pagos', label: 'Pagos' },
-  { to: '/admin/mensajes', label: 'Mensajeria' },
+  {
+    label: 'Mensajeria',
+    children: [
+      { to: '/admin/mensajes/permisos', label: 'Habilitar/Bloquear fichas' },
+      { to: '/admin/mensajes/fichas', label: 'Fichas existentes' },
+    ],
+  },
   {
     label: 'Catalogos',
     mainAdminOnly: true,
