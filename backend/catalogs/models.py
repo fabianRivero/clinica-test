@@ -11,6 +11,8 @@ class Sucursal(TimeStampedModel):
     es_principal = models.BooleanField(default=False)
     activa = models.BooleanField(default=True)
 
+    especialistas_pueden_abrir_fichas = models.BooleanField(default=True)
+
     class Meta:
         db_table = "sucursales"
         ordering = ("nombre",)

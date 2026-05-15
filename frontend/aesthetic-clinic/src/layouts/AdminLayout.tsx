@@ -29,6 +29,7 @@ const fullNavigation = [
     ],
   },
   { to: '/admin/pagos', label: 'Pagos' },
+  { to: '/admin/mensajes', label: 'Mensajeria' },
   {
     label: 'Catalogos',
     mainAdminOnly: true,

@@ -692,3 +692,35 @@ def sincronizar_estado_cliente(sender, instance, **kwargs):
     instance.paciente.actualizar_estado_automaticamente()
 
 # Create your models here.
+
+
+class Ticket(TimeStampedModel):
+    class Estado(models.TextChoices):
+        ABIERTO = "ABIERTO", "Abierto"
+        CERRADO = "CERRADO", "Cerrado"
+
+    sucursal = models.ForeignKey("catalogs.Sucursal", on_delete=models.CASCADE, related_name="tickets")
+    especialista = models.ForeignKey("staff.Especialista", on_delete=models.CASCADE, related_name="tickets")
+    creado_por = models.ForeignKey("accounts.Usuario", on_delete=models.CASCADE, related_name="tickets_creados")
+    asunto = models.CharField(max_length=180)
+    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.ABIERTO)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "tickets"
+        ordering = ("-updated_at",)
+
+
+class TicketMessage(TimeStampedModel):
+    class Estado(models.TextChoices):
+        ENVIADO = "ENVIADO", "Enviado"
+        RESPONDIDO = "RESPONDIDO", "Respondido"
+
+    ticket = models.ForeignKey("operations.Ticket", on_delete=models.CASCADE, related_name="mensajes")
+    autor = models.ForeignKey("accounts.Usuario", on_delete=models.CASCADE, related_name="mensajes_ticket")
+    contenido = models.TextField()
+    estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.ENVIADO)
+
+    class Meta:
+        db_table = "ticket_messages"
+        ordering = ("created_at",)
