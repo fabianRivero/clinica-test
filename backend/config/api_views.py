@@ -1748,8 +1748,6 @@ def _parse_staff_payload(request, payload, errors, *, instance=None):
         errors["primerNombre"] = "El primer nombre es obligatorio."
     if not apellido_paterno:
         errors["apellidoPaterno"] = "El apellido paterno es obligatorio."
-    if not specialty_ids:
-        errors["specialtyIds"] = "Debes seleccionar al menos una especialidad."
     if instance is None and not password:
         errors["password"] = "La contraseña inicial es obligatoria."
 
@@ -1767,6 +1765,12 @@ def _parse_staff_payload(request, payload, errors, *, instance=None):
         sucursal_base = Sucursal.objects.filter(pk=branch_id, activa=True).first()
         if not sucursal_base:
             errors["branchId"] = "La sucursal seleccionada no es valida."
+    else:
+        # Admin principal/superuser sin branchId explicito: usar sucursal activa del contexto.
+        sucursal_base = _get_user_branch(request)
+
+    if not sucursal_base:
+        errors["branchId"] = "No encontramos una sucursal activa para este especialista."
 
     if errors:
         return None
@@ -2845,6 +2849,13 @@ def admin_crear_prospecto(request):
     if errors:
         return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
 
+    branch = _get_user_branch(request)
+    if not branch:
+        return _json(
+            {"detail": "No encontramos una sucursal activa para registrar el prospecto."},
+            status=400,
+        )
+
     prospecto = Prospecto.objects.create(
         nombres=nombres,
         apellidos=apellidos,
@@ -2852,6 +2863,7 @@ def admin_crear_prospecto(request):
         estado=estado,
         observaciones=observaciones,
         registrado_por=request.user,
+        sucursal_registro=branch,
     )
 
     return _json(

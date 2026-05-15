@@ -40,6 +40,14 @@ def _json(data, status=200):
     return JsonResponse(data, status=status, json_dumps_params={"ensure_ascii": False})
 
 
+def _get_branch_for_scope_check(request):
+    """Sucursal para control de alcance en conversiones (sin depender de sesión)."""
+    user = request.user
+    if user.is_superuser or user.es_admin_principal:
+        return None
+    return user.sucursal
+
+
 def _load_payload(request):
     try:
         return json.loads(request.body.decode("utf-8"))
@@ -56,9 +64,10 @@ def _check_cross_city_procedures(request, prospecto=None, cliente=None):
 
     # Si es prospecto, buscamos si ya existe como cliente por CI
     if prospecto and not cliente:
-        if not prospecto.ci:
+        prospect_ci = getattr(prospecto, "ci", "")
+        if not prospect_ci:
             return None
-        cliente = Cliente.objects.filter(ci=prospecto.ci).first()
+        cliente = Cliente.objects.filter(ci=prospect_ci).first()
     
     if not cliente:
         return None
@@ -176,10 +185,10 @@ def _build_initial_user_data(prospecto):
         "segundoNombre": "",
         "apellidoPaterno": prospecto.apellidos,
         "apellidoMaterno": "",
-        "username": prospecto.username or "",
-        "email": prospecto.email or "",
+        "username": getattr(prospecto, "username", "") or "",
+        "email": getattr(prospecto, "email", "") or "",
         "telefono": prospecto.telefono or "",
-        "ci": "",
+        "ci": getattr(prospecto, "ci", "") or "",
         "fechaNacimiento": "",
         "nroHijos": 0,
         "direccionDomicilio": "",
@@ -498,10 +507,16 @@ def _serialize_medical_config(service_config):
 
 
 def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
+    user = request.user
+    branch = _get_branch_for_scope_check(request)
+    enforce_branch = bool(branch)
+
     if prospecto_id:
         prospecto = Prospecto.objects.filter(pk=prospecto_id).first()
         if not prospecto:
             return None, "No encontramos el prospecto solicitado."
+        if enforce_branch and prospecto.sucursal_registro_id != branch.id:
+            return None, "No tienes permisos para procesar prospectos de otra sucursal."
         if prospecto.estado != Prospecto.Estado.PASAJERO:
             return None, "Este prospecto ya fue procesado."
         draft, _ = ProspectoConversionBorrador.objects.get_or_create(
@@ -510,9 +525,11 @@ def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
         )
         return draft, None
     elif cliente_id:
-        cliente = Cliente.objects.filter(pk=cliente_id).first()
+        cliente = Cliente.objects.select_related("usuario", "sucursal_registro").filter(pk=cliente_id).first()
         if not cliente:
             return None, "No encontramos el cliente solicitado."
+        if enforce_branch and cliente.sucursal_registro_id != branch.id:
+            return None, "No tienes permisos para procesar clientes de otra sucursal."
         draft, created = ProspectoConversionBorrador.objects.get_or_create(
             cliente=cliente,
             defaults={"iniciado_por": request.user}
@@ -1261,8 +1278,13 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             password=user_data["passwordHash"],
         )
 
+        target_branch = draft.prospecto.sucursal_registro or _get_branch_for_scope_check(request)
+        if not target_branch:
+            return _json({"detail": "No encontramos una sucursal activa para completar la conversión."}, status=400)
+
         cliente = Cliente.objects.create(
             usuario=user,
+            sucursal_registro=target_branch,
             ci=user_data.get("ci", ""),
             fecha_nacimiento=date.fromisoformat(user_data["fechaNacimiento"]),
             nro_hijos=int(user_data.get("nroHijos") or 0),
