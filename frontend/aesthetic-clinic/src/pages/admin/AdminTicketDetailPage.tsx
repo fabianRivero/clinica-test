@@ -179,7 +179,7 @@ export function AdminTicketDetailPage() {
               const confirmSend = window.confirm('¿Deseas enviar esta respuesta ahora?')
               if (!confirmSend) return
               setIsSendingReply(true)
-              void replyTicket(ticket.id, reply.trim()).then(async () => {
+              void replyTicket(ticket.id, reply.trim(), replyFiles[0] ?? null).then(async () => {
                 await load()
                 setReply('')
                 setReplyFiles([])

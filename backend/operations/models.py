@@ -1,6 +1,7 @@
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.core.validators import MinValueValidator
+from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
@@ -719,6 +720,12 @@ class TicketMessage(TimeStampedModel):
     ticket = models.ForeignKey("operations.Ticket", on_delete=models.CASCADE, related_name="mensajes")
     autor = models.ForeignKey("accounts.Usuario", on_delete=models.CASCADE, related_name="mensajes_ticket")
     contenido = models.TextField()
+    adjunto = models.FileField(
+        upload_to='tickets_adjuntos/%Y/%m/',
+        blank=True,
+        null=True,
+        validators=[FileExtensionValidator(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip', 'rar', '7z'])],
+    )
     estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.ENVIADO)
 
     class Meta:

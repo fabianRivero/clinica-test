@@ -96,6 +96,7 @@ export function AdminMessagingPermissionsPage() {
         specialistId: composeState.specialistId,
         subject: composeState.subject.trim(),
         message: composeState.message.trim(),
+        attachment: composeState.files[0] ?? null,
       })
       closeComposeModal()
       showNotification({

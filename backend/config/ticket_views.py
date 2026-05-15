@@ -15,6 +15,9 @@ def _json(data, status=200):
 
 
 def _load_payload(request):
+    content_type = request.META.get("CONTENT_TYPE", "")
+    if "multipart/form-data" in content_type:
+        return request.POST.dict()
     try:
         return json.loads(request.body.decode("utf-8") or "{}")
     except json.JSONDecodeError:
@@ -67,6 +70,8 @@ def _message_item(message):
         "body": message.contenido,
         "status": message.estado,
         "createdAt": timezone.localtime(message.created_at).isoformat(),
+        "attachmentUrl": message.adjunto.url if message.adjunto else None,
+        "attachmentName": message.adjunto.name.split("/")[-1] if message.adjunto else None,
     }
 
 
@@ -144,7 +149,8 @@ def tickets_create(request):
             especialista=specialist,
             creado_por=user,
         )
-        TicketMessage.objects.create(ticket=ticket, autor=user, contenido=message, estado=TicketMessage.Estado.ENVIADO)
+        attachment = request.FILES.get('attachment')
+        TicketMessage.objects.create(ticket=ticket, autor=user, contenido=message, adjunto=attachment, estado=TicketMessage.Estado.ENVIADO)
 
     return _json({"detail": "Ficha creada.", "ticket": _ticket_item(ticket)}, status=201)
 
@@ -176,7 +182,8 @@ def tickets_reply(request, ticket_id):
         return _json({"detail": "El mensaje es obligatorio."}, status=400)
 
     with transaction.atomic():
-        msg = TicketMessage.objects.create(ticket=ticket, autor=request.user, contenido=body, estado=TicketMessage.Estado.ENVIADO)
+        attachment = request.FILES.get('attachment')
+        msg = TicketMessage.objects.create(ticket=ticket, autor=request.user, contenido=body, adjunto=attachment, estado=TicketMessage.Estado.ENVIADO)
         TicketMessage.objects.filter(ticket=ticket, estado=TicketMessage.Estado.ENVIADO).exclude(autor=request.user).update(estado=TicketMessage.Estado.RESPONDIDO)
 
     return _json({"detail": "Respuesta enviada.", "message": _message_item(msg)})

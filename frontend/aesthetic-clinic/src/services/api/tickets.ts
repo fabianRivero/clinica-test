@@ -22,6 +22,20 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return data as T
 }
 
+
+
+async function postForm<T>(path: string, formData: FormData): Promise<T> {
+  const csrf = await ensureCsrfCookie()
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { Accept: 'application/json', 'X-CSRFToken': csrf },
+    body: formData,
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error((data as { detail?: string })?.detail || `Error ${response.status}`)
+  return data as T
+}
 export type TicketStatus = 'ABIERTO' | 'CERRADO'
 export type MessageStatus = 'ENVIADO' | 'RESPONDIDO'
 export type PermissionSummary = 'ALL_ENABLED' | 'ALL_BLOCKED' | 'MIXED'
@@ -37,9 +51,27 @@ export type OpenPermissionStatusResponse = {
 }
 
 export const getTickets = (status?: TicketStatus) => getJson<{tickets: Ticket[]}>(`/api/tickets/${status ? `?status=${status}`:''}`)
-export const createTicket = (payload: {subject:string; message:string; specialistId?:number}) => postJson('/api/tickets/crear/', payload)
+export const createTicket = (payload: {subject:string; message:string; specialistId?:number; attachment?: File | null}) => {
+  if (payload.attachment) {
+    const formData = new FormData()
+    formData.append('subject', payload.subject)
+    formData.append('message', payload.message)
+    if (payload.specialistId) formData.append('specialistId', String(payload.specialistId))
+    formData.append('attachment', payload.attachment)
+    return postForm('/api/tickets/crear/', formData)
+  }
+  return postJson('/api/tickets/crear/', payload)
+}
 export const getTicketDetail = (ticketId:number) => getJson<{ticket:Ticket; messages:TicketMessage[]}>(`/api/tickets/${ticketId}/`)
-export const replyTicket = (ticketId:number, message:string) => postJson(`/api/tickets/${ticketId}/responder/`, { message })
+export const replyTicket = (ticketId:number, message:string, attachment?: File | null) => {
+  if (attachment) {
+    const formData = new FormData()
+    formData.append('message', message)
+    formData.append('attachment', attachment)
+    return postForm(`/api/tickets/${ticketId}/responder/`, formData)
+  }
+  return postJson(`/api/tickets/${ticketId}/responder/`, { message })
+}
 export const closeTicket = (ticketId:number) => postJson(`/api/tickets/${ticketId}/cerrar/`, {})
 export const reopenTicket = (ticketId:number) => postJson(`/api/tickets/${ticketId}/reabrir/`, {})
 export const getOpenPermissionStatus = () => getJson<OpenPermissionStatusResponse>('/api/tickets/permisos/apertura/estado/')
