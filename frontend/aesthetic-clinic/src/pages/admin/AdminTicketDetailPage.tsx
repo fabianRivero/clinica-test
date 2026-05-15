@@ -136,8 +136,7 @@ export function AdminTicketDetailPage() {
                         <span style={{ fontSize: '1.3rem' }}>{getFileTypeIcon(attachment.name, attachment.isImage)}</span>
                       )}
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <span>{getFileTypeIcon(attachment.name, attachment.isImage)}</span>
+                        <div>
                           <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '320px' }}>{attachment.name}</strong>
                         </div>
                       </div>
