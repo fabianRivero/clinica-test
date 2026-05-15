@@ -57,8 +57,12 @@ export function AdminTicketsPage() {
 
     <SectionCard eyebrow='Permisos' title='Apertura de fichas por especialistas' description='Control masivo e individual por especialista.'>
       <div style={{display:'flex', gap:'0.5rem', marginBottom:'0.5rem'}}>
-        <button className='button' onClick={() => void onMassUpdate(true)}>Habilitar a todos</button>
-        <button className='button button--ghost' onClick={() => void onMassUpdate(false)}>Bloquear a todos</button>
+        <button className='button' onClick={() => void onMassUpdate(true)} disabled={summary === 'ALL_ENABLED'}>
+          Habilitar a todos
+        </button>
+        <button className='button button--ghost' onClick={() => void onMassUpdate(false)} disabled={summary === 'ALL_BLOCKED'}>
+          Bloquear a todos
+        </button>
       </div>
       {summaryLabel ? <p style={{marginTop:0, color:'var(--c-neutral-700)'}}>{summaryLabel}</p> : null}
 
