@@ -64,9 +64,10 @@ def _check_cross_city_procedures(request, prospecto=None, cliente=None):
 
     # Si es prospecto, buscamos si ya existe como cliente por CI
     if prospecto and not cliente:
-        if not prospecto.ci:
+        prospect_ci = getattr(prospecto, "ci", "")
+        if not prospect_ci:
             return None
-        cliente = Cliente.objects.filter(ci=prospecto.ci).first()
+        cliente = Cliente.objects.filter(ci=prospect_ci).first()
     
     if not cliente:
         return None
@@ -184,10 +185,10 @@ def _build_initial_user_data(prospecto):
         "segundoNombre": "",
         "apellidoPaterno": prospecto.apellidos,
         "apellidoMaterno": "",
-        "username": prospecto.username or "",
-        "email": prospecto.email or "",
+        "username": getattr(prospecto, "username", "") or "",
+        "email": getattr(prospecto, "email", "") or "",
         "telefono": prospecto.telefono or "",
-        "ci": "",
+        "ci": getattr(prospecto, "ci", "") or "",
         "fechaNacimiento": "",
         "nroHijos": 0,
         "direccionDomicilio": "",
