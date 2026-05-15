@@ -21,6 +21,23 @@ function formatDateTime(value: string) {
   }).format(date)
 }
 
+
+
+function getFileExtension(fileName: string) {
+  const parts = fileName.toLowerCase().split('.')
+  return parts.length > 1 ? parts[parts.length - 1] : ''
+}
+
+function getFileTypeIcon(fileName: string, isImage: boolean) {
+  if (isImage) return '🖼️'
+  const ext = getFileExtension(fileName)
+  if (ext === 'pdf') return '📄'
+  if (['doc', 'docx', 'txt', 'rtf'].includes(ext)) return '📝'
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return '📊'
+  if (['zip', 'rar', '7z'].includes(ext)) return '🗜️'
+  return '📎'
+}
+
 function getMessageAttachments(message: TicketMessage): MessageAttachment[] {
   const messageWithAttachment = message as TicketMessage & {
     attachmentUrl?: string
@@ -105,18 +122,28 @@ export function AdminTicketDetailPage() {
             {attachments.length ? (
               <div style={{ marginTop: '0.75rem', display: 'grid', gap: '0.6rem' }}>
                 {attachments.map((attachment) => (
-                  <div key={`${m.id}-${attachment.url}`} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    {attachment.isImage ? (
-                      <button
-                        type="button"
-                        onClick={() => setPreviewImage(attachment)}
-                        style={{ border: '1px solid var(--border)', padding: 0, borderRadius: '8px', cursor: 'pointer', background: 'transparent' }}
-                      >
-                        <img src={attachment.url} alt={attachment.name} style={{ width: '72px', height: '72px', objectFit: 'cover', display: 'block', borderRadius: '8px' }} />
-                      </button>
-                    ) : null}
+                  <div key={`${m.id}-${attachment.url}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.55rem 0.65rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0 }}>
+                      {attachment.isImage ? (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewImage(attachment)}
+                          style={{ border: '1px solid var(--border)', padding: 0, borderRadius: '8px', cursor: 'pointer', background: 'transparent' }}
+                        >
+                          <img src={attachment.url} alt={attachment.name} style={{ width: '56px', height: '56px', objectFit: 'cover', display: 'block', borderRadius: '8px' }} />
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '1.3rem' }}>{getFileTypeIcon(attachment.name, attachment.isImage)}</span>
+                      )}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span>{getFileTypeIcon(attachment.name, attachment.isImage)}</span>
+                          <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '320px' }}>{attachment.name}</strong>
+                        </div>
+                      </div>
+                    </div>
                     <a className="button button--ghost button--compact" href={attachment.url} target="_blank" rel="noreferrer" download>
-                      Descargar {attachment.name}
+                      Descargar
                     </a>
                   </div>
                 ))}
