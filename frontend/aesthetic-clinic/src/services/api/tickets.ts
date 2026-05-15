@@ -1,9 +1,17 @@
 import { ensureCsrfCookie } from './auth'
+import { getActiveBranchId } from './activeBranch'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
 async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, { credentials: 'include', headers: { Accept: 'application/json' } })
+  const branchId = getActiveBranchId()
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'X-Selected-Branch-Id': branchId ? String(branchId) : '',
+    },
+  })
   const data = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error((data as { detail?: string })?.detail || `Error ${response.status}`)
   return data as T
@@ -11,10 +19,16 @@ async function getJson<T>(path: string): Promise<T> {
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const csrf = await ensureCsrfCookie()
+  const branchId = getActiveBranchId()
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     credentials: 'include',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrf,
+      'X-Selected-Branch-Id': branchId ? String(branchId) : '',
+    },
     body: JSON.stringify(body),
   })
   const data = await response.json().catch(() => ({}))
@@ -26,10 +40,15 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 
 async function postForm<T>(path: string, formData: FormData): Promise<T> {
   const csrf = await ensureCsrfCookie()
+  const branchId = getActiveBranchId()
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     credentials: 'include',
-    headers: { Accept: 'application/json', 'X-CSRFToken': csrf },
+    headers: {
+      Accept: 'application/json',
+      'X-CSRFToken': csrf,
+      'X-Selected-Branch-Id': branchId ? String(branchId) : '',
+    },
     body: formData,
   })
   const data = await response.json().catch(() => ({}))
