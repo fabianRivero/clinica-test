@@ -498,8 +498,16 @@ def _serialize_medical_config(service_config):
 
 
 def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
+    from config.api_views import _get_user_branch
+
+    current_branch = _get_user_branch(request)
+    can_access_all = bool(request.user.is_superuser or request.user.es_admin_principal)
+
     if prospecto_id:
-        prospecto = Prospecto.objects.filter(pk=prospecto_id).first()
+        prospecto_qs = Prospecto.objects.filter(pk=prospecto_id)
+        if not can_access_all and current_branch:
+            prospecto_qs = prospecto_qs.filter(sucursal_registro=current_branch)
+        prospecto = prospecto_qs.first()
         if not prospecto:
             return None, "No encontramos el prospecto solicitado."
         if prospecto.estado != Prospecto.Estado.PASAJERO:
@@ -510,7 +518,10 @@ def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
         )
         return draft, None
     elif cliente_id:
-        cliente = Cliente.objects.filter(pk=cliente_id).first()
+        cliente_qs = Cliente.objects.filter(pk=cliente_id)
+        if not can_access_all and current_branch:
+            cliente_qs = cliente_qs.filter(sucursal_registro=current_branch)
+        cliente = cliente_qs.first()
         if not cliente:
             return None, "No encontramos el cliente solicitado."
         draft, created = ProspectoConversionBorrador.objects.get_or_create(
@@ -1261,8 +1272,16 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             password=user_data["passwordHash"],
         )
 
+        branch = draft.prospecto.sucursal_registro
+        if not branch:
+            from config.api_views import _get_user_branch
+            branch = _get_user_branch(request)
+        if not branch:
+            return _json({"detail": "No se pudo determinar la sucursal del cliente a convertir."}, status=400)
+
         cliente = Cliente.objects.create(
             usuario=user,
+            sucursal_registro=branch,
             ci=user_data.get("ci", ""),
             fecha_nacimiento=date.fromisoformat(user_data["fechaNacimiento"]),
             nro_hijos=int(user_data.get("nroHijos") or 0),

@@ -70,6 +70,35 @@ class BranchIsolationTest(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("zonaGeneral", response.json().get('fieldErrors', {}))
 
+
+    def test_branch_admin_create_prospect_assigns_own_branch(self):
+        """Al crear prospecto desde admin de sucursal se asigna su sucursal."""
+        payload = {
+            "nombres": "Nuevo",
+            "apellidos": "Prospecto",
+            "telefono": "70000000",
+            "estado": "PASAJERO"
+        }
+        response = self.client_suc.post(
+            '/api/admin/prospectos/crear/',
+            data=json.dumps(payload),
+            content_type='application/json'
+        )
+        self.assertEqual(response.status_code, 201)
+        prospect_id = response.json()['prospect']['id']
+        prospecto = Prospecto.objects.get(pk=prospect_id)
+        self.assertEqual(prospecto.sucursal_registro, self.sucursal_sur)
+
+    def test_branch_admin_cannot_convert_other_branch_prospect(self):
+        """Admin sucursal no puede iniciar conversion de prospecto de otra sucursal."""
+        prospecto_norte = Prospecto.objects.create(
+            nombres="Norte",
+            apellidos="Bloqueado",
+            sucursal_registro=self.sucursal_norte
+        )
+        response = self.client_suc.get(f'/api/admin/prospectos/{prospecto_norte.id}/convertir/')
+        self.assertEqual(response.status_code, 400)
+
     def test_main_admin_can_see_everything(self):
         """El admin general debe ver prospectos de todas las sucursales."""
         Prospecto.objects.create(nombres="P. Norte", apellidos="Test", sucursal_registro=self.sucursal_norte)
