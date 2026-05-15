@@ -2845,6 +2845,13 @@ def admin_crear_prospecto(request):
     if errors:
         return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
 
+    branch = _get_user_branch(request)
+    if not branch:
+        return _json(
+            {"detail": "No encontramos una sucursal activa para registrar el prospecto."},
+            status=400,
+        )
+
     prospecto = Prospecto.objects.create(
         nombres=nombres,
         apellidos=apellidos,
@@ -2852,6 +2859,7 @@ def admin_crear_prospecto(request):
         estado=estado,
         observaciones=observaciones,
         registrado_por=request.user,
+        sucursal_registro=branch,
     )
 
     return _json(

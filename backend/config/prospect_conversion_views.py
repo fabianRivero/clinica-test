@@ -21,7 +21,7 @@ from catalogs.models import (
     TipoPiel,
 )
 from clinical.models import AnalisisEstetico, PatologiaPorAnalisis
-from config.api_views import _admin_required, _prospect_item
+from config.api_views import _admin_required, _get_user_branch, _prospect_item
 from customers.models import Cliente, HuellaBiometricaCliente, Prospecto, ProspectoConversionBorrador
 from operations.models import (
     FichaAntecedenteMedico,
@@ -498,10 +498,16 @@ def _serialize_medical_config(service_config):
 
 
 def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
+    user = request.user
+    branch = _get_user_branch(request)
+    enforce_branch = bool(branch and not (user.is_superuser or user.es_admin_principal))
+
     if prospecto_id:
         prospecto = Prospecto.objects.filter(pk=prospecto_id).first()
         if not prospecto:
             return None, "No encontramos el prospecto solicitado."
+        if enforce_branch and prospecto.sucursal_registro_id != branch.id:
+            return None, "No tienes permisos para procesar prospectos de otra sucursal."
         if prospecto.estado != Prospecto.Estado.PASAJERO:
             return None, "Este prospecto ya fue procesado."
         draft, _ = ProspectoConversionBorrador.objects.get_or_create(
@@ -510,9 +516,11 @@ def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
         )
         return draft, None
     elif cliente_id:
-        cliente = Cliente.objects.filter(pk=cliente_id).first()
+        cliente = Cliente.objects.select_related("usuario", "sucursal_registro").filter(pk=cliente_id).first()
         if not cliente:
             return None, "No encontramos el cliente solicitado."
+        if enforce_branch and cliente.sucursal_registro_id != branch.id:
+            return None, "No tienes permisos para procesar clientes de otra sucursal."
         draft, created = ProspectoConversionBorrador.objects.get_or_create(
             cliente=cliente,
             defaults={"iniciado_por": request.user}
@@ -1261,8 +1269,13 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             password=user_data["passwordHash"],
         )
 
+        target_branch = draft.prospecto.sucursal_registro or _get_user_branch(request)
+        if not target_branch:
+            return _json({"detail": "No encontramos una sucursal activa para completar la conversión."}, status=400)
+
         cliente = Cliente.objects.create(
             usuario=user,
+            sucursal_registro=target_branch,
             ci=user_data.get("ci", ""),
             fecha_nacimiento=date.fromisoformat(user_data["fechaNacimiento"]),
             nro_hijos=int(user_data.get("nroHijos") or 0),
