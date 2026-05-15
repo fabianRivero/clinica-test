@@ -54,16 +54,7 @@ export function AdminTicketsPage() {
 
   return <div className='page-stack'>
     <PageHeader eyebrow='Administracion' title='Fichas de mensajeria' description='Responde mensajes de especialistas y gestiona estado abierto/cerrado.' />
-
-    <nav className='section-tabs' aria-label='Subpestañas de mensajeria'>
-        <button className='button' onClick={() => void onMassUpdate(true)} disabled={summary === 'ALL_ENABLED'}>
-          Habilitar a todos
-        </button>
-        <button className='button button--ghost' onClick={() => void onMassUpdate(false)} disabled={summary === 'ALL_BLOCKED'}>
-          Bloquear a todos
-        </button>
-    </nav>
-
+    
     {activeTab === 'PERMISOS' ? (
       <SectionCard eyebrow='Permisos' title='Apertura de fichas por especialistas' description='Control masivo e individual por especialista.'>
         <div style={{display:'flex', gap:'0.5rem', marginBottom:'0.5rem'}}>
