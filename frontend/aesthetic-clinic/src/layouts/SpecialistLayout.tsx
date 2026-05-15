@@ -1,15 +1,24 @@
-import { useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../providers/AuthProvider'
 
 const navigation = [
   { to: '/trabajador/agenda', label: 'Agenda semanal' },
-  { to: '/trabajador/mensajes', label: 'Mensajeria interna' },
+  {
+    label: 'Mensajeria interna',
+    children: [
+      { to: '/trabajador/mensajes/fichas', label: 'Fichas existentes' },
+      { to: '/trabajador/mensajes/nueva', label: 'Crear ficha nueva' },
+    ],
+  },
 ] as const
 
 export function SpecialistLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { user, logout } = useAuth()
+  const location = useLocation()
+  const activePath = location.pathname
+  const openGroups = useMemo(() => new Set(navigation.filter((item) => 'children' in item && item.children.some((child) => activePath.startsWith(child.to))).map((item) => item.label)), [activePath])
 
   return (
     <div className="client-shell">
@@ -21,17 +30,39 @@ export function SpecialistLayout() {
         </div>
 
         <nav className="side-nav" aria-label="Navegacion principal del especialista">
-          {navigation.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => `side-nav__link ${isActive ? 'is-active' : ''}`}
-              onClick={() => setSidebarOpen(false)}
-            >
-              <span className="side-nav__marker" />
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
+          {navigation.map((item) =>
+            'children' in item ? (
+              <div key={item.label} className={`side-nav__group ${openGroups.has(item.label) ? 'is-active' : ''}`}>
+                <div className="side-nav__group-label">
+                  <span className="side-nav__marker" />
+                  <span>{item.label}</span>
+                </div>
+                <div className="side-nav__children">
+                  {item.children.map((child) => (
+                    <NavLink
+                      key={child.to}
+                      to={child.to}
+                      className={({ isActive }) => `side-nav__link side-nav__link--child ${isActive ? 'is-active' : ''}`}
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      <span className="side-nav__marker" />
+                      <span>{child.label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) => `side-nav__link ${isActive ? 'is-active' : ''}`}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <span className="side-nav__marker" />
+                <span>{item.label}</span>
+              </NavLink>
+            ),
+          )}
         </nav>
       </aside>
 
