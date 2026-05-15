@@ -31,6 +31,7 @@ class Especialista(TimeStampedModel):
     ci = models.CharField(max_length=30, blank=True)
     telefono = models.CharField(max_length=30, blank=True)
     observaciones = models.TextField(blank=True)
+    puede_abrir_fichas = models.BooleanField(default=True)
 
     class Meta:
         db_table = "especialistas"

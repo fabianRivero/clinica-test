@@ -6,7 +6,6 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from accounts.models import Usuario
 from operations.models import Ticket, TicketMessage
 from staff.models import Especialista
 
@@ -38,21 +37,21 @@ def _is_admin(user):
     return user.is_superuser or user.es_administrador
 
 
-def _effective_admin_branch(request):
-    if request.user.sucursal_id:
-        return request.user.sucursal
+def _admin_branch(request):
+    user = request.user
+    if user.es_admin_sucursal and user.sucursal_id:
+        return user.sucursal
     selected = request.headers.get("X-Selected-Branch-Id")
     if selected:
-        try:
-            return request.user.sucursal.__class__.objects.filter(pk=int(selected), activa=True).first()
-        except Exception:
-            return None
-    return None
+        from catalogs.models import Sucursal
+        return Sucursal.objects.filter(pk=int(selected), activa=True).first()
+    return user.sucursal
 
 
-def _ticket_visible_to_user(ticket, user):
+def _ticket_visible_to_user(ticket, request):
+    user = request.user
     if _is_admin(user):
-        branch = _effective_admin_branch(type("R", (), {"user": user, "headers": {}})())
+        branch = _admin_branch(request)
         if user.es_admin_principal or user.is_superuser:
             return branch is None or ticket.sucursal_id == branch.id
         return user.sucursal_id and ticket.sucursal_id == user.sucursal_id
@@ -78,6 +77,7 @@ def _ticket_item(ticket):
         "status": ticket.estado,
         "branchId": ticket.sucursal_id,
         "branchName": ticket.sucursal.nombre,
+        "specialistId": ticket.especialista_id,
         "specialistName": ticket.especialista.usuario.nombre_completo if ticket.especialista_id else "",
         "createdBy": ticket.creado_por.nombre_completo if ticket.creado_por_id else "",
         "updatedAt": timezone.localtime(ticket.updated_at).isoformat(),
@@ -91,10 +91,9 @@ def tickets_list(request):
     user = request.user
     qs = Ticket.objects.select_related("sucursal", "especialista__usuario", "creado_por").order_by("-updated_at")
     if _is_admin(user):
-        if user.es_admin_sucursal and user.sucursal_id:
-            qs = qs.filter(sucursal_id=user.sucursal_id)
-        elif (user.es_admin_principal or user.is_superuser) and request.headers.get("X-Selected-Branch-Id"):
-            qs = qs.filter(sucursal_id=int(request.headers["X-Selected-Branch-Id"]))
+        branch = _admin_branch(request)
+        if branch:
+            qs = qs.filter(sucursal=branch)
     else:
         qs = qs.filter(especialista__usuario=user)
 
@@ -123,14 +122,16 @@ def tickets_create(request):
         specialist = getattr(user, "especialista", None)
         if not specialist:
             return _json({"detail": "Perfil de especialista no encontrado."}, status=400)
-        if specialist.sucursal_base and not specialist.sucursal_base.especialistas_pueden_abrir_fichas:
-            return _json({"detail": "Tu sucursal no permite abrir nuevas fichas."}, status=403)
+        if specialist.sucursal_base and (
+            not specialist.sucursal_base.especialistas_pueden_abrir_fichas or not specialist.puede_abrir_fichas
+        ):
+            return _json({"detail": "No tienes permiso para abrir nuevas fichas."}, status=403)
         branch = specialist.sucursal_base or user.sucursal
     else:
         if not specialist_id:
             return _json({"detail": "specialistId es obligatorio para admin."}, status=400)
         specialist = get_object_or_404(Especialista.objects.select_related("usuario", "sucursal_base"), pk=specialist_id)
-        branch = specialist.sucursal_base or user.sucursal
+        branch = specialist.sucursal_base or _admin_branch(request) or user.sucursal
 
     if not branch:
         return _json({"detail": "No se pudo determinar la sucursal de la ficha."}, status=400)
@@ -152,7 +153,7 @@ def tickets_create(request):
 @_comms_required
 def tickets_detail(request, ticket_id):
     ticket = get_object_or_404(Ticket.objects.select_related("sucursal", "especialista__usuario", "creado_por"), pk=ticket_id)
-    if not _ticket_visible_to_user(ticket, request.user):
+    if not _ticket_visible_to_user(ticket, request):
         return _json({"detail": "No autorizado."}, status=403)
     messages = TicketMessage.objects.filter(ticket=ticket).select_related("autor", "autor__rol").order_by("created_at")
     return _json({"ticket": _ticket_item(ticket), "messages": [_message_item(m) for m in messages]})
@@ -162,7 +163,7 @@ def tickets_detail(request, ticket_id):
 @_comms_required
 def tickets_reply(request, ticket_id):
     ticket = get_object_or_404(Ticket, pk=ticket_id)
-    if not _ticket_visible_to_user(ticket, request.user):
+    if not _ticket_visible_to_user(ticket, request):
         return _json({"detail": "No autorizado."}, status=403)
     if ticket.estado == Ticket.Estado.CERRADO:
         return _json({"detail": "La ficha esta cerrada."}, status=400)
@@ -187,6 +188,8 @@ def tickets_close(request, ticket_id):
     if not _is_admin(request.user):
         return _json({"detail": "Solo admin puede cerrar fichas."}, status=403)
     ticket = get_object_or_404(Ticket, pk=ticket_id)
+    if not _ticket_visible_to_user(ticket, request):
+        return _json({"detail": "No autorizado."}, status=403)
     ticket.estado = Ticket.Estado.CERRADO
     ticket.closed_at = timezone.now()
     ticket.save(update_fields=["estado", "closed_at", "updated_at"])
@@ -199,10 +202,47 @@ def tickets_reopen(request, ticket_id):
     if not _is_admin(request.user):
         return _json({"detail": "Solo admin puede reabrir fichas."}, status=403)
     ticket = get_object_or_404(Ticket, pk=ticket_id)
+    if not _ticket_visible_to_user(ticket, request):
+        return _json({"detail": "No autorizado."}, status=403)
     ticket.estado = Ticket.Estado.ABIERTO
     ticket.closed_at = None
     ticket.save(update_fields=["estado", "closed_at", "updated_at"])
     return _json({"detail": "Ficha reabierta.", "ticket": _ticket_item(ticket)})
+
+
+@require_GET
+@_comms_required
+def admin_ticket_open_permission_status(request):
+    if not _is_admin(request.user):
+        return _json({"detail": "Solo admin."}, status=403)
+    branch = _admin_branch(request)
+    if not branch:
+        return _json({"detail": "No se pudo determinar sucursal."}, status=400)
+    specialists = list(
+        Especialista.objects.select_related("usuario").filter(sucursal_base=branch, usuario__is_active=True)
+    )
+    items = [
+        {
+            "specialistId": s.id,
+            "specialistName": s.usuario.nombre_completo,
+            "enabled": bool(s.puede_abrir_fichas),
+        }
+        for s in specialists
+    ]
+    enabled_count = sum(1 for i in items if i["enabled"])
+    if items and enabled_count == len(items):
+        summary = "ALL_ENABLED"
+    elif items and enabled_count == 0:
+        summary = "ALL_BLOCKED"
+    else:
+        summary = "MIXED"
+    return _json({
+        "branchId": branch.id,
+        "branchName": branch.nombre,
+        "branchDefaultEnabled": bool(branch.especialistas_pueden_abrir_fichas),
+        "specialists": items,
+        "summary": summary,
+    })
 
 
 @require_POST
@@ -214,9 +254,18 @@ def admin_ticket_open_permission(request):
     if payload is None or "enabled" not in payload:
         return _json({"detail": "enabled es obligatorio."}, status=400)
     enabled = bool(payload["enabled"])
-    branch = request.user.sucursal
+    branch = _admin_branch(request)
     if not branch:
-        return _json({"detail": "Admin sin sucursal."}, status=400)
+        return _json({"detail": "No se pudo determinar sucursal."}, status=400)
+
+    specialist_id = payload.get("specialistId")
+    if specialist_id:
+        specialist = get_object_or_404(Especialista, pk=int(specialist_id), sucursal_base=branch)
+        specialist.puede_abrir_fichas = enabled
+        specialist.save(update_fields=["puede_abrir_fichas", "updated_at"])
+        return _json({"detail": "Permiso actualizado.", "enabled": enabled, "specialistId": specialist.id})
+
     branch.especialistas_pueden_abrir_fichas = enabled
     branch.save(update_fields=["especialistas_pueden_abrir_fichas", "updated_at"])
-    return _json({"detail": "Permiso actualizado.", "enabled": enabled, "branchId": branch.id})
+    Especialista.objects.filter(sucursal_base=branch).update(puede_abrir_fichas=enabled)
+    return _json({"detail": "Permisos actualizados para toda la sucursal.", "enabled": enabled, "branchId": branch.id})
