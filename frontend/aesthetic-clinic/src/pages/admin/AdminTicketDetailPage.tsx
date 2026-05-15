@@ -5,6 +5,7 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { closeTicket, getTicketDetail, replyTicket, reopenTicket, type Ticket, type TicketMessage } from '../../services/api/tickets'
 import { useNotifications } from '../../providers/NotificationProvider'
+import { useBranchContext } from '../../providers/BranchProvider'
 
 type MessageAttachment = {
   url: string
@@ -79,6 +80,8 @@ export function AdminTicketDetailPage() {
   const [replyFiles, setReplyFiles] = useState<File[]>([])
   const [isSendingReply, setIsSendingReply] = useState(false)
   const [previewImage, setPreviewImage] = useState<MessageAttachment | null>(null)
+  const { activeBranch } = useBranchContext()
+  const branchId = activeBranch?.id ?? null
 
   const load = async () => {
     if (!ticketId) return
@@ -89,7 +92,7 @@ export function AdminTicketDetailPage() {
 
   useEffect(() => {
     void load()
-  }, [ticketId])
+  }, [ticketId, branchId])
 
   const messageItems = useMemo(
     () => messages.map((message) => ({ message, attachments: getMessageAttachments(message) })),

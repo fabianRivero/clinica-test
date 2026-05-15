@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useNotifications } from '../../providers/NotificationProvider'
+import { useBranchContext } from '../../providers/BranchProvider'
 import {
   createTicket,
   getOpenPermissionStatus,
@@ -38,6 +39,8 @@ export function AdminMessagingPermissionsPage() {
   const [isComposeOpen, setIsComposeOpen] = useState(false)
   const [composeState, setComposeState] = useState<TicketComposeState>(initialComposeState)
   const [isSending, setIsSending] = useState(false)
+  const { activeBranch } = useBranchContext()
+  const branchId = activeBranch?.id ?? null
 
   const loadPermissions = async () => {
     const data = await getOpenPermissionStatus()
@@ -47,7 +50,7 @@ export function AdminMessagingPermissionsPage() {
 
   useEffect(() => {
     void loadPermissions()
-  }, [])
+  }, [branchId])
 
   const summaryLabel = useMemo(() => {
     if (summary === 'ALL_ENABLED') return 'Todos los especialistas estan habilitados para abrir fichas.'
@@ -226,10 +229,12 @@ export function AdminMessagingPermissionsPage() {
 export function AdminMessagingTicketsPage() {
   const [status, setStatus] = useState<TicketStatus | ''>('')
   const [tickets, setTickets] = useState<Ticket[]>([])
+  const { activeBranch } = useBranchContext()
+  const branchId = activeBranch?.id ?? null
 
   useEffect(() => {
     void getTickets(status || undefined).then((result) => setTickets(result.tickets))
-  }, [status])
+  }, [status, branchId])
 
   return (
     <div className="page-stack">
