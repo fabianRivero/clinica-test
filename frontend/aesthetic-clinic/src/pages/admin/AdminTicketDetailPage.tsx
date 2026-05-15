@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
-import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
-import { closeTicket, getTicketDetail, reopenTicket, replyTicket, type Ticket, type TicketMessage } from '../../services/api/tickets'
+import { closeTicket, getTicketDetail, replyTicket, reopenTicket, type Ticket, type TicketMessage } from '../../services/api/tickets'
+import { useNotifications } from '../../providers/NotificationProvider'
 
 type MessageAttachment = {
   url: string
@@ -56,7 +56,11 @@ export function AdminTicketDetailPage() {
   const { ticketId } = useParams()
   const [ticket, setTicket] = useState<Ticket | null>(null)
   const [messages, setMessages] = useState<TicketMessage[]>([])
+  const { showNotification } = useNotifications()
   const [reply, setReply] = useState('')
+  const [isReplyModalOpen, setIsReplyModalOpen] = useState(false)
+  const [replyFiles, setReplyFiles] = useState<File[]>([])
+  const [isSendingReply, setIsSendingReply] = useState(false)
   const [previewImage, setPreviewImage] = useState<MessageAttachment | null>(null)
 
   const load = async () => {
@@ -122,8 +126,68 @@ export function AdminTicketDetailPage() {
         ))}
       </div>
 
-      {ticket.status === 'ABIERTO' ? <form className='form-stack' onSubmit={(e)=>{e.preventDefault(); void replyTicket(ticket.id, reply).then(load); setReply('')}}><textarea className='input' rows={4} value={reply} onChange={(e)=>setReply(e.target.value)} /><button className='button' type='submit'>Responder</button></form> : <DataState title='Ficha cerrada' message='Reabre para permitir respuestas.' tone='warning' />}
+      <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+        <button className='button' type='button' disabled={ticket.status !== 'ABIERTO'} onClick={() => setIsReplyModalOpen(true)}>Responder</button>
+      </div>
     </SectionCard>
+
+
+    {isReplyModalOpen ? (
+      <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Responder ficha">
+        <div className="booking-modal-content" style={{ maxWidth: '760px' }}>
+          <header className="booking-modal-header">
+            <div>
+              <h2 style={{ margin: 0 }}>Responder ficha</h2>
+              <p style={{ margin: '0.5rem 0 0', color: 'var(--c-neutral-600)' }}>Formato tipo correo interno.</p>
+            </div>
+            <button className="booking-modal-close" type="button" onClick={() => setIsReplyModalOpen(false)}>×</button>
+          </header>
+          <div className="booking-modal-body" style={{ padding: '1.5rem' }}>
+            <form className="form-stack" onSubmit={(event: FormEvent<HTMLFormElement>) => {
+              event.preventDefault()
+              if (!reply.trim()) {
+                showNotification({ title: 'Mensaje requerido', message: 'Debes escribir un mensaje para responder.', tone: 'warning' })
+                return
+              }
+              const confirmSend = window.confirm('¿Deseas enviar esta respuesta ahora?')
+              if (!confirmSend) return
+              setIsSendingReply(true)
+              void replyTicket(ticket.id, reply.trim()).then(async () => {
+                await load()
+                setReply('')
+                setReplyFiles([])
+                setIsReplyModalOpen(false)
+                showNotification({ title: 'Respuesta enviada', message: 'El mensaje se envio correctamente.', tone: 'success' })
+              }).catch((error: unknown) => {
+                showNotification({ title: 'No se pudo enviar', message: error instanceof Error ? error.message : 'Ocurrio un error al enviar la respuesta.', tone: 'danger' })
+              }).finally(() => setIsSendingReply(false))
+            }}>
+              <label className="field">
+                <span>Para</span>
+                <input className="input" value={ticket.specialistName} readOnly />
+              </label>
+              <label className="field">
+                <span>Asunto</span>
+                <input className="input" value={`Re: ${ticket.subject}`} readOnly />
+              </label>
+              <label className="field">
+                <span>Mensaje</span>
+                <textarea className="input" rows={7} value={reply} onChange={(e) => setReply(e.target.value)} required />
+              </label>
+              <label className="field">
+                <span>Adjuntar documentos o imagenes</span>
+                <input className="input" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" onChange={(event) => setReplyFiles(Array.from(event.target.files ?? []))} />
+                {replyFiles.length > 0 ? <small style={{ color: 'var(--c-neutral-600)' }}>{replyFiles.length} archivo(s) seleccionado(s).</small> : null}
+              </label>
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button type="button" className="button button--ghost" onClick={() => setIsReplyModalOpen(false)}>Cancelar</button>
+                <button type="submit" className="button" disabled={isSendingReply}>{isSendingReply ? 'Enviando...' : 'Enviar respuesta'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    ) : null}
 
     {previewImage ? (
       <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Vista previa de imagen adjunta">
