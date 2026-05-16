@@ -1,9 +1,10 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Colores
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Directorio raíz del backend
@@ -13,23 +14,33 @@ cd "$BACKEND_ROOT"
 # Forzar el uso de base de datos LOCAL (SQLite)
 export DJANGO_USE_LOCAL_DB=1
 
-# Detectar Python
-if [ -f "env/bin/python" ]; then
+# Detectar Python del entorno virtual si existe
+if [ -x "env/bin/python" ]; then
     PYTHON="env/bin/python"
+elif [ -x ".venv/bin/python" ]; then
+    PYTHON=".venv/bin/python"
 else
     PYTHON="python"
 fi
 
-echo -e "${CYAN}[local_reset] Reiniciando base de datos SQLite...${NC}"
+echo -e "${CYAN}[local_reset] Reiniciando base de datos SQLite local...${NC}"
 
-# Borrar base de datos local vieja
+# Borrar base local previa
 rm -f db.sqlite3
 
-# Migrar (Crear tablas desde cero)
-$PYTHON manage.py migrate --no-input
+# Reconstruir esquema
+echo -e "${CYAN}[local_reset] Ejecutando migraciones...${NC}"
+"$PYTHON" manage.py migrate --no-input
 
-# Sembrar datos iniciales
-$PYTHON manage.py seed_pdf_baseline
-$PYTHON manage.py seed_branch_test_scenarios
+# Sembrar base mínima y escenarios locales actuales
+echo -e "${CYAN}[local_reset] Cargando baseline PDF...${NC}"
+"$PYTHON" manage.py seed_pdf_baseline
 
-echo -e "${GREEN}[local_reset] Base de datos SQLite lista para tests.${NC}"
+echo -e "${CYAN}[local_reset] Normalizando sede principal y categorías...${NC}"
+"$PYTHON" manage.py ensure_main_branch
+
+echo -e "${CYAN}[local_reset] Cargando escenarios de prueba multi-sucursal...${NC}"
+"$PYTHON" manage.py seed_branch_test_scenarios
+
+echo -e "${YELLOW}[local_reset] Usuarios demo: admin.general / admin123456, admin.sucursal / admin123456${NC}"
+echo -e "${GREEN}[local_reset] Base de datos SQLite lista para pruebas locales.${NC}"
