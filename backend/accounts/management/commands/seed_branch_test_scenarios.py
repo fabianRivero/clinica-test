@@ -15,6 +15,8 @@ from operations.models import (
     AgendaHabitualEspecialista,
     CitaMedica,
     Operacion,
+    Ticket,
+    TicketMessage,
 )
 from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
 
@@ -33,6 +35,7 @@ SCENARIO_SPECIALISTS = {
 }
 
 EXPENSE_SCENARIO_PREFIX = "[ESCENARIO_GASTOS]"
+TICKET_SCENARIO_PREFIX = "[DEMO_TICKET]"
 
 
 class Command(BaseCommand):
@@ -50,6 +53,7 @@ class Command(BaseCommand):
         self._seed_clients(roles["CLIENTE"], branches, services, admin_user)
         self._seed_specialists(roles["TRABAJADOR"], branches)
         self._seed_expenses(branches, admin_user)
+        self._seed_tickets(branches)
 
         self.stdout.write(self.style.SUCCESS("Escenarios multi-sucursal cargados correctamente."))
         self.stdout.write(
@@ -100,6 +104,7 @@ class Command(BaseCommand):
         AgendaExcepcionEspecialista.objects.filter(especialista__in=specialists).delete()
         AgendaHabitualEspecialista.objects.filter(especialista__in=specialists).delete()
         GastoSucursal.objects.filter(detalles__startswith=EXPENSE_SCENARIO_PREFIX).delete()
+        Ticket.objects.filter(asunto__startswith=TICKET_SCENARIO_PREFIX).delete()
 
     def _seed_prospects(self, branches):
         prospect_specs = [
@@ -491,3 +496,92 @@ class Command(BaseCommand):
                 detalles=f"{EXPENSE_SCENARIO_PREFIX} Gasto demo para validar filtros de abril y mayo 2026.",
                 registrado_por=admin_user,
             )
+
+    def _seed_tickets(self, branches):
+        users = Usuario.objects.in_bulk(
+            [
+                "admin.general",
+                "admin.sucursal",
+                "especialista.movible.norte",
+                "especialista.movible.sur",
+            ],
+            field_name="username",
+        )
+        missing = [
+            username
+            for username in ["admin.general", "admin.sucursal", "especialista.movible.norte", "especialista.movible.sur"]
+            if username not in users
+        ]
+        if missing:
+            raise RuntimeError(f"Faltan usuarios para seed de tickets: {', '.join(missing)}")
+
+        specialists = {
+            specialist.usuario.username: specialist
+            for specialist in Especialista.objects.select_related("usuario").filter(
+                usuario__username__in=["especialista.movible.norte", "especialista.movible.sur"]
+            )
+        }
+        if "especialista.movible.norte" not in specialists or "especialista.movible.sur" not in specialists:
+            raise RuntimeError("Faltan especialistas movibles para seed de tickets.")
+
+        ticket_specs = [
+            {
+                "asunto": f"{TICKET_SCENARIO_PREFIX} Ticket abierto Norte",
+                "sucursal": branches["norte"],
+                "especialista": specialists["especialista.movible.norte"],
+                "creado_por": users["admin.sucursal"],
+                "estado": Ticket.Estado.ABIERTO,
+                "closed_at": None,
+                "mensajes": [
+                    ("admin.sucursal", "Se registra incidente operativo en Norte.", TicketMessage.Estado.RESPONDIDO),
+                    ("admin.general", "Escalado y validado desde administracion principal.", TicketMessage.Estado.RESPONDIDO),
+                    ("especialista.movible.norte", "Tomado; iniciando diagnostico en cabina Norte.", TicketMessage.Estado.ENVIADO),
+                ],
+            },
+            {
+                "asunto": f"{TICKET_SCENARIO_PREFIX} Ticket abierto Sur",
+                "sucursal": branches["sur"],
+                "especialista": specialists["especialista.movible.sur"],
+                "creado_por": users["admin.sucursal"],
+                "estado": Ticket.Estado.ABIERTO,
+                "closed_at": None,
+                "mensajes": [
+                    ("admin.sucursal", "Paciente reporta demora de confirmacion en Sur.", TicketMessage.Estado.RESPONDIDO),
+                    ("especialista.movible.sur", "Se reviso agenda y se aplicaron ajustes.", TicketMessage.Estado.ENVIADO),
+                    ("admin.general", "Monitoreo activo para validar SLA.", TicketMessage.Estado.RESPONDIDO),
+                ],
+            },
+            {
+                "asunto": f"{TICKET_SCENARIO_PREFIX} Ticket cerrado para reopen",
+                "sucursal": branches["sur"],
+                "especialista": specialists["especialista.movible.sur"],
+                "creado_por": users["admin.general"],
+                "estado": Ticket.Estado.CERRADO,
+                "closed_at": timezone.now() - timedelta(days=1),
+                "mensajes": [
+                    ("admin.general", "Caso resuelto inicialmente y marcado para cierre.", TicketMessage.Estado.RESPONDIDO),
+                    ("especialista.movible.sur", "Se confirmo resolucion tecnica en sitio.", TicketMessage.Estado.RESPONDIDO),
+                    ("admin.sucursal", "Pendiente validacion final para posible reapertura.", TicketMessage.Estado.ENVIADO),
+                ],
+            },
+        ]
+
+        for spec in ticket_specs:
+            ticket, _ = Ticket.objects.update_or_create(
+                asunto=spec["asunto"],
+                defaults={
+                    "sucursal": spec["sucursal"],
+                    "especialista": spec["especialista"],
+                    "creado_por": spec["creado_por"],
+                    "estado": spec["estado"],
+                    "closed_at": spec["closed_at"],
+                },
+            )
+            TicketMessage.objects.filter(ticket=ticket).delete()
+            for username, contenido, estado in spec["mensajes"]:
+                TicketMessage.objects.create(
+                    ticket=ticket,
+                    autor=users[username],
+                    contenido=f"{TICKET_SCENARIO_PREFIX} {contenido}",
+                    estado=estado,
+                )
