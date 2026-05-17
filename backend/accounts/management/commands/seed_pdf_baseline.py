@@ -752,6 +752,7 @@ class Command(BaseCommand):
             sucursal=branches["A"],
             fecha_hora=fecha_pasada,
             estado=CitaMedica.Estado.CONFIRMADA,
+            metodo_confirmacion=CitaMedica.MetodoConfirmacion.BIOMETRICO,
             verif_biometria=True,
             fecha_confirmacion_biometrica=fecha_pasada,
             detalles_cita="Sesion completada satisfactoriamente"
@@ -873,6 +874,7 @@ class Command(BaseCommand):
             sucursal=branches["B"],
             fecha_hora=fecha_manchas,
             estado=CitaMedica.Estado.CONFIRMADA,
+            metodo_confirmacion=CitaMedica.MetodoConfirmacion.BIOMETRICO,
             verif_biometria=True,
             detalles_cita="Alta medica por manchas"
         )
