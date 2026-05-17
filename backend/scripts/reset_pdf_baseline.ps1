@@ -33,6 +33,7 @@ try {
     & $python manage.py seed_pdf_baseline
     if ($LASTEXITCODE -eq 0) {
         Write-Host "[reset_pdf_baseline] Seed completado correctamente." -ForegroundColor Green
+        Write-Host "[reset_pdf_baseline] Revisa arriba las credenciales de tablet kiosko generadas para pruebas." -ForegroundColor Cyan
     }
     exit $LASTEXITCODE
 }

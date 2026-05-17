@@ -5,11 +5,18 @@ from config.client_api_views import (
     client_payments,
     client_upload_payment_receipt,
     client_reservations,
+    client_tablet_current_appointment,
+    client_tablet_confirm_current_appointment,
+    client_tablet_confirm_appointment_for_operation,
     client_reservation_availability,
     client_edit_reservation_availability,
     client_create_reservation,
     client_update_reservation,
     client_cancel_reservation,
+    client_confirm_pending_appointment_tablet,
+    tablet_kiosk_login,
+    tablet_client_login,
+    tablet_client_reset,
 )
 
 urlpatterns = [
@@ -18,9 +25,28 @@ urlpatterns = [
     path("pagos/", client_payments, name="client-payments-api"),
     path("pagos/cuotas/<int:quota_id>/comprobante/", client_upload_payment_receipt, name="client-upload-receipt-api"),
     path("reservas/", client_reservations, name="client-reservations-api"),
+    path("tablet/auth/login/", tablet_kiosk_login, name="tablet-kiosk-login-api"),
+    path("tablet/client/login/", tablet_client_login, name="tablet-client-login-api"),
+    path("tablet/client/reset/", tablet_client_reset, name="tablet-client-reset-api"),
+    path("tablet/cita-actual/", client_tablet_current_appointment, name="client-tablet-current-appointment-api"),
+    path(
+        "tablet/confirmar-cita-actual/",
+        client_tablet_confirm_current_appointment,
+        name="client-tablet-confirm-current-appointment-api",
+    ),
+    path(
+        "tablet/confirmar-procedimiento/",
+        client_tablet_confirm_appointment_for_operation,
+        name="client-tablet-confirm-operation-appointment-api",
+    ),
     path("operaciones/<int:operation_id>/disponibilidad/", client_reservation_availability, name="client-reservation-availability-api"),
     path("citas/<int:appointment_id>/disponibilidad/", client_edit_reservation_availability, name="client-edit-reservation-availability-api"),
     path("operaciones/<int:operation_id>/reservar/", client_create_reservation, name="client-reservation-create-api"),
     path("citas/<int:appointment_id>/actualizar/", client_update_reservation, name="client-reservation-update-api"),
     path("citas/<int:appointment_id>/cancelar/", client_cancel_reservation, name="client-reservation-cancel-api"),
+    path(
+        "citas/<int:appointment_id>/confirmar-tablet/",
+        client_confirm_pending_appointment_tablet,
+        name="client-appointment-confirm-tablet-api",
+    ),
 ]

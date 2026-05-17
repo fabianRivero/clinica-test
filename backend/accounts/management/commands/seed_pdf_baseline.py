@@ -31,6 +31,7 @@ from operations.models import (
     FichaSeccion,
     Operacion,
     CitaMedica,
+    TabletKiosko,
 )
 from billing.models import CategoriaGasto, CuotaPlanPago, PagoRealizado
 from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
@@ -57,6 +58,7 @@ class Command(BaseCommand):
         self._seed_formal_patients(roles["CLIENTE"], branches)
         self._clear_schedule_configuration()
         self._seed_schedules(specialists)
+        kiosk_credentials = self._seed_tablet_kiosks(branches)
 
         self.stdout.write(self.style.SUCCESS("Base PDF minima cargada correctamente."))
         self.stdout.write(
@@ -80,6 +82,11 @@ class Command(BaseCommand):
             "Especialidades disponibles: "
             + ", ".join(specialty.nombre for specialty in specialties.values())
         )
+        self.stdout.write("Credenciales de tablet kiosko para pruebas:")
+        for cred in kiosk_credentials:
+            self.stdout.write(
+                f"- {cred['branch']}: codigo={cred['codigo']} clave={cred['clave']}"
+            )
 
     def _seed_roles(self):
         roles = {}
@@ -906,6 +913,35 @@ class Command(BaseCommand):
                 "fecha_registro": fecha_manchas,
             }
         )
+
+    def _seed_tablet_kiosks(self, branches):
+        kiosks = []
+        for key, branch in branches.items():
+            if key == "principal":
+                code_suffix = "PRINCIPAL"
+            elif key == "A":
+                code_suffix = "NORTE"
+            else:
+                code_suffix = "SUR"
+            codigo = f"KIOSKO-{code_suffix}"
+            clave = f"tablet-{code_suffix.lower()}-123"
+            kiosko, _ = TabletKiosko.objects.update_or_create(
+                codigo=codigo,
+                defaults={
+                    "nombre": f"Tablet {branch.nombre}",
+                    "sucursal": branch,
+                    "clave": clave,
+                    "activo": True,
+                },
+            )
+            kiosks.append(
+                {
+                    "branch": branch.nombre,
+                    "codigo": kiosko.codigo,
+                    "clave": clave,
+                }
+            )
+        return kiosks
 
     def _seed_schedules(self, specialists):
         from datetime import time

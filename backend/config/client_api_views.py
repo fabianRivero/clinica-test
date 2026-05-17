@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
 
+from django.contrib.auth import authenticate
 from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.http import JsonResponse
@@ -12,7 +13,7 @@ from django.views.decorators.http import require_GET, require_POST
 from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
 from clinical.models import AnalisisEstetico
 from customers.models import Cliente
-from operations.models import CitaClienteLibre, CitaMedica, CitaProspecto, Operacion
+from operations.models import CitaClienteLibre, CitaMedica, CitaProspecto, EventoConfirmacionCita, Operacion, TabletKiosko
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 
 
@@ -35,6 +36,13 @@ def _load_payload(request):
         return None
 
 
+def _client_ip(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR")
+
+
 def _client_required(view_func):
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
@@ -47,6 +55,38 @@ def _client_required(view_func):
             request.cliente = user.cliente
         except Cliente.DoesNotExist:
             return _json({"detail": "No existe un perfil de cliente asociado a esta cuenta."}, status=404)
+        return view_func(request, *args, **kwargs)
+
+    return wrapped
+
+
+def _tablet_kiosk_required(view_func):
+    @wraps(view_func)
+    def wrapped(request, *args, **kwargs):
+        kiosk_id = request.session.get("tablet_kiosk_id")
+        if not kiosk_id:
+            return _json({"detail": "Sesion de tablet requerida."}, status=401)
+        kiosk = TabletKiosko.objects.filter(pk=kiosk_id, activo=True).select_related("sucursal").first()
+        if not kiosk:
+            request.session.pop("tablet_kiosk_id", None)
+            return _json({"detail": "La sesion de tablet no es valida."}, status=401)
+        request.tablet_kiosk = kiosk
+        return view_func(request, *args, **kwargs)
+
+    return wrapped
+
+
+def _tablet_client_required(view_func):
+    @wraps(view_func)
+    def wrapped(request, *args, **kwargs):
+        client_id = request.session.get("tablet_client_id")
+        if not client_id:
+            return _json({"detail": "Debes identificar al cliente en la tablet."}, status=401)
+        cliente = Cliente.objects.filter(pk=client_id).select_related("usuario").first()
+        if not cliente:
+            request.session.pop("tablet_client_id", None)
+            return _json({"detail": "No se encontro el cliente de la sesion actual."}, status=401)
+        request.cliente = cliente
         return view_func(request, *args, **kwargs)
 
     return wrapped
@@ -765,6 +805,207 @@ def client_reservations(request):
 
 
 @require_GET
+@_tablet_kiosk_required
+@_tablet_client_required
+def client_tablet_current_appointment(request):
+    mark_expired_programmed_appointments_as_no_show()
+    now = timezone.now()
+    today = timezone.localdate()
+    appointments_qs = (
+        CitaMedica.objects.filter(operacion__paciente=request.cliente)
+        .select_related("operacion__servicio_config__tipo_servicio", "operacion__servicio_config__proc_estetico")
+        .order_by("fecha_hora")
+    )
+    today_appointments = appointments_qs.filter(
+            estado__in=[
+                CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+                CitaMedica.Estado.PROGRAMADA,
+            ],
+            fecha_hora__date=today,
+        )
+    current = today_appointments.first()
+    pending_count = appointments_qs.filter(
+        estado__in=[CitaMedica.Estado.PROGRAMADA, CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA],
+        fecha_hora__gte=now,
+    ).count()
+    procedure_options = []
+    operation_map = {}
+    for cita in today_appointments:
+        operation = cita.operacion
+        if not operation or operation.estado != Operacion.Estado.EN_PROCESO:
+            continue
+        if operation.id not in operation_map:
+            operation_map[operation.id] = {
+                "operation": _operation_item(operation),
+                "appointments": [],
+            }
+        operation_map[operation.id]["appointments"].append(_appointment_item(cita))
+    procedure_options = list(operation_map.values())
+
+    return _json(
+        {
+            "currentAppointment": _appointment_item(current) if current else None,
+            "pendingAppointmentsCount": pending_count,
+            "procedureOptions": procedure_options,
+        }
+    )
+
+
+@require_POST
+def tablet_kiosk_login(request):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+    codigo = (payload.get("codigo") or "").strip()
+    clave = (payload.get("clave") or "").strip()
+    if not codigo or not clave:
+        return _json({"detail": "Debes enviar codigo y clave del kiosko."}, status=400)
+
+    kiosko = TabletKiosko.objects.filter(codigo=codigo, activo=True).select_related("sucursal").first()
+    if not kiosko or kiosko.clave != clave:
+        return _json({"detail": "Credenciales de kiosko invalidas."}, status=401)
+
+    request.session["tablet_kiosk_id"] = kiosko.id
+    request.session.pop("tablet_client_id", None)
+    kiosko.ultimo_acceso = timezone.now()
+    kiosko.save(update_fields=["ultimo_acceso", "updated_at"])
+    return _json(
+        {
+            "detail": "Kiosko autenticado correctamente.",
+            "kiosk": {"id": kiosko.id, "codigo": kiosko.codigo, "nombre": kiosko.nombre, "branchId": kiosko.sucursal_id},
+        }
+    )
+
+
+@require_POST
+@_tablet_kiosk_required
+def tablet_client_login(request):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+    username = (payload.get("username") or "").strip()
+    password = (payload.get("password") or "").strip()
+    if not username or not password:
+        return _json({"detail": "Debes ingresar usuario y contraseña del cliente."}, status=400)
+    user = authenticate(request, username=username, password=password)
+    if not user or not user.es_cliente:
+        return _json({"detail": "Credenciales de cliente invalidas."}, status=401)
+    cliente = Cliente.objects.filter(usuario=user).first()
+    if not cliente:
+        return _json({"detail": "No existe un perfil de cliente para esta cuenta."}, status=404)
+    request.session["tablet_client_id"] = cliente.id
+    return _json({"detail": "Cliente autenticado en tablet.", "clientId": cliente.id, "fullName": user.nombre_completo or user.username})
+
+
+@require_POST
+@_tablet_kiosk_required
+def tablet_client_reset(request):
+    request.session.pop("tablet_client_id", None)
+    return _json({"detail": "Sesion del cliente reiniciada en la tablet."})
+
+
+@require_POST
+@_tablet_kiosk_required
+@_tablet_client_required
+@transaction.atomic
+def client_tablet_confirm_current_appointment(request):
+    mark_expired_programmed_appointments_as_no_show()
+    today = timezone.localdate()
+    cita = (
+        CitaMedica.objects.select_for_update(of=("self",))
+        .select_related("operacion__paciente", "sucursal")
+        .filter(
+            operacion__paciente=request.cliente,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            fecha_hora__date=today,
+        )
+        .order_by("fecha_hora")
+        .first()
+    )
+    if not cita:
+        return _json(
+            {"detail": "No tienes una cita pendiente de biometria para confirmar hoy."},
+            status=404,
+        )
+
+    cita.estado = CitaMedica.Estado.CONFIRMADA
+    cita.metodo_confirmacion = CitaMedica.MetodoConfirmacion.TABLET
+    cita.verif_biometria = False
+    cita.save(update_fields=["estado", "metodo_confirmacion", "verif_biometria", "updated_at"])
+
+    EventoConfirmacionCita.objects.create(
+        cita=cita,
+        paciente=request.cliente,
+        sucursal=cita.sucursal,
+        metodo=EventoConfirmacionCita.Metodo.TABLET,
+        confirmado_en=timezone.now(),
+        ip_origen=_client_ip(request),
+    )
+
+    return _json(
+        {
+            "detail": "Cita realizada",
+            "appointment": _appointment_item(cita),
+        }
+    )
+
+
+@require_POST
+@_tablet_kiosk_required
+@_tablet_client_required
+@transaction.atomic
+def client_tablet_confirm_appointment_for_operation(request):
+    mark_expired_programmed_appointments_as_no_show()
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    operation_id = payload.get("operationId")
+    if not operation_id:
+        return _json({"detail": "Debes seleccionar un procedimiento para confirmar la cita."}, status=400)
+
+    today = timezone.localdate()
+    cita = (
+        CitaMedica.objects.select_for_update(of=("self",))
+        .select_related("operacion__paciente", "sucursal")
+        .filter(
+            operacion__paciente=request.cliente,
+            operacion_id=operation_id,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            fecha_hora__date=today,
+        )
+        .order_by("fecha_hora")
+        .first()
+    )
+    if not cita:
+        return _json(
+            {"detail": "No tienes una cita pendiente de biometria hoy para el procedimiento seleccionado."},
+            status=404,
+        )
+
+    cita.estado = CitaMedica.Estado.CONFIRMADA
+    cita.metodo_confirmacion = CitaMedica.MetodoConfirmacion.TABLET
+    cita.verif_biometria = False
+    cita.save(update_fields=["estado", "metodo_confirmacion", "verif_biometria", "updated_at"])
+
+    EventoConfirmacionCita.objects.create(
+        cita=cita,
+        paciente=request.cliente,
+        sucursal=cita.sucursal,
+        metodo=EventoConfirmacionCita.Metodo.TABLET,
+        confirmado_en=timezone.now(),
+        ip_origen=_client_ip(request),
+    )
+
+    return _json(
+        {
+            "detail": "Cita realizada",
+            "appointment": _appointment_item(cita),
+        }
+    )
+
+
+@require_GET
 @_client_required
 def client_reservation_availability(request, operation_id):
     operacion = _get_client_operation(request.cliente, operation_id)
@@ -977,6 +1218,49 @@ def client_cancel_reservation(request, appointment_id):
             "detail": "La reserva fue cancelada correctamente.",
             "appointment": _appointment_item(cita),
             "operation": _operation_item(cita.operacion),
+        },
+        status=200,
+    )
+
+
+@require_POST
+@_client_required
+@transaction.atomic
+def client_confirm_pending_appointment_tablet(request, appointment_id):
+    cita = (
+        CitaMedica.objects.select_for_update(of=("self",))
+        .select_related("operacion__paciente", "sucursal")
+        .filter(operacion__paciente=request.cliente, pk=appointment_id)
+        .first()
+    )
+    if not cita:
+        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+    if cita.estado != CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+        return _json(
+            {"detail": "Solo se pueden confirmar por tablet citas pendientes de biometria."},
+            status=400,
+        )
+    if timezone.localdate(cita.fecha_hora) != timezone.localdate():
+        return _json({"detail": "Solo puedes confirmar la cita el mismo dia de la atencion."}, status=400)
+
+    cita.estado = CitaMedica.Estado.CONFIRMADA
+    cita.metodo_confirmacion = CitaMedica.MetodoConfirmacion.TABLET
+    cita.verif_biometria = False
+    cita.save(update_fields=["estado", "metodo_confirmacion", "verif_biometria", "updated_at"])
+
+    EventoConfirmacionCita.objects.create(
+        cita=cita,
+        paciente=request.cliente,
+        sucursal=cita.sucursal,
+        metodo=EventoConfirmacionCita.Metodo.TABLET,
+        confirmado_en=timezone.now(),
+        ip_origen=_client_ip(request),
+    )
+
+    return _json(
+        {
+            "detail": "Cita realizada",
+            "appointment": _appointment_item(cita),
         },
         status=200,
     )

@@ -32,6 +32,7 @@ from operations.models import (
     CitaClienteLibre,
     CitaMedica,
     CitaProspecto,
+    EventoConfirmacionCita,
     FichaCampo,
     FichaSeccion,
     Operacion,
@@ -57,6 +58,13 @@ def _load_payload(request):
         return json.loads(request.body.decode("utf-8") or "{}")
     except json.JSONDecodeError:
         return None
+
+
+def _request_ip(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR")
 
 
 def _client_has_pending_reservations(cliente):
@@ -2738,15 +2746,32 @@ def admin_update_appointment_status(request, appointment_id):
     if nuevo_estado not in [choice[0] for choice in CitaMedica.Estado.choices]:
         return _json({"detail": "El estado proporcionado no es valido."}, status=400)
 
+    previous_status = appointment.estado
     appointment.estado = nuevo_estado
     # Si se marca como PROGRAMADA, nos aseguramos que verif_biometria sea False
     if appointment.estado == CitaMedica.Estado.PROGRAMADA:
         appointment.verif_biometria = False
-    # Si se marca como CONFIRMADA, verif_biometria deberia ser True
+        appointment.metodo_confirmacion = ""
+    # Si se marca como CONFIRMADA manualmente, se registra como confirmacion manual
     elif appointment.estado == CitaMedica.Estado.CONFIRMADA:
-        appointment.verif_biometria = True
+        appointment.verif_biometria = False
+        appointment.metodo_confirmacion = CitaMedica.MetodoConfirmacion.MANUAL
 
-    appointment.save(update_fields=["estado", "verif_biometria", "updated_at"])
+    appointment.save(update_fields=["estado", "verif_biometria", "metodo_confirmacion", "updated_at"])
+
+    if (
+        previous_status != CitaMedica.Estado.CONFIRMADA
+        and appointment.estado == CitaMedica.Estado.CONFIRMADA
+        and appointment.metodo_confirmacion == CitaMedica.MetodoConfirmacion.MANUAL
+    ):
+        EventoConfirmacionCita.objects.create(
+            cita=appointment,
+            paciente=appointment.operacion.paciente,
+            sucursal=appointment.sucursal,
+            metodo=EventoConfirmacionCita.Metodo.MANUAL,
+            confirmado_en=timezone.now(),
+            ip_origen=_request_ip(request),
+        )
 
     return _json(
         {
@@ -2804,7 +2829,16 @@ def admin_confirm_appointment_biometric(request, appointment_id):
 
     appointment.estado = CitaMedica.Estado.CONFIRMADA
     appointment.verif_biometria = True
+    appointment.metodo_confirmacion = CitaMedica.MetodoConfirmacion.BIOMETRICO
     appointment.save()
+    EventoConfirmacionCita.objects.create(
+        cita=appointment,
+        paciente=appointment.operacion.paciente,
+        sucursal=appointment.sucursal,
+        metodo=EventoConfirmacionCita.Metodo.BIOMETRICO,
+        confirmado_en=timezone.now(),
+        ip_origen=_request_ip(request),
+    )
 
     return _json(
         {
