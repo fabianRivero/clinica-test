@@ -29,6 +29,7 @@ import { AdminProspectCreatePage } from './pages/admin/AdminProspectCreatePage'
 import { AdminProspectsPage } from './pages/admin/AdminProspectsPage'
 import { AdminStaffCreatePage, AdminStaffManagePage } from './pages/admin/AdminStaffPage'
 import { LoginPage } from './pages/auth/LoginPage'
+import { TabletKioskPage } from './pages/tablet/TabletKioskPage'
 import { ClientDashboardPage } from './pages/client/ClientDashboardPage'
 import { ClientPaymentsPage } from './pages/client/ClientPaymentsPage'
 import { ClientReservationsPage } from './pages/client/ClientReservationsPage'
@@ -102,6 +103,7 @@ function App() {
     <Routes>
       <Route path="/" element={<RootRedirect />} />
       <Route path="/login" element={<LoginRoute />} />
+      <Route path="/tablet" element={<TabletKioskPage />} />
 
       <Route element={<RequireRole allowedRoles={['ADMINISTRADOR']} />}>
         <Route path="/admin" element={<AdminLayout />}>

@@ -347,6 +347,11 @@ class Command(BaseCommand):
             fecha_hora=timezone.now().replace(hour=9, minute=0, second=0, microsecond=0)
             + timedelta(days=days_offset),
             estado=appointment_status,
+            metodo_confirmacion=(
+                CitaMedica.MetodoConfirmacion.BIOMETRICO
+                if is_confirmed_appointment
+                else ""
+            ),
             verif_biometria=is_confirmed_appointment,
             fecha_confirmacion_biometrica=timezone.now() + timedelta(days=days_offset)
             if is_confirmed_appointment

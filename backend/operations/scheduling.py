@@ -177,22 +177,26 @@ def get_available_dates(sucursal_id, start_date, end_date):
     return available_dates
 
 
-def mark_expired_programmed_appointments_as_no_show(*args, **kwargs):
+def mark_expired_programmed_appointments_as_no_show(reference_time=None):
     """
-    Automatically changes the status of PROGRAMADA appointments to NO_ASISTIO 
-     if they are more than 24 hours old.
+    Changes PROGRAMADA appointments to NO_ASISTIO once the appointment day has passed.
+    Rule: any PROGRAMADA appointment with local date < current local date becomes NO_ASISTIO.
     """
-    from datetime import timedelta
-    cutoff = timezone.now() - timedelta(days=1)
-    
-    # Update CitaProspecto
-    CitaProspecto.objects.filter(
+    current_time = reference_time or timezone.now()
+    today = timezone.localdate(current_time)
+
+    prospect_no_show = CitaProspecto.objects.filter(
         estado=CitaProspecto.Estado.PROGRAMADA,
-        fecha_hora__lt=cutoff
+        fecha_hora__date__lt=today,
     ).update(estado=CitaProspecto.Estado.NO_ASISTIO)
-    
-    # Update CitaMedica (clients)
-    CitaMedica.objects.filter(
+
+    medical_no_show = CitaMedica.objects.filter(
         estado=CitaMedica.Estado.PROGRAMADA,
-        fecha_hora__lt=cutoff
+        fecha_hora__date__lt=today,
     ).update(estado=CitaMedica.Estado.NO_ASISTIO)
+
+    return {
+        "no_show": prospect_no_show + medical_no_show,
+        "citas_prospecto": prospect_no_show,
+        "citas_medicas": medical_no_show,
+    }

@@ -39,3 +39,4 @@ echo -e "${GREEN}[reset_pdf_baseline] Purge completado. Iniciando seed base PDF.
 $PYTHON manage.py seed_pdf_baseline
 
 echo -e "${GREEN}[reset_pdf_baseline] Seed completado correctamente.${NC}"
+echo -e "${CYAN}[reset_pdf_baseline] Revisa arriba las credenciales de tablet kiosko generadas para pruebas.${NC}"

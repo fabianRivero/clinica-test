@@ -62,10 +62,7 @@ class Operacion(TimeStampedModel):
 
     @property
     def sesiones_confirmadas(self):
-        return self.citas_medicas.filter(
-            estado=CitaMedica.Estado.CONFIRMADA,
-            verif_biometria=True,
-        ).count()
+        return self.citas_medicas.filter(estado=CitaMedica.Estado.CONFIRMADA).count()
 
     @property
     def sesiones_pendientes_confirmacion(self):
@@ -139,6 +136,11 @@ class Operacion(TimeStampedModel):
 
 
 class CitaMedica(TimeStampedModel):
+    class MetodoConfirmacion(models.TextChoices):
+        BIOMETRICO = "BIOMETRICO", "Biometrico"
+        TABLET = "TABLET", "Tablet"
+        MANUAL = "MANUAL", "Manual"
+
     class Estado(models.TextChoices):
         PROGRAMADA = "PROGRAMADA", "Programada"
         REALIZADA_PENDIENTE_BIOMETRIA = (
@@ -167,6 +169,12 @@ class CitaMedica(TimeStampedModel):
     )
     verif_biometria = models.BooleanField(default=False)
     fecha_confirmacion_biometrica = models.DateTimeField(null=True, blank=True)
+    metodo_confirmacion = models.CharField(
+        max_length=16,
+        choices=MetodoConfirmacion.choices,
+        blank=True,
+        default="",
+    )
     detalles_cita = models.TextField(blank=True)
 
     class Meta:
@@ -176,15 +184,18 @@ class CitaMedica(TimeStampedModel):
     def clean(self):
         errors = {}
 
-        if self.estado == self.Estado.CONFIRMADA and not self.verif_biometria:
-            errors["verif_biometria"] = "Una cita confirmada requiere verificacion biometrica."
+        if self.estado == self.Estado.CONFIRMADA:
+            if self.metodo_confirmacion == self.MetodoConfirmacion.BIOMETRICO and not self.verif_biometria:
+                errors["verif_biometria"] = "Una cita confirmada por biometria requiere verificacion biometrica."
+            if not self.metodo_confirmacion:
+                errors["metodo_confirmacion"] = "Debes especificar el metodo de confirmacion para una cita confirmada."
 
         if self.operacion_id:
             otras_citas = self.operacion.citas_medicas.exclude(pk=self.pk)
             sesiones_consumidas = otras_citas.filter(
                 models.Q(estado=self.Estado.PROGRAMADA)
                 | models.Q(estado=self.Estado.REALIZADA_PENDIENTE_BIOMETRIA)
-                | models.Q(estado=self.Estado.CONFIRMADA, verif_biometria=True)
+                | models.Q(estado=self.Estado.CONFIRMADA)
             ).count()
 
             estado_consume_sesion = self.estado in {
@@ -205,6 +216,7 @@ class CitaMedica(TimeStampedModel):
             self.fecha_confirmacion_biometrica = timezone.now()
         if self.estado != self.Estado.CONFIRMADA:
             self.fecha_confirmacion_biometrica = None
+            self.metodo_confirmacion = ""
 
         self.full_clean()
         super().save(*args, **kwargs)
@@ -314,6 +326,59 @@ class CitaClienteLibre(TimeStampedModel):
 
     def __str__(self):
         return f"Cita libre #{self.pk} - {self.cliente}"
+
+
+class EventoConfirmacionCita(TimeStampedModel):
+    class Metodo(models.TextChoices):
+        BIOMETRICO = "BIOMETRICO", "Biometrico"
+        TABLET = "TABLET", "Tablet"
+        MANUAL = "MANUAL", "Manual"
+
+    cita = models.ForeignKey(
+        "operations.CitaMedica",
+        on_delete=models.CASCADE,
+        related_name="eventos_confirmacion",
+    )
+    paciente = models.ForeignKey(
+        "customers.Cliente",
+        on_delete=models.PROTECT,
+        related_name="eventos_confirmacion_citas",
+    )
+    sucursal = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.PROTECT,
+        related_name="eventos_confirmacion_citas",
+    )
+    metodo = models.CharField(max_length=16, choices=Metodo.choices)
+    confirmado_en = models.DateTimeField(default=timezone.now)
+    ip_origen = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        db_table = "eventos_confirmacion_citas"
+        ordering = ("-confirmado_en", "-id")
+
+    def __str__(self):
+        return f"Evento confirmacion cita #{self.cita_id} - {self.metodo}"
+
+
+class TabletKiosko(TimeStampedModel):
+    codigo = models.CharField(max_length=50, unique=True)
+    nombre = models.CharField(max_length=120)
+    sucursal = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.PROTECT,
+        related_name="kioskos_tablet",
+    )
+    clave = models.CharField(max_length=255)
+    activo = models.BooleanField(default=True)
+    ultimo_acceso = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "tablet_kioskos"
+        ordering = ("nombre",)
+
+    def __str__(self):
+        return f"{self.nombre} ({self.codigo})"
 
 
 class AgendaHabitualEspecialista(TimeStampedModel):
