@@ -1,6 +1,6 @@
 import type { ProspectLead } from './admin'
 
-export type ConversionStep = 1 | 2 | 3 | 4
+export type ConversionStep = 1 | 2 | 3 | 4 | 5
 
 export type ProspectConversionUserData = {
   primerNombre: string
