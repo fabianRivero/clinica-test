@@ -19,6 +19,7 @@ import {
   saveAdminClientReactivationMedicalStep,
   saveAdminClientReactivationBiometricStep,
   finalizeAdminClientReactivation,
+  getAdminPayments,
 } from '../../services/api/admin'
 import { checkMockFingerprintDevice, enrollMockFingerprint } from '../../services/fingerprint/mockFingerprint'
 import type {
@@ -41,6 +42,7 @@ const stepLabels: Array<{ step: ConversionStep; label: string }> = [
   { step: 2, label: 'Operacion' },
   { step: 3, label: 'Ficha medica' },
   { step: 4, label: 'Huella biometrica' },
+  { step: 5, label: 'Primer pago (opcional)' },
 ]
 
 type FieldErrors = Record<string, string>
@@ -49,7 +51,7 @@ function getInitialStep(draft: ProspectConversionDraft): ConversionStep {
   if (!draft.stepUserCompleted) return 1
   if (!draft.stepOperationCompleted) return 2
   if (!draft.stepMedicalCompleted) return 3
-  return 4
+  return draft.stepBiometricCompleted ? 5 : 4
 }
 
 function emptyFieldResponse(): ProspectConversionFieldResponse {
@@ -124,6 +126,10 @@ export function AdminProspectConvertPage() {
   const [medicalForm, setMedicalForm] = useState<ProspectConversionMedicalData | null>(null)
   const [biometricForm, setBiometricForm] = useState<ProspectConversionBiometricData>(blankBiometricData)
   const [biometricStatus, setBiometricStatus] = useState<string | null>(null)
+  const [paymentQrImageUrl, setPaymentQrImageUrl] = useState('')
+  const [firstPaymentReceipt, setFirstPaymentReceipt] = useState<File | null>(null)
+  const [firstPaymentAmount, setFirstPaymentAmount] = useState('')
+  const [firstPaymentDetails, setFirstPaymentDetails] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -153,6 +159,8 @@ export function AdminProspectConvertPage() {
         setBiometricForm(response.draft.biometricData)
         setMedicalDocumentFile(null)
         setActiveStep(getInitialStep(response.draft))
+        const paymentsResponse = await getAdminPayments()
+        setPaymentQrImageUrl(paymentsResponse.paymentQrConfig?.qrImageUrl || '')
       } catch (requestError) {
         if (!cancelled) {
           setError(requestError instanceof Error ? requestError.message : 'No se pudo cargar la conversion.')
@@ -181,7 +189,8 @@ export function AdminProspectConvertPage() {
     if (step === 1) return true
     if (step === 2) return data.draft.stepUserCompleted || activeStep === 2
     if (step === 3) return data.draft.stepOperationCompleted || activeStep === 3
-    return data.draft.stepMedicalCompleted || activeStep === 4
+    if (step === 4) return data.draft.stepMedicalCompleted || activeStep === 4
+    return data.draft.stepBiometricCompleted || activeStep === 5
   }
 
   const applyResponse = (response: ProspectConversionResponse) => {
@@ -481,7 +490,7 @@ export function AdminProspectConvertPage() {
     }
   }
 
-  const handleFinalize = async (event: FormEvent) => {
+  const handleSaveBiometricStep = async (event: FormEvent) => {
     event.preventDefault()
 
     resetFeedback()
@@ -489,22 +498,44 @@ export function AdminProspectConvertPage() {
       setFieldErrors({ template: 'Debes capturar la huella biometrica simulada.' })
       return
     }
-    if (!medicalDocumentFile) {
-      setFieldErrors({
-        documentoFichaPdf: 'Debes adjuntar el PDF escaneado de la ficha medica para finalizar la conversion.',
-      })
-      return
-    }
-
     setIsSaving(true)
     try {
       const biometricResponse = isReactivation
         ? await saveAdminClientReactivationBiometricStep(clientId, biometricForm)
         : await saveAdminProspectConversionBiometricStep(prospectId, biometricForm)
       applyResponse(biometricResponse)
+      setActiveStep(5)
+    } catch (requestError) {
+      if (requestError instanceof Error && 'fieldErrors' in requestError) {
+        const maybeFieldErrors = (requestError as Error & { fieldErrors?: FieldErrors }).fieldErrors
+        if (maybeFieldErrors) {
+          setFieldErrors(maybeFieldErrors)
+        }
+      }
+      setSubmitError(requestError instanceof Error ? requestError.message : 'No se pudo guardar la biometria.')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleFinalize = async (event: FormEvent) => {
+    event.preventDefault()
+    resetFeedback()
+    if (!medicalDocumentFile) {
+      setFieldErrors({
+        documentoFichaPdf: 'Debes adjuntar el PDF escaneado de la ficha medica para finalizar la conversion.',
+      })
+      return
+    }
+    if (firstPaymentReceipt && !firstPaymentAmount) {
+      setFieldErrors({ primerPagoMonto: 'Debes indicar el monto del comprobante.' })
+      return
+    }
+    setIsSaving(true)
+    try {
       const finalizeResponse = isReactivation
-        ? await finalizeAdminClientReactivation(clientId, medicalDocumentFile)
-        : await finalizeAdminProspectConversion(prospectId, medicalDocumentFile)
+        ? await finalizeAdminClientReactivation(clientId, medicalDocumentFile, { receiptFile: firstPaymentReceipt, amount: firstPaymentAmount, details: firstPaymentDetails })
+        : await finalizeAdminProspectConversion(prospectId, medicalDocumentFile, { receiptFile: firstPaymentReceipt, amount: firstPaymentAmount, details: firstPaymentDetails })
       navigate(isReactivation ? `/admin/clientes/${clientId}` : '/admin/prospectos', {
         replace: true,
         state: {
@@ -1441,7 +1472,7 @@ export function AdminProspectConvertPage() {
           title="Huella biometrica"
           description="Simula el enrolamiento con un lector SecuGen Hamster Pro 20. Esta capa queda lista para reemplazar el proveedor mock por la WebAPI real."
         >
-          <form className="form-grid" onSubmit={handleFinalize}>
+          <form className="form-grid" onSubmit={handleSaveBiometricStep}>
             <div className="wizard-block field--full">
               <div className="wizard-block__header">
                 <div>
@@ -1494,8 +1525,34 @@ export function AdminProspectConvertPage() {
                 Volver
               </button>
               <button className="button" disabled={isSaving || isCancelling} type="submit">
-                {isSaving ? 'Guardando y convirtiendo...' : 'Finalizar'}
+                {isSaving ? 'Guardando...' : 'Guardar y continuar'}
               </button>
+            </div>
+          </form>
+        </SectionCard>
+      ) : null}
+      {activeStep === 5 ? (
+        <SectionCard eyebrow="Paso 5" title="Primer pago (opcional)" description="Muestra el QR de pago, permite adjuntar comprobante y confirmar el pago para revision administrativa.">
+          <form className="form-grid" onSubmit={handleFinalize}>
+            <div className="wizard-block field--full">
+              {paymentQrImageUrl ? <img src={paymentQrImageUrl} alt="QR de pago" style={{ maxWidth: 280, width: '100%', borderRadius: 12 }} /> : <p>No hay QR configurado.</p>}
+            </div>
+            <label className="field">
+              <span>Monto del primer pago</span>
+              <input className="input" value={firstPaymentAmount} onChange={(event) => setFirstPaymentAmount(event.target.value)} />
+              {fieldErrors.primerPagoMonto ? <small className="field__error">{fieldErrors.primerPagoMonto}</small> : null}
+            </label>
+            <label className="field field--full">
+              <span>Comprobante</span>
+              <input className="input input--file" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,application/pdf,image/*" onChange={(event) => setFirstPaymentReceipt(event.target.files?.[0] || null)} />
+            </label>
+            <label className="field field--full">
+              <span>Detalle</span>
+              <textarea className="input textarea" rows={3} value={firstPaymentDetails} onChange={(event) => setFirstPaymentDetails(event.target.value)} />
+            </label>
+            <div className="form-actions field--full">
+              <button className="button button--ghost" disabled={isSaving || isCancelling} type="button" onClick={() => setActiveStep(4)}>Volver</button>
+              <button className="button" disabled={isSaving || isCancelling} type="submit">{isSaving ? 'Confirmando...' : 'Confirmar pago y finalizar'}</button>
             </div>
           </form>
         </SectionCard>

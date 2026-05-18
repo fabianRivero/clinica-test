@@ -105,7 +105,6 @@ class Operacion(TimeStampedModel):
     def puede_reservar(self):
         return (
             self.estado == self.Estado.EN_PROCESO
-            and self.primer_pago_verificado
             and not self.tiene_reserva_programada
             and not self.tiene_cierre_pendiente
             and self.sesiones_disponibles > 0
@@ -115,8 +114,6 @@ class Operacion(TimeStampedModel):
     def motivo_bloqueo_reserva(self):
         if self.estado != self.Estado.EN_PROCESO:
             return "Solo los tratamientos en proceso pueden reservar nuevas citas."
-        if not self.primer_pago_verificado:
-            return "Necesitas tener el primer pago verificado para poder hacer reservas."
         if self.tiene_reserva_programada:
             return (
                 "Ya tienes una cita programada para este tratamiento. Debes completarla "

@@ -545,9 +545,22 @@ export function saveAdminProspectConversionBiometricStep(prospectId: string, pay
   )
 }
 
-export function finalizeAdminProspectConversion(prospectId: string, documentFile: File) {
+export function finalizeAdminProspectConversion(
+  prospectId: string,
+  documentFile: File,
+  firstPayment?: { receiptFile?: File | null; amount?: string; details?: string },
+) {
   const formData = new FormData()
   formData.append('documentoFichaPdf', documentFile)
+  if (firstPayment?.receiptFile) {
+    formData.append('primerPagoComprobante', firstPayment.receiptFile)
+  }
+  if (firstPayment?.amount) {
+    formData.append('primerPagoMonto', firstPayment.amount)
+  }
+  if (firstPayment?.details) {
+    formData.append('primerPagoDetalle', firstPayment.details)
+  }
 
   return requestFormDataWithBody<ProspectConversionFinalizeResponse>(
     `/api/admin/prospectos/${prospectId}/conversion/finalizar/`,
@@ -598,10 +611,23 @@ export function saveAdminClientReactivationBiometricStep(clientId: string, paylo
   return requestJsonWithBody<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/paso-4/`, payload)
 }
 
-export function finalizeAdminClientReactivation(clientId: string, pdfFile?: File) {
+export function finalizeAdminClientReactivation(
+  clientId: string,
+  pdfFile?: File,
+  firstPayment?: { receiptFile?: File | null; amount?: string; details?: string },
+) {
   const formData = new FormData()
   if (pdfFile) {
     formData.append('documento_escaneado_pdf', pdfFile)
+  }
+  if (firstPayment?.receiptFile) {
+    formData.append('primerPagoComprobante', firstPayment.receiptFile)
+  }
+  if (firstPayment?.amount) {
+    formData.append('primerPagoMonto', firstPayment.amount)
+  }
+  if (firstPayment?.details) {
+    formData.append('primerPagoDetalle', firstPayment.details)
   }
 
   return requestFormDataWithBody<ProspectConversionFinalizeResponse>(`/api/admin/clientes/${clientId}/reactivar/finalizar/`, formData)

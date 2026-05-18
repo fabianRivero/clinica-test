@@ -10,6 +10,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from accounts.models import Rol, Usuario
 from billing.models import CuotaPlanPago
+from billing.models import PagoRealizado
 from catalogs.models import (
     AntecedenteMedico,
     CirugiaEstetica,
@@ -1367,6 +1368,22 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             fecha_vencimiento=date.fromisoformat(fecha_vencimiento),
             monto_programado=quota_amounts[cuota_index] if cuota_index < len(quota_amounts) else Decimal("0.00"),
         )
+    primer_pago_comprobante = request.FILES.get("primerPagoComprobante")
+    primer_pago_monto = (request.POST.get("primerPagoMonto") or "").strip()
+    primer_pago_detalle = (request.POST.get("primerPagoDetalle") or "").strip()
+    if primer_pago_comprobante:
+        primera_cuota = operacion.cuotas_plan_pagos.order_by("nro_cuota", "fecha_vencimiento").first()
+        if primera_cuota:
+            try:
+                monto_primer_pago = Decimal(primer_pago_monto) if primer_pago_monto else primera_cuota.monto_programado
+            except Exception:
+                return _json({"detail": "El monto del primer pago no es válido."}, status=400)
+            PagoRealizado.objects.create(
+                cuota=primera_cuota,
+                monto_pagado=monto_primer_pago,
+                comprobante_url=primer_pago_comprobante,
+                detalles_pago=primer_pago_detalle or "Comprobante de primer pago registrado durante la conversión.",
+            )
 
     ficha = FichaClinica.objects.create(
         operacion=operacion,
