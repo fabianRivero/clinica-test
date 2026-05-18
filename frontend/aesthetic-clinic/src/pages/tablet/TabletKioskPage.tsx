@@ -80,8 +80,8 @@ export function TabletKioskPage() {
   }
 
   return (
-    <div className="auth-shell">
-      <div className="auth-card" style={{ maxWidth: 720 }}>
+    <div className="auth-shell tablet-shell">
+      <div className="auth-card tablet-shell__card">
         <h2>Interfaz Tablet · Confirmación de cita</h2>
         {step === 'kiosk' && (
           <form className="auth-form" onSubmit={handleKioskLogin}>
