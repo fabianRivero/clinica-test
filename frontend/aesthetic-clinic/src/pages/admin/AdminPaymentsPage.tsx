@@ -15,6 +15,18 @@ import {
 } from '../../services/api/admin'
 import type { UpdateAdminPaymentStatusPayload } from '../../types/admin'
 
+function toComparableDate(value?: string) {
+  if (!value) return null
+  const normalized = value.trim()
+  const direct = new Date(normalized)
+  if (!Number.isNaN(direct.getTime())) return direct
+  const ddmmyyyy = normalized.match(/(\d{2})\/(\d{2})\/(\d{4})/)
+  if (!ddmmyyyy) return null
+  const [, dd, mm, yyyy] = ddmmyyyy
+  const parsed = new Date(`${yyyy}-${mm}-${dd}T00:00:00`)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
 export function AdminPaymentsPage() {
   const { activeBranch } = useBranchContext()
   const branchId = activeBranch?.id ?? null
@@ -31,14 +43,8 @@ export function AdminPaymentsPage() {
   const [searchFilter, setSearchFilter] = useState('')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loader = useCallback(
-    () =>
-      getAdminPayments({
-        status: statusFilter,
-        dateFrom: dateFromFilter,
-        dateTo: dateToFilter,
-        search: searchFilter,
-      }),
-    [branchId, dateFromFilter, dateToFilter, searchFilter, statusFilter],
+    () => getAdminPayments(),
+    [branchId],
   )
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
@@ -136,6 +142,34 @@ export function AdminPaymentsPage() {
       setPaymentActionId(null)
     }
   }
+
+  const filteredPayments = (data?.payments ?? []).filter((payment) => {
+    if (statusFilter) {
+      const statusMap: Record<NonNullable<AdminPaymentsFilters['status']>, string> = {
+        PENDIENTE: 'pendiente',
+        APROBADO: 'aprobado',
+        RECHAZADO: 'observado',
+      }
+      if (statusMap[statusFilter] !== payment.status) return false
+    }
+
+    if (searchFilter) {
+      const term = searchFilter.toLowerCase()
+      const haystack = `${payment.patient} ${payment.operation}`.toLowerCase()
+      if (!haystack.includes(term)) return false
+    }
+
+    const dueDate = toComparableDate(payment.dueDate)
+    if (dateFromFilter) {
+      const from = new Date(`${dateFromFilter}T00:00:00`)
+      if (dueDate && dueDate < from) return false
+    }
+    if (dateToFilter) {
+      const to = new Date(`${dateToFilter}T23:59:59`)
+      if (dueDate && dueDate > to) return false
+    }
+    return true
+  })
 
   return (
     <div className="page-stack">
@@ -264,7 +298,7 @@ export function AdminPaymentsPage() {
                 <input className="input" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
               </label>
             </div>
-            {data.payments.length ? (
+            {filteredPayments.length ? (
               <div className="table-card">
                 <table>
                   <thead>
@@ -282,7 +316,7 @@ export function AdminPaymentsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.payments.map((payment) => (
+                    {filteredPayments.map((payment) => (
                       <tr key={payment.id}>
                         <td>{payment.id}</td>
                         <td>
