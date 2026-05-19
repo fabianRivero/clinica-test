@@ -1371,6 +1371,11 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
     primer_pago_comprobante = request.FILES.get("primerPagoComprobante")
     primer_pago_monto = (request.POST.get("primerPagoMonto") or "").strip()
     primer_pago_detalle = (request.POST.get("primerPagoDetalle") or "").strip()
+    if (primer_pago_monto or primer_pago_detalle) and not primer_pago_comprobante:
+        return _json(
+            {"detail": "Debes adjuntar el comprobante para registrar el primer pago en este paso."},
+            status=400,
+        )
     if primer_pago_comprobante:
         primera_cuota = operacion.cuotas_plan_pagos.order_by("nro_cuota", "fecha_vencimiento").first()
         if primera_cuota:
@@ -1383,6 +1388,10 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
                 monto_pagado=monto_primer_pago,
                 comprobante_url=primer_pago_comprobante,
                 detalles_pago=primer_pago_detalle or "Comprobante de primer pago registrado durante la conversión.",
+                estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
+                verificado_por=request.user,
+                fecha_verificacion=timezone.now(),
+                observacion_verificacion="Pago confirmado durante la conversión.",
             )
 
     ficha = FichaClinica.objects.create(

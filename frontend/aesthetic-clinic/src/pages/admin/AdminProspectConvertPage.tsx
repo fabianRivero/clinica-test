@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
@@ -127,9 +127,18 @@ export function AdminProspectConvertPage() {
   const [biometricForm, setBiometricForm] = useState<ProspectConversionBiometricData>(blankBiometricData)
   const [biometricStatus, setBiometricStatus] = useState<string | null>(null)
   const [paymentQrImageUrl, setPaymentQrImageUrl] = useState('')
+  const [qrModalOpen, setQrModalOpen] = useState(false)
+  const [shouldRegisterFirstPayment, setShouldRegisterFirstPayment] = useState(false)
   const [firstPaymentReceipt, setFirstPaymentReceipt] = useState<File | null>(null)
-  const [firstPaymentAmount, setFirstPaymentAmount] = useState('')
   const [firstPaymentDetails, setFirstPaymentDetails] = useState('')
+
+  const firstPaymentAmount = useMemo(() => {
+    if (!operationForm) return ''
+    const total = Number(operationForm.precioTotal)
+    const cuotas = Number(operationForm.cuotasTotales)
+    if (!Number.isFinite(total) || !Number.isFinite(cuotas) || cuotas <= 0) return ''
+    return (total / cuotas).toFixed(2)
+  }, [operationForm])
 
   useEffect(() => {
     let cancelled = false
@@ -521,21 +530,27 @@ export function AdminProspectConvertPage() {
   const handleFinalize = async (event: FormEvent) => {
     event.preventDefault()
     resetFeedback()
-    if (!medicalDocumentFile) {
-      setFieldErrors({
-        documentoFichaPdf: 'Debes adjuntar el PDF escaneado de la ficha medica para finalizar la conversion.',
-      })
+    if (shouldRegisterFirstPayment && !firstPaymentReceipt) {
+      setFieldErrors({ primerPagoComprobante: 'Debes adjuntar un comprobante para registrar el primer pago.' })
       return
     }
-    if (firstPaymentReceipt && !firstPaymentAmount) {
-      setFieldErrors({ primerPagoMonto: 'Debes indicar el monto del comprobante.' })
+    if (shouldRegisterFirstPayment && !firstPaymentAmount) {
+      setFieldErrors({ primerPagoMonto: 'No se pudo calcular el monto del primer pago.' })
+      return
+    }
+
+    const shouldContinue = window.confirm('¿Estás seguro de que toda la información es correcta para finalizar el proceso?')
+    if (!shouldContinue) {
       return
     }
     setIsSaving(true)
     try {
+      const firstPaymentPayload = shouldRegisterFirstPayment
+        ? { receiptFile: firstPaymentReceipt, amount: firstPaymentAmount, details: firstPaymentDetails }
+        : undefined
       const finalizeResponse = isReactivation
-        ? await finalizeAdminClientReactivation(clientId, medicalDocumentFile, { receiptFile: firstPaymentReceipt, amount: firstPaymentAmount, details: firstPaymentDetails })
-        : await finalizeAdminProspectConversion(prospectId, medicalDocumentFile, { receiptFile: firstPaymentReceipt, amount: firstPaymentAmount, details: firstPaymentDetails })
+        ? await finalizeAdminClientReactivation(clientId, medicalDocumentFile || undefined, firstPaymentPayload)
+        : await finalizeAdminProspectConversion(prospectId, medicalDocumentFile || undefined, firstPaymentPayload)
       navigate(isReactivation ? `/admin/clientes/${clientId}` : '/admin/prospectos', {
         replace: true,
         state: {
@@ -1532,30 +1547,100 @@ export function AdminProspectConvertPage() {
         </SectionCard>
       ) : null}
       {activeStep === 5 ? (
-        <SectionCard eyebrow="Paso 5" title="Primer pago (opcional)" description="Muestra el QR de pago, permite adjuntar comprobante y confirmar el pago para revision administrativa.">
+        <SectionCard eyebrow="Paso 5" title="Primer pago" description="Activa la casilla para registrar el primer pago en este paso. Si lo activas, el comprobante es obligatorio.">
           <form className="form-grid" onSubmit={handleFinalize}>
-            <div className="wizard-block field--full">
-              {paymentQrImageUrl ? <img src={paymentQrImageUrl} alt="QR de pago" style={{ maxWidth: 280, width: '100%', borderRadius: 12 }} /> : <p>No hay QR configurado.</p>}
+            <label className="field field--full" style={{ cursor: 'pointer' }}>
+              <span>Registrar primer pago en este paso</span>
+              <input
+                checked={shouldRegisterFirstPayment}
+                type="checkbox"
+                onChange={(event) => {
+                  const checked = event.target.checked
+                  setShouldRegisterFirstPayment(checked)
+                  if (!checked) {
+                    setFirstPaymentReceipt(null)
+                    setFirstPaymentDetails('')
+                  }
+                }}
+              />
+            </label>
+            <div
+              className="field--full"
+              style={{
+                opacity: shouldRegisterFirstPayment ? 1 : 0.5,
+                pointerEvents: shouldRegisterFirstPayment ? 'auto' : 'none',
+                transition: 'opacity 0.2s ease',
+              }}
+            >
+              <div className="wizard-block field--full">
+                {paymentQrImageUrl ? (
+                  <>
+                    <img
+                      src={paymentQrImageUrl}
+                      alt="QR de pago"
+                      style={{ maxWidth: 280, width: '100%', borderRadius: 12, cursor: 'zoom-in' }}
+                      onClick={() => setQrModalOpen(true)}
+                    />
+                    <button
+                      className="button button--ghost button--compact"
+                      type="button"
+                      onClick={() => setQrModalOpen(true)}
+                    >
+                      Ver QR en grande
+                    </button>
+                  </>
+                ) : <p>No hay QR configurado.</p>}
+              </div>
+              <label className="field">
+                <span>Monto del primer pago</span>
+                <input className="input" readOnly value={firstPaymentAmount} />
+                {fieldErrors.primerPagoMonto ? <small className="field__error">{fieldErrors.primerPagoMonto}</small> : null}
+              </label>
+              <label className="field field--full">
+                <span>Comprobante</span>
+                <input className="input input--file" disabled={!shouldRegisterFirstPayment} type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,application/pdf,image/*" onChange={(event) => setFirstPaymentReceipt(event.target.files?.[0] || null)} />
+                {fieldErrors.primerPagoComprobante ? <small className="field__error">{fieldErrors.primerPagoComprobante}</small> : null}
+              </label>
+              <label className="field field--full">
+                <span>Detalle</span>
+                <textarea className="input textarea" disabled={!shouldRegisterFirstPayment} rows={3} value={firstPaymentDetails} onChange={(event) => setFirstPaymentDetails(event.target.value)} />
+              </label>
             </div>
-            <label className="field">
-              <span>Monto del primer pago</span>
-              <input className="input" value={firstPaymentAmount} onChange={(event) => setFirstPaymentAmount(event.target.value)} />
-              {fieldErrors.primerPagoMonto ? <small className="field__error">{fieldErrors.primerPagoMonto}</small> : null}
-            </label>
-            <label className="field field--full">
-              <span>Comprobante</span>
-              <input className="input input--file" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,application/pdf,image/*" onChange={(event) => setFirstPaymentReceipt(event.target.files?.[0] || null)} />
-            </label>
-            <label className="field field--full">
-              <span>Detalle</span>
-              <textarea className="input textarea" rows={3} value={firstPaymentDetails} onChange={(event) => setFirstPaymentDetails(event.target.value)} />
-            </label>
             <div className="form-actions field--full">
+              <button className="button button--danger" disabled={isSaving || isCancelling} type="button" onClick={handleCancelDraft}>
+                {isCancelling ? 'Cancelando...' : 'Cancelar conversion'}
+              </button>
               <button className="button button--ghost" disabled={isSaving || isCancelling} type="button" onClick={() => setActiveStep(4)}>Volver</button>
               <button className="button" disabled={isSaving || isCancelling} type="submit">{isSaving ? 'Confirmando...' : 'Confirmar pago y finalizar'}</button>
             </div>
           </form>
         </SectionCard>
+      ) : null}
+      {qrModalOpen && paymentQrImageUrl ? (
+        <div className="qr-modal" role="dialog" aria-modal="true" aria-label="QR de pago">
+          <button
+            aria-label="Cerrar visor de QR"
+            className="qr-modal__backdrop"
+            type="button"
+            onClick={() => setQrModalOpen(false)}
+          />
+          <div className="qr-modal__content">
+            <div className="qr-modal__header">
+              <div>
+                <span>QR de pago</span>
+                <strong>Vista ampliada</strong>
+              </div>
+              <button className="button button--ghost button--compact" type="button" onClick={() => setQrModalOpen(false)}>
+                Cerrar
+              </button>
+            </div>
+            <img
+              alt="QR de pago bancario ampliado"
+              className="qr-modal__image"
+              src={paymentQrImageUrl}
+            />
+          </div>
+        </div>
       ) : null}
     </div>
   )

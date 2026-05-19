@@ -52,7 +52,7 @@ export function ClientReservationsPage() {
       <PageHeader
         eyebrow="Agenda y reservas"
         title="Mis reservas"
-        description="Consulta citas registradas, estado biometrico y si tus tratamientos aun tienen sesiones disponibles."
+        description="Consulta citas registradas, estado de confirmacion y si tus tratamientos aun tienen sesiones disponibles."
       />
 
       {flashMessage ? <DataState title="Reserva registrada" message={flashMessage} /> : null}
@@ -75,7 +75,7 @@ export function ClientReservationsPage() {
             <SectionCard
               eyebrow="Agenda"
               title="Citas registradas"
-              description="Incluye citas futuras y tambien las que esperan cierre biometrico o quedaron con observaciones."
+              description="Incluye citas futuras y tambien las que esperan confirmacion o quedaron con observaciones."
             >
               {data.appointments.length ? (
                 <div className="table-card">
@@ -86,7 +86,7 @@ export function ClientReservationsPage() {
                         <th>Especialista</th>
                         <th>Fecha</th>
                         <th>Estado</th>
-                        <th>Biometria</th>
+                        <th>Confirmacion</th>
                         <th>Acciones</th>
                       </tr>
                     </thead>
@@ -102,7 +102,19 @@ export function ClientReservationsPage() {
                           <td>
                             <StatusBadge tone={appointment.statusTone}>{appointment.status}</StatusBadge>
                           </td>
-                          <td>{appointment.biometric}</td>
+                          <td>
+                            <StatusBadge
+                              tone={
+                                appointment.confirmationStatus === 'biometria'
+                                  ? 'approved'
+                                  : appointment.confirmationStatus === 'qr'
+                                    ? 'pending'
+                                    : 'warning'
+                              }
+                            >
+                              {appointment.confirmationLabel}
+                            </StatusBadge>
+                          </td>
                           <td>
                             {appointment.canManage ? (
                               <div className="table-actions">

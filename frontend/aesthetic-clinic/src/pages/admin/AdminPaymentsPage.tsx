@@ -8,6 +8,7 @@ import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
 import {
+  type AdminPaymentsFilters,
   getAdminPayments,
   updateAdminPaymentQrConfig,
   updateAdminPaymentStatus,
@@ -23,8 +24,21 @@ export function AdminPaymentsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [paymentNotes, setPaymentNotes] = useState<Record<number, string>>({})
   const [paymentActionId, setPaymentActionId] = useState<number | null>(null)
+  const [statusFilter, setStatusFilter] = useState<AdminPaymentsFilters['status']>('')
+  const [dateFromFilter, setDateFromFilter] = useState('')
+  const [dateToFilter, setDateToFilter] = useState('')
+  const [searchFilter, setSearchFilter] = useState('')
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const loader = useCallback(() => getAdminPayments(), [branchId])
+  const loader = useCallback(
+    () =>
+      getAdminPayments({
+        status: statusFilter,
+        dateFrom: dateFromFilter,
+        dateTo: dateToFilter,
+        search: searchFilter,
+      }),
+    [branchId, dateFromFilter, dateToFilter, searchFilter, statusFilter],
+  )
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
 
@@ -218,6 +232,29 @@ export function AdminPaymentsPage() {
             title="Cola de verificacion"
             description="Los estados replican el flujo real del negocio: pendiente, observado y aprobado."
           >
+            <div className="form-grid" style={{ marginBottom: 16 }}>
+              <label className="field">
+                <span>Estado</span>
+                <select className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as AdminPaymentsFilters['status'])}>
+                  <option value="">Todos</option>
+                  <option value="PENDIENTE">Pendiente</option>
+                  <option value="APROBADO">Aprobado</option>
+                  <option value="RECHAZADO">Observado</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Desde</span>
+                <input className="input" type="date" value={dateFromFilter} onChange={(event) => setDateFromFilter(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Hasta</span>
+                <input className="input" type="date" value={dateToFilter} onChange={(event) => setDateToFilter(event.target.value)} />
+              </label>
+              <label className="field field--full">
+                <span>Buscar paciente/procedimiento</span>
+                <input className="input" value={searchFilter} onChange={(event) => setSearchFilter(event.target.value)} />
+              </label>
+            </div>
             {data.payments.length ? (
               <div className="table-card">
                 <table>
