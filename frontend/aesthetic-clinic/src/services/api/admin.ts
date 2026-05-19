@@ -560,11 +560,13 @@ export function saveAdminProspectConversionBiometricStep(prospectId: string, pay
 
 export function finalizeAdminProspectConversion(
   prospectId: string,
-  documentFile: File,
+  documentFile?: File,
   firstPayment?: { receiptFile?: File | null; amount?: string; details?: string },
 ) {
   const formData = new FormData()
-  formData.append('documentoFichaPdf', documentFile)
+  if (documentFile) {
+    formData.append('documentoFichaPdf', documentFile)
+  }
   if (firstPayment?.receiptFile) {
     formData.append('primerPagoComprobante', firstPayment.receiptFile)
   }

@@ -127,6 +127,7 @@ export function AdminProspectConvertPage() {
   const [biometricForm, setBiometricForm] = useState<ProspectConversionBiometricData>(blankBiometricData)
   const [biometricStatus, setBiometricStatus] = useState<string | null>(null)
   const [paymentQrImageUrl, setPaymentQrImageUrl] = useState('')
+  const [qrModalOpen, setQrModalOpen] = useState(false)
   const [shouldRegisterFirstPayment, setShouldRegisterFirstPayment] = useState(false)
   const [firstPaymentReceipt, setFirstPaymentReceipt] = useState<File | null>(null)
   const [firstPaymentDetails, setFirstPaymentDetails] = useState('')
@@ -529,12 +530,6 @@ export function AdminProspectConvertPage() {
   const handleFinalize = async (event: FormEvent) => {
     event.preventDefault()
     resetFeedback()
-    if (!medicalDocumentFile) {
-      setFieldErrors({
-        documentoFichaPdf: 'Debes adjuntar el PDF escaneado de la ficha medica para finalizar la conversion.',
-      })
-      return
-    }
     if (shouldRegisterFirstPayment && !firstPaymentReceipt) {
       setFieldErrors({ primerPagoComprobante: 'Debes adjuntar un comprobante para registrar el primer pago.' })
       return
@@ -554,8 +549,8 @@ export function AdminProspectConvertPage() {
         ? { receiptFile: firstPaymentReceipt, amount: firstPaymentAmount, details: firstPaymentDetails }
         : undefined
       const finalizeResponse = isReactivation
-        ? await finalizeAdminClientReactivation(clientId, medicalDocumentFile, firstPaymentPayload)
-        : await finalizeAdminProspectConversion(prospectId, medicalDocumentFile, firstPaymentPayload)
+        ? await finalizeAdminClientReactivation(clientId, medicalDocumentFile || undefined, firstPaymentPayload)
+        : await finalizeAdminProspectConversion(prospectId, medicalDocumentFile || undefined, firstPaymentPayload)
       navigate(isReactivation ? `/admin/clientes/${clientId}` : '/admin/prospectos', {
         replace: true,
         state: {
@@ -1578,7 +1573,23 @@ export function AdminProspectConvertPage() {
               }}
             >
               <div className="wizard-block field--full">
-                {paymentQrImageUrl ? <img src={paymentQrImageUrl} alt="QR de pago" style={{ maxWidth: 280, width: '100%', borderRadius: 12 }} /> : <p>No hay QR configurado.</p>}
+                {paymentQrImageUrl ? (
+                  <>
+                    <img
+                      src={paymentQrImageUrl}
+                      alt="QR de pago"
+                      style={{ maxWidth: 280, width: '100%', borderRadius: 12, cursor: 'zoom-in' }}
+                      onClick={() => setQrModalOpen(true)}
+                    />
+                    <button
+                      className="button button--ghost button--compact"
+                      type="button"
+                      onClick={() => setQrModalOpen(true)}
+                    >
+                      Ver QR en grande
+                    </button>
+                  </>
+                ) : <p>No hay QR configurado.</p>}
               </div>
               <label className="field">
                 <span>Monto del primer pago</span>
@@ -1604,6 +1615,32 @@ export function AdminProspectConvertPage() {
             </div>
           </form>
         </SectionCard>
+      ) : null}
+      {qrModalOpen && paymentQrImageUrl ? (
+        <div className="qr-modal" role="dialog" aria-modal="true" aria-label="QR de pago">
+          <button
+            aria-label="Cerrar visor de QR"
+            className="qr-modal__backdrop"
+            type="button"
+            onClick={() => setQrModalOpen(false)}
+          />
+          <div className="qr-modal__content">
+            <div className="qr-modal__header">
+              <div>
+                <span>QR de pago</span>
+                <strong>Vista ampliada</strong>
+              </div>
+              <button className="button button--ghost button--compact" type="button" onClick={() => setQrModalOpen(false)}>
+                Cerrar
+              </button>
+            </div>
+            <img
+              alt="QR de pago bancario ampliado"
+              className="qr-modal__image"
+              src={paymentQrImageUrl}
+            />
+          </div>
+        </div>
       ) : null}
     </div>
   )
