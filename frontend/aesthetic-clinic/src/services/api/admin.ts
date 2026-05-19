@@ -184,7 +184,17 @@ export function cancelAdminProspectMedicalAppointment(appointmentId: number) {
   )
 }
 
-export function updateAdminProspect(prospectId: number, data: { firstName?: string; lastName?: string; phone?: string; observations?: string }) {
+export function updateAdminProspect(
+  prospectId: number,
+  data: {
+    primerNombre?: string
+    segundoNombre?: string
+    apellidoPaterno?: string
+    apellidoMaterno?: string
+    phone?: string
+    observations?: string
+  },
+) {
   return requestJsonWithBody<{ detail: string; prospect: any }>(
     `/api/admin/prospectos/${prospectId}/actualizar/`,
     data,
@@ -447,7 +457,13 @@ export function createAdminProspect(payload: CreateAdminProspectPayload) {
   return requestJsonWithBody<CreateAdminProspectResponse>('/api/admin/prospectos/crear/', payload)
 }
 
-export function checkAdminProspectDuplicates(payload: { nombres: string; apellidos: string; telefono?: string }) {
+export function checkAdminProspectDuplicates(payload: {
+  primerNombre: string
+  segundoNombre?: string
+  apellidoPaterno: string
+  apellidoMaterno?: string
+  telefono?: string
+}) {
   return requestJsonWithBody<CheckAdminProspectDuplicatesResponse>('/api/admin/prospectos/verificar-duplicados/', payload)
 }
 

@@ -8,8 +8,10 @@ import { createAdminProspect, checkAdminProspectDuplicates } from '../../service
 import type { CreateAdminProspectPayload, CheckAdminProspectDuplicatesResponse } from '../../types/admin'
 
 const initialForm: CreateAdminProspectPayload = {
-  nombres: '',
-  apellidos: '',
+  primerNombre: '',
+  segundoNombre: '',
+  apellidoPaterno: '',
+  apellidoMaterno: '',
   telefono: '',
   estado: 'PASAJERO',
   observaciones: '',
@@ -26,18 +28,26 @@ export function AdminProspectCreatePage() {
   const [duplicateCheck, setDuplicateCheck] = useState<CheckAdminProspectDuplicatesResponse | null>(null)
 
   useEffect(() => {
-    const nombres = form.nombres.trim()
-    const apellidos = form.apellidos.trim()
+    const primerNombre = form.primerNombre.trim()
+    const segundoNombre = form.segundoNombre.trim()
+    const apellidoPaterno = form.apellidoPaterno.trim()
+    const apellidoMaterno = form.apellidoMaterno.trim()
     const telefono = form.telefono.trim()
 
-    if (nombres.length < 3 || apellidos.length < 3) {
+    if (primerNombre.length < 2 || apellidoPaterno.length < 2) {
       setDuplicateCheck(null)
       return
     }
 
     const timer = setTimeout(async () => {
       try {
-        const result = await checkAdminProspectDuplicates({ nombres, apellidos, telefono })
+        const result = await checkAdminProspectDuplicates({
+          primerNombre,
+          segundoNombre,
+          apellidoPaterno,
+          apellidoMaterno,
+          telefono,
+        })
         setDuplicateCheck(result)
       } catch (error) {
         console.error('Error al verificar duplicados:', error)
@@ -45,7 +55,7 @@ export function AdminProspectCreatePage() {
     }, 600)
 
     return () => clearTimeout(timer)
-  }, [form.nombres, form.apellidos, form.telefono])
+  }, [form.primerNombre, form.segundoNombre, form.apellidoPaterno, form.apellidoMaterno, form.telefono])
 
   const handleChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = event.target
@@ -57,12 +67,12 @@ export function AdminProspectCreatePage() {
   const validate = () => {
     const nextErrors: FieldErrors = {}
 
-    if (!form.nombres.trim()) {
-      nextErrors.nombres = 'Los nombres son obligatorios.'
+    if (!form.primerNombre.trim()) {
+      nextErrors.primerNombre = 'El primer nombre es obligatorio.'
     }
 
-    if (!form.apellidos.trim()) {
-      nextErrors.apellidos = 'Los apellidos son obligatorios.'
+    if (!form.apellidoPaterno.trim()) {
+      nextErrors.apellidoPaterno = 'El apellido paterno es obligatorio.'
     }
 
     setFieldErrors(nextErrors)
@@ -82,8 +92,10 @@ export function AdminProspectCreatePage() {
     try {
       const response = await createAdminProspect({
         ...form,
-        nombres: form.nombres.trim(),
-        apellidos: form.apellidos.trim(),
+        primerNombre: form.primerNombre.trim(),
+        segundoNombre: form.segundoNombre.trim(),
+        apellidoPaterno: form.apellidoPaterno.trim(),
+        apellidoMaterno: form.apellidoMaterno.trim(),
         telefono: form.telefono.trim(),
         observaciones: form.observaciones.trim(),
       })
@@ -112,7 +124,7 @@ export function AdminProspectCreatePage() {
       <PageHeader
         eyebrow="Nuevo prospecto"
         title="Registrar prospecto"
-        description="Crea un registro interno para una persona interesada en los servicios de la clinica. Solo se piden nombres y apellidos; el telefono y las observaciones son opcionales."
+        description="Crea un registro interno para una persona interesada en los servicios de la clinica. Se registran nombre y apellidos por separado; solo primer nombre y apellido paterno son obligatorios."
         actions={[{ label: 'Volver a prospectos', variant: 'ghost', to: '/admin/prospectos' }]}
       />
 
@@ -123,27 +135,49 @@ export function AdminProspectCreatePage() {
       >
         <form className="form-grid" onSubmit={handleSubmit}>
           <label className="field">
-            <span>Nombres</span>
+            <span>Primer nombre</span>
             <input
               className="input"
-              name="nombres"
+              name="primerNombre"
               onChange={handleChange}
               placeholder="Ej. Carla"
-              value={form.nombres}
+              value={form.primerNombre}
             />
-            {fieldErrors.nombres ? <small className="field__error">{fieldErrors.nombres}</small> : null}
+            {fieldErrors.primerNombre ? <small className="field__error">{fieldErrors.primerNombre}</small> : null}
           </label>
 
           <label className="field">
-            <span>Apellidos</span>
+            <span>Segundo nombre</span>
             <input
               className="input"
-              name="apellidos"
+              name="segundoNombre"
               onChange={handleChange}
-              placeholder="Ej. Flores Vargas"
-              value={form.apellidos}
+              placeholder="Opcional"
+              value={form.segundoNombre}
             />
-            {fieldErrors.apellidos ? <small className="field__error">{fieldErrors.apellidos}</small> : null}
+          </label>
+
+          <label className="field">
+            <span>Apellido paterno</span>
+            <input
+              className="input"
+              name="apellidoPaterno"
+              onChange={handleChange}
+              placeholder="Ej. Flores"
+              value={form.apellidoPaterno}
+            />
+            {fieldErrors.apellidoPaterno ? <small className="field__error">{fieldErrors.apellidoPaterno}</small> : null}
+          </label>
+
+          <label className="field">
+            <span>Apellido materno</span>
+            <input
+              className="input"
+              name="apellidoMaterno"
+              onChange={handleChange}
+              placeholder="Opcional"
+              value={form.apellidoMaterno}
+            />
           </label>
 
           <label className="field">
