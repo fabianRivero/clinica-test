@@ -299,8 +299,21 @@ export function removeAdminVisibleAvailability(slotId: number) {
   )
 }
 
-export function getAdminPayments() {
-  return requestJson<PaymentsResponse>('/api/admin/pagos/')
+export type AdminPaymentsFilters = {
+  status?: '' | 'PENDIENTE' | 'APROBADO' | 'RECHAZADO'
+  dateFrom?: string
+  dateTo?: string
+  search?: string
+}
+
+export function getAdminPayments(filters?: AdminPaymentsFilters) {
+  const params = new URLSearchParams()
+  if (filters?.status) params.set('status', filters.status)
+  if (filters?.dateFrom) params.set('dateFrom', filters.dateFrom)
+  if (filters?.dateTo) params.set('dateTo', filters.dateTo)
+  if (filters?.search) params.set('search', filters.search)
+  const query = params.toString()
+  return requestJson<PaymentsResponse>(`/api/admin/pagos/${query ? `?${query}` : ''}`)
 }
 
 export function updateAdminPaymentQrConfig(file: File, instructions: string) {

@@ -132,6 +132,14 @@ export function AdminProspectConvertPage() {
   const [firstPaymentDetails, setFirstPaymentDetails] = useState('')
 
   useEffect(() => {
+    if (!operationForm || firstPaymentAmount) return
+    const total = Number(operationForm.precioTotal)
+    const cuotas = Number(operationForm.cuotasTotales)
+    if (!Number.isFinite(total) || !Number.isFinite(cuotas) || cuotas <= 0) return
+    setFirstPaymentAmount((total / cuotas).toFixed(2))
+  }, [operationForm, firstPaymentAmount])
+
+  useEffect(() => {
     let cancelled = false
 
     async function load() {

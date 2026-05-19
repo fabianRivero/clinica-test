@@ -1383,6 +1383,10 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
                 monto_pagado=monto_primer_pago,
                 comprobante_url=primer_pago_comprobante,
                 detalles_pago=primer_pago_detalle or "Comprobante de primer pago registrado durante la conversión.",
+                estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
+                verificado_por=request.user,
+                fecha_verificacion=timezone.now(),
+                observacion_verificacion="Pago confirmado durante la conversión.",
             )
 
     ficha = FichaClinica.objects.create(

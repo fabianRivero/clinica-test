@@ -392,6 +392,17 @@ def _payment_qr_config_item(config):
 
 def _appointment_item(cita):
     can_manage = cita.estado == CitaMedica.Estado.PROGRAMADA
+    confirmation_status = "pendiente"
+    confirmation_label = "Pendiente"
+    if cita.estado == CitaMedica.Estado.CONFIRMADA:
+        if cita.metodo_confirmacion == CitaMedica.MetodoConfirmacion.BIOMETRICO:
+            confirmation_status = "biometria"
+            confirmation_label = "Biometria"
+        elif cita.metodo_confirmacion == CitaMedica.MetodoConfirmacion.TABLET:
+            confirmation_status = "qr"
+            confirmation_label = "QR"
+        else:
+            confirmation_label = "Confirmada"
     return {
         "id": f"CIT-{cita.pk:04d}",
         "rawId": cita.pk,
@@ -402,6 +413,8 @@ def _appointment_item(cita):
         "status": cita.get_estado_display(),
         "statusTone": _appointment_tone(cita),
         "biometric": "Confirmada" if cita.verif_biometria else "Pendiente",
+        "confirmationStatus": confirmation_status,
+        "confirmationLabel": confirmation_label,
         "details": cita.detalles_cita or "Sin notas adicionales.",
         "canManage": can_manage,
         "canMarkPendingBiometric": cita.estado == CitaMedica.Estado.PROGRAMADA,

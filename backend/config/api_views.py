@@ -3167,6 +3167,11 @@ def admin_update_operation_price_plan(request, operacion_id):
 @_admin_required
 def admin_pagos(request):
     branch = _get_user_branch(request)
+    status_filter = (request.GET.get("status") or "").strip().upper()
+    date_from = (request.GET.get("dateFrom") or "").strip()
+    date_to = (request.GET.get("dateTo") or "").strip()
+    search = (request.GET.get("search") or "").strip()
+
     pagos_qs = (
         PagoRealizado.objects.select_related(
             "cuota__operacion__paciente__usuario",
@@ -3176,6 +3181,22 @@ def admin_pagos(request):
     )
     if branch:
         pagos_qs = pagos_qs.filter(cuota__operacion__citas_medicas__sucursal=branch).distinct()
+    valid_statuses = {choice[0] for choice in PagoRealizado.EstadoVerificacion.choices}
+    if status_filter and status_filter in valid_statuses:
+        pagos_qs = pagos_qs.filter(estado_verificacion=status_filter)
+    if date_from:
+        pagos_qs = pagos_qs.filter(created_at__date__gte=date_from)
+    if date_to:
+        pagos_qs = pagos_qs.filter(created_at__date__lte=date_to)
+    if search:
+        pagos_qs = pagos_qs.filter(
+            Q(cuota__operacion__paciente__usuario__primer_nombre__icontains=search)
+            | Q(cuota__operacion__paciente__usuario__segundo_nombre__icontains=search)
+            | Q(cuota__operacion__paciente__usuario__apellido_paterno__icontains=search)
+            | Q(cuota__operacion__paciente__usuario__apellido_materno__icontains=search)
+            | Q(cuota__operacion__servicio_config__proc_estetico__proceso__icontains=search)
+            | Q(cuota__operacion__servicio_config__tipo_servicio__tipo__icontains=search)
+        )
     pending_amount = sum(
         payment.monto_pagado
         for payment in pagos_qs

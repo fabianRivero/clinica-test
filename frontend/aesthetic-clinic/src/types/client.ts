@@ -80,6 +80,8 @@ export type ClientAppointment = {
   status: string
   statusTone: 'approved' | 'warning' | 'danger' | 'observed' | 'pending'
   biometric: string
+  confirmationStatus: 'qr' | 'biometria' | 'pendiente'
+  confirmationLabel: string
   details: string
   canManage: boolean
   canMarkPendingBiometric: boolean
