@@ -3180,7 +3180,9 @@ def admin_pagos(request):
         ).order_by("-created_at")
     )
     if branch:
-        pagos_qs = pagos_qs.filter(cuota__operacion__citas_medicas__sucursal=branch).distinct()
+        # Filtrar por la sucursal activa del cliente/operacion sin depender de citas,
+        # para incluir pagos pendientes aunque la operacion aun no tenga agenda.
+        pagos_qs = pagos_qs.filter(cuota__operacion__paciente__sucursal_registro=branch).distinct()
     valid_statuses = {choice[0] for choice in PagoRealizado.EstadoVerificacion.choices}
     if status_filter and status_filter in valid_statuses:
         pagos_qs = pagos_qs.filter(estado_verificacion=status_filter)
