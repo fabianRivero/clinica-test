@@ -108,16 +108,18 @@ class Command(BaseCommand):
 
     def _seed_prospects(self, branches):
         prospect_specs = [
-            ("Prospecto Norte Uno", "Demo", "71110001", branches["norte"]),
-            ("Prospecto Norte Dos", "Demo", "71110002", branches["norte"]),
-            ("Prospecto Sur Uno", "Demo", "72220001", branches["sur"]),
+            ("Prospecto", "Norte Uno", "Demo", "", "71110001", branches["norte"]),
+            ("Prospecto", "Norte Dos", "Demo", "", "71110002", branches["norte"]),
+            ("Prospecto", "Sur Uno", "Demo", "", "72220001", branches["sur"]),
         ]
-        for nombres, apellidos, telefono, branch in prospect_specs:
+        for primer_nombre, segundo_nombre, apellido_paterno, apellido_materno, telefono, branch in prospect_specs:
             Prospecto.objects.update_or_create(
                 telefono=telefono,
                 defaults={
-                    "nombres": nombres,
-                    "apellidos": apellidos,
+                    "primer_nombre": primer_nombre,
+                    "segundo_nombre": segundo_nombre,
+                    "apellido_paterno": apellido_paterno,
+                    "apellido_materno": apellido_materno,
                     "sucursal_registro": branch,
                     "estado": Prospecto.Estado.PASAJERO,
                     "observaciones": "Escenario local multi-sucursal.",

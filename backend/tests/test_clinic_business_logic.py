@@ -51,18 +51,18 @@ class ClinicBusinessTests(TestCase):
     
     def test_prospect_isolation(self):
         """Un admin de sucursal solo debe ver sus prospectos."""
-        Prospecto.objects.create(nombres="Norte", apellidos="Test", sucursal_registro=self.suc_norte)
-        Prospecto.objects.create(nombres="Sur", apellidos="Test", sucursal_registro=self.suc_sur)
+        Prospecto.objects.create(primer_nombre="Norte", apellido_paterno="Test", sucursal_registro=self.suc_norte)
+        Prospecto.objects.create(primer_nombre="Sur", apellido_paterno="Test", sucursal_registro=self.suc_sur)
 
         response = self.client_sur.get('/api/admin/prospectos/')
         self.assertEqual(len(response.json()['prospects']), 1)
-        self.assertEqual(response.json()['prospects'][0]['nombres'], "Sur")
+        self.assertEqual(response.json()['prospects'][0]['segundoNombre'], "Sur")
 
     # --- TESTS DE CONVERSION (4 PASOS) ---
 
     def test_step_2_mandatory_zones(self):
         """El paso 2 debe exigir zona general y especifica."""
-        prospecto = Prospecto.objects.create(nombres="Test", apellidos="Valid", sucursal_registro=self.suc_sur)
+        prospecto = Prospecto.objects.create(primer_nombre="Test", apellido_paterno="Valid", sucursal_registro=self.suc_sur)
         
         url = f'/api/admin/prospectos/{prospecto.id}/convertir/operacion/'
         payload = {
@@ -83,7 +83,7 @@ class ClinicBusinessTests(TestCase):
 
     def test_step_3_mandatory_medical_analysis(self):
         """El paso 3 debe exigir analisis estetico (Piel, Deshidratacion, Grosor)."""
-        prospecto = Prospecto.objects.create(nombres="Test", apellidos="Med", sucursal_registro=self.suc_sur)
+        prospecto = Prospecto.objects.create(primer_nombre="Test", apellido_paterno="Med", sucursal_registro=self.suc_sur)
         # Necesitamos el PDF ficticio para que no falle por falta de archivo (usando mock o simulando multipart)
         from django.core.files.uploadedfile import SimpleUploadedFile
         pdf_file = SimpleUploadedFile("ficha.pdf", b"file_content", content_type="application/pdf")

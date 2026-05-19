@@ -675,14 +675,16 @@ class Command(BaseCommand):
 
     def _seed_prospects(self, branches):
         prospect_specs = [
-            {"nombres": "Juan", "apellidos": "Perez", "telefono": "70000001", "sucursal": branches["A"]},
-            {"nombres": "Maria", "apellidos": "Gomez", "telefono": "70000002", "sucursal": branches["B"]},
+            {"primer_nombre": "Juan", "segundo_nombre": "", "apellido_paterno": "Perez", "apellido_materno": "", "telefono": "70000001", "sucursal": branches["A"]},
+            {"primer_nombre": "Maria", "segundo_nombre": "", "apellido_paterno": "Gomez", "apellido_materno": "", "telefono": "70000002", "sucursal": branches["B"]},
         ]
         for spec in prospect_specs:
             Prospecto.objects.get_or_create(
-                nombres=spec["nombres"],
-                apellidos=spec["apellidos"],
+                primer_nombre=spec["primer_nombre"],
+                apellido_paterno=spec["apellido_paterno"],
                 defaults={
+                    "segundo_nombre": spec["segundo_nombre"],
+                    "apellido_materno": spec["apellido_materno"],
                     "telefono": spec["telefono"],
                     "sucursal_registro": spec["sucursal"],
                     "estado": Prospecto.Estado.PASAJERO,
@@ -721,8 +723,10 @@ class Command(BaseCommand):
         Prospecto.objects.update_or_create(
             convertido_a_cliente=cliente_demo,
             defaults={
-                "nombres": "Paciente",
-                "apellidos": "Demo",
+                "primer_nombre": "Paciente",
+                "segundo_nombre": "",
+                "apellido_paterno": "Demo",
+                "apellido_materno": "",
                 "telefono": "78888888",
                 "sucursal_registro": branches["A"],
                 "estado": Prospecto.Estado.CONVERTIDO,
