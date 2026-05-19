@@ -112,6 +112,8 @@ export function AdminProspectsPage() {
     apellidoMaterno: string
     phone: string
     observations: string
+    stateValue: 'PASAJERO' | 'DESCARTADO'
+    appointmentStatuses: Record<number, string>
   }) {
     if (!editingProspect?.rawId) return
     setIsUpdating(true)
@@ -660,10 +662,13 @@ function EditProspectModal({
   const [apellidoMaterno, setApellidoMaterno] = useState(prospect.apellidoMaterno || '')
   const [phone, setPhone] = useState(prospect.phone || '')
   const [observations, setObservations] = useState(prospect.observations || '')
+  const [stateValue, setStateValue] = useState<'PASAJERO' | 'DESCARTADO'>(
+    prospect.stateValue === 'DESCARTADO' ? 'DESCARTADO' : 'PASAJERO',
+  )
   const [tempStatuses, setTempStatuses] = useState<Record<number, string>>({})
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null)
 
-  const isEditable = prospect.state === 'Pasajero'
+  const isEditable = prospect.state !== 'Convertido'
 
   return (
     <div className="booking-modal-overlay">
@@ -741,6 +746,18 @@ function EditProspectModal({
               onChange={e => setObservations(e.target.value)}
               disabled={!isEditable}
             />
+          </label>
+          <label className="field" style={{ marginTop: '1rem' }}>
+            <span>Estado del prospecto</span>
+            <select
+              className="input"
+              value={stateValue}
+              onChange={(e) => setStateValue(e.target.value as 'PASAJERO' | 'DESCARTADO')}
+              disabled={!isEditable}
+            >
+              <option value="PASAJERO">Pasajero</option>
+              <option value="DESCARTADO">Descartado</option>
+            </select>
           </label>
 
           {prospect.medicalAppointments && prospect.medicalAppointments.length > 0 && (
@@ -834,6 +851,7 @@ function EditProspectModal({
                   apellidoMaterno,
                   phone,
                   observations,
+                  stateValue,
                   appointmentStatuses: tempStatuses,
                 })
               }
