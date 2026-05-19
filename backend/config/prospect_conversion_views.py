@@ -1371,6 +1371,11 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
     primer_pago_comprobante = request.FILES.get("primerPagoComprobante")
     primer_pago_monto = (request.POST.get("primerPagoMonto") or "").strip()
     primer_pago_detalle = (request.POST.get("primerPagoDetalle") or "").strip()
+    if (primer_pago_monto or primer_pago_detalle) and not primer_pago_comprobante:
+        return _json(
+            {"detail": "Debes adjuntar el comprobante para registrar el primer pago en este paso."},
+            status=400,
+        )
     if primer_pago_comprobante:
         primera_cuota = operacion.cuotas_plan_pagos.order_by("nro_cuota", "fecha_vencimiento").first()
         if primera_cuota:

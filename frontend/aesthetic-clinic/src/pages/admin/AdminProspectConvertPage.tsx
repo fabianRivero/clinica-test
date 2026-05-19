@@ -1547,7 +1547,7 @@ export function AdminProspectConvertPage() {
         </SectionCard>
       ) : null}
       {activeStep === 5 ? (
-        <SectionCard eyebrow="Paso 5" title="Primer pago (opcional)" description="Muestra el QR de pago, permite adjuntar comprobante y confirmar el pago para revision administrativa.">
+        <SectionCard eyebrow="Paso 5" title="Primer pago" description="Activa la casilla para registrar el primer pago en este paso. Si lo activas, el comprobante es obligatorio.">
           <form className="form-grid" onSubmit={handleFinalize}>
             <label className="field field--full" style={{ cursor: 'pointer' }}>
               <span>Registrar primer pago en este paso</span>
