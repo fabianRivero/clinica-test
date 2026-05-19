@@ -221,8 +221,26 @@ def _build_initial_client_user_data(cliente):
 
 
 def _build_initial_client_medical_data(cliente):
-    # Intentar obtener la ficha clinica de la ultima operacion finalizada o mas reciente
-    ultima_operacion = cliente.operaciones.order_by("-created_at").first()
+    # Tomar la ultima operacion con ficha clinica en estados relevantes.
+    ultima_operacion = (
+        cliente.operaciones.filter(
+            estado__in=[Operacion.Estado.EN_PROCESO, Operacion.Estado.FINALIZADA],
+            ficha_clinica__isnull=False,
+        )
+        .select_related("ficha_clinica")
+        .order_by("-ficha_clinica__fecha_ficha", "-created_at")
+        .first()
+    )
+
+    # Fallback legacy: si no hay estados relevantes con ficha, usar cualquier operacion con ficha.
+    if not ultima_operacion:
+        ultima_operacion = (
+            cliente.operaciones.filter(ficha_clinica__isnull=False)
+            .select_related("ficha_clinica")
+            .order_by("-ficha_clinica__fecha_ficha", "-created_at")
+            .first()
+        )
+
     data = _blank_medical_data()
     
     if ultima_operacion and hasattr(ultima_operacion, "ficha_clinica"):
