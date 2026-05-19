@@ -2861,13 +2861,19 @@ def admin_confirm_appointment_biometric(request, appointment_id):
 @require_POST
 @_admin_required
 def admin_crear_prospecto(request):
+    def _capitalize_first_letter(value):
+        text = (value or "").strip()
+        if not text:
+            return ""
+        return text[:1].upper() + text[1:]
+
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
-    nombres = (payload.get("nombres") or "").strip()
-    apellidos = (payload.get("apellidos") or "").strip()
+    nombres = _capitalize_first_letter(payload.get("nombres"))
+    apellidos = _capitalize_first_letter(payload.get("apellidos"))
     telefono = (payload.get("telefono") or "").strip()
     observaciones = (payload.get("observaciones") or "").strip()
     estado = (payload.get("estado") or Prospecto.Estado.PASAJERO).strip()
