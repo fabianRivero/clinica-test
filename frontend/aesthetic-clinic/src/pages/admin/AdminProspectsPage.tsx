@@ -668,7 +668,7 @@ function EditProspectModal({
   const [tempStatuses, setTempStatuses] = useState<Record<number, string>>({})
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null)
 
-  const isEditable = prospect.state === 'Pasajero'
+  const isEditable = prospect.state !== 'Convertido'
 
   return (
     <div className="booking-modal-overlay">
