@@ -2350,18 +2350,32 @@ def admin_update_prospect(request, prospecto_id):
     if payload is None:
         return _json({"detail": "Datos invalidos."}, status=400)
 
+    def _capitalize_first_letter(value):
+        text = (value or "").strip()
+        if not text:
+            return ""
+        return text[:1].upper() + text[1:]
+
     if "firstName" in payload or "primerNombre" in payload:
-        prospecto.primer_nombre = (payload.get("primerNombre") or payload.get("firstName") or "").strip()
+        prospecto.primer_nombre = _capitalize_first_letter(payload.get("primerNombre") or payload.get("firstName"))
     if "segundoNombre" in payload:
-        prospecto.segundo_nombre = (payload.get("segundoNombre") or "").strip()
+        prospecto.segundo_nombre = _capitalize_first_letter(payload.get("segundoNombre"))
     if "lastName" in payload or "apellidoPaterno" in payload:
-        prospecto.apellido_paterno = (payload.get("apellidoPaterno") or payload.get("lastName") or "").strip()
+        prospecto.apellido_paterno = _capitalize_first_letter(payload.get("apellidoPaterno") or payload.get("lastName"))
     if "apellidoMaterno" in payload:
-        prospecto.apellido_materno = (payload.get("apellidoMaterno") or "").strip()
+        prospecto.apellido_materno = _capitalize_first_letter(payload.get("apellidoMaterno"))
     if "phone" in payload:
         prospecto.telefono = payload["phone"]
     if "observations" in payload:
         prospecto.observaciones = payload["observations"]
+
+    errors = {}
+    if not prospecto.primer_nombre:
+        errors["primerNombre"] = "El primer nombre es obligatorio."
+    if not prospecto.apellido_paterno:
+        errors["apellidoPaterno"] = "El apellido paterno es obligatorio."
+    if errors:
+        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
 
     prospecto.save()
 
