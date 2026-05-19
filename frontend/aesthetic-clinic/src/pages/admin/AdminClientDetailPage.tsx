@@ -484,7 +484,7 @@ export function AdminClientDetailPage() {
                   <th>Especialista</th>
                   <th>Fecha</th>
                   <th>Estado</th>
-                  <th>Biometria</th>
+                  <th>Verificacion</th>
                   <th>Acciones</th>
                 </tr>
               </thead>
@@ -495,7 +495,7 @@ export function AdminClientDetailPage() {
                     <td>{appointment.specialist}</td>
                     <td>{appointment.dateTime}</td>
                     <td><StatusBadge tone={appointment.statusTone}>{appointment.status}</StatusBadge></td>
-                    <td>{appointment.biometric}</td>
+                    <td>{appointment.confirmationLabel}</td>
                     <td>
                       <div className="table-action-list">
                         {appointment.canMarkPendingBiometric ? (
