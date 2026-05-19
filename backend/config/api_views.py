@@ -2368,6 +2368,15 @@ def admin_update_prospect(request, prospecto_id):
         prospecto.telefono = payload["phone"]
     if "observations" in payload:
         prospecto.observaciones = payload["observations"]
+    if "stateValue" in payload:
+        requested_state = (payload.get("stateValue") or "").strip().upper()
+        if requested_state in {Prospecto.Estado.PASAJERO, Prospecto.Estado.DESCARTADO}:
+            prospecto.estado = requested_state
+        elif requested_state:
+            return _json(
+                {"detail": "El estado seleccionado no es valido para este prospecto."},
+                status=400,
+            )
 
     errors = {}
     if not prospecto.primer_nombre:

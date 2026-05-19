@@ -193,6 +193,8 @@ export function updateAdminProspect(
     apellidoMaterno?: string
     phone?: string
     observations?: string
+    stateValue?: 'PASAJERO' | 'DESCARTADO'
+    appointmentStatuses?: Record<number, string>
   },
 ) {
   return requestJsonWithBody<{ detail: string; prospect: any }>(
