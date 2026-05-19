@@ -145,7 +145,7 @@ export function AdminPaymentsPage() {
 
   const filteredPayments = (data?.payments ?? []).filter((payment) => {
     if (statusFilter) {
-      const statusMap: Record<NonNullable<AdminPaymentsFilters['status']>, string> = {
+      const statusMap: Record<'PENDIENTE' | 'APROBADO' | 'RECHAZADO', string> = {
         PENDIENTE: 'pendiente',
         APROBADO: 'aprobado',
         RECHAZADO: 'observado',

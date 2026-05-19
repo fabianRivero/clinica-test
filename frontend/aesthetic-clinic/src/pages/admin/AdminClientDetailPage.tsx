@@ -16,6 +16,7 @@ import {
   getAdminClientDetail,
   inactivateAdminClient,
   markAdminAppointmentPendingBiometric,
+  updateAdminPaymentStatus,
 } from '../../services/api/admin'
 import { verifyMockFingerprint } from '../../services/fingerprint/mockFingerprint'
 import type {
@@ -46,6 +47,10 @@ export function AdminClientDetailPage() {
   const [isFreeBookingKey, setIsFreeBookingKey] = useState<string | null>(null)
   const [isInactivating, setIsInactivating] = useState(false)
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
+  const [paymentNotes, setPaymentNotes] = useState<Record<number, string>>({})
+  const [paymentActionId, setPaymentActionId] = useState<number | null>(null)
+  const [operationStatusFilter, setOperationStatusFilter] = useState<string>('')
+  const [pendingQuotaProcedureFilter, setPendingQuotaProcedureFilter] = useState<string>('')
   const [isMigrating, setIsMigrating] = useState(false)
   const { user } = useAuth()
   const isMainAdmin = user?.isMainAdmin || user?.isSuperuser
@@ -279,6 +284,40 @@ export function AdminClientDetailPage() {
     }
   }
 
+
+  const getPaymentNote = (paymentId: number, fallbackNote?: string) =>
+    paymentNotes[paymentId] ?? fallbackNote ?? ''
+
+  const handlePaymentNoteChange = (paymentId: number, note: string) => {
+    setPaymentNotes((current) => ({
+      ...current,
+      [paymentId]: note,
+    }))
+  }
+
+  async function handlePaymentStatusUpdate(paymentId: number, status: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO', fallbackNote?: string) {
+    setPaymentActionId(paymentId)
+    try {
+      const note = status === 'PENDIENTE' ? '' : getPaymentNote(paymentId, fallbackNote)
+      const response = await updateAdminPaymentStatus(paymentId, { status, note })
+      showNotification({
+        title: 'Pago actualizado',
+        message: response.detail,
+        tone: status === 'APROBADO' ? 'success' : status === 'RECHAZADO' ? 'warning' : 'info',
+      })
+      setPaymentNotes((current) => ({ ...current, [paymentId]: response.payment.note || '' }))
+      reload()
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo actualizar el pago',
+        message: requestError instanceof Error ? requestError.message : 'Ocurrio un error al cambiar el estado del pago.',
+        tone: 'danger',
+      })
+    } finally {
+      setPaymentActionId(null)
+    }
+  }
+
   if (isLoading && !data) {
     return (
       <div className="page-stack">
@@ -300,6 +339,15 @@ export function AdminClientDetailPage() {
       </div>
     )
   }
+
+  const operationStatuses = Array.from(new Set(data.operations.map((operation) => operation.status)))
+  const filteredOperations = data.operations.filter((operation) =>
+    operationStatusFilter ? operation.status === operationStatusFilter : true,
+  )
+  const pendingQuotaProcedures = Array.from(new Set(data.pendingQuotas.map((quota) => quota.operation)))
+  const filteredPendingQuotas = data.pendingQuotas.filter((quota) =>
+    pendingQuotaProcedureFilter ? quota.operation === pendingQuotaProcedureFilter : true,
+  )
 
   return (
     <div className="page-stack">
@@ -559,8 +607,19 @@ export function AdminClientDetailPage() {
 
         <SectionCard eyebrow="Pagos" title="Pagos pendientes" description="Cuotas aun no pagadas o pendientes de completar.">
           {data.pendingQuotas.length ? (
-            <div className="capacity-list">
-              {data.pendingQuotas.map((quota) => (
+            <>
+              <label className="field" style={{ marginBottom: 12 }}>
+                <span>Filtrar por procedimiento</span>
+                <select className="input" value={pendingQuotaProcedureFilter} onChange={(event) => setPendingQuotaProcedureFilter(event.target.value)}>
+                  <option value="">Todos los procedimientos</option>
+                  {pendingQuotaProcedures.map((procedure) => (
+                    <option key={procedure} value={procedure}>{procedure}</option>
+                  ))}
+                </select>
+              </label>
+              {filteredPendingQuotas.length ? (
+                <div className="capacity-list">
+              {filteredPendingQuotas.map((quota) => (
                 <article className="capacity-item" key={quota.id}>
                   <div className="capacity-item__header">
                     <div><strong>{quota.operation} | {quota.quotaLabel}</strong><p>{quota.amount} | Vence: {quota.dueDate}</p></div>
@@ -569,6 +628,8 @@ export function AdminClientDetailPage() {
                 </article>
               ))}
             </div>
+              ) : <DataState title="Sin resultados" message="No hay pagos pendientes para el procedimiento seleccionado." />}
+            </>
           ) : <DataState title="Sin pagos pendientes" message="No hay cuotas pendientes para este cliente." />}
         </SectionCard>
       </section>
@@ -585,6 +646,8 @@ export function AdminClientDetailPage() {
                   <th>Fecha</th>
                   <th>Estado</th>
                   <th>Comprobante</th>
+                  <th>Observacion</th>
+                  <th>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -596,6 +659,21 @@ export function AdminClientDetailPage() {
                     <td>{payment.submittedAt}</td>
                     <td><StatusBadge tone={payment.statusTone}>{payment.status}</StatusBadge></td>
                     <td>{payment.receiptUrl ? <a className="table-strong-link" href={payment.receiptUrl} target="_blank" rel="noreferrer">Ver</a> : 'Sin archivo'}</td>
+                    <td>
+                      <input
+                        className="input"
+                        value={getPaymentNote(payment.rawId, payment.note)}
+                        onChange={(event) => handlePaymentNoteChange(payment.rawId, event.target.value)}
+                        placeholder="Nota para aprobacion u observacion"
+                      />
+                    </td>
+                    <td>
+                      <div className="table-action-list">
+                        <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || payment.status === 'aprobado'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, 'APROBADO', payment.note)}>Aprobar</button>
+                        <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || payment.status === 'observado'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, 'RECHAZADO', payment.note)}>Observar</button>
+                        <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || payment.status === 'pendiente'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, 'PENDIENTE', payment.note)}>Pendiente</button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -606,13 +684,25 @@ export function AdminClientDetailPage() {
 
       <SectionCard eyebrow="Tratamientos" title="Procedimientos del cliente" description="Resumen operativo de tratamientos activos e historicos.">
         {data.operations.length ? (
-          <div className="capacity-list">
-            {data.operations.map((operation) => (
+          <>
+            <label className="field" style={{ marginBottom: 12 }}>
+              <span>Filtrar por estado</span>
+              <select className="input" value={operationStatusFilter} onChange={(event) => setOperationStatusFilter(event.target.value)}>
+                <option value="">Todos los estados</option>
+                {operationStatuses.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </label>
+            {filteredOperations.length ? (
+              <div className="capacity-list">
+            {filteredOperations.map((operation) => (
               <article className="capacity-item" key={operation.id}>
                 <div className="capacity-item__header">
                   <div>
                     <strong>{operation.procedure}</strong>
                     <p>{operation.zone} | {operation.quotaSummary}</p>
+                    <p>Establecido: {operation.startedAt || 'Fecha no registrada'}</p>
                   </div>
                   <StatusBadge tone={operation.statusTone}>{operation.status}</StatusBadge>
                 </div>
@@ -626,6 +716,8 @@ export function AdminClientDetailPage() {
               </article>
             ))}
           </div>
+            ) : <DataState title="Sin resultados" message="No hay procedimientos para el estado seleccionado." />}
+          </>
         ) : <DataState title="Sin procedimientos" message="No hay procedimientos asociados a este cliente." />}
       </SectionCard>
     </div>

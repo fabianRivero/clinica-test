@@ -58,6 +58,7 @@ export type ClientQuota = {
 
 export type ClientPayment = {
   id: string
+  rawId: number
   operation: string
   quotaLabel: string
   amount: string

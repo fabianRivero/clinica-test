@@ -365,6 +365,7 @@ def _quota_item(cuota):
 def _payment_item(payment):
     return {
         "id": f"PAY-{payment.pk:04d}",
+        "rawId": payment.pk,
         "operation": _procedure_name(payment.cuota.operacion),
         "quotaLabel": f"Cuota {payment.cuota.nro_cuota}",
         "amount": _currency(payment.monto_pagado),
