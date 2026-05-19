@@ -27,6 +27,7 @@ export function AdminPaymentsPage() {
   const [statusFilter, setStatusFilter] = useState<AdminPaymentsFilters['status']>('')
   const [dateFromFilter, setDateFromFilter] = useState('')
   const [dateToFilter, setDateToFilter] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loader = useCallback(
@@ -47,6 +48,14 @@ export function AdminPaymentsPage() {
       setInstructions(data.paymentQrConfig.instructions)
     }
   }, [data])
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSearchFilter(searchInput.trim())
+    }, 400)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [searchInput])
 
   const handleQrFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     setQrFile(event.target.files?.[0] || null)
@@ -252,7 +261,7 @@ export function AdminPaymentsPage() {
               </label>
               <label className="field field--full">
                 <span>Buscar paciente/procedimiento</span>
-                <input className="input" value={searchFilter} onChange={(event) => setSearchFilter(event.target.value)} />
+                <input className="input" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
               </label>
             </div>
             {data.payments.length ? (
