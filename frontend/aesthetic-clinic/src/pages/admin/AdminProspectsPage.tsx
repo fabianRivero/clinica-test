@@ -105,7 +105,14 @@ export function AdminProspectsPage() {
     }
   }
 
-  async function handleUpdateProspect(data: { firstName: string; lastName: string; phone: string; observations: string }) {
+  async function handleUpdateProspect(data: {
+    primerNombre: string
+    segundoNombre: string
+    apellidoPaterno: string
+    apellidoMaterno: string
+    phone: string
+    observations: string
+  }) {
     if (!editingProspect?.rawId) return
     setIsUpdating(true)
     try {
@@ -647,8 +654,10 @@ function EditProspectModal({
   isUpdating: boolean
   handleCancelAppointment: (id: number) => Promise<void>
 }) {
-  const [firstName, setFirstName] = useState(prospect.firstName || '')
-  const [lastName, setLastName] = useState(prospect.lastName || '')
+  const [primerNombre, setPrimerNombre] = useState(prospect.primerNombre || prospect.firstName || '')
+  const [segundoNombre, setSegundoNombre] = useState(prospect.segundoNombre || '')
+  const [apellidoPaterno, setApellidoPaterno] = useState(prospect.apellidoPaterno || prospect.lastName || '')
+  const [apellidoMaterno, setApellidoMaterno] = useState(prospect.apellidoMaterno || '')
   const [phone, setPhone] = useState(prospect.phone || '')
   const [observations, setObservations] = useState(prospect.observations || '')
   const [tempStatuses, setTempStatuses] = useState<Record<number, string>>({})
@@ -678,20 +687,38 @@ function EditProspectModal({
 
           <div className="form-grid">
             <label className="field">
-              <span>Nombres</span>
+              <span>Primer nombre</span>
               <input
                 className="input"
-                value={firstName}
-                onChange={e => setFirstName(e.target.value)}
+                value={primerNombre}
+                onChange={e => setPrimerNombre(e.target.value)}
                 disabled={!isEditable}
               />
             </label>
             <label className="field">
-              <span>Apellidos</span>
+              <span>Segundo nombre</span>
               <input
                 className="input"
-                value={lastName}
-                onChange={e => setLastName(e.target.value)}
+                value={segundoNombre}
+                onChange={e => setSegundoNombre(e.target.value)}
+                disabled={!isEditable}
+              />
+            </label>
+            <label className="field">
+              <span>Apellido paterno</span>
+              <input
+                className="input"
+                value={apellidoPaterno}
+                onChange={e => setApellidoPaterno(e.target.value)}
+                disabled={!isEditable}
+              />
+            </label>
+            <label className="field">
+              <span>Apellido materno</span>
+              <input
+                className="input"
+                value={apellidoMaterno}
+                onChange={e => setApellidoMaterno(e.target.value)}
                 disabled={!isEditable}
               />
             </label>
@@ -799,7 +826,17 @@ function EditProspectModal({
             <button
               className="button button--primary"
               disabled={isUpdating}
-              onClick={() => void onSave({ firstName, lastName, phone, observations, appointmentStatuses: tempStatuses })}
+              onClick={() =>
+                void onSave({
+                  primerNombre,
+                  segundoNombre,
+                  apellidoPaterno,
+                  apellidoMaterno,
+                  phone,
+                  observations,
+                  appointmentStatuses: tempStatuses,
+                })
+              }
             >
               {isUpdating ? 'Guardando...' : 'Guardar Cambios'}
             </button>

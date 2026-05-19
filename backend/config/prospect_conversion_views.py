@@ -182,10 +182,10 @@ def _cap(text):
     return raw[0].upper() + raw[1:]
 def _build_initial_user_data(prospecto):
     return {
-        "primerNombre": prospecto.nombres,
-        "segundoNombre": "",
-        "apellidoPaterno": prospecto.apellidos,
-        "apellidoMaterno": "",
+        "primerNombre": prospecto.primer_nombre,
+        "segundoNombre": prospecto.segundo_nombre,
+        "apellidoPaterno": prospecto.apellido_paterno,
+        "apellidoMaterno": prospecto.apellido_materno,
         "username": getattr(prospecto, "username", "") or "",
         "email": getattr(prospecto, "email", "") or "",
         "telefono": prospecto.telefono or "",

@@ -11,8 +11,10 @@ class Prospecto(TimeStampedModel):
         CONVERTIDO = "CONVERTIDO", "Convertido"
         DESCARTADO = "DESCARTADO", "Descartado"
 
-    nombres = models.CharField(max_length=120)
-    apellidos = models.CharField(max_length=160)
+    primer_nombre = models.CharField(max_length=120)
+    segundo_nombre = models.CharField(max_length=120, blank=True, default="")
+    apellido_paterno = models.CharField(max_length=120)
+    apellido_materno = models.CharField(max_length=120, blank=True, default="")
     telefono = models.CharField(max_length=30, blank=True)
 
     estado = models.CharField(
@@ -63,7 +65,13 @@ class Prospecto(TimeStampedModel):
             )
 
     def __str__(self):
-        return f"{self.nombres} {self.apellidos}".strip()
+        parts = [
+            self.primer_nombre,
+            self.segundo_nombre,
+            self.apellido_paterno,
+            self.apellido_materno,
+        ]
+        return " ".join(part for part in parts if part).strip()
 
 
 class ProspectoConversionBorrador(TimeStampedModel):

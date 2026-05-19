@@ -446,8 +446,12 @@ def _prospect_item(prospecto):
         "id": f"PRO-{prospecto.pk:04d}",
         "rawId": prospecto.pk,
         "name": str(prospecto),
-        "firstName": prospecto.nombres,
-        "lastName": prospecto.apellidos,
+        "firstName": prospecto.primer_nombre,
+        "lastName": prospecto.apellido_paterno,
+        "primerNombre": prospecto.primer_nombre,
+        "segundoNombre": prospecto.segundo_nombre,
+        "apellidoPaterno": prospecto.apellido_paterno,
+        "apellidoMaterno": prospecto.apellido_materno,
         "phone": prospecto.telefono or "Sin telefono",
         "interest": _prospect_interest(prospecto),
         "registeredBy": _full_name(prospecto.registrado_por),
@@ -2074,16 +2078,30 @@ def admin_prospect_check_duplicates(request):
     if not payload:
         return _json({"detail": "Datos invalidos."}, status=400)
 
-    nombres = (payload.get("nombres") or "").strip()
-    apellidos = (payload.get("apellidos") or "").strip()
+    primer_nombre = (payload.get("primerNombre") or payload.get("nombres") or "").strip()
+    segundo_nombre = (payload.get("segundoNombre") or "").strip()
+    apellido_paterno = (payload.get("apellidoPaterno") or payload.get("apellidos") or "").strip()
+    apellido_materno = (payload.get("apellidoMaterno") or "").strip()
     telefono = (payload.get("telefono") or "").strip()
 
-    if not nombres or not apellidos:
-        return _json({"detail": "Nombres y apellidos son requeridos."}, status=400)
+    if not primer_nombre or not apellido_paterno:
+        return _json({"detail": "Primer nombre y apellido paterno son requeridos."}, status=400)
 
     # Buscar coincidencias exactas o similares
     # Filtramos por nombre + apellido o por telefono
-    duplicate_filter = Q(nombres__iexact=nombres, apellidos__iexact=apellidos)
+    duplicate_filter = Q(primer_nombre__iexact=primer_nombre, apellido_paterno__iexact=apellido_paterno)
+    if segundo_nombre:
+        duplicate_filter |= Q(
+            primer_nombre__iexact=primer_nombre,
+            segundo_nombre__iexact=segundo_nombre,
+            apellido_paterno__iexact=apellido_paterno,
+        )
+    if apellido_materno:
+        duplicate_filter |= Q(
+            primer_nombre__iexact=primer_nombre,
+            apellido_paterno__iexact=apellido_paterno,
+            apellido_materno__iexact=apellido_materno,
+        )
     if telefono:
         duplicate_filter |= Q(telefono=telefono)
     duplicates = Prospecto.objects.filter(duplicate_filter).exclude(estado=Prospecto.Estado.CONVERTIDO)
@@ -2095,10 +2113,10 @@ def admin_prospect_check_duplicates(request):
         
         return _json({
             "exists": True,
-            "message": f"Atencion: Ya existe un prospecto con datos similares ({match.nombres} {match.apellidos}) registrado en {branch_info}.",
+            "message": f"Atencion: Ya existe un prospecto con datos similares ({match}) registrado en {branch_info}.",
             "match": {
                 "id": match.pk,
-                "name": f"{match.nombres} {match.apellidos}",
+                "name": str(match),
                 "branch": branch_info
             }
         })
@@ -2332,14 +2350,32 @@ def admin_update_prospect(request, prospecto_id):
     if payload is None:
         return _json({"detail": "Datos invalidos."}, status=400)
 
-    if "firstName" in payload:
-        prospecto.nombres = payload["firstName"]
-    if "lastName" in payload:
-        prospecto.apellidos = payload["lastName"]
+    def _capitalize_first_letter(value):
+        text = (value or "").strip()
+        if not text:
+            return ""
+        return text[:1].upper() + text[1:]
+
+    if "firstName" in payload or "primerNombre" in payload:
+        prospecto.primer_nombre = _capitalize_first_letter(payload.get("primerNombre") or payload.get("firstName"))
+    if "segundoNombre" in payload:
+        prospecto.segundo_nombre = _capitalize_first_letter(payload.get("segundoNombre"))
+    if "lastName" in payload or "apellidoPaterno" in payload:
+        prospecto.apellido_paterno = _capitalize_first_letter(payload.get("apellidoPaterno") or payload.get("lastName"))
+    if "apellidoMaterno" in payload:
+        prospecto.apellido_materno = _capitalize_first_letter(payload.get("apellidoMaterno"))
     if "phone" in payload:
         prospecto.telefono = payload["phone"]
     if "observations" in payload:
         prospecto.observaciones = payload["observations"]
+
+    errors = {}
+    if not prospecto.primer_nombre:
+        errors["primerNombre"] = "El primer nombre es obligatorio."
+    if not prospecto.apellido_paterno:
+        errors["apellidoPaterno"] = "El apellido paterno es obligatorio."
+    if errors:
+        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
 
     prospecto.save()
 
@@ -2861,22 +2897,30 @@ def admin_confirm_appointment_biometric(request, appointment_id):
 @require_POST
 @_admin_required
 def admin_crear_prospecto(request):
+    def _capitalize_first_letter(value):
+        text = (value or "").strip()
+        if not text:
+            return ""
+        return text[:1].upper() + text[1:]
+
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
-    nombres = (payload.get("nombres") or "").strip()
-    apellidos = (payload.get("apellidos") or "").strip()
+    primer_nombre = _capitalize_first_letter(payload.get("primerNombre") or payload.get("nombres"))
+    segundo_nombre = _capitalize_first_letter(payload.get("segundoNombre"))
+    apellido_paterno = _capitalize_first_letter(payload.get("apellidoPaterno") or payload.get("apellidos"))
+    apellido_materno = _capitalize_first_letter(payload.get("apellidoMaterno"))
     telefono = (payload.get("telefono") or "").strip()
     observaciones = (payload.get("observaciones") or "").strip()
     estado = (payload.get("estado") or Prospecto.Estado.PASAJERO).strip()
 
     errors = {}
-    if not nombres:
-        errors["nombres"] = "Los nombres son obligatorios."
-    if not apellidos:
-        errors["apellidos"] = "Los apellidos son obligatorios."
+    if not primer_nombre:
+        errors["primerNombre"] = "El primer nombre es obligatorio."
+    if not apellido_paterno:
+        errors["apellidoPaterno"] = "El apellido paterno es obligatorio."
     if estado not in {Prospecto.Estado.PASAJERO, Prospecto.Estado.DESCARTADO}:
         errors["estado"] = "Solo puedes crear prospectos en estado pasajero o descartado."
 
@@ -2891,8 +2935,10 @@ def admin_crear_prospecto(request):
         )
 
     prospecto = Prospecto.objects.create(
-        nombres=nombres,
-        apellidos=apellidos,
+        primer_nombre=primer_nombre,
+        segundo_nombre=segundo_nombre,
+        apellido_paterno=apellido_paterno,
+        apellido_materno=apellido_materno,
         telefono=telefono,
         estado=estado,
         observaciones=observaciones,

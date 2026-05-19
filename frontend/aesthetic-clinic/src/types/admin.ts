@@ -139,6 +139,10 @@ export type ProspectLead = {
   name: string
   firstName?: string
   lastName?: string
+  primerNombre?: string
+  segundoNombre?: string
+  apellidoPaterno?: string
+  apellidoMaterno?: string
   phone: string
   interest: string
   registeredBy: string
@@ -510,8 +514,10 @@ export type AdminStaffMutationResponse = {
 }
 
 export type CreateAdminProspectPayload = {
-  nombres: string
-  apellidos: string
+  primerNombre: string
+  segundoNombre: string
+  apellidoPaterno: string
+  apellidoMaterno: string
   telefono: string
   estado: 'PASAJERO' | 'DESCARTADO'
   observaciones: string

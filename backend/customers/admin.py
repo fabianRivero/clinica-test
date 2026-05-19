@@ -41,14 +41,16 @@ class HuellaBiometricaClienteAdmin(admin.ModelAdmin):
 class ProspectoAdmin(admin.ModelAdmin):
     list_display = (
         "id",
-        "nombres",
-        "apellidos",
+        "primer_nombre",
+        "segundo_nombre",
+        "apellido_paterno",
+        "apellido_materno",
         "telefono",
         "estado",
         "registrado_por",
         "fecha_conversion",
     )
     list_filter = ("estado",)
-    search_fields = ("nombres", "apellidos", "telefono")
+    search_fields = ("primer_nombre", "segundo_nombre", "apellido_paterno", "apellido_materno", "telefono")
 
 # Register your models here.

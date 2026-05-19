@@ -37,8 +37,8 @@ class BranchIsolationTest(TestCase):
     def test_branch_admin_isolation_prospects(self):
         """Un admin de sucursal solo debe ver prospectos de su sucursal."""
         # Crear un prospecto en Norte y otro en Sur
-        Prospecto.objects.create(nombres="P. Norte", apellidos="Test", sucursal_registro=self.sucursal_norte)
-        Prospecto.objects.create(nombres="P. Sur", apellidos="Test", sucursal_registro=self.sucursal_sur)
+        Prospecto.objects.create(primer_nombre="P.", segundo_nombre="Norte", apellido_paterno="Test", sucursal_registro=self.sucursal_norte)
+        Prospecto.objects.create(primer_nombre="P.", segundo_nombre="Sur", apellido_paterno="Test", sucursal_registro=self.sucursal_sur)
 
         # El admin de sucursal (Sur) pide la lista
         response = self.client_suc.get('/api/admin/prospectos/')
@@ -46,11 +46,11 @@ class BranchIsolationTest(TestCase):
         
         # Debe ver solo 1 prospecto (el de Sur)
         self.assertEqual(len(data['prospects']), 1)
-        self.assertEqual(data['prospects'][0]['nombres'], "P. Sur")
+        self.assertEqual(data['prospects'][0]['segundoNombre'], "P. Sur")
 
     def test_mandatory_fields_step_2(self):
         """Validar que el Paso 2 falle si faltan campos obligatorios."""
-        prospecto = Prospecto.objects.create(nombres="Test", apellidos="Validacion", sucursal_registro=self.sucursal_sur)
+        prospecto = Prospecto.objects.create(primer_nombre="Test", apellido_paterno="Validacion", sucursal_registro=self.sucursal_sur)
         
         # Intentar guardar operacion sin zona_general (Paso 2)
         payload = {
@@ -72,8 +72,8 @@ class BranchIsolationTest(TestCase):
 
     def test_main_admin_can_see_everything(self):
         """El admin general debe ver prospectos de todas las sucursales."""
-        Prospecto.objects.create(nombres="P. Norte", apellidos="Test", sucursal_registro=self.sucursal_norte)
-        Prospecto.objects.create(nombres="P. Sur", apellidos="Test", sucursal_registro=self.sucursal_sur)
+        Prospecto.objects.create(primer_nombre="P.", segundo_nombre="Norte", apellido_paterno="Test", sucursal_registro=self.sucursal_norte)
+        Prospecto.objects.create(primer_nombre="P.", segundo_nombre="Sur", apellido_paterno="Test", sucursal_registro=self.sucursal_sur)
 
         response = self.client_gral.get('/api/admin/prospectos/')
         data = response.json()
