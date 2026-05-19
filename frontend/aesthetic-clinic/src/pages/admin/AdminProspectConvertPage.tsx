@@ -1554,9 +1554,6 @@ export function AdminProspectConvertPage() {
       {activeStep === 5 ? (
         <SectionCard eyebrow="Paso 5" title="Primer pago (opcional)" description="Muestra el QR de pago, permite adjuntar comprobante y confirmar el pago para revision administrativa.">
           <form className="form-grid" onSubmit={handleFinalize}>
-            <div className="wizard-block field--full">
-              {paymentQrImageUrl ? <img src={paymentQrImageUrl} alt="QR de pago" style={{ maxWidth: 280, width: '100%', borderRadius: 12 }} /> : <p>No hay QR configurado.</p>}
-            </div>
             <label className="field field--full" style={{ cursor: 'pointer' }}>
               <span>Registrar primer pago en este paso</span>
               <input
@@ -1572,20 +1569,32 @@ export function AdminProspectConvertPage() {
                 }}
               />
             </label>
-            <label className="field">
-              <span>Monto del primer pago</span>
-              <input className="input" readOnly value={firstPaymentAmount} />
-              {fieldErrors.primerPagoMonto ? <small className="field__error">{fieldErrors.primerPagoMonto}</small> : null}
-            </label>
-            <label className="field field--full">
-              <span>Comprobante</span>
-              <input className="input input--file" disabled={!shouldRegisterFirstPayment} type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,application/pdf,image/*" onChange={(event) => setFirstPaymentReceipt(event.target.files?.[0] || null)} />
-              {fieldErrors.primerPagoComprobante ? <small className="field__error">{fieldErrors.primerPagoComprobante}</small> : null}
-            </label>
-            <label className="field field--full">
-              <span>Detalle</span>
-              <textarea className="input textarea" disabled={!shouldRegisterFirstPayment} rows={3} value={firstPaymentDetails} onChange={(event) => setFirstPaymentDetails(event.target.value)} />
-            </label>
+            <div
+              className="field--full"
+              style={{
+                opacity: shouldRegisterFirstPayment ? 1 : 0.5,
+                pointerEvents: shouldRegisterFirstPayment ? 'auto' : 'none',
+                transition: 'opacity 0.2s ease',
+              }}
+            >
+              <div className="wizard-block field--full">
+                {paymentQrImageUrl ? <img src={paymentQrImageUrl} alt="QR de pago" style={{ maxWidth: 280, width: '100%', borderRadius: 12 }} /> : <p>No hay QR configurado.</p>}
+              </div>
+              <label className="field">
+                <span>Monto del primer pago</span>
+                <input className="input" readOnly value={firstPaymentAmount} />
+                {fieldErrors.primerPagoMonto ? <small className="field__error">{fieldErrors.primerPagoMonto}</small> : null}
+              </label>
+              <label className="field field--full">
+                <span>Comprobante</span>
+                <input className="input input--file" disabled={!shouldRegisterFirstPayment} type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,application/pdf,image/*" onChange={(event) => setFirstPaymentReceipt(event.target.files?.[0] || null)} />
+                {fieldErrors.primerPagoComprobante ? <small className="field__error">{fieldErrors.primerPagoComprobante}</small> : null}
+              </label>
+              <label className="field field--full">
+                <span>Detalle</span>
+                <textarea className="input textarea" disabled={!shouldRegisterFirstPayment} rows={3} value={firstPaymentDetails} onChange={(event) => setFirstPaymentDetails(event.target.value)} />
+              </label>
+            </div>
             <div className="form-actions field--full">
               <button className="button button--danger" disabled={isSaving || isCancelling} type="button" onClick={handleCancelDraft}>
                 {isCancelling ? 'Cancelando...' : 'Cancelar conversion'}
