@@ -149,6 +149,38 @@ class MedicalPrefillTests(TestCase):
         self.assertEqual(len(payload["medicalData"]["antecedentes"]), 1)
         self.assertEqual(payload["medicalData"]["antecedentes"][0]["antecedenteId"], self.antecedente.id)
 
+    def test_serialize_draft_blank_keys_do_not_override_historical_prefill(self):
+        op = self._create_operacion(Operacion.Estado.FINALIZADA)
+        ficha = FichaClinica.objects.create(operacion=op)
+        FichaAntecedenteMedico.objects.create(
+            ficha=ficha,
+            antecedente=self.antecedente,
+            tipo_antecedente=FichaAntecedenteMedico.TipoAntecedente.PERSONAL,
+            detalle="Historico",
+        )
+        FichaImplanteInjerto.objects.create(ficha=ficha, implante=self.implante, detalle="Historico")
+        FichaCirugiaEstetica.objects.create(
+            ficha=ficha,
+            cirugia=self.cirugia,
+            hace_cuanto_tiempo="1 año",
+            detalle="Historico",
+        )
+
+        draft = ProspectoConversionBorrador.objects.create(
+            cliente=self.cliente,
+            datos_ficha={
+                **_blank_medical_data(),
+                "antecedentes": [],
+                "implantes": [],
+                "cirugias": [],
+            },
+        )
+
+        payload = _serialize_draft(draft)
+        self.assertEqual(len(payload["medicalData"]["antecedentes"]), 1)
+        self.assertEqual(len(payload["medicalData"]["implantes"]), 1)
+        self.assertEqual(len(payload["medicalData"]["cirugias"]), 1)
+
     def test_serialize_draft_keeps_existing_datos_ficha_content(self):
         draft = ProspectoConversionBorrador.objects.create(
             cliente=self.cliente,

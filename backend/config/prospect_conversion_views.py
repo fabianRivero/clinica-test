@@ -460,6 +460,11 @@ def _serialize_draft(draft):
         logger.warning("[PREFILL] skipping historical prefill")
 
     saved_medical_data = dict(draft.datos_ficha or {})
+    if is_empty_medical_data:
+        # Evitar que arreglos vacios del borrador pisen el prefill historico.
+        for key in ("antecedentes", "implantes", "cirugias"):
+            if not saved_medical_data.get(key):
+                saved_medical_data.pop(key, None)
     saved_operation_data = dict(draft.datos_operacion or {})
     cuotas_totales = int(saved_operation_data.get("cuotasTotales") or 1)
     due_dates = saved_operation_data.get("fechasVencimientoCuotas")
