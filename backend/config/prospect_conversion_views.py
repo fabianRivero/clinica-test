@@ -225,11 +225,6 @@ def _build_initial_client_user_data(cliente):
 
 
 def _build_initial_client_medical_data(cliente):
-    logger.warning(
-        "[PREFILL] start _build_initial_client_medical_data cliente_id=%s",
-        getattr(cliente, "id", None),
-    )
-
     prioritized_qs = (
         cliente.operaciones.filter(
             estado__in=[Operacion.Estado.EN_PROCESO, Operacion.Estado.FINALIZADA],
@@ -237,15 +232,6 @@ def _build_initial_client_medical_data(cliente):
         )
         .select_related("ficha_clinica")
         .order_by("-ficha_clinica__fecha_ficha", "-created_at")
-    )
-
-    logger.warning(
-        "[PREFILL] prioritized candidates=%s",
-        list(
-            prioritized_qs.values_list(
-                "id", "estado", "created_at", "ficha_clinica__id", "ficha_clinica__fecha_ficha"
-            )[:10]
-        ),
     )
 
     ultima_operacion = prioritized_qs.first()
@@ -257,22 +243,7 @@ def _build_initial_client_medical_data(cliente):
             .select_related("ficha_clinica")
             .order_by("-ficha_clinica__fecha_ficha", "-created_at")
         )
-        logger.warning(
-            "[PREFILL] fallback candidates=%s",
-            list(
-                fallback_qs.values_list(
-                    "id", "estado", "created_at", "ficha_clinica__id", "ficha_clinica__fecha_ficha"
-                )[:10]
-            ),
-        )
         ultima_operacion = fallback_qs.first()
-
-    logger.warning(
-        "[PREFILL] selected operacion_id=%s estado=%s ficha_id=%s",
-        getattr(ultima_operacion, "id", None),
-        getattr(ultima_operacion, "estado", None),
-        getattr(getattr(ultima_operacion, "ficha_clinica", None), "id", None),
-    )
 
     data = _blank_medical_data()
     
@@ -451,10 +422,8 @@ def _serialize_draft(draft):
 
     default_medical_data = _blank_medical_data()
     is_empty_medical_data = _is_effectively_empty_medical_data(draft.datos_ficha)
-    logger.warning("[PREFILL] _is_effectively_empty_medical_data=%s", is_empty_medical_data)
 
     if draft.cliente and is_empty_medical_data:
-        logger.warning("[PREFILL] using client historical medical data")
         default_medical_data = _build_initial_client_medical_data(draft.cliente)
     else:
         logger.warning("[PREFILL] skipping historical prefill")
@@ -480,13 +449,6 @@ def _serialize_draft(draft):
             **(saved_medical_data.get("analisisEstetico") or {}),
         },
     }
-    logger.warning(
-        "[PREFILL] final medical_data antecedentes=%s implantes=%s cirugias=%s",
-        len(medical_data.get("antecedentes", [])),
-        len(medical_data.get("implantes", [])),
-        len(medical_data.get("cirugias", [])),
-    )
-
     initial_biometric_data = _blank_biometric_data()
     if not draft.datos_biometria and draft.cliente:
         initial_biometric_data = _build_initial_client_biometric_data(draft.cliente)
