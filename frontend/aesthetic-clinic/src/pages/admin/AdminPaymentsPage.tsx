@@ -122,7 +122,12 @@ export function AdminPaymentsPage() {
       showNotification({
         title: 'Pago actualizado',
         message: response.detail,
-        tone: status === 'APROBADO' ? 'success' : status === 'RECHAZADO' ? 'warning' : 'info',
+        tone:
+          status === 'APROBADO'
+            ? 'success'
+            : status === 'RECHAZADO' || status === 'CANCELADO'
+              ? 'warning'
+              : 'info',
       })
       setPaymentNotes((current) => ({
         ...current,
@@ -145,10 +150,11 @@ export function AdminPaymentsPage() {
 
   const filteredPayments = (data?.payments ?? []).filter((payment) => {
     if (statusFilter) {
-      const statusMap: Record<'PENDIENTE' | 'APROBADO' | 'RECHAZADO', string> = {
+      const statusMap: Record<'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO', string> = {
         PENDIENTE: 'pendiente',
         APROBADO: 'aprobado',
         RECHAZADO: 'observado',
+        CANCELADO: 'cancelado',
       }
       if (statusMap[statusFilter] !== payment.status) return false
     }
@@ -283,6 +289,7 @@ export function AdminPaymentsPage() {
                   <option value="PENDIENTE">Pendiente</option>
                   <option value="APROBADO">Aprobado</option>
                   <option value="RECHAZADO">Observado</option>
+                  <option value="CANCELADO">Cancelado</option>
                 </select>
               </label>
               <label className="field">
@@ -332,7 +339,7 @@ export function AdminPaymentsPage() {
                             tone={
                               payment.status === 'aprobado'
                                 ? 'approved'
-                                : payment.status === 'observado'
+                                : payment.status === 'observado' || payment.status === 'cancelado'
                                   ? 'observed'
                                   : 'pending'
                             }
@@ -399,6 +406,22 @@ export function AdminPaymentsPage() {
                               }
                             >
                               Observar
+                            </button>
+                            <button
+                              className="button button--warning button--compact"
+                              disabled={
+                                paymentActionId === payment.rawId || payment.status === 'cancelado'
+                              }
+                              type="button"
+                              onClick={() =>
+                                handlePaymentStatusUpdate(
+                                  payment.rawId,
+                                  'CANCELADO',
+                                  payment.note,
+                                )
+                              }
+                            >
+                              Cancelar
                             </button>
                             <button
                               className="button button--ghost button--compact"

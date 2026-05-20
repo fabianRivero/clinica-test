@@ -396,7 +396,7 @@ export type UpdateAdminPaymentQrConfigResponse = {
 }
 
 export type UpdateAdminPaymentStatusPayload = {
-  status: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO'
+  status: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO'
   note: string
 }
 

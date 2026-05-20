@@ -312,7 +312,7 @@ export function removeAdminVisibleAvailability(slotId: number) {
 }
 
 export type AdminPaymentsFilters = {
-  status?: '' | 'PENDIENTE' | 'APROBADO' | 'RECHAZADO'
+  status?: '' | 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO'
   dateFrom?: string
   dateTo?: string
   search?: string
