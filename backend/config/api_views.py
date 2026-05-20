@@ -319,6 +319,21 @@ def _quota_programmed_amount(cuota):
     return operacion.precio_total
 
 
+def _quota_display_status(cuota):
+    if cuota.estado == CuotaPlanPago.Estado.PAGADO:
+        return cuota.get_estado_display()
+
+    pagos = list(cuota.pagos_realizados.all())
+    if any(pago.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE for pago in pagos):
+        return "Pendiente"
+    if any(pago.estado_verificacion == PagoRealizado.EstadoVerificacion.RECHAZADO for pago in pagos):
+        return "Observado"
+    if any(pago.estado_verificacion == PagoRealizado.EstadoVerificacion.CANCELADO for pago in pagos):
+        return "Cancelado"
+
+    return cuota.get_estado_display()
+
+
 def _operation_specialist(operacion):
     citas = list(operacion.citas_medicas.all())
     if not citas:
@@ -424,7 +439,7 @@ def _operation_detail(operacion):
                 "amount": _currency(_quota_programmed_amount(cuota)),
                 "amountValue": f"{_quota_programmed_amount(cuota):.2f}",
                 "dueDate": _date_label(cuota.fecha_vencimiento),
-                "status": cuota.get_estado_display(),
+                "status": _quota_display_status(cuota),
                 "paymentsCount": cuota.pagos_realizados.count(),
             }
             for cuota in operacion.cuotas_plan_pagos.all()
