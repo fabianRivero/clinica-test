@@ -2729,42 +2729,30 @@ def admin_cliente_inactivate(request, client_id):
     if not cliente:
         return _json({"detail": "No encontramos el cliente solicitado."}, status=404)
 
+    pending_review_payment = PagoRealizado.objects.filter(
+        cuota__operacion__paciente=cliente,
+        estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
+    ).select_related("cuota__operacion").order_by("created_at").first()
+    if pending_review_payment:
+        return _json(
+            {
+                "detail": (
+                    "No se puede inactivar al cliente porque tiene un pago realizado pendiente de revision. "
+                    f"Primero revisa el pago #{pending_review_payment.pk} de la operacion "
+                    f"#{pending_review_payment.cuota.operacion_id}."
+                )
+            },
+            status=400,
+        )
+
     pendientes = cliente.pendientes_operativos()
     cancelled_operations = 0
     cancelled_appointments = 0
-    cancelled_pending_payments = 0
     for operacion in cliente.operaciones.all():
         if operacion.estado == Operacion.Estado.EN_PROCESO:
             operacion.estado = Operacion.Estado.CANCELADA
             operacion.save(update_fields=["estado", "updated_at"])
             cancelled_operations += 1
-            for cuota in operacion.cuotas_plan_pagos.prefetch_related("pagos_realizados"):
-                for pago in cuota.pagos_realizados.all():
-                    if pago.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE:
-                        logger.warning(
-                            "inactivate_client payment_before client=%s operation=%s quota=%s payment=%s status=%s",
-                            cliente.pk,
-                            operacion.pk,
-                            cuota.pk,
-                            pago.pk,
-                            pago.estado_verificacion,
-                        )
-                        pago.estado_verificacion = PagoRealizado.EstadoVerificacion.CANCELADO
-                        pago.verificado_por = request.user
-                        pago.fecha_verificacion = timezone.now()
-                        pago.observacion_verificacion = (
-                            "Pago cancelado por inactivacion administrativa del cliente."
-                        )
-                        pago.save()
-                        logger.warning(
-                            "inactivate_client payment_after client=%s operation=%s quota=%s payment=%s status=%s",
-                            cliente.pk,
-                            operacion.pk,
-                            cuota.pk,
-                            pago.pk,
-                            pago.estado_verificacion,
-                        )
-                        cancelled_pending_payments += 1
         for cita in operacion.citas_medicas.all():
             if cita.estado == CitaMedica.Estado.PROGRAMADA:
                 cita.estado = CitaMedica.Estado.CANCELADA
@@ -2781,8 +2769,7 @@ def admin_cliente_inactivate(request, client_id):
                 f"Antes de la inactivacion tenia {pendientes['sesiones_pendientes']} sesion(es) "
                 f"y {pendientes['cuotas_pendientes']} cuota(s) pendiente(s). "
                 f"Se cancelaron {cancelled_operations} procedimiento(s) en proceso y "
-                f"{cancelled_appointments} cita(s) programada(s). "
-                f"Tambien se cancelaron {cancelled_pending_payments} pago(s) pendiente(s)."
+                f"{cancelled_appointments} cita(s) programada(s)."
             ),
             "client": _client_item(cliente),
         }
