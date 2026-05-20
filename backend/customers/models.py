@@ -146,6 +146,7 @@ class Cliente(TimeStampedModel):
         choices=Estado.choices,
         default=Estado.INACTIVO,
     )
+    bloqueo_reactivacion_automatica = models.BooleanField(default=False)
 
     fecha_nacimiento = models.DateField()
     nro_hijos = models.PositiveIntegerField(default=0)
@@ -158,13 +159,21 @@ class Cliente(TimeStampedModel):
         db_table = "clientes"
         ordering = ("usuario__primer_nombre", "usuario__apellido_paterno")
 
-    def cambiar_estado(self, nuevo_estado, save=True):
+    def cambiar_estado(self, nuevo_estado, save=True, manual=False):
         if nuevo_estado not in {choice[0] for choice in self.Estado.choices}:
             raise ValueError("Estado de cliente no valido.")
+
+        if manual:
+            self.bloqueo_reactivacion_automatica = nuevo_estado == self.Estado.INACTIVO
+        elif nuevo_estado == self.Estado.ACTIVO:
+            self.bloqueo_reactivacion_automatica = False
+
         if self.estado_cliente != nuevo_estado:
             self.estado_cliente = nuevo_estado
             if save:
-                self.save(update_fields=["estado_cliente", "updated_at"])
+                self.save(update_fields=["estado_cliente", "bloqueo_reactivacion_automatica", "updated_at"])
+        elif save and manual:
+            self.save(update_fields=["bloqueo_reactivacion_automatica", "updated_at"])
         return self.estado_cliente
 
     def procedimiento_tiene_pendientes(self, operacion):
@@ -194,6 +203,9 @@ class Cliente(TimeStampedModel):
         }
 
     def actualizar_estado_automaticamente(self, save=True):
+        if self.estado_cliente == self.Estado.INACTIVO and self.bloqueo_reactivacion_automatica:
+            return self.estado_cliente
+
         tiene_pendientes = False
         for operacion in self.operaciones.prefetch_related("cuotas_plan_pagos", "citas_medicas"):
             if self.procedimiento_tiene_pendientes(operacion):

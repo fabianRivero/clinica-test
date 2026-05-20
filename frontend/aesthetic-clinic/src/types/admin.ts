@@ -31,7 +31,7 @@ export type VerificationPayment = {
   amount: string
   submittedAt: string
   bank: string
-  status: 'pendiente' | 'observado' | 'aprobado'
+  status: 'pendiente' | 'observado' | 'aprobado' | 'cancelado'
   quota?: string
   note?: string
   dueDate?: string
@@ -396,7 +396,7 @@ export type UpdateAdminPaymentQrConfigResponse = {
 }
 
 export type UpdateAdminPaymentStatusPayload = {
-  status: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO'
+  status: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO'
   note: string
 }
 

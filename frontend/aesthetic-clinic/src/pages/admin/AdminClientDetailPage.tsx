@@ -295,7 +295,11 @@ export function AdminClientDetailPage() {
     }))
   }
 
-  async function handlePaymentStatusUpdate(paymentId: number, status: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO', fallbackNote?: string) {
+  async function handlePaymentStatusUpdate(
+    paymentId: number,
+    status: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO',
+    fallbackNote?: string,
+  ) {
     setPaymentActionId(paymentId)
     try {
       const note = status === 'PENDIENTE' ? '' : getPaymentNote(paymentId, fallbackNote)
@@ -303,7 +307,12 @@ export function AdminClientDetailPage() {
       showNotification({
         title: 'Pago actualizado',
         message: response.detail,
-        tone: status === 'APROBADO' ? 'success' : status === 'RECHAZADO' ? 'warning' : 'info',
+        tone:
+          status === 'APROBADO'
+            ? 'success'
+            : status === 'RECHAZADO' || status === 'CANCELADO'
+              ? 'warning'
+              : 'info',
       })
       setPaymentNotes((current) => ({ ...current, [paymentId]: response.payment.note || '' }))
       reload()
@@ -671,6 +680,7 @@ export function AdminClientDetailPage() {
                       <div className="table-action-list">
                         <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || payment.status === 'aprobado'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, 'APROBADO', payment.note)}>Aprobar</button>
                         <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || payment.status === 'observado'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, 'RECHAZADO', payment.note)}>Observar</button>
+                        <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || payment.status === 'cancelado'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, 'CANCELADO', payment.note)}>Cancelar</button>
                         <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || payment.status === 'pendiente'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, 'PENDIENTE', payment.note)}>Pendiente</button>
                       </div>
                     </td>
