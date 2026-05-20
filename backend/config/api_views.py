@@ -652,7 +652,12 @@ def _admin_client_detail(cliente):
         for cuota in quotas
         for pago in cuota.pagos_realizados.all()
     ]
-    pending_quotas = [cuota for cuota in quotas if cuota.estado != CuotaPlanPago.Estado.PAGADO]
+    pending_quotas = [
+        cuota
+        for cuota in quotas
+        if cuota.estado != CuotaPlanPago.Estado.PAGADO
+        and cuota.operacion.estado == Operacion.Estado.EN_PROCESO
+    ]
     completed_sessions = [
         cita
         for cita in appointments
