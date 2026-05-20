@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
@@ -35,6 +36,9 @@ from operations.models import (
     FichaSeccion,
     Operacion,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _json(data, status=200):
@@ -221,12 +225,65 @@ def _build_initial_client_user_data(cliente):
 
 
 def _build_initial_client_medical_data(cliente):
-    # Intentar obtener la ficha clinica de la ultima operacion finalizada o mas reciente
-    ultima_operacion = cliente.operaciones.order_by("-created_at").first()
+    logger.warning(
+        "[PREFILL] start _build_initial_client_medical_data cliente_id=%s",
+        getattr(cliente, "id", None),
+    )
+
+    prioritized_qs = (
+        cliente.operaciones.filter(
+            estado__in=[Operacion.Estado.EN_PROCESO, Operacion.Estado.FINALIZADA],
+            ficha_clinica__isnull=False,
+        )
+        .select_related("ficha_clinica")
+        .order_by("-ficha_clinica__fecha_ficha", "-created_at")
+    )
+
+    logger.warning(
+        "[PREFILL] prioritized candidates=%s",
+        list(
+            prioritized_qs.values_list(
+                "id", "estado", "created_at", "ficha_clinica__id", "ficha_clinica__fecha_ficha"
+            )[:10]
+        ),
+    )
+
+    ultima_operacion = prioritized_qs.first()
+
+    # Fallback legacy: si no hay estados relevantes con ficha, usar cualquier operacion con ficha.
+    if not ultima_operacion:
+        fallback_qs = (
+            cliente.operaciones.filter(ficha_clinica__isnull=False)
+            .select_related("ficha_clinica")
+            .order_by("-ficha_clinica__fecha_ficha", "-created_at")
+        )
+        logger.warning(
+            "[PREFILL] fallback candidates=%s",
+            list(
+                fallback_qs.values_list(
+                    "id", "estado", "created_at", "ficha_clinica__id", "ficha_clinica__fecha_ficha"
+                )[:10]
+            ),
+        )
+        ultima_operacion = fallback_qs.first()
+
+    logger.warning(
+        "[PREFILL] selected operacion_id=%s estado=%s ficha_id=%s",
+        getattr(ultima_operacion, "id", None),
+        getattr(ultima_operacion, "estado", None),
+        getattr(getattr(ultima_operacion, "ficha_clinica", None), "id", None),
+    )
+
     data = _blank_medical_data()
     
     if ultima_operacion and hasattr(ultima_operacion, "ficha_clinica"):
         ficha = ultima_operacion.ficha_clinica
+        logger.warning(
+            "[PREFILL] ficha counts antecedentes=%s implantes=%s cirugias=%s",
+            ficha.antecedentes.count(),
+            ficha.implantes.count(),
+            ficha.cirugias.count(),
+        )
         
         # Mapear antecedentes
         data["antecedentes"] = [
@@ -259,6 +316,13 @@ def _build_initial_client_medical_data(cliente):
             }
             for cir in ficha.cirugias.all()
         ]
+
+    logger.warning(
+        "[PREFILL] mapped data antecedentes=%s implantes=%s cirugias=%s",
+        len(data.get("antecedentes", [])),
+        len(data.get("implantes", [])),
+        len(data.get("cirugias", [])),
+    )
 
     return data
 
@@ -319,6 +383,37 @@ def _field_response_has_value(field, response):
     return bool(response.get("optionIds"))
 
 
+def _is_effectively_empty_medical_data(medical_data):
+    if not medical_data:
+        return True
+
+    if not isinstance(medical_data, dict):
+        return False
+
+    antecedentes = medical_data.get("antecedentes") or []
+    implantes = medical_data.get("implantes") or []
+    cirugias = medical_data.get("cirugias") or []
+    field_responses = medical_data.get("fieldResponses") or {}
+
+    analisis = medical_data.get("analisisEstetico") or {}
+    analisis_vacio = not any(
+        [
+            analisis.get("tipoPielId"),
+            analisis.get("gradoDeshidratacionId"),
+            analisis.get("grosorPielId"),
+            analisis.get("patologiaIds"),
+        ]
+    )
+
+    return (
+        len(antecedentes) == 0
+        and len(implantes) == 0
+        and len(cirugias) == 0
+        and len(field_responses) == 0
+        and analisis_vacio
+    )
+
+
 def _serialize_draft(draft):
     # Obtener los datos guardados en el borrador
     saved_user_data = dict(draft.datos_usuario or {})
@@ -346,11 +441,30 @@ def _serialize_draft(draft):
     
     user_data["hasPassword"] = has_password
 
+    logger.warning(
+        "[PREFILL] _serialize_draft draft_id=%s cliente_id=%s datos_ficha_type=%s datos_ficha_keys=%s",
+        getattr(draft, "id", None),
+        getattr(draft, "cliente_id", None),
+        type(draft.datos_ficha).__name__,
+        list((draft.datos_ficha or {}).keys()) if isinstance(draft.datos_ficha, dict) else None,
+    )
+
     default_medical_data = _blank_medical_data()
-    if not draft.datos_ficha and draft.cliente:
+    is_empty_medical_data = _is_effectively_empty_medical_data(draft.datos_ficha)
+    logger.warning("[PREFILL] _is_effectively_empty_medical_data=%s", is_empty_medical_data)
+
+    if draft.cliente and is_empty_medical_data:
+        logger.warning("[PREFILL] using client historical medical data")
         default_medical_data = _build_initial_client_medical_data(draft.cliente)
+    else:
+        logger.warning("[PREFILL] skipping historical prefill")
 
     saved_medical_data = dict(draft.datos_ficha or {})
+    if is_empty_medical_data:
+        # Evitar que arreglos vacios del borrador pisen el prefill historico.
+        for key in ("antecedentes", "implantes", "cirugias"):
+            if not saved_medical_data.get(key):
+                saved_medical_data.pop(key, None)
     saved_operation_data = dict(draft.datos_operacion or {})
     cuotas_totales = int(saved_operation_data.get("cuotasTotales") or 1)
     due_dates = saved_operation_data.get("fechasVencimientoCuotas")
@@ -366,6 +480,12 @@ def _serialize_draft(draft):
             **(saved_medical_data.get("analisisEstetico") or {}),
         },
     }
+    logger.warning(
+        "[PREFILL] final medical_data antecedentes=%s implantes=%s cirugias=%s",
+        len(medical_data.get("antecedentes", [])),
+        len(medical_data.get("implantes", [])),
+        len(medical_data.get("cirugias", [])),
+    )
 
     initial_biometric_data = _blank_biometric_data()
     if not draft.datos_biometria and draft.cliente:
@@ -1042,7 +1162,15 @@ def admin_prospect_conversion_detail(request, prospecto_id):
     draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id)
     if error:
         return _json({"detail": error}, status=400)
-    return _json(_admin_conversion_detail(draft))
+    payload = _admin_conversion_detail(draft)
+    logger.warning(
+        "[PREFILL] response(prospect) draft_id=%s antecedentes=%s implantes=%s cirugias=%s",
+        getattr(draft, "id", None),
+        len((payload.get("medicalData") or {}).get("antecedentes", [])),
+        len((payload.get("medicalData") or {}).get("implantes", [])),
+        len((payload.get("medicalData") or {}).get("cirugias", [])),
+    )
+    return _json(payload)
 
 
 @require_GET
@@ -1051,7 +1179,16 @@ def admin_client_reactivation_detail(request, cliente_id):
     draft, error = _get_draft_convertible(request, cliente_id=cliente_id)
     if error:
         return _json({"detail": error}, status=400)
-    return _json(_admin_conversion_detail(draft))
+    payload = _admin_conversion_detail(draft)
+    logger.warning(
+        "[PREFILL] response(client) draft_id=%s cliente_id=%s antecedentes=%s implantes=%s cirugias=%s",
+        getattr(draft, "id", None),
+        cliente_id,
+        len((payload.get("medicalData") or {}).get("antecedentes", [])),
+        len((payload.get("medicalData") or {}).get("implantes", [])),
+        len((payload.get("medicalData") or {}).get("cirugias", [])),
+    )
+    return _json(payload)
 
 
 @require_POST
