@@ -328,18 +328,10 @@ def _quota_display_status(cuota):
     if cuota.estado == CuotaPlanPago.Estado.PAGADO:
         return cuota.get_estado_display()
 
-    pagos = list(cuota.pagos_realizados.all())
-    if cuota.operacion.estado == Operacion.Estado.CANCELADA and any(
-        pago.estado_verificacion == PagoRealizado.EstadoVerificacion.CANCELADO for pago in pagos
-    ):
-        logger.warning(
-            "quota_status cuota=%s operacion=%s op_estado=%s pagos=%s result=Cancelado",
-            cuota.pk,
-            cuota.operacion_id,
-            cuota.operacion.estado,
-            [pago.estado_verificacion for pago in pagos],
-        )
+    if cuota.operacion.estado == Operacion.Estado.CANCELADA:
         return "Cancelado"
+
+    pagos = list(cuota.pagos_realizados.all())
     if any(pago.estado_verificacion == PagoRealizado.EstadoVerificacion.RECHAZADO for pago in pagos):
         return "Observado"
     if any(pago.estado_verificacion == PagoRealizado.EstadoVerificacion.CANCELADO for pago in pagos):
