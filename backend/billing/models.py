@@ -1,3 +1,5 @@
+import logging
+
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.exceptions import ValidationError
@@ -9,6 +11,8 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from common.models import CatalogoEditableModel, TimeStampedModel
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_delete_file(file_name):
@@ -164,6 +168,16 @@ class PagoRealizado(TimeStampedModel):
 
         self.full_clean()
         super().save(*args, **kwargs)
+        logger.warning(
+            "payment_save payment=%s cuota=%s operacion=%s status=%s verificado=%s verificado_por=%s fecha_verificacion=%s",
+            self.pk,
+            self.cuota_id,
+            self.cuota.operacion_id if self.cuota_id else None,
+            self.estado_verificacion,
+            self.verificado,
+            self.verificado_por_id,
+            self.fecha_verificacion.isoformat() if self.fecha_verificacion else None,
+        )
         if previous_file_name and previous_file_name != self.comprobante_url.name:
             _safe_delete_file(previous_file_name)
         self.cuota.actualizar_estado_por_pagos()

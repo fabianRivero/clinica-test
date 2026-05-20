@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import PurePosixPath
 from datetime import date, timedelta, time
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -47,6 +48,8 @@ from config.client_api_views import (
     BLOCKING_RESERVATION_STATES,
 )
 from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
+
+logger = logging.getLogger(__name__)
 
 
 def _json(data, status=200):
@@ -329,6 +332,13 @@ def _quota_display_status(cuota):
     if cuota.operacion.estado == Operacion.Estado.CANCELADA and any(
         pago.estado_verificacion == PagoRealizado.EstadoVerificacion.CANCELADO for pago in pagos
     ):
+        logger.warning(
+            "quota_status cuota=%s operacion=%s op_estado=%s pagos=%s result=Cancelado",
+            cuota.pk,
+            cuota.operacion_id,
+            cuota.operacion.estado,
+            [pago.estado_verificacion for pago in pagos],
+        )
         return "Cancelado"
     if any(pago.estado_verificacion == PagoRealizado.EstadoVerificacion.RECHAZADO for pago in pagos):
         return "Observado"
@@ -337,7 +347,16 @@ def _quota_display_status(cuota):
     if any(pago.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE for pago in pagos):
         return "Pendiente"
 
-    return cuota.get_estado_display()
+    result = cuota.get_estado_display()
+    logger.warning(
+        "quota_status cuota=%s operacion=%s op_estado=%s pagos=%s result=%s",
+        cuota.pk,
+        cuota.operacion_id,
+        cuota.operacion.estado,
+        [pago.estado_verificacion for pago in pagos],
+        result,
+    )
+    return result
 
 
 def _operation_specialist(operacion):
@@ -390,6 +409,33 @@ def _operation_detail(operacion):
     document_url = document_field.url if document_field else ""
     document_name = PurePosixPath(document_field.name).name if document_field else ""
 
+    quotas_payload = [
+        {
+            "id": f"CUO-{cuota.pk:04d}",
+            "number": cuota.nro_cuota,
+            "rawId": cuota.pk,
+            "amount": _currency(_quota_programmed_amount(cuota)),
+            "amountValue": f"{_quota_programmed_amount(cuota):.2f}",
+            "dueDate": _date_label(cuota.fecha_vencimiento),
+            "status": _quota_display_status(cuota),
+            "paymentsCount": cuota.pagos_realizados.count(),
+        }
+        for cuota in operacion.cuotas_plan_pagos.all()
+    ]
+    logger.warning(
+        "operation_detail operation=%s estado=%s quotas=%s",
+        operacion.pk,
+        operacion.estado,
+        [
+            {
+                "cuota_id": item["rawId"],
+                "status": item["status"],
+                "paymentsCount": item["paymentsCount"],
+            }
+            for item in quotas_payload
+        ],
+    )
+
     return {
         "id": f"OP-{operacion.pk:04d}",
         "rawId": operacion.pk,
@@ -437,19 +483,7 @@ def _operation_detail(operacion):
             }
             for cita in operacion.citas_medicas.all()
         ],
-        "quotas": [
-            {
-                "id": f"CUO-{cuota.pk:04d}",
-                "number": cuota.nro_cuota,
-                "rawId": cuota.pk,
-                "amount": _currency(_quota_programmed_amount(cuota)),
-                "amountValue": f"{_quota_programmed_amount(cuota):.2f}",
-                "dueDate": _date_label(cuota.fecha_vencimiento),
-                "status": _quota_display_status(cuota),
-                "paymentsCount": cuota.pagos_realizados.count(),
-            }
-            for cuota in operacion.cuotas_plan_pagos.all()
-        ],
+        "quotas": quotas_payload,
     }
 
 
@@ -2707,6 +2741,14 @@ def admin_cliente_inactivate(request, client_id):
             for cuota in operacion.cuotas_plan_pagos.prefetch_related("pagos_realizados"):
                 for pago in cuota.pagos_realizados.all():
                     if pago.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE:
+                        logger.warning(
+                            "inactivate_client payment_before client=%s operation=%s quota=%s payment=%s status=%s",
+                            cliente.pk,
+                            operacion.pk,
+                            cuota.pk,
+                            pago.pk,
+                            pago.estado_verificacion,
+                        )
                         pago.estado_verificacion = PagoRealizado.EstadoVerificacion.CANCELADO
                         pago.verificado_por = request.user
                         pago.fecha_verificacion = timezone.now()
@@ -2714,6 +2756,14 @@ def admin_cliente_inactivate(request, client_id):
                             "Pago cancelado por inactivacion administrativa del cliente."
                         )
                         pago.save()
+                        logger.warning(
+                            "inactivate_client payment_after client=%s operation=%s quota=%s payment=%s status=%s",
+                            cliente.pk,
+                            operacion.pk,
+                            cuota.pk,
+                            pago.pk,
+                            pago.estado_verificacion,
+                        )
                         cancelled_pending_payments += 1
         for cita in operacion.citas_medicas.all():
             if cita.estado == CitaMedica.Estado.PROGRAMADA:
