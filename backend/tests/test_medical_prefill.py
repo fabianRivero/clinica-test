@@ -12,8 +12,12 @@ from catalogs.models import (
     Sucursal,
     TipoServicio,
 )
-from config.prospect_conversion_views import _build_initial_client_medical_data
-from customers.models import Cliente
+from config.prospect_conversion_views import (
+    _blank_medical_data,
+    _build_initial_client_medical_data,
+    _serialize_draft,
+)
+from customers.models import Cliente, ProspectoConversionBorrador
 from operations.models import (
     FichaAntecedenteMedico,
     FichaCirugiaEstetica,
@@ -125,3 +129,42 @@ class MedicalPrefillTests(TestCase):
         self.assertEqual(data["antecedentes"], [])
         self.assertEqual(data["implantes"], [])
         self.assertEqual(data["cirugias"], [])
+
+    def test_serialize_draft_prefills_when_datos_ficha_is_blank_structure(self):
+        op = self._create_operacion(Operacion.Estado.FINALIZADA)
+        ficha = FichaClinica.objects.create(operacion=op)
+        FichaAntecedenteMedico.objects.create(
+            ficha=ficha,
+            antecedente=self.antecedente,
+            tipo_antecedente=FichaAntecedenteMedico.TipoAntecedente.FAMILIAR,
+            detalle="Padre",
+        )
+
+        draft = ProspectoConversionBorrador.objects.create(
+            cliente=self.cliente,
+            datos_ficha=_blank_medical_data(),
+        )
+
+        payload = _serialize_draft(draft)
+        self.assertEqual(len(payload["medicalData"]["antecedentes"]), 1)
+        self.assertEqual(payload["medicalData"]["antecedentes"][0]["antecedenteId"], self.antecedente.id)
+
+    def test_serialize_draft_keeps_existing_datos_ficha_content(self):
+        draft = ProspectoConversionBorrador.objects.create(
+            cliente=self.cliente,
+            datos_ficha={
+                **_blank_medical_data(),
+                "antecedentes": [
+                    {
+                        "id": "manual",
+                        "antecedenteId": self.antecedente.id,
+                        "tipoAntecedente": "PERSONAL",
+                        "detalle": "Manual",
+                    }
+                ],
+            },
+        )
+
+        payload = _serialize_draft(draft)
+        self.assertEqual(len(payload["medicalData"]["antecedentes"]), 1)
+        self.assertEqual(payload["medicalData"]["antecedentes"][0]["detalle"], "Manual")

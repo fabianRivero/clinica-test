@@ -337,6 +337,37 @@ def _field_response_has_value(field, response):
     return bool(response.get("optionIds"))
 
 
+def _is_effectively_empty_medical_data(medical_data):
+    if not medical_data:
+        return True
+
+    if not isinstance(medical_data, dict):
+        return False
+
+    antecedentes = medical_data.get("antecedentes") or []
+    implantes = medical_data.get("implantes") or []
+    cirugias = medical_data.get("cirugias") or []
+    field_responses = medical_data.get("fieldResponses") or {}
+
+    analisis = medical_data.get("analisisEstetico") or {}
+    analisis_vacio = not any(
+        [
+            analisis.get("tipoPielId"),
+            analisis.get("gradoDeshidratacionId"),
+            analisis.get("grosorPielId"),
+            analisis.get("patologiaIds"),
+        ]
+    )
+
+    return (
+        len(antecedentes) == 0
+        and len(implantes) == 0
+        and len(cirugias) == 0
+        and len(field_responses) == 0
+        and analisis_vacio
+    )
+
+
 def _serialize_draft(draft):
     # Obtener los datos guardados en el borrador
     saved_user_data = dict(draft.datos_usuario or {})
@@ -365,7 +396,7 @@ def _serialize_draft(draft):
     user_data["hasPassword"] = has_password
 
     default_medical_data = _blank_medical_data()
-    if not draft.datos_ficha and draft.cliente:
+    if draft.cliente and _is_effectively_empty_medical_data(draft.datos_ficha):
         default_medical_data = _build_initial_client_medical_data(draft.cliente)
 
     saved_medical_data = dict(draft.datos_ficha or {})
