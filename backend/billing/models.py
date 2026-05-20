@@ -80,6 +80,7 @@ class PagoRealizado(TimeStampedModel):
         PENDIENTE = "PENDIENTE", "Pendiente"
         APROBADO = "APROBADO", "Aprobado"
         RECHAZADO = "RECHAZADO", "Rechazado"
+        CANCELADO = "CANCELADO", "Cancelado"
 
     cuota = models.ForeignKey(
         "billing.CuotaPlanPago",
@@ -148,7 +149,10 @@ class PagoRealizado(TimeStampedModel):
             self.verificado = True
             if self.verificado_por_id and not self.fecha_verificacion:
                 self.fecha_verificacion = timezone.now()
-        elif self.estado_verificacion == self.EstadoVerificacion.RECHAZADO:
+        elif self.estado_verificacion in {
+            self.EstadoVerificacion.RECHAZADO,
+            self.EstadoVerificacion.CANCELADO,
+        }:
             self.verificado = False
             if self.verificado_por_id and not self.fecha_verificacion:
                 self.fecha_verificacion = timezone.now()

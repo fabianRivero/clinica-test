@@ -2672,11 +2672,23 @@ def admin_cliente_inactivate(request, client_id):
     pendientes = cliente.pendientes_operativos()
     cancelled_operations = 0
     cancelled_appointments = 0
+    cancelled_pending_payments = 0
     for operacion in cliente.operaciones.all():
         if operacion.estado == Operacion.Estado.EN_PROCESO:
             operacion.estado = Operacion.Estado.CANCELADA
             operacion.save(update_fields=["estado", "updated_at"])
             cancelled_operations += 1
+            for cuota in operacion.cuotas_plan_pagos.prefetch_related("pagos_realizados"):
+                for pago in cuota.pagos_realizados.all():
+                    if pago.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE:
+                        pago.estado_verificacion = PagoRealizado.EstadoVerificacion.CANCELADO
+                        pago.verificado_por = request.user
+                        pago.fecha_verificacion = timezone.now()
+                        pago.observacion_verificacion = (
+                            "Pago cancelado por inactivacion administrativa del cliente."
+                        )
+                        pago.save()
+                        cancelled_pending_payments += 1
         for cita in operacion.citas_medicas.all():
             if cita.estado == CitaMedica.Estado.PROGRAMADA:
                 cita.estado = CitaMedica.Estado.CANCELADA
@@ -2684,7 +2696,7 @@ def admin_cliente_inactivate(request, client_id):
                 cita.save(update_fields=["estado", "detalles_cita", "updated_at"])
                 cancelled_appointments += 1
 
-    cliente.cambiar_estado(Cliente.Estado.INACTIVO, save=True)
+    cliente.cambiar_estado(Cliente.Estado.INACTIVO, save=True, manual=True)
 
     return _json(
         {
@@ -2693,7 +2705,8 @@ def admin_cliente_inactivate(request, client_id):
                 f"Antes de la inactivacion tenia {pendientes['sesiones_pendientes']} sesion(es) "
                 f"y {pendientes['cuotas_pendientes']} cuota(s) pendiente(s). "
                 f"Se cancelaron {cancelled_operations} procedimiento(s) en proceso y "
-                f"{cancelled_appointments} cita(s) programada(s)."
+                f"{cancelled_appointments} cita(s) programada(s). "
+                f"Tambien se cancelaron {cancelled_pending_payments} pago(s) pendiente(s)."
             ),
             "client": _client_item(cliente),
         }
@@ -3352,6 +3365,7 @@ def admin_update_payment_status(request, payment_id):
         PagoRealizado.EstadoVerificacion.PENDIENTE,
         PagoRealizado.EstadoVerificacion.APROBADO,
         PagoRealizado.EstadoVerificacion.RECHAZADO,
+        PagoRealizado.EstadoVerificacion.CANCELADO,
     }
     if status_value not in valid_statuses:
         return _json({"detail": "El estado solicitado no es valido."}, status=400)
@@ -3378,6 +3392,7 @@ def admin_update_payment_status(request, payment_id):
         PagoRealizado.EstadoVerificacion.PENDIENTE: "El pago volvio a estado pendiente.",
         PagoRealizado.EstadoVerificacion.APROBADO: "El pago fue aprobado correctamente.",
         PagoRealizado.EstadoVerificacion.RECHAZADO: "El pago fue observado correctamente.",
+        PagoRealizado.EstadoVerificacion.CANCELADO: "El pago fue cancelado correctamente.",
     }
 
     return _json(
