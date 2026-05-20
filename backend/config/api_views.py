@@ -326,12 +326,16 @@ def _quota_display_status(cuota):
         return cuota.get_estado_display()
 
     pagos = list(cuota.pagos_realizados.all())
-    if any(pago.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE for pago in pagos):
-        return "Pendiente"
+    if cuota.operacion.estado == Operacion.Estado.CANCELADA and any(
+        pago.estado_verificacion == PagoRealizado.EstadoVerificacion.CANCELADO for pago in pagos
+    ):
+        return "Cancelado"
     if any(pago.estado_verificacion == PagoRealizado.EstadoVerificacion.RECHAZADO for pago in pagos):
         return "Observado"
     if any(pago.estado_verificacion == PagoRealizado.EstadoVerificacion.CANCELADO for pago in pagos):
         return "Cancelado"
+    if any(pago.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE for pago in pagos):
+        return "Pendiente"
 
     return cuota.get_estado_display()
 
