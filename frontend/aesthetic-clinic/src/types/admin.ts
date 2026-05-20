@@ -31,7 +31,7 @@ export type VerificationPayment = {
   amount: string
   submittedAt: string
   bank: string
-  status: 'pendiente' | 'observado' | 'aprobado'
+  status: 'pendiente' | 'observado' | 'aprobado' | 'cancelado'
   quota?: string
   note?: string
   dueDate?: string

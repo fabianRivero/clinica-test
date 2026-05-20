@@ -251,6 +251,8 @@ def _payment_status(payment):
         return "aprobado"
     if payment.estado_verificacion == PagoRealizado.EstadoVerificacion.RECHAZADO:
         return "observado"
+    if payment.estado_verificacion == PagoRealizado.EstadoVerificacion.CANCELADO:
+        return "cancelado"
     return "pendiente"
 
 
