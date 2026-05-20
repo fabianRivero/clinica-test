@@ -221,8 +221,26 @@ def _build_initial_client_user_data(cliente):
 
 
 def _build_initial_client_medical_data(cliente):
-    # Intentar obtener la ficha clinica de la ultima operacion finalizada o mas reciente
-    ultima_operacion = cliente.operaciones.order_by("-created_at").first()
+    prioritized_qs = (
+        cliente.operaciones.filter(
+            estado__in=[Operacion.Estado.EN_PROCESO, Operacion.Estado.FINALIZADA],
+            ficha_clinica__isnull=False,
+        )
+        .select_related("ficha_clinica")
+        .order_by("-ficha_clinica__fecha_ficha", "-created_at")
+    )
+
+    ultima_operacion = prioritized_qs.first()
+
+    # Fallback legacy: si no hay estados relevantes con ficha, usar cualquier operacion con ficha.
+    if not ultima_operacion:
+        fallback_qs = (
+            cliente.operaciones.filter(ficha_clinica__isnull=False)
+            .select_related("ficha_clinica")
+            .order_by("-ficha_clinica__fecha_ficha", "-created_at")
+        )
+        ultima_operacion = fallback_qs.first()
+
     data = _blank_medical_data()
     
     if ultima_operacion and hasattr(ultima_operacion, "ficha_clinica"):
@@ -319,6 +337,37 @@ def _field_response_has_value(field, response):
     return bool(response.get("optionIds"))
 
 
+def _is_effectively_empty_medical_data(medical_data):
+    if not medical_data:
+        return True
+
+    if not isinstance(medical_data, dict):
+        return False
+
+    antecedentes = medical_data.get("antecedentes") or []
+    implantes = medical_data.get("implantes") or []
+    cirugias = medical_data.get("cirugias") or []
+    field_responses = medical_data.get("fieldResponses") or {}
+
+    analisis = medical_data.get("analisisEstetico") or {}
+    analisis_vacio = not any(
+        [
+            analisis.get("tipoPielId"),
+            analisis.get("gradoDeshidratacionId"),
+            analisis.get("grosorPielId"),
+            analisis.get("patologiaIds"),
+        ]
+    )
+
+    return (
+        len(antecedentes) == 0
+        and len(implantes) == 0
+        and len(cirugias) == 0
+        and len(field_responses) == 0
+        and analisis_vacio
+    )
+
+
 def _serialize_draft(draft):
     # Obtener los datos guardados en el borrador
     saved_user_data = dict(draft.datos_usuario or {})
@@ -347,10 +396,17 @@ def _serialize_draft(draft):
     user_data["hasPassword"] = has_password
 
     default_medical_data = _blank_medical_data()
-    if not draft.datos_ficha and draft.cliente:
+    is_empty_medical_data = _is_effectively_empty_medical_data(draft.datos_ficha)
+
+    if draft.cliente and is_empty_medical_data:
         default_medical_data = _build_initial_client_medical_data(draft.cliente)
 
     saved_medical_data = dict(draft.datos_ficha or {})
+    if is_empty_medical_data:
+        # Evitar que arreglos vacios del borrador pisen el prefill historico.
+        for key in ("antecedentes", "implantes", "cirugias"):
+            if not saved_medical_data.get(key):
+                saved_medical_data.pop(key, None)
     saved_operation_data = dict(draft.datos_operacion or {})
     cuotas_totales = int(saved_operation_data.get("cuotasTotales") or 1)
     due_dates = saved_operation_data.get("fechasVencimientoCuotas")
@@ -366,7 +422,6 @@ def _serialize_draft(draft):
             **(saved_medical_data.get("analisisEstetico") or {}),
         },
     }
-
     initial_biometric_data = _blank_biometric_data()
     if not draft.datos_biometria and draft.cliente:
         initial_biometric_data = _build_initial_client_biometric_data(draft.cliente)
