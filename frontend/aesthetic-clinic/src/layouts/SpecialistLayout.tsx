@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../providers/AuthProvider'
+import { NOTIFICATIONS_UPDATED_EVENT } from '../services/api/notifications'
 
 const navigation = [
   { to: '/trabajador/agenda', label: 'Agenda semanal' },
@@ -11,11 +12,27 @@ const navigation = [
       { to: '/trabajador/mensajes/nueva', label: 'Crear ficha nueva' },
     ],
   },
+  { to: '/trabajador/notificaciones', label: 'Notificaciones' },
 ] as const
 
 export function SpecialistLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { user, logout } = useAuth()
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  const loadUnreadCount = () => {
+    void fetch('/api/notifications/', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setUnreadCount(data.unreadCount || 0))
+      .catch(() => undefined)
+  }
+
+  useEffect(() => {
+    loadUnreadCount()
+    const handleNotificationsUpdated = () => loadUnreadCount()
+    window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, handleNotificationsUpdated)
+    return () => window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, handleNotificationsUpdated)
+  }, [])
   const location = useLocation()
   const activePath = location.pathname
   const openGroups = useMemo(() => new Set(navigation.filter((item) => 'children' in item && item.children.some((child) => activePath.startsWith(child.to))).map((item) => item.label)), [activePath])
@@ -82,6 +99,7 @@ export function SpecialistLayout() {
             </div>
           </div>
           <div className="topbar__right">
+            <NavLink to="/trabajador/notificaciones" className="button button--ghost button--compact">🔔 {unreadCount}</NavLink>
             <div className="search-pill search-pill--client">Agenda abierta, disponibilidad y mensajes internos</div>
             <div className="profile-chip profile-chip--client">
               <div className="profile-chip__meta">

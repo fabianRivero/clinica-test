@@ -8,6 +8,9 @@ from django.views.decorators.http import require_GET, require_POST
 
 from operations.models import Ticket, TicketMessage
 from staff.models import Especialista
+from accounts.models import Usuario
+from notifications.models import Notification
+from notifications.services import create_notification
 
 
 def _json(data, status=200):
@@ -59,6 +62,51 @@ def _ticket_visible_to_user(ticket, request):
             return branch is None or ticket.sucursal_id == branch.id
         return user.sucursal_id and ticket.sucursal_id == user.sucursal_id
     return ticket.especialista_id and ticket.especialista.usuario_id == user.id
+
+
+
+def _notify_ticket_message(ticket, author, body):
+    participant_ids = set(
+        TicketMessage.objects.filter(ticket=ticket)
+        .exclude(autor_id=author.id)
+        .values_list("autor_id", flat=True)
+    )
+    if ticket.creado_por_id and ticket.creado_por_id != author.id:
+        participant_ids.add(ticket.creado_por_id)
+    specialist_user_id = getattr(ticket.especialista, "usuario_id", None)
+    if specialist_user_id and specialist_user_id != author.id:
+        participant_ids.add(specialist_user_id)
+
+    recipients = Usuario.objects.filter(id__in=participant_ids, is_active=True)
+    for recipient in recipients:
+        if recipient.es_trabajador:
+            notif_type = Notification.Type.SPECIALIST_MESSAGE_FROM_ADMIN if author.es_administrador else Notification.Type.SPECIALIST_MESSAGE_FROM_ADMIN
+            title = "Nueva respuesta en ficha"
+            action_url = "/trabajador/mensajes/fichas"
+        elif recipient.es_administrador or recipient.is_superuser:
+            notif_type = (
+                Notification.Type.ADMIN_MESSAGE_FROM_SPECIALIST
+                if author.es_trabajador
+                else (Notification.Type.ADMIN_MESSAGE_FROM_GENERAL_ADMIN if author.es_admin_principal else Notification.Type.ADMIN_MESSAGE_FROM_ADMIN)
+            )
+            title = "Nueva respuesta en ficha"
+            action_url = f"/admin/mensajes/fichas/{ticket.id}"
+        else:
+            continue
+
+        create_notification(
+            recipient=recipient,
+            branch=ticket.sucursal,
+            type=notif_type,
+            title=title,
+            message=body[:180],
+            action_url=action_url,
+            source_event="ticket.message",
+            source_entity_type="ticket",
+            source_entity_id=ticket.id,
+            created_by_type="specialist" if author.es_trabajador else "admin",
+            created_by_id=author.id,
+        )
 
 
 def _message_item(message):
@@ -151,6 +199,7 @@ def tickets_create(request):
         )
         attachment = request.FILES.get('attachment')
         TicketMessage.objects.create(ticket=ticket, autor=user, contenido=message, adjunto=attachment, estado=TicketMessage.Estado.ENVIADO)
+        _notify_ticket_message(ticket, user, message)
 
     return _json({"detail": "Ficha creada.", "ticket": _ticket_item(ticket)}, status=201)
 
@@ -184,7 +233,7 @@ def tickets_reply(request, ticket_id):
     with transaction.atomic():
         attachment = request.FILES.get('attachment')
         msg = TicketMessage.objects.create(ticket=ticket, autor=request.user, contenido=body, adjunto=attachment, estado=TicketMessage.Estado.ENVIADO)
-        TicketMessage.objects.filter(ticket=ticket, estado=TicketMessage.Estado.ENVIADO).exclude(autor=request.user).update(estado=TicketMessage.Estado.RESPONDIDO)
+        _notify_ticket_message(ticket, request.user, body)
 
     return _json({"detail": "Respuesta enviada.", "message": _message_item(msg)})
 

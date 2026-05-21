@@ -48,6 +48,8 @@ from config.client_api_views import (
     BLOCKING_RESERVATION_STATES,
 )
 from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
+from notifications.models import Notification
+from notifications.services import create_notification
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +236,34 @@ def _datetime_label(value):
     if not value:
         return "Sin fecha"
     return timezone.localtime(value).strftime("%d/%m %H:%M")
+
+
+def _notify_client_appointment_scheduled(*, cliente, fecha_hora, sucursal_id, appointment_id, appointment_type):
+    recipient = getattr(cliente, "usuario", None)
+    if not recipient:
+        return
+
+    branch = Sucursal.objects.filter(pk=sucursal_id).first()
+    fecha_legible = _datetime_label(fecha_hora)
+    nombre_sucursal = branch.nombre if branch else "Sucursal no especificada"
+
+    create_notification(
+        recipient=recipient,
+        branch=branch,
+        type="appointment_scheduled",
+        title="Nueva cita programada",
+        message=f"Tu cita fue programada para el {fecha_legible} en {nombre_sucursal}.",
+        action_url="/cliente/reservas",
+        payload={
+            "appointmentType": appointment_type,
+            "appointmentId": appointment_id,
+            "scheduledAt": fecha_hora.isoformat(),
+            "branchId": sucursal_id,
+        },
+        source_event="appointment_scheduled",
+        source_entity_type=appointment_type,
+        source_entity_id=appointment_id,
+    )
 
 
 def _full_name(user):
@@ -2626,6 +2656,13 @@ def admin_cliente_create_free_medical_appointment(request, client_id):
         estado=CitaClienteLibre.Estado.PROGRAMADA,
         detalles_cita="Cita medica libre agendada por administracion.",
     )
+    _notify_client_appointment_scheduled(
+        cliente=cliente,
+        fecha_hora=appointment.fecha_hora,
+        sucursal_id=appointment.sucursal_id,
+        appointment_id=appointment.pk,
+        appointment_type="cita_cliente_libre",
+    )
 
     return _json(
         {
@@ -2691,6 +2728,13 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
         fecha_hora=fecha_hora,
         estado=CitaMedica.Estado.PROGRAMADA,
         detalles_cita="Reserva creada libremente por administracion.",
+    )
+    _notify_client_appointment_scheduled(
+        cliente=cliente,
+        fecha_hora=cita.fecha_hora,
+        sucursal_id=cita.sucursal_id,
+        appointment_id=cita.pk,
+        appointment_type="cita_medica",
     )
 
     return _json(
@@ -2797,6 +2841,9 @@ def admin_cancel_appointment(request, appointment_id):
     appointment.estado = CitaMedica.Estado.CANCELADA
     appointment.verif_biometria = False
     appointment.save()
+
+    client_user = appointment.operacion.paciente.usuario
+    create_notification(recipient=client_user, branch=appointment.sucursal, type=Notification.Type.CLIENT_APPOINTMENT_CANCELLED, title="Cita cancelada", message="Tu cita fue cancelada por administracion.", action_url="/cliente/reservas", source_event="appointment.cancelled", source_entity_type="appointment", source_entity_id=appointment.id, created_by_type="admin", created_by_id=request.user.id)
 
     return _json(
         {
@@ -2935,6 +2982,8 @@ def admin_reschedule_appointment(request, appointment_id):
     appointment.metodo_confirmacion = ""
     appointment.detalles_cita = "Reserva reprogramada desde administracion."
     appointment.save(update_fields=["fecha_hora", "estado", "verif_biometria", "metodo_confirmacion", "detalles_cita", "updated_at"])
+    client_user = appointment.operacion.paciente.usuario
+    create_notification(recipient=client_user, branch=appointment.sucursal, type=Notification.Type.CLIENT_APPOINTMENT_RESCHEDULED, title="Cita reprogramada", message=f"Tu cita fue reprogramada para {_datetime_label(appointment.fecha_hora)}.", action_url="/cliente/reservas", source_event="appointment.rescheduled", source_entity_type="appointment", source_entity_id=appointment.id, created_by_type="admin", created_by_id=request.user.id)
     return _json({"detail": "La reserva fue reprogramada correctamente.", "appointment": _client_appointment_item(appointment)})
 
 
@@ -3485,6 +3534,11 @@ def admin_update_payment_status(request, payment_id):
         )
         .get(pk=payment.pk)
     )
+
+    if status_value == PagoRealizado.EstadoVerificacion.APROBADO:
+        create_notification(recipient=payment.cuota.operacion.paciente.usuario, branch=payment.cuota.operacion.sucursal, type=Notification.Type.CLIENT_PAYMENT_CONFIRMED, title="Pago confirmado", message="Tu pago fue confirmado por administracion.", action_url="/cliente/pagos", source_event="payment.approved", source_entity_type="payment", source_entity_id=payment.id, created_by_type="admin", created_by_id=request.user.id)
+    elif status_value == PagoRealizado.EstadoVerificacion.RECHAZADO:
+        create_notification(recipient=payment.cuota.operacion.paciente.usuario, branch=payment.cuota.operacion.sucursal, type=Notification.Type.CLIENT_PAYMENT_REJECTED, title="Pago rechazado", message="Tu pago fue rechazado. Revisa el detalle en pagos.", action_url="/cliente/pagos", source_event="payment.rejected", source_entity_type="payment", source_entity_id=payment.id, created_by_type="admin", created_by_id=request.user.id)
 
     detail_map = {
         PagoRealizado.EstadoVerificacion.PENDIENTE: "El pago volvio a estado pendiente.",

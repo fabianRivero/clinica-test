@@ -1,18 +1,35 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { useAuth } from '../providers/AuthProvider'
+import { NOTIFICATIONS_UPDATED_EVENT } from '../services/api/notifications'
 
 const navigation = [
   { to: '/cliente', label: 'Resumen' },
   { to: '/cliente/tratamientos', label: 'Tratamientos' },
   { to: '/cliente/pagos', label: 'Pagos y cuotas' },
   { to: '/cliente/reservas', label: 'Reservas' },
+  { to: '/cliente/notificaciones', label: 'Notificaciones' },
 ] as const
 
 export function ClientLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { user, logout } = useAuth()
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  const loadUnreadCount = () => {
+    void fetch('/api/notifications/', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setUnreadCount(data.unreadCount || 0))
+      .catch(() => undefined)
+  }
+
+  useEffect(() => {
+    loadUnreadCount()
+    const handleNotificationsUpdated = () => loadUnreadCount()
+    window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, handleNotificationsUpdated)
+    return () => window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, handleNotificationsUpdated)
+  }, [])
 
   return (
     <div className="client-shell">
@@ -66,6 +83,7 @@ export function ClientLayout() {
           </div>
 
           <div className="topbar__right">
+            <NavLink to="/cliente/notificaciones" className="button button--ghost button--compact">🔔 {unreadCount}</NavLink>
             <div className="search-pill search-pill--client">Seguimiento de pagos, cuotas y sesiones</div>
             <div className="profile-chip profile-chip--client">
               <div className="profile-chip__meta">

@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "operations",
     "billing",
     "clinical",
+    "notifications",
     "corsheaders",
 ]
 

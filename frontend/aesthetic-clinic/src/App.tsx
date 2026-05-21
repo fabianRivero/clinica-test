@@ -38,6 +38,7 @@ import { SpecialistLayout } from './layouts/SpecialistLayout'
 import { SpecialistAgendaPage } from './pages/specialist/SpecialistAgendaPage'
 import { SpecialistMessageDetailPage, SpecialistMessagesCreatePage, SpecialistMessagesTicketsPage } from './pages/specialist/SpecialistMessagesPage'
 import { useAuth } from './providers/AuthProvider'
+import { NotificationsPage } from './pages/shared/NotificationsPage'
 import type { RoleKey } from './types/auth'
 
 function AppLoadingScreen() {
@@ -144,6 +145,7 @@ function App() {
           <Route path="equipo" element={<Navigate to="/admin/equipo/gestionar" replace />} />
           <Route path="equipo/crear" element={<AdminStaffCreatePage />} />
           <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />
+          <Route path="notificaciones" element={<NotificationsPage />} />
         </Route>
       </Route>
       <Route element={<RequireRole allowedRoles={['TRABAJADOR']} />}>
@@ -154,6 +156,7 @@ function App() {
           <Route path="mensajes/fichas" element={<SpecialistMessagesTicketsPage />} />
           <Route path="mensajes/nueva" element={<SpecialistMessagesCreatePage />} />
           <Route path="mensajes/:ticketId" element={<SpecialistMessageDetailPage />} />
+          <Route path="notificaciones" element={<NotificationsPage />} />
         </Route>
       </Route>
       <Route element={<RequireRole allowedRoles={['CLIENTE']} />}>
@@ -162,6 +165,7 @@ function App() {
           <Route path="tratamientos" element={<ClientTreatmentsPage />} />
           <Route path="pagos" element={<ClientPaymentsPage />} />
           <Route path="reservas" element={<ClientReservationsPage />} />
+          <Route path="notificaciones" element={<NotificationsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<RootRedirect />} />
