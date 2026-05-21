@@ -2,22 +2,11 @@ import { useCallback, useState } from 'react'
 import { DataState } from '../../components/admin/DataState'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
+import { appointmentStatusLabel, appointmentStatusTone } from '../../constants/verification'
 import { useApiResource } from '../../hooks/useApiResource'
 import { getAdminDashboardPayments, getAdminDashboardAgenda } from '../../services/api/admin'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { Link } from 'react-router-dom'
-
-const agendaTone = {
-  programada: 'neutral',
-  pendiente_verificacion: 'warning',
-  confirmada: 'success',
-} as const
-
-const agendaStatusLabel = {
-  programada: 'Programada',
-  pendiente_verificacion: 'Pendiente de verificacion',
-  confirmada: 'Confirmada',
-} as const
 
 export function AdminDashboardPage() {
   const { activeBranch } = useBranchContext()
@@ -236,7 +225,7 @@ export function AdminDashboardPage() {
                           </Link>
                         </td>
                         <td>
-                          <StatusBadge tone={agendaTone[item.status]}>{agendaStatusLabel[item.status]}</StatusBadge>
+                          <StatusBadge tone={appointmentStatusTone[item.status]}>{appointmentStatusLabel[item.status]}</StatusBadge>
                         </td>
                       </tr>
                     )

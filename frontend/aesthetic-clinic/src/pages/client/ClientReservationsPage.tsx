@@ -3,6 +3,7 @@ import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
+import { confirmationStatusTone } from '../../constants/verification'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { cancelClientReservation, getClientReservations } from '../../services/api/client'
@@ -104,13 +105,7 @@ export function ClientReservationsPage() {
                           </td>
                           <td>
                             <StatusBadge
-                              tone={
-                                appointment.confirmationStatus === 'biometria'
-                                  ? 'approved'
-                                  : appointment.confirmationStatus === 'qr'
-                                    ? 'pending'
-                                    : 'warning'
-                              }
+                              tone={confirmationStatusTone[appointment.confirmationStatus]}
                             >
                               {appointment.confirmationLabel}
                             </StatusBadge>
