@@ -24,6 +24,7 @@ import type {
   CreateAdminProspectPayload,
   CreateAdminProspectResponse,
   DashboardAgendaResponse,
+  AgendaItemLegacy,
   DashboardPaymentsResponse,
   DashboardResponse,
   ExpensesResponse,
@@ -46,6 +47,7 @@ import type {
   AdminConcurrencyCheckResponse,
   CheckAdminProspectDuplicatesResponse,
 } from '../../types/admin'
+import { normalizeAgendaItem } from '../../mappers/agenda'
 import type {
   ProspectConversionFinalizeResponse,
   ProspectConversionBiometricData,
@@ -154,8 +156,14 @@ export function getAdminDashboardPayments(month: number, year: number) {
   return requestJson<DashboardPaymentsResponse>(`/api/admin/dashboard/payments/?month=${month}&year=${year}`)
 }
 
-export function getAdminDashboardAgenda(month: number, year: number) {
-  return requestJson<DashboardAgendaResponse>(`/api/admin/dashboard/agenda/?month=${month}&year=${year}`)
+export async function getAdminDashboardAgenda(month: number, year: number) {
+  const response = await requestJson<Omit<DashboardAgendaResponse, 'agenda'> & { agenda: AgendaItemLegacy[] }>(
+    `/api/admin/dashboard/agenda/?month=${month}&year=${year}`,
+  )
+  return {
+    ...response,
+    agenda: response.agenda.map(normalizeAgendaItem),
+  }
 }
 
 export function getAdminProspects(_branchId?: number) {

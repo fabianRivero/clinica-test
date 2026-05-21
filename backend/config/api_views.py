@@ -297,6 +297,30 @@ def _agenda_status(cita):
     return "programada"
 
 
+def _agenda_appointment_status(cita):
+    if cita.estado == CitaMedica.Estado.CONFIRMADA:
+        return "confirmada"
+    if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+        return "pendiente_verificacion"
+    return "programada"
+
+
+def _agenda_verification_status(cita):
+    if cita.estado == CitaMedica.Estado.CONFIRMADA:
+        return "verificada"
+    if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+        return "pendiente"
+    return "no_requerida"
+
+
+def _agenda_verification_method(cita):
+    if cita.metodo_confirmacion == CitaMedica.MetodoConfirmacion.BIOMETRICO:
+        return "biometria"
+    if cita.metodo_confirmacion == CitaMedica.MetodoConfirmacion.TABLET:
+        return "qr"
+    return None
+
+
 def _prospect_stage(prospecto):
     if prospecto.estado == Prospecto.Estado.CONVERTIDO:
         return "convertido"
@@ -2142,6 +2166,9 @@ def admin_dashboard_agenda(request):
             "operationId": cita.operacion_id,
             "specialist": "Asignado",
             "status": _agenda_status(cita),
+            "appointmentStatus": _agenda_appointment_status(cita),
+            "verificationStatus": _agenda_verification_status(cita),
+            "verificationMethod": _agenda_verification_method(cita),
             "isToday": cita.fecha_hora.date() == today,
             "isThisWeek": start_of_week <= cita.fecha_hora.date() <= end_of_week,
         })

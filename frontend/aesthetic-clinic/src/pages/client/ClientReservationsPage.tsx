@@ -3,6 +3,7 @@ import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
+import { verificationStatusLabel, verificationStatusTone } from '../../constants/verification'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { cancelClientReservation, getClientReservations } from '../../services/api/client'
@@ -104,15 +105,9 @@ export function ClientReservationsPage() {
                           </td>
                           <td>
                             <StatusBadge
-                              tone={
-                                appointment.confirmationStatus === 'biometria'
-                                  ? 'approved'
-                                  : appointment.confirmationStatus === 'qr'
-                                    ? 'pending'
-                                    : 'warning'
-                              }
+                              tone={verificationStatusTone[appointment.verificationStatus ?? 'pendiente']}
                             >
-                              {appointment.confirmationLabel}
+                              {verificationStatusLabel[appointment.verificationStatus ?? 'pendiente']}
                             </StatusBadge>
                           </td>
                           <td>
@@ -175,7 +170,7 @@ export function ClientReservationsPage() {
                           <strong>{operation.sessions.confirmed}</strong>
                         </article>
                         <article>
-                          <span>Pend. biometria</span>
+                          <span>Pend. verificacion</span>
                           <strong>{operation.sessions.pendingBiometric}</strong>
                         </article>
                         <article>

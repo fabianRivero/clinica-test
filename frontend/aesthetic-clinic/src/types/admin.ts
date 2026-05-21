@@ -119,7 +119,12 @@ export type AdminExpenseDeleteResponse = {
   detail: string
 }
 
-export type AgendaItem = {
+export type LegacyAgendaStatus = 'programada' | 'biometria' | 'confirmada'
+export type AppointmentStatus = 'programada' | 'pendiente_verificacion' | 'confirmada'
+export type VerificationStatus = 'pendiente' | 'verificada' | 'no_requerida'
+export type VerificationMethod = 'biometria' | 'qr' | 'manual' | 'otro' | null
+
+export type AgendaItemLegacy = {
   id: string
   time: string
   dateLabel: string
@@ -128,9 +133,18 @@ export type AgendaItem = {
   procedure: string
   operationId: number
   specialist: string
-  status: 'programada' | 'biometria' | 'confirmada'
+  status: LegacyAgendaStatus
+  appointmentStatus: AppointmentStatus
+  verificationStatus: VerificationStatus
+  verificationMethod: VerificationMethod
   isToday: boolean
   isThisWeek: boolean
+}
+
+export type AgendaItem = Omit<AgendaItemLegacy, 'status'> & {
+  status: AppointmentStatus
+  verificationStatus: VerificationStatus
+  verificationMethod: VerificationMethod
 }
 
 export type ProspectLead = {
