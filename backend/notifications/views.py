@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 from django.utils import timezone
+from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_GET, require_POST
 
 from notifications.models import Notification, NotificationReadAudit
@@ -42,3 +43,18 @@ def mark_all_notifications_read(request):
     unread.update(is_read=True, read_at=now)
     NotificationReadAudit.objects.bulk_create([NotificationReadAudit(notification_id=pk, user=request.user) for pk in ids], ignore_conflicts=True)
     return _json({"detail": "Notificaciones marcadas como leidas."})
+
+
+@require_POST
+def mark_notification_read(request, notification_id):
+    if not request.user.is_authenticated:
+        return _json({"detail": "Autenticacion requerida."}, status=401)
+    notification = get_object_or_404(Notification, pk=notification_id, recipient=request.user)
+    if notification.is_read:
+        return _json({"detail": "La notificacion ya estaba marcada como leida."})
+    now = timezone.now()
+    notification.is_read = True
+    notification.read_at = now
+    notification.save(update_fields=["is_read", "read_at"])
+    NotificationReadAudit.objects.create(notification=notification, user=request.user)
+    return _json({"detail": "Notificacion marcada como leida."})
