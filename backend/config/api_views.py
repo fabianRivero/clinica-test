@@ -472,6 +472,25 @@ def _prospect_appointment_operation_card(appointment):
     }
 
 
+def _appointment_biometric_status(cita):
+    if cita.verif_biometria:
+        return "Validada"
+
+    if cita.estado in {
+        CitaMedica.Estado.CANCELADA,
+        CitaMedica.Estado.NO_ASISTIO,
+    }:
+        return "No aplica"
+
+    if cita.estado in {
+        CitaMedica.Estado.PROGRAMADA,
+        CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+    }:
+        return "Pendiente"
+
+    return "No aplica"
+
+
 def _operation_detail(operacion):
     ficha = getattr(operacion, "ficha_clinica", None)
     huella = getattr(operacion.paciente, "huella_biometrica", None)
@@ -547,7 +566,7 @@ def _operation_detail(operacion):
                 "dateTime": _datetime_label(cita.fecha_hora),
                 "specialist": "Sin asignar",
                 "status": cita.get_estado_display(),
-                "biometricStatus": "Validada" if cita.verif_biometria else "Pendiente",
+                "biometricStatus": _appointment_biometric_status(cita),
                 "canConfirmBiometric": cita.estado in {
                     CitaMedica.Estado.PROGRAMADA,
                     CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
