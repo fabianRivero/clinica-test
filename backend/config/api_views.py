@@ -2895,6 +2895,45 @@ def admin_update_appointment_status(request, appointment_id):
     )
 
 
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_reschedule_appointment(request, appointment_id):
+    appointment = (
+        CitaMedica.objects.select_related("operacion__paciente", "sucursal")
+        .filter(pk=appointment_id)
+        .first()
+    )
+    if not appointment:
+        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+
+    if appointment.estado != CitaMedica.Estado.PROGRAMADA or appointment.fecha_hora <= timezone.now():
+        return _json({"detail": "Solo se pueden reprogramar citas futuras que sigan programadas."}, status=400)
+
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "Datos invalidos."}, status=400)
+    date_time_str = payload.get("dateTime")
+    if not date_time_str:
+        return _json({"detail": "Debes enviar la nueva fecha y hora."}, status=400)
+    try:
+        from django.utils import dateparse
+        new_date_time = dateparse.parse_datetime(date_time_str)
+        if timezone.is_naive(new_date_time):
+            new_date_time = timezone.make_aware(new_date_time)
+        if not new_date_time:
+            raise ValueError
+    except Exception:
+        return _json({"detail": "Formato de fecha u hora invalido."}, status=400)
+    if new_date_time <= timezone.now():
+        return _json({"detail": "La nueva fecha y hora debe ser futura."}, status=400)
+
+    appointment.fecha_hora = new_date_time
+    appointment.detalles_cita = "Reserva reprogramada desde administracion."
+    appointment.save(update_fields=["fecha_hora", "detalles_cita", "updated_at"])
+    return _json({"detail": "La reserva fue reprogramada correctamente.", "appointment": _client_appointment_item(appointment)})
+
+
 
 
 @require_POST
