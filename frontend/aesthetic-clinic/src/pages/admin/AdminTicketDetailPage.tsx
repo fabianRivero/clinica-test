@@ -6,6 +6,7 @@ import { StatusBadge } from '../../components/admin/StatusBadge'
 import { closeTicket, getTicketDetail, replyTicket, reopenTicket, type Ticket, type TicketMessage } from '../../services/api/tickets'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
+import { useAuth } from '../../providers/AuthProvider'
 
 type MessageAttachment = {
   url: string
@@ -81,6 +82,7 @@ export function AdminTicketDetailPage() {
   const [isSendingReply, setIsSendingReply] = useState(false)
   const [previewImage, setPreviewImage] = useState<MessageAttachment | null>(null)
   const { activeBranch } = useBranchContext()
+  const { user } = useAuth()
   const branchId = activeBranch?.id ?? null
 
   const load = async () => {
@@ -101,12 +103,15 @@ export function AdminTicketDetailPage() {
 
   if (!ticket) return null
 
+  const isAdminToAdmin = Boolean(ticket.adminRecipientId)
+  const canCloseOrReopen = isAdminToAdmin ? Boolean(user?.isMainAdmin || user?.isSuperuser) : Boolean(user?.isAdmin)
+
   return <div className='page-stack'>
     <PageHeader eyebrow='Administracion' title={ticket.subject} description={`Ficha ${ticket.status}`} />
     <SectionCard eyebrow='Estado' title='Gestion de ficha' description='Cerrar o reabrir segun corresponda.'>
       <div style={{display:'flex', gap:'0.5rem'}}>
         <StatusBadge tone={ticket.status === 'ABIERTO' ? 'success':'warning'}>{ticket.status}</StatusBadge>
-        {ticket.status === 'ABIERTO' ? <button className='button button--ghost' onClick={()=>void closeTicket(ticket.id).then(load)}>Cerrar ficha</button> : <button className='button' onClick={()=>void reopenTicket(ticket.id).then(load)}>Reabrir ficha</button>}
+        {ticket.status === 'ABIERTO' ? <button className='button button--ghost' disabled={!canCloseOrReopen} onClick={()=>void closeTicket(ticket.id).then(load)}>Cerrar ficha</button> : <button className='button' disabled={!canCloseOrReopen} onClick={()=>void reopenTicket(ticket.id).then(load)}>Reabrir ficha</button>}
       </div>
     </SectionCard>
     <SectionCard eyebrow='Mensajes' title='Hilo completo' description='Conversación completa de la ficha.'>
@@ -193,7 +198,7 @@ export function AdminTicketDetailPage() {
             }}>
               <label className="field">
                 <span>Para</span>
-                <input className="input" value={ticket.specialistName} readOnly />
+                <input className="input" value={ticket.specialistName || ticket.adminRecipientName || ''} readOnly />
               </label>
               <label className="field">
                 <span>Asunto</span>

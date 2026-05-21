@@ -58,24 +58,28 @@ async function postForm<T>(path: string, formData: FormData): Promise<T> {
 export type TicketStatus = 'ABIERTO' | 'CERRADO'
 export type MessageStatus = 'ENVIADO' | 'RESPONDIDO'
 export type PermissionSummary = 'ALL_ENABLED' | 'ALL_BLOCKED' | 'MIXED'
-export type Ticket = { id:number; subject:string; status:TicketStatus; branchName:string; specialistName:string; updatedAt:string }
+export type Ticket = { id:number; subject:string; status:TicketStatus; branchName:string; specialistName:string; adminRecipientId?: number | null; adminRecipientName?: string; updatedAt:string }
 export type TicketMessage = { id:number; authorName:string; authorRole:string; body:string; status:MessageStatus; createdAt:string }
 export type SpecialistOpenPermission = { specialistId:number; specialistName:string; enabled:boolean }
+export type BranchAdminOpenPermission = { adminId:number; adminName:string; branchId:number | null; branchName:string; enabled:boolean }
 export type OpenPermissionStatusResponse = {
   branchId:number
   branchName:string
   branchDefaultEnabled:boolean
   summary: PermissionSummary
   specialists: SpecialistOpenPermission[]
+  branchAdmins: BranchAdminOpenPermission[]
+  mainAdmins: BranchAdminOpenPermission[]
 }
 
 export const getTickets = (status?: TicketStatus) => getJson<{tickets: Ticket[]}>(`/api/tickets/${status ? `?status=${status}`:''}`)
-export const createTicket = (payload: {subject:string; message:string; specialistId?:number; attachment?: File | null}) => {
+export const createTicket = (payload: {subject:string; message:string; specialistId?:number; adminRecipientId?: number; attachment?: File | null}) => {
   if (payload.attachment) {
     const formData = new FormData()
     formData.append('subject', payload.subject)
     formData.append('message', payload.message)
     if (payload.specialistId) formData.append('specialistId', String(payload.specialistId))
+    if (payload.adminRecipientId) formData.append('adminRecipientId', String(payload.adminRecipientId))
     formData.append('attachment', payload.attachment)
     return postForm('/api/tickets/crear/', formData)
   }
@@ -95,3 +99,5 @@ export const closeTicket = (ticketId:number) => postJson(`/api/tickets/${ticketI
 export const reopenTicket = (ticketId:number) => postJson(`/api/tickets/${ticketId}/reabrir/`, {})
 export const getOpenPermissionStatus = () => getJson<OpenPermissionStatusResponse>('/api/tickets/permisos/apertura/estado/')
 export const setSpecialistOpenPermission = (enabled:boolean, specialistId?: number) => postJson('/api/tickets/permisos/apertura/', { enabled, specialistId })
+
+export const setBranchAdminOpenPermission = (enabled:boolean, adminUserId?: number) => postJson('/api/tickets/permisos/apertura/', adminUserId ? { enabled, adminUserId } : { enabled, target: 'branch_admins' })

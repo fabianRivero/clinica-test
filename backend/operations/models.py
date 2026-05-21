@@ -816,7 +816,8 @@ class Ticket(TimeStampedModel):
         CERRADO = "CERRADO", "Cerrado"
 
     sucursal = models.ForeignKey("catalogs.Sucursal", on_delete=models.CASCADE, related_name="tickets")
-    especialista = models.ForeignKey("staff.Especialista", on_delete=models.CASCADE, related_name="tickets")
+    especialista = models.ForeignKey("staff.Especialista", on_delete=models.CASCADE, related_name="tickets", null=True, blank=True)
+    destinatario_admin = models.ForeignKey("accounts.Usuario", on_delete=models.CASCADE, related_name="tickets_recibidos", null=True, blank=True)
     creado_por = models.ForeignKey("accounts.Usuario", on_delete=models.CASCADE, related_name="tickets_creados")
     asunto = models.CharField(max_length=180)
     estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.ABIERTO)

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useAuth } from '../../providers/AuthProvider'
 import { Link } from 'react-router-dom'
 import { AdminMessagingTabs } from '../../components/admin/AdminMessagingTabs'
 import { DataState } from '../../components/admin/DataState'
@@ -12,14 +13,18 @@ import {
   getOpenPermissionStatus,
   getTickets,
   setSpecialistOpenPermission,
+  setBranchAdminOpenPermission,
   type PermissionSummary,
   type SpecialistOpenPermission,
+  type BranchAdminOpenPermission,
   type Ticket,
   type TicketStatus,
 } from '../../services/api/tickets'
 
 type TicketComposeState = {
   specialistId: number | null
+  adminRecipientId: number | null
+  recipientName: string
   subject: string
   message: string
   files: File[]
@@ -27,6 +32,8 @@ type TicketComposeState = {
 
 const initialComposeState: TicketComposeState = {
   specialistId: null,
+  adminRecipientId: null,
+  recipientName: '',
   subject: '',
   message: '',
   files: [],
@@ -36,6 +43,9 @@ export function AdminMessagingPermissionsPage() {
   const { showNotification } = useNotifications()
   const [specialists, setSpecialists] = useState<SpecialistOpenPermission[]>([])
   const [summary, setSummary] = useState<PermissionSummary>('MIXED')
+  const [branchAdmins, setBranchAdmins] = useState<BranchAdminOpenPermission[]>([])
+  const [mainAdmins, setMainAdmins] = useState<BranchAdminOpenPermission[]>([])
+  const { user } = useAuth()
   const [isComposeOpen, setIsComposeOpen] = useState(false)
   const [composeState, setComposeState] = useState<TicketComposeState>(initialComposeState)
   const [isSending, setIsSending] = useState(false)
@@ -45,6 +55,8 @@ export function AdminMessagingPermissionsPage() {
   const loadPermissions = async () => {
     const data = await getOpenPermissionStatus()
     setSpecialists(data.specialists)
+    setBranchAdmins(data.branchAdmins ?? [])
+    setMainAdmins(data.mainAdmins ?? [])
     setSummary(data.summary)
   }
 
@@ -71,10 +83,35 @@ export function AdminMessagingPermissionsPage() {
     await loadPermissions()
   }
 
+  const onBranchAdminUpdate = async (adminUserId: number, enabled: boolean) => {
+    await setBranchAdminOpenPermission(enabled, adminUserId)
+    await loadPermissions()
+  }
+
+  const onBranchAdminMassUpdate = async (enabled: boolean) => {
+    await setBranchAdminOpenPermission(enabled)
+    await loadPermissions()
+  }
+
   const openComposeModal = (specialistId: number, specialistName: string) => {
     setComposeState({
       specialistId,
+      adminRecipientId: null,
+      recipientName: specialistName,
       subject: `Nueva ficha para ${specialistName}`,
+      message: '',
+      files: [],
+    })
+    setIsComposeOpen(true)
+  }
+
+
+  const openComposeForAdmin = (adminId: number, adminName: string) => {
+    setComposeState({
+      specialistId: null,
+      adminRecipientId: adminId,
+      recipientName: adminName,
+      subject: `Nueva ficha para ${adminName}` ,
       message: '',
       files: [],
     })
@@ -88,7 +125,7 @@ export function AdminMessagingPermissionsPage() {
 
   const onComposeSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!composeState.specialistId) return
+    if (!composeState.specialistId && !composeState.adminRecipientId) return
 
     const confirmSend = window.confirm('¿Deseas enviar esta ficha ahora?')
     if (!confirmSend) return
@@ -96,7 +133,8 @@ export function AdminMessagingPermissionsPage() {
     setIsSending(true)
     try {
       await createTicket({
-        specialistId: composeState.specialistId,
+        specialistId: composeState.specialistId ?? undefined,
+        adminRecipientId: composeState.adminRecipientId ?? undefined,
         subject: composeState.subject.trim(),
         message: composeState.message.trim(),
         attachment: composeState.files[0] ?? null,
@@ -126,6 +164,70 @@ export function AdminMessagingPermissionsPage() {
         description="Gestiona permisos para apertura de fichas y revisa fichas existentes."
       />
       <AdminMessagingTabs />
+      {user?.isMainAdmin ? (
+        <SectionCard
+          eyebrow="Administradores"
+          title="Administradores de sucursal"
+          description="Listado de administradores de sucursal con su usuario y sucursal asociada."
+        >
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <button className="button" onClick={() => void onBranchAdminMassUpdate(true)}>Habilitar a todos</button>
+            <button className="button button--ghost" onClick={() => void onBranchAdminMassUpdate(false)}>Bloquear a todos</button>
+          </div>
+          {!branchAdmins.length ? (
+            <DataState title="Sin administradores" message="No hay administradores de sucursal activos." />
+          ) : (
+            <div className="table-card">
+              <table>
+                <thead><tr><th>Usuario</th><th>Sucursal</th><th>Permiso</th><th>Accion</th></tr></thead>
+                <tbody>
+                  {branchAdmins.map((admin) => (
+                    <tr key={admin.adminId}>
+                      <td>{admin.adminName}</td>
+                      <td>{admin.branchName || 'Sin sucursal'}</td>
+                      <td><StatusBadge tone={admin.enabled ? 'success' : 'warning'}>{admin.enabled ? 'Habilitado' : 'Bloqueado'}</StatusBadge></td>
+                      <td style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <button className="button button--ghost button--compact" disabled={admin.enabled} onClick={() => void onBranchAdminUpdate(admin.adminId, true)}>Habilitar</button>
+                        <button className="button button--ghost button--compact" disabled={!admin.enabled} onClick={() => void onBranchAdminUpdate(admin.adminId, false)}>Bloquear</button>
+                        <button className="button button--compact" onClick={() => openComposeForAdmin(admin.adminId, admin.adminName)}>Crear ficha</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+      ) : null}
+
+      {user && !user.isMainAdmin ? (
+        <SectionCard
+          eyebrow="Comunicacion"
+          title="Administradores principales"
+          description="Puedes crear fichas para comunicarte con el administrador principal."
+        >
+          {!mainAdmins.length ? (
+            <DataState title="Sin administradores principales" message="No hay administradores principales activos." />
+          ) : (
+            <div className="table-card">
+              <table>
+                <thead><tr><th>Usuario</th><th>Sucursal</th><th>Permiso</th><th>Accion</th></tr></thead>
+                <tbody>
+                  {mainAdmins.map((admin) => (
+                    <tr key={admin.adminId}>
+                      <td>{admin.adminName}</td>
+                      <td>{admin.branchName || 'Global'}</td>
+                      <td><StatusBadge tone={admin.enabled ? 'success' : 'warning'}>{admin.enabled ? 'Habilitado' : 'Bloqueado'}</StatusBadge></td>
+                      <td><button className="button button--compact" onClick={() => openComposeForAdmin(admin.adminId, admin.adminName)}>Crear ficha</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+      ) : null}
+
       <SectionCard
         eyebrow="Permisos"
         title="Apertura de fichas por especialistas"
@@ -177,7 +279,7 @@ export function AdminMessagingPermissionsPage() {
                   <span>Para</span>
                   <input
                     className="input"
-                    value={specialists.find((sp) => sp.specialistId === composeState.specialistId)?.specialistName ?? ''}
+                    value={composeState.recipientName}
                     readOnly
                   />
                 </label>
@@ -277,3 +379,4 @@ export function AdminMessagingTicketsPage() {
     </div>
   )
 }
+
