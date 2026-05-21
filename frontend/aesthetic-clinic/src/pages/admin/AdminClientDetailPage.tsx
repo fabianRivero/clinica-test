@@ -691,7 +691,7 @@ export function AdminClientDetailPage() {
       </SectionCard>
 
       <section className="dashboard-grid">
-        <SectionCard eyebrow="Sesiones" title="Sesiones realizadas" description="Citas confirmadas con validacion biometrica.">
+        <SectionCard eyebrow="Sesiones" title="Sesiones realizadas" description="Citas confirmadas con verificacion registrada.">
           {data.sessions.length ? (
             <div className="capacity-list">
               {data.sessions.map((session) => (

@@ -217,7 +217,7 @@ export function ClientDashboardPage() {
             <SectionCard
               eyebrow="Agenda"
               title="Proximas citas"
-              description="Citas ya registradas o pendientes de cierre biometrico."
+              description="Citas ya registradas o pendientes de cierre de verificacion."
             >
               {data.upcomingAppointments.length ? (
                 <div className="agenda-list">
