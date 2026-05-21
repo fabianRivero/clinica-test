@@ -175,7 +175,70 @@ def get_available_dates(sucursal_id, start_date, end_date):
                 available_dates.add(curr)
             curr += timedelta(days=1)
             
-    return available_dates
+    if not available_dates:
+        return available_dates
+
+    # 3. Keep only dates with at least one specialist effectively present.
+    # This guarantees consistency when:
+    # - all specialists are blocked by BLOQUEAR exceptions (date must disappear), or
+    # - a date without habitual schedule is opened via AGREGAR (date must appear).
+    specialist_ids = list(
+        Especialista.objects.filter(usuario__is_active=True).values_list("id", flat=True)
+    )
+    if not specialist_ids:
+        return set()
+
+    present_dates = set()
+    for current_date in available_dates:
+        for specialist_id in specialist_ids:
+            # Build smart checkpoints for the day from explicit configured boundaries,
+            # so we don't require full-day coverage and don't depend on coarse hourly buckets.
+            checkpoints = {time(12, 0)}
+
+            habitual_ranges = AgendaHabitualEspecialista.objects.filter(
+                especialista_id=specialist_id,
+                sucursal_id=sucursal_id,
+                fecha_inicio__lte=current_date,
+                fecha_fin__gte=current_date,
+                activo=True,
+            ).prefetch_related("dias")
+
+            dia_semana_python = current_date.weekday()
+            dia_semana_mapping = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 0}
+            dia_semana_django = dia_semana_mapping[dia_semana_python]
+
+            for habitual_range in habitual_ranges:
+                if habitual_range.dias.filter(dia_semana=dia_semana_django).exists():
+                    checkpoints.add(habitual_range.hora_inicio)
+                    checkpoints.add(habitual_range.hora_fin)
+
+            day_exceptions = AgendaExcepcionEspecialista.objects.filter(
+                especialista_id=specialist_id,
+                sucursal_id=sucursal_id,
+                fecha=current_date,
+                activo=True,
+            )
+            for exc in day_exceptions:
+                if exc.hora_inicio:
+                    checkpoints.add(exc.hora_inicio)
+                if exc.hora_fin:
+                    checkpoints.add(exc.hora_fin)
+
+            specialist_has_any_range = any(
+                check_specialist_presence(
+                    specialist_id,
+                    sucursal_id,
+                    current_date,
+                    checkpoint,
+                    checkpoint,
+                )
+                for checkpoint in checkpoints
+            )
+            if specialist_has_any_range:
+                present_dates.add(current_date)
+                break
+
+    return present_dates
 
 
 def mark_expired_programmed_appointments_as_no_show(reference_time=None):
