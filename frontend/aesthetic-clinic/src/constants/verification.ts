@@ -18,3 +18,9 @@ export const confirmationStatusTone: Record<ClientAppointment['confirmationStatu
   qr: 'pending',
   pendiente: 'warning',
 }
+
+export const verificationStatusTone: Record<NonNullable<ClientAppointment['verificationStatus']>, 'approved' | 'pending' | 'warning'> = {
+  verificada: 'approved',
+  pendiente: 'pending',
+  no_requerida: 'warning',
+}

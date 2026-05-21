@@ -228,7 +228,7 @@ export function ClientDashboardPage() {
                       <div className="agenda-item__content">
                         <strong>{appointment.operation}</strong>
                         <p>
-                          {appointment.specialist} | metodo verificacion: {appointment.biometric}
+                          {appointment.specialist} | metodo verificacion: {appointment.verificationMethod ?? appointment.biometric}
                         </p>
                       </div>
                       <StatusBadge tone={appointment.statusTone}>{appointment.status}</StatusBadge>

@@ -13,6 +13,7 @@ import type {
   UploadClientPaymentReceiptResponse,
 } from '../../types/client'
 import { ensureCsrfCookie } from './auth'
+import { normalizeClientAppointment, normalizeClientAppointments } from '../../mappers/clientVerification'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
@@ -76,8 +77,12 @@ async function requestFormDataWithBody<T>(path: string, body: FormData): Promise
   return responseBody as T
 }
 
-export function getClientDashboard() {
-  return requestJson<ClientDashboardResponse>('/api/client/dashboard/')
+export async function getClientDashboard() {
+  const response = await requestJson<ClientDashboardResponse>('/api/client/dashboard/')
+  return {
+    ...response,
+    upcomingAppointments: normalizeClientAppointments(response.upcomingAppointments),
+  }
 }
 
 export function getClientTreatments() {
@@ -88,20 +93,32 @@ export function getClientPayments() {
   return requestJson<ClientPaymentsResponse>('/api/client/pagos/')
 }
 
-export function getClientReservations() {
-  return requestJson<ClientReservationsResponse>('/api/client/reservas/')
+export async function getClientReservations() {
+  const response = await requestJson<ClientReservationsResponse>('/api/client/reservas/')
+  return {
+    ...response,
+    appointments: normalizeClientAppointments(response.appointments),
+  }
 }
 
-export function getClientReservationAvailability(operationId: string) {
-  return requestJson<ClientReservationAvailabilityResponse>(
+export async function getClientReservationAvailability(operationId: string) {
+  const response = await requestJson<ClientReservationAvailabilityResponse>(
     `/api/client/reservas/${operationId}/disponibilidad/`,
   )
+  return {
+    ...response,
+    appointment: response.appointment ? normalizeClientAppointment(response.appointment) : response.appointment,
+  }
 }
 
-export function getClientEditReservationAvailability(appointmentId: string) {
-  return requestJson<ClientReservationAvailabilityResponse>(
+export async function getClientEditReservationAvailability(appointmentId: string) {
+  const response = await requestJson<ClientReservationAvailabilityResponse>(
     `/api/client/reservas/citas/${appointmentId}/disponibilidad/`,
   )
+  return {
+    ...response,
+    appointment: response.appointment ? normalizeClientAppointment(response.appointment) : response.appointment,
+  }
 }
 
 export function createClientReservation(
