@@ -83,9 +83,13 @@ export function AdminOperationsPage() {
                       </div>
                     </dl>
                     <div className="operation-card__actions">
-                      <Link className="button button--ghost button--compact" to={`/admin/operaciones/${operation.rawId}`}>
-                        Ver detalle
-                      </Link>
+                      {operation.rawId ? (
+                        <Link className="button button--ghost button--compact" to={`/admin/operaciones/${operation.rawId}`}>
+                          Ver detalle
+                        </Link>
+                      ) : (
+                        <span className="field__hint">Sin detalle de operacion</span>
+                      )}
                     </div>
                   </article>
                 ))}
