@@ -62,8 +62,8 @@ export function AdminOperationsPage() {
                     </header>
                     <dl>
                       <div>
-                        <dt>Especialista</dt>
-                        <dd>{operation.specialist}</dd>
+                        <dt>Sucursal</dt>
+                        <dd>{operation.branch}</dd>
                       </div>
                       <div>
                         <dt>Sesiones</dt>

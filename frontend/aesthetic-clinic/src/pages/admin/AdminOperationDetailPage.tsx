@@ -227,8 +227,8 @@ export function AdminOperationDetailPage() {
                 <dd>{operation.patient}</dd>
               </div>
               <div>
-                <dt>Especialista</dt>
-                <dd>{operation.specialist}</dd>
+                <dt>Sucursal</dt>
+                <dd>{operation.branch}</dd>
               </div>
               <div>
                 <dt>Tipo de servicio</dt>

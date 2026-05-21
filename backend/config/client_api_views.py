@@ -125,7 +125,7 @@ def _procedure_name(operacion):
     return operacion.servicio_config.tipo_servicio.tipo
 
 
-def _operation_specialist(operacion):
+def _operation_branch(operacion):
     citas = list(operacion.citas_medicas.all())
     if not citas:
         return "Por asignar"
@@ -209,7 +209,7 @@ def _operation_item(operacion):
         "rawId": operacion.pk,
         "procedure": _procedure_name(operacion),
         "serviceType": operacion.servicio_config.tipo_servicio.tipo,
-        "specialist": _operation_specialist(operacion),
+        "branch": _operation_branch(operacion),
         "status": operacion.get_estado_display(),
         "statusTone": (
             "success"

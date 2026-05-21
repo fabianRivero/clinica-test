@@ -405,7 +405,7 @@ def _quota_display_status(cuota):
     return result
 
 
-def _operation_specialist(operacion):
+def _operation_branch(operacion):
     citas = list(operacion.citas_medicas.all())
     if not citas:
         return "Por asignar"
@@ -433,7 +433,7 @@ def _operation_card(operacion):
         "rawId": operacion.pk,
         "patient": _full_name(operacion.paciente.usuario),
         "procedure": _procedure_name(operacion),
-        "specialist": _operation_specialist(operacion),
+        "branch": _operation_branch(operacion),
         "sessions": (
             f"{operacion.sesiones_totales} total | "
             f"{operacion.sesiones_confirmadas} confirmadas | "
@@ -453,7 +453,7 @@ def _prospect_appointment_operation_card(appointment):
         "rawId": None,
         "patient": str(appointment.prospecto),
         "procedure": "Consulta medica (prospecto)",
-        "specialist": f"Sede: {appointment.sucursal.nombre}",
+        "branch": f"Sede: {appointment.sucursal.nombre}",
         "sessions": "No aplica",
         "nextAppointment": _datetime_label(appointment.fecha_hora),
         "quotaStatus": "No aplica",
@@ -504,7 +504,7 @@ def _operation_detail(operacion):
         "procedure": _procedure_name(operacion),
         "serviceType": operacion.servicio_config.tipo_servicio.tipo,
         "procedureType": procedure.tipo_p_estetico.tipo if procedure else "Sin tipo",
-        "specialist": _operation_specialist(operacion),
+        "branch": _operation_branch(operacion),
         "sessions": (
             f"{operacion.sesiones_totales} total | "
             f"{operacion.sesiones_confirmadas} confirmadas | "

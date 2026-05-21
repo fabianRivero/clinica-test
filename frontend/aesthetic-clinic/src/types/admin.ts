@@ -187,7 +187,7 @@ export type OperationCardData = {
   rawId: number | null
   patient: string
   procedure: string
-  specialist: string
+  branch: string
   sessions: string
   nextAppointment: string
   quotaStatus: string
@@ -358,7 +358,7 @@ export type OperationDetailData = {
   procedure: string
   serviceType: string
   procedureType: string
-  specialist: string
+  branch: string
   sessions: string
   nextAppointment: string
   quotaStatus: string
