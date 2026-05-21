@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 
 import { useAuth } from '../providers/AuthProvider'
@@ -29,6 +29,7 @@ const fullNavigation = [
     ],
   },
   { to: '/admin/pagos', label: 'Pagos' },
+  { to: '/admin/notificaciones', label: 'Notificaciones' },
   {
     label: 'Mensajeria',
     children: [
@@ -90,6 +91,14 @@ function AdminLayoutInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const { user, logout } = useAuth()
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  useEffect(() => {
+    void fetch('/api/notifications/', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data) => setUnreadCount(data.unreadCount || 0))
+      .catch(() => undefined)
+  }, [])
   const activePath = location.pathname
   const isMainAdmin = user?.isMainAdmin ?? false
 
@@ -189,6 +198,7 @@ function AdminLayoutInner() {
           </div>
 
           <div className="topbar__right">
+            <NavLink to="/admin/notificaciones" className="button button--ghost button--compact">🔔 {unreadCount}</NavLink>
             <div className="search-pill">Buscar pacientes, pagos u operaciones</div>
             <div className="profile-chip">
               <div className="profile-chip__meta">

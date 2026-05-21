@@ -12,6 +12,7 @@ urlpatterns = [
     path("api/client/", include("config.client_api_urls")),
     path("api/auth/", include("config.auth_urls")),
     path("api/tickets/", include("config.ticket_urls")),
+    path("api/notifications/", include("config.notification_urls")),
     path("health/", healthcheck, name="healthcheck"),
 ]
 
