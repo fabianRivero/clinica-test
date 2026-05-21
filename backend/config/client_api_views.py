@@ -169,6 +169,8 @@ def _payment_tone(payment):
 def _quota_tone(cuota):
     if cuota.estado == CuotaPlanPago.Estado.PAGADO:
         return "approved"
+    if cuota.estado == CuotaPlanPago.Estado.NO_PAGADA:
+        return "observed"
     if cuota.estado == CuotaPlanPago.Estado.VENCIDA:
         return "danger"
     return "pending"
@@ -567,7 +569,11 @@ def client_dashboard(request):
     operations_qs, payments_qs, appointments_qs, quotas_qs = _base_client_queryset(cliente)
 
     active_operations = list(operations_qs.filter(estado=Operacion.Estado.EN_PROCESO))
-    pending_quotas = list(quotas_qs.exclude(estado=CuotaPlanPago.Estado.PAGADO))
+    pending_quotas = list(
+        quotas_qs.exclude(
+            estado__in=[CuotaPlanPago.Estado.PAGADO, CuotaPlanPago.Estado.NO_PAGADA]
+        )
+    )
     upcoming_appointments = list(appointments_qs.filter(fecha_hora__gte=timezone.now()))
     latest_analysis = cliente.analisis_esteticos.order_by("-fecha_analisis").first()
 
@@ -698,13 +704,18 @@ def client_payments(request):
             _metric(
                 "client-payments-quotas",
                 "Cuotas vigentes",
-                quotas_qs.exclude(estado=CuotaPlanPago.Estado.PAGADO).count(),
+                quotas_qs.exclude(estado__in=[CuotaPlanPago.Estado.PAGADO, CuotaPlanPago.Estado.NO_PAGADA]).count(),
                 f"{quotas_qs.filter(estado=CuotaPlanPago.Estado.VENCIDA).count()} vencidas",
                 "primary",
             ),
         ],
         "paymentQrConfig": _payment_qr_config_item(ConfiguracionPagoQR.objects.order_by("-updated_at").first()),
-        "activeQuotas": [_quota_item(cuota) for cuota in quotas_qs.exclude(estado=CuotaPlanPago.Estado.PAGADO)],
+        "activeQuotas": [
+            _quota_item(cuota)
+            for cuota in quotas_qs.exclude(
+                estado__in=[CuotaPlanPago.Estado.PAGADO, CuotaPlanPago.Estado.NO_PAGADA]
+            )
+        ],
         "payments": [_payment_item(payment) for payment in payments_qs],
     }
     return _json(data)

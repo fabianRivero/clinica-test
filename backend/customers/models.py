@@ -180,7 +180,9 @@ class Cliente(TimeStampedModel):
         if operacion.estado in {"CANCELADA", "FINALIZADA"}:
             return False
         sesiones_pendientes = operacion.sesiones_confirmadas < operacion.sesiones_totales
-        pagos_pendientes = operacion.cuotas_plan_pagos.exclude(estado="PAGADO").exists()
+        pagos_pendientes = operacion.cuotas_plan_pagos.exclude(
+            estado__in={"PAGADO", "NO_PAGADA"}
+        ).exists()
         return sesiones_pendientes or pagos_pendientes
 
     def pendientes_operativos(self):
@@ -197,7 +199,7 @@ class Cliente(TimeStampedModel):
                 for operacion in operaciones_con_pendientes
             ),
             "cuotas_pendientes": sum(
-                operacion.cuotas_plan_pagos.exclude(estado="PAGADO").count()
+                operacion.cuotas_plan_pagos.exclude(estado__in={"PAGADO", "NO_PAGADA"}).count()
                 for operacion in operaciones_con_pendientes
             ),
         }

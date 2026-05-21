@@ -29,6 +29,7 @@ class CuotaPlanPago(TimeStampedModel):
         PAGADO = "PAGADO", "Pagado"
         PENDIENTE = "PENDIENTE", "Pendiente"
         VENCIDA = "VENCIDA", "Vencida"
+        NO_PAGADA = "NO_PAGADA", "No pagada"
 
     operacion = models.ForeignKey(
         "operations.Operacion",
@@ -64,6 +65,10 @@ class CuotaPlanPago(TimeStampedModel):
             estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO
         ).exists():
             nuevo_estado = self.Estado.PAGADO
+        elif self.pagos_realizados.filter(
+            estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE
+        ).exists():
+            nuevo_estado = self.Estado.PENDIENTE
         elif self.fecha_vencimiento < timezone.localdate():
             nuevo_estado = self.Estado.VENCIDA
         else:
