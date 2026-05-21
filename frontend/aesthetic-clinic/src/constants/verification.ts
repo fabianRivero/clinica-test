@@ -13,12 +13,6 @@ export const appointmentStatusLabel: Record<AppointmentStatus, string> = {
   confirmada: 'Confirmada',
 }
 
-export const confirmationStatusTone: Record<ClientAppointment['confirmationStatus'], 'approved' | 'pending' | 'warning'> = {
-  biometria: 'approved',
-  qr: 'pending',
-  pendiente: 'warning',
-}
-
 export const verificationStatusTone: Record<NonNullable<ClientAppointment['verificationStatus']>, 'approved' | 'pending' | 'warning'> = {
   verificada: 'approved',
   pendiente: 'pending',

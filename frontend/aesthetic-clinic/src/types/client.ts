@@ -83,8 +83,8 @@ export type ClientAppointment = {
   biometric: string
   confirmationStatus: 'qr' | 'biometria' | 'pendiente'
   confirmationLabel: string
-  verificationStatus?: 'pendiente' | 'verificada' | 'no_requerida'
-  verificationMethod?: 'biometria' | 'qr' | 'manual' | 'otro' | null
+  verificationStatus: 'pendiente' | 'verificada' | 'no_requerida'
+  verificationMethod: 'biometria' | 'qr' | 'manual' | 'otro' | null
   details: string
   canManage: boolean
   canMarkPendingBiometric: boolean

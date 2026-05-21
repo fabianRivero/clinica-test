@@ -134,9 +134,9 @@ export type AgendaItemLegacy = {
   operationId: number
   specialist: string
   status: LegacyAgendaStatus
-  appointmentStatus?: AppointmentStatus
-  verificationStatus?: VerificationStatus
-  verificationMethod?: VerificationMethod
+  appointmentStatus: AppointmentStatus
+  verificationStatus: VerificationStatus
+  verificationMethod: VerificationMethod
   isToday: boolean
   isThisWeek: boolean
 }
