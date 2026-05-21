@@ -175,7 +175,35 @@ def get_available_dates(sucursal_id, start_date, end_date):
                 available_dates.add(curr)
             curr += timedelta(days=1)
             
-    return available_dates
+    if not available_dates:
+        return available_dates
+
+    # 3. Keep only dates with at least one specialist effectively present.
+    # This guarantees consistency when:
+    # - all specialists are blocked by BLOQUEAR exceptions (date must disappear), or
+    # - a date without habitual schedule is opened via AGREGAR (date must appear).
+    specialist_ids = list(
+        Especialista.objects.filter(usuario__is_active=True).values_list("id", flat=True)
+    )
+    if not specialist_ids:
+        return set()
+
+    present_dates = set()
+    full_day_start = time(0, 0)
+    full_day_end = time(23, 59)
+    for current_date in available_dates:
+        for specialist_id in specialist_ids:
+            if check_specialist_presence(
+                specialist_id,
+                sucursal_id,
+                current_date,
+                full_day_start,
+                full_day_end,
+            ):
+                present_dates.add(current_date)
+                break
+
+    return present_dates
 
 
 def mark_expired_programmed_appointments_as_no_show(reference_time=None):
