@@ -188,7 +188,7 @@ export type OperationCardData = {
   patient: string
   procedure: string
   branch: string
-  branchId: number
+  branchId: number | null
   sessions: string
   nextAppointment: string
   quotaStatus: string
@@ -361,7 +361,7 @@ export type OperationDetailData = {
   serviceType: string
   procedureType: string
   branch: string
-  branchId: number
+  branchId: number | null
   sessions: string
   nextAppointment: string
   quotaStatus: string

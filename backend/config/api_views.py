@@ -405,25 +405,34 @@ def _quota_display_status(cuota):
     return result
 
 
-def _operation_branch(operacion):
+def _operation_reference_appointment(operacion):
     citas = list(operacion.citas_medicas.all())
     if not citas:
-        return "Por asignar"
+        return None
 
     now = timezone.now()
     upcoming = [cita for cita in citas if cita.fecha_hora >= now]
-    cita = upcoming[0] if upcoming else citas[-1]
+    return upcoming[0] if upcoming else citas[-1]
+
+
+def _operation_branch(operacion):
+    cita = _operation_reference_appointment(operacion)
+    if not cita:
+        return "Por asignar"
     return f"Sede: {cita.sucursal.nombre}"
 
 
-def _operation_next_appointment(operacion):
-    citas = list(operacion.citas_medicas.all())
-    if not citas:
-        return "Sin cita programada"
+def _operation_branch_id(operacion):
+    cita = _operation_reference_appointment(operacion)
+    if not cita:
+        return None
+    return cita.sucursal_id
 
-    now = timezone.now()
-    upcoming = [cita for cita in citas if cita.fecha_hora >= now]
-    cita = upcoming[0] if upcoming else citas[-1]
+
+def _operation_next_appointment(operacion):
+    cita = _operation_reference_appointment(operacion)
+    if not cita:
+        return "Sin cita programada"
     return _datetime_label(cita.fecha_hora)
 
 
@@ -434,6 +443,7 @@ def _operation_card(operacion):
         "patient": _full_name(operacion.paciente.usuario),
         "procedure": _procedure_name(operacion),
         "branch": _operation_branch(operacion),
+        "branchId": _operation_branch_id(operacion),
         "sessions": (
             f"{operacion.sesiones_totales} total | "
             f"{operacion.sesiones_confirmadas} confirmadas | "
@@ -505,6 +515,7 @@ def _operation_detail(operacion):
         "serviceType": operacion.servicio_config.tipo_servicio.tipo,
         "procedureType": procedure.tipo_p_estetico.tipo if procedure else "Sin tipo",
         "branch": _operation_branch(operacion),
+        "branchId": _operation_branch_id(operacion),
         "sessions": (
             f"{operacion.sesiones_totales} total | "
             f"{operacion.sesiones_confirmadas} confirmadas | "
@@ -541,6 +552,8 @@ def _operation_detail(operacion):
                     CitaMedica.Estado.PROGRAMADA,
                     CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
                 },
+                "canManage": cita.estado == CitaMedica.Estado.PROGRAMADA,
+
             }
             for cita in operacion.citas_medicas.all()
         ],
