@@ -9,6 +9,7 @@ from catalogs.models import ServicioConfig, TipoServicio
 from customers.models import Cliente
 from operations.models import CitaMedica, Operacion
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
+from notifications.models import Notification
 from staff.models import Especialista
 
 
@@ -79,6 +80,25 @@ class AppointmentNoShowSyncTests(TestCase):
         appointment.refresh_from_db()
         self.assertEqual(summary["no_show"], 0)
         self.assertEqual(appointment.estado, CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA)
+
+    def test_creates_client_notification_when_appointment_becomes_no_show(self):
+        reference_time = timezone.now()
+        stale_appointment = CitaMedica.objects.create(
+            operacion=self.operacion,
+            medico=self.especialista,
+            fecha_hora=reference_time - timedelta(days=2),
+            estado=CitaMedica.Estado.PROGRAMADA,
+        )
+
+        mark_expired_programmed_appointments_as_no_show(reference_time)
+
+        notification = Notification.objects.filter(
+            recipient=self.cliente.usuario,
+            source_event="appointment_marked_no_show",
+            source_entity_id=stale_appointment.pk,
+        ).first()
+        self.assertIsNotNone(notification)
+        self.assertEqual(notification.type, "CLIENT_APPOINTMENT_CANCELLED")
 
     def test_client_becomes_inactive_when_sessions_and_payments_are_complete(self):
         self.operacion.sesiones_totales = 1

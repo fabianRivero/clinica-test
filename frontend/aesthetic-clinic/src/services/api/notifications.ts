@@ -12,6 +12,12 @@ export type NotificationItem = {
   actionUrl: string
 }
 
+export const NOTIFICATIONS_UPDATED_EVENT = 'notifications:updated'
+
+export function notifyNotificationsUpdated() {
+  window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
+}
+
 export async function getMyNotifications() {
   const response = await fetch(`${API_BASE_URL}/api/notifications/`, {
     credentials: 'include',

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 import { useAuth } from '../providers/AuthProvider'
+import { NOTIFICATIONS_UPDATED_EVENT } from '../services/api/notifications'
 
 const navigation = [
   { to: '/cliente', label: 'Resumen' },
@@ -16,11 +17,18 @@ export function ClientLayout() {
   const { user, logout } = useAuth()
   const [unreadCount, setUnreadCount] = useState(0)
 
-  useEffect(() => {
+  const loadUnreadCount = () => {
     void fetch('/api/notifications/', { credentials: 'include' })
       .then((r) => r.json())
       .then((data) => setUnreadCount(data.unreadCount || 0))
       .catch(() => undefined)
+  }
+
+  useEffect(() => {
+    loadUnreadCount()
+    const handleNotificationsUpdated = () => loadUnreadCount()
+    window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, handleNotificationsUpdated)
+    return () => window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, handleNotificationsUpdated)
   }, [])
 
   return (

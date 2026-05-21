@@ -9,6 +9,7 @@ from operations.models import (
     CitaProspecto,
 )
 from staff.models import Especialista
+from notifications.services import create_notification
 
 BLOCKING_RESERVATION_STATES = [
     CitaMedica.Estado.PROGRAMADA,
@@ -190,10 +191,42 @@ def mark_expired_programmed_appointments_as_no_show(reference_time=None):
         fecha_hora__date__lt=today,
     ).update(estado=CitaProspecto.Estado.NO_ASISTIO)
 
+    stale_medical_appointments = list(
+        CitaMedica.objects.filter(
+            estado=CitaMedica.Estado.PROGRAMADA,
+            fecha_hora__date__lt=today,
+        )
+        .select_related("operacion__paciente__usuario", "sucursal")
+    )
     medical_no_show = CitaMedica.objects.filter(
         estado=CitaMedica.Estado.PROGRAMADA,
         fecha_hora__date__lt=today,
     ).update(estado=CitaMedica.Estado.NO_ASISTIO)
+
+    for appointment in stale_medical_appointments:
+        cliente = getattr(appointment.operacion, "paciente", None)
+        recipient = getattr(cliente, "usuario", None) if cliente else None
+        if not recipient:
+            continue
+        create_notification(
+            recipient=recipient,
+            branch=appointment.sucursal,
+            type="CLIENT_APPOINTMENT_CANCELLED",
+            title="Reserva marcada como no asistida",
+            message=(
+                f"Tu reserva del {timezone.localtime(appointment.fecha_hora).strftime('%d/%m %H:%M')} "
+                "pasó al estado No asistió."
+            ),
+            action_url="/cliente/reservas",
+            payload={
+                "appointmentType": "cita_medica",
+                "appointmentId": appointment.pk,
+                "newStatus": CitaMedica.Estado.NO_ASISTIO,
+            },
+            source_event="appointment_marked_no_show",
+            source_entity_type="cita_medica",
+            source_entity_id=appointment.pk,
+        )
 
     return {
         "no_show": prospect_no_show + medical_no_show,
