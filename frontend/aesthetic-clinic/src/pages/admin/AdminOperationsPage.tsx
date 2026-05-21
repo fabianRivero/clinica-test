@@ -6,7 +6,10 @@ import { useApiResource } from '../../hooks/useApiResource'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { getAdminOperations } from '../../services/api/admin'
 import { Link } from 'react-router-dom'
-import { useCallback } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+
+
+const OPERATION_STATUS_ALL = 'TODOS'
 
 export function AdminOperationsPage() {
   const { activeBranch } = useBranchContext()
@@ -14,6 +17,24 @@ export function AdminOperationsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loader = useCallback(() => getAdminOperations(), [branchId])
   const { data, isLoading, error } = useApiResource(loader)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState(OPERATION_STATUS_ALL)
+
+  const statusOptions = useMemo(() => {
+    const statuses = new Set((data?.operations ?? []).map((operation) => operation.status).filter(Boolean))
+    return [OPERATION_STATUS_ALL, ...Array.from(statuses)]
+  }, [data])
+
+  const filteredOperations = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase()
+    return (data?.operations ?? []).filter((operation) => {
+      const matchesSearch = !normalizedSearch || operation.patient.toLowerCase().includes(normalizedSearch)
+      const matchesStatus =
+        statusFilter === OPERATION_STATUS_ALL ||
+        (operation.status || '').toLowerCase() === statusFilter.toLowerCase()
+      return matchesSearch && matchesStatus
+    })
+  }, [data, searchTerm, statusFilter])
 
   return (
     <div className="page-stack">
@@ -49,9 +70,35 @@ export function AdminOperationsPage() {
             title="Resumen de tratamientos"
             description="Lectura real de operaciones vigentes, sesiones disponibles y situacion de cuotas."
           >
-            {data.operations.length ? (
+            <div className="form-grid">
+              <label className="field">
+                <span>Buscar cliente</span>
+                <input
+                  className="input"
+                  placeholder="Nombre del cliente"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Estado</span>
+                <select
+                  className="input"
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                >
+                  {statusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {status === OPERATION_STATUS_ALL ? 'Todos' : status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {filteredOperations.length ? (
               <div className="operation-grid">
-                {data.operations.map((operation) => (
+                {filteredOperations.map((operation) => (
                   <article className="operation-card" key={operation.id}>
                     <header>
                       <div>
@@ -96,8 +143,12 @@ export function AdminOperationsPage() {
               </div>
             ) : (
               <DataState
-                title="Sin operaciones"
-                message="Todavia no hay tratamientos creados en la base conectada."
+                title={data.operations.length ? 'Sin resultados' : 'Sin operaciones'}
+                message={
+                  data.operations.length
+                    ? 'No hay operaciones que coincidan con los filtros aplicados.'
+                    : 'Todavia no hay tratamientos creados en la base conectada.'
+                }
               />
             )}
           </SectionCard>
