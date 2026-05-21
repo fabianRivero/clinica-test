@@ -2907,8 +2907,8 @@ def admin_reschedule_appointment(request, appointment_id):
     if not appointment:
         return _json({"detail": "No encontramos la cita solicitada."}, status=404)
 
-    if appointment.estado != CitaMedica.Estado.PROGRAMADA or appointment.fecha_hora <= timezone.now():
-        return _json({"detail": "Solo se pueden reprogramar citas futuras que sigan programadas."}, status=400)
+    if appointment.estado != CitaMedica.Estado.PROGRAMADA:
+        return _json({"detail": "Solo se pueden reprogramar citas que sigan programadas."}, status=400)
 
     payload = _load_payload(request)
     if payload is None:
