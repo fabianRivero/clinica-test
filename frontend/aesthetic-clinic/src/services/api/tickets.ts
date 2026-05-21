@@ -61,12 +61,15 @@ export type PermissionSummary = 'ALL_ENABLED' | 'ALL_BLOCKED' | 'MIXED'
 export type Ticket = { id:number; subject:string; status:TicketStatus; branchName:string; specialistName:string; updatedAt:string }
 export type TicketMessage = { id:number; authorName:string; authorRole:string; body:string; status:MessageStatus; createdAt:string }
 export type SpecialistOpenPermission = { specialistId:number; specialistName:string; enabled:boolean }
+export type BranchAdminOpenPermission = { adminId:number; adminName:string; branchId:number | null; branchName:string }
 export type OpenPermissionStatusResponse = {
   branchId:number
   branchName:string
   branchDefaultEnabled:boolean
   summary: PermissionSummary
   specialists: SpecialistOpenPermission[]
+  branchAdmins: BranchAdminOpenPermission[]
+  mainAdmins: BranchAdminOpenPermission[]
 }
 
 export const getTickets = (status?: TicketStatus) => getJson<{tickets: Ticket[]}>(`/api/tickets/${status ? `?status=${status}`:''}`)

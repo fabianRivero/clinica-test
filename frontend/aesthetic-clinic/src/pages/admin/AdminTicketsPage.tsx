@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useAuth } from '../../providers/AuthProvider'
 import { Link } from 'react-router-dom'
 import { AdminMessagingTabs } from '../../components/admin/AdminMessagingTabs'
 import { DataState } from '../../components/admin/DataState'
@@ -14,6 +15,7 @@ import {
   setSpecialistOpenPermission,
   type PermissionSummary,
   type SpecialistOpenPermission,
+  type BranchAdminOpenPermission,
   type Ticket,
   type TicketStatus,
 } from '../../services/api/tickets'
@@ -36,6 +38,9 @@ export function AdminMessagingPermissionsPage() {
   const { showNotification } = useNotifications()
   const [specialists, setSpecialists] = useState<SpecialistOpenPermission[]>([])
   const [summary, setSummary] = useState<PermissionSummary>('MIXED')
+  const [branchAdmins, setBranchAdmins] = useState<BranchAdminOpenPermission[]>([])
+  const [mainAdmins, setMainAdmins] = useState<BranchAdminOpenPermission[]>([])
+  const { user } = useAuth()
   const [isComposeOpen, setIsComposeOpen] = useState(false)
   const [composeState, setComposeState] = useState<TicketComposeState>(initialComposeState)
   const [isSending, setIsSending] = useState(false)
@@ -45,6 +50,8 @@ export function AdminMessagingPermissionsPage() {
   const loadPermissions = async () => {
     const data = await getOpenPermissionStatus()
     setSpecialists(data.specialists)
+    setBranchAdmins(data.branchAdmins ?? [])
+    setMainAdmins(data.mainAdmins ?? [])
     setSummary(data.summary)
   }
 
@@ -126,6 +133,59 @@ export function AdminMessagingPermissionsPage() {
         description="Gestiona permisos para apertura de fichas y revisa fichas existentes."
       />
       <AdminMessagingTabs />
+      {user?.isMainAdmin ? (
+        <SectionCard
+          eyebrow="Administradores"
+          title="Administradores de sucursal"
+          description="Listado de administradores de sucursal con su usuario y sucursal asociada."
+        >
+          {!branchAdmins.length ? (
+            <DataState title="Sin administradores" message="No hay administradores de sucursal activos." />
+          ) : (
+            <div className="table-card">
+              <table>
+                <thead><tr><th>Usuario</th><th>Sucursal</th></tr></thead>
+                <tbody>
+                  {branchAdmins.map((admin) => (
+                    <tr key={admin.adminId}>
+                      <td>{admin.adminName}</td>
+                      <td>{admin.branchName || 'Sin sucursal'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+      ) : null}
+
+      {user && !user.isMainAdmin ? (
+        <SectionCard
+          eyebrow="Comunicacion"
+          title="Administradores principales"
+          description="Puedes crear fichas para comunicarte con el administrador principal."
+        >
+          {!mainAdmins.length ? (
+            <DataState title="Sin administradores principales" message="No hay administradores principales activos." />
+          ) : (
+            <div className="table-card">
+              <table>
+                <thead><tr><th>Usuario</th><th>Sucursal</th><th>Accion</th></tr></thead>
+                <tbody>
+                  {mainAdmins.map((admin) => (
+                    <tr key={admin.adminId}>
+                      <td>{admin.adminName}</td>
+                      <td>{admin.branchName || 'Global'}</td>
+                      <td><span style={{ color: 'var(--c-neutral-600)' }}>Disponible para mensajeria administrativa</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SectionCard>
+      ) : null}
+
       <SectionCard
         eyebrow="Permisos"
         title="Apertura de fichas por especialistas"

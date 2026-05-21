@@ -8,7 +8,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from operations.models import Ticket, TicketMessage
 from staff.models import Especialista
-from accounts.models import Usuario
+from accounts.models import Rol, Usuario
 from notifications.models import Notification
 from notifications.services import create_notification
 
@@ -65,6 +65,35 @@ def _ticket_visible_to_user(ticket, request):
 
 
 
+
+
+def _branch_admin_items(request):
+    user = request.user
+    qs = Usuario.objects.select_related("sucursal").filter(is_active=True, rol__rol="ADMIN_SUCURSAL")
+    if user.es_admin_sucursal and user.sucursal_id:
+        qs = qs.filter(sucursal_id=user.sucursal_id)
+    items = []
+    for admin in qs.order_by("sucursal__nombre", "username"):
+        items.append({
+            "adminId": admin.id,
+            "adminName": admin.nombre_completo or admin.username,
+            "branchId": admin.sucursal_id,
+            "branchName": admin.sucursal.nombre if admin.sucursal_id else "",
+        })
+    return items
+
+
+def _main_admin_items():
+    qs = Usuario.objects.select_related("sucursal").filter(is_active=True, rol__rol="ADMIN_PRINCIPAL")
+    return [
+        {
+            "adminId": admin.id,
+            "adminName": admin.nombre_completo or admin.username,
+            "branchId": admin.sucursal_id,
+            "branchName": admin.sucursal.nombre if admin.sucursal_id else "",
+        }
+        for admin in qs.order_by("username")
+    ]
 def _notify_ticket_message(ticket, author, body):
     participant_ids = set(
         TicketMessage.objects.filter(ticket=ticket)
@@ -297,6 +326,8 @@ def admin_ticket_open_permission_status(request):
         "branchName": branch.nombre,
         "branchDefaultEnabled": bool(branch.especialistas_pueden_abrir_fichas),
         "specialists": items,
+        "branchAdmins": _branch_admin_items(request),
+        "mainAdmins": _main_admin_items(),
         "summary": summary,
     })
 
