@@ -24,3 +24,16 @@ export const verificationStatusTone: Record<NonNullable<ClientAppointment['verif
   pendiente: 'pending',
   no_requerida: 'warning',
 }
+
+export const verificationStatusLabel: Record<NonNullable<ClientAppointment['verificationStatus']>, string> = {
+  verificada: 'Verificada',
+  pendiente: 'Pendiente',
+  no_requerida: 'No requerida',
+}
+
+export const verificationMethodLabel: Record<Exclude<NonNullable<ClientAppointment['verificationMethod']>, null>, string> = {
+  biometria: 'Biometria',
+  qr: 'QR',
+  manual: 'Manual',
+  otro: 'Otro',
+}

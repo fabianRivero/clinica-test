@@ -3,7 +3,7 @@ import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
-import { confirmationStatusTone, verificationStatusTone } from '../../constants/verification'
+import { verificationStatusLabel, verificationStatusTone } from '../../constants/verification'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { cancelClientReservation, getClientReservations } from '../../services/api/client'
@@ -105,13 +105,9 @@ export function ClientReservationsPage() {
                           </td>
                           <td>
                             <StatusBadge
-                              tone={
-                                appointment.verificationStatus
-                                  ? verificationStatusTone[appointment.verificationStatus]
-                                  : confirmationStatusTone[appointment.confirmationStatus]
-                              }
+                              tone={verificationStatusTone[appointment.verificationStatus ?? 'pendiente']}
                             >
-                              {appointment.confirmationLabel}
+                              {verificationStatusLabel[appointment.verificationStatus ?? 'pendiente']}
                             </StatusBadge>
                           </td>
                           <td>

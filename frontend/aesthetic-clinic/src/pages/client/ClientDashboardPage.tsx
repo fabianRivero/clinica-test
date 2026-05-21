@@ -2,6 +2,7 @@ import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
+import { verificationMethodLabel } from '../../constants/verification'
 import { useApiResource } from '../../hooks/useApiResource'
 import { getClientDashboard } from '../../services/api/client'
 
@@ -228,7 +229,10 @@ export function ClientDashboardPage() {
                       <div className="agenda-item__content">
                         <strong>{appointment.operation}</strong>
                         <p>
-                          {appointment.specialist} | metodo verificacion: {appointment.verificationMethod ?? appointment.biometric}
+                          {appointment.specialist} | metodo verificacion:{' '}
+                          {appointment.verificationMethod
+                            ? verificationMethodLabel[appointment.verificationMethod]
+                            : 'No especificado'}
                         </p>
                       </div>
                       <StatusBadge tone={appointment.statusTone}>{appointment.status}</StatusBadge>
