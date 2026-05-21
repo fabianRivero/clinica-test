@@ -61,7 +61,7 @@ export type PermissionSummary = 'ALL_ENABLED' | 'ALL_BLOCKED' | 'MIXED'
 export type Ticket = { id:number; subject:string; status:TicketStatus; branchName:string; specialistName:string; updatedAt:string }
 export type TicketMessage = { id:number; authorName:string; authorRole:string; body:string; status:MessageStatus; createdAt:string }
 export type SpecialistOpenPermission = { specialistId:number; specialistName:string; enabled:boolean }
-export type BranchAdminOpenPermission = { adminId:number; adminName:string; branchId:number | null; branchName:string }
+export type BranchAdminOpenPermission = { adminId:number; adminName:string; branchId:number | null; branchName:string; enabled:boolean }
 export type OpenPermissionStatusResponse = {
   branchId:number
   branchName:string
@@ -98,3 +98,5 @@ export const closeTicket = (ticketId:number) => postJson(`/api/tickets/${ticketI
 export const reopenTicket = (ticketId:number) => postJson(`/api/tickets/${ticketId}/reabrir/`, {})
 export const getOpenPermissionStatus = () => getJson<OpenPermissionStatusResponse>('/api/tickets/permisos/apertura/estado/')
 export const setSpecialistOpenPermission = (enabled:boolean, specialistId?: number) => postJson('/api/tickets/permisos/apertura/', { enabled, specialistId })
+
+export const setBranchAdminOpenPermission = (enabled:boolean, adminUserId?: number) => postJson('/api/tickets/permisos/apertura/', adminUserId ? { enabled, adminUserId } : { enabled, target: 'branch_admins' })

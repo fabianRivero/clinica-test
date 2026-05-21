@@ -13,6 +13,7 @@ import {
   getOpenPermissionStatus,
   getTickets,
   setSpecialistOpenPermission,
+  setBranchAdminOpenPermission,
   type PermissionSummary,
   type SpecialistOpenPermission,
   type BranchAdminOpenPermission,
@@ -78,6 +79,16 @@ export function AdminMessagingPermissionsPage() {
     await loadPermissions()
   }
 
+  const onBranchAdminUpdate = async (adminUserId: number, enabled: boolean) => {
+    await setBranchAdminOpenPermission(enabled, adminUserId)
+    await loadPermissions()
+  }
+
+  const onBranchAdminMassUpdate = async (enabled: boolean) => {
+    await setBranchAdminOpenPermission(enabled)
+    await loadPermissions()
+  }
+
   const openComposeModal = (specialistId: number, specialistName: string) => {
     setComposeState({
       specialistId,
@@ -139,17 +150,27 @@ export function AdminMessagingPermissionsPage() {
           title="Administradores de sucursal"
           description="Listado de administradores de sucursal con su usuario y sucursal asociada."
         >
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <button className="button" onClick={() => void onBranchAdminMassUpdate(true)}>Habilitar a todos</button>
+            <button className="button button--ghost" onClick={() => void onBranchAdminMassUpdate(false)}>Bloquear a todos</button>
+          </div>
           {!branchAdmins.length ? (
             <DataState title="Sin administradores" message="No hay administradores de sucursal activos." />
           ) : (
             <div className="table-card">
               <table>
-                <thead><tr><th>Usuario</th><th>Sucursal</th></tr></thead>
+                <thead><tr><th>Usuario</th><th>Sucursal</th><th>Permiso</th><th>Accion</th></tr></thead>
                 <tbody>
                   {branchAdmins.map((admin) => (
                     <tr key={admin.adminId}>
                       <td>{admin.adminName}</td>
                       <td>{admin.branchName || 'Sin sucursal'}</td>
+                      <td><StatusBadge tone={admin.enabled ? 'success' : 'warning'}>{admin.enabled ? 'Habilitado' : 'Bloqueado'}</StatusBadge></td>
+                      <td style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <button className="button button--ghost button--compact" disabled={admin.enabled} onClick={() => void onBranchAdminUpdate(admin.adminId, true)}>Habilitar</button>
+                        <button className="button button--ghost button--compact" disabled={!admin.enabled} onClick={() => void onBranchAdminUpdate(admin.adminId, false)}>Bloquear</button>
+                        <button className="button button--compact">Crear ficha</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -170,13 +191,14 @@ export function AdminMessagingPermissionsPage() {
           ) : (
             <div className="table-card">
               <table>
-                <thead><tr><th>Usuario</th><th>Sucursal</th><th>Accion</th></tr></thead>
+                <thead><tr><th>Usuario</th><th>Sucursal</th><th>Permiso</th><th>Accion</th></tr></thead>
                 <tbody>
                   {mainAdmins.map((admin) => (
                     <tr key={admin.adminId}>
                       <td>{admin.adminName}</td>
                       <td>{admin.branchName || 'Global'}</td>
-                      <td><span style={{ color: 'var(--c-neutral-600)' }}>Disponible para mensajeria administrativa</span></td>
+                      <td><StatusBadge tone={admin.enabled ? 'success' : 'warning'}>{admin.enabled ? 'Habilitado' : 'Bloqueado'}</StatusBadge></td>
+                      <td><button className="button button--compact">Crear ficha</button></td>
                     </tr>
                   ))}
                 </tbody>

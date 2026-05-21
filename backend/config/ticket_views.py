@@ -79,6 +79,7 @@ def _branch_admin_items(request):
             "adminName": admin.nombre_completo or admin.username,
             "branchId": admin.sucursal_id,
             "branchName": admin.sucursal.nombre if admin.sucursal_id else "",
+            "enabled": bool(admin.is_active),
         })
     return items
 
@@ -91,6 +92,7 @@ def _main_admin_items():
             "adminName": admin.nombre_completo or admin.username,
             "branchId": admin.sucursal_id,
             "branchName": admin.sucursal.nombre if admin.sucursal_id else "",
+            "enabled": bool(admin.is_active),
         }
         for admin in qs.order_by("username")
     ]
@@ -344,6 +346,17 @@ def admin_ticket_open_permission(request):
     branch = _admin_branch(request)
     if not branch:
         return _json({"detail": "No se pudo determinar sucursal."}, status=400)
+
+    admin_user_id = payload.get("adminUserId")
+    if request.user.es_admin_principal and admin_user_id:
+        admin_user = get_object_or_404(Usuario, pk=int(admin_user_id), rol__rol="ADMIN_SUCURSAL")
+        admin_user.is_active = enabled
+        admin_user.save(update_fields=["is_active", "updated_at"])
+        return _json({"detail": "Permiso actualizado.", "enabled": enabled, "adminUserId": admin_user.id})
+
+    if request.user.es_admin_principal and payload.get("target") == "branch_admins":
+        Usuario.objects.filter(rol__rol="ADMIN_SUCURSAL").update(is_active=enabled)
+        return _json({"detail": "Permisos actualizados para administradores de sucursal.", "enabled": enabled})
 
     specialist_id = payload.get("specialistId")
     if specialist_id:
