@@ -247,6 +247,7 @@ function StaffEditorForm({
             className="input"
             value={formState.ci}
             onChange={(event) => handleChange('ci', event.target.value)}
+            required
           />
           {fieldErrors.ci ? <small className="field__error">{fieldErrors.ci}</small> : null}
         </label>

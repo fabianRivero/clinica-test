@@ -133,6 +133,25 @@ class ClinicBusinessTests(TestCase):
         esp = Especialista.objects.get(usuario__username="esp.nuevo")
         self.assertEqual(esp.usuario.sucursal, self.suc_sur)
 
+
+    def test_specialist_creation_requires_ci(self):
+        """Crear especialista sin CI debe devolver error de validacion."""
+        url = '/api/admin/equipo/crear/'
+        payload = {
+            "username": "esp.sinci",
+            "password": "password123",
+            "primerNombre": "Mario",
+            "apellidoPaterno": "Rojas",
+            "ci": "",
+            "telefono": "700000",
+            "specialtyIds": []
+        }
+
+        response = self.client_sur.post(url, data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+        errors = response.json().get('errors', {})
+        self.assertIn('ci', errors)
+
     def test_main_admin_can_choose_branch_for_specialist(self):
         """Admin General puede elegir cualquier sucursal para un especialista."""
         url = '/api/admin/equipo/crear/'
