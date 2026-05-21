@@ -393,11 +393,16 @@ def _payment_qr_config_item(config):
 
 def _appointment_item(cita):
     can_manage = cita.estado == CitaMedica.Estado.PROGRAMADA
-    verification_status = "pendiente"
-    if cita.estado == CitaMedica.Estado.CONFIRMADA:
-        verification_status = "verificada"
-    elif cita.estado == CitaMedica.Estado.PROGRAMADA:
-        verification_status = "no_requerida"
+
+    verification_status_map = {
+        CitaMedica.EstadoVerificacion.PENDIENTE: "pendiente",
+        CitaMedica.EstadoVerificacion.VERIFICADA: "verificada",
+        CitaMedica.EstadoVerificacion.NO_REQUERIDA: "no_requerida",
+    }
+    verification_status = verification_status_map.get(
+        cita.estado_verificacion,
+        "no_requerida",
+    )
 
     verification_method = None
     if cita.metodo_confirmacion == CitaMedica.MetodoConfirmacion.BIOMETRICO:
