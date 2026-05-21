@@ -109,7 +109,7 @@ export function AdminTicketDetailPage() {
         {ticket.status === 'ABIERTO' ? <button className='button button--ghost' onClick={()=>void closeTicket(ticket.id).then(load)}>Cerrar ficha</button> : <button className='button' onClick={()=>void reopenTicket(ticket.id).then(load)}>Reabrir ficha</button>}
       </div>
     </SectionCard>
-    <SectionCard eyebrow='Mensajes' title='Hilo completo' description='Estado de mensajes ENVIADO/RESPONDIDO.'>
+    <SectionCard eyebrow='Mensajes' title='Hilo completo' description='Conversación completa de la ficha.'>
       <div style={{ display: 'grid', gap: '0.85rem' }}>
         {messageItems.map(({ message: m, attachments }) => (
           <article key={m.id} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '0.85rem 1rem', background: 'var(--bg-card)' }}>
@@ -117,7 +117,7 @@ export function AdminTicketDetailPage() {
               <strong>{m.authorName}</strong>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <small style={{ color: 'var(--c-neutral-600)' }}>{formatDateTime(m.createdAt)}</small>
-                <StatusBadge tone={m.status === 'RESPONDIDO' ? 'success':'warning'}>{m.status}</StatusBadge>
+                <StatusBadge tone='primary'>MENSAJE</StatusBadge>
               </div>
             </div>
             <p style={{ margin: '0.75rem 0 0' }}>{m.body}</p>

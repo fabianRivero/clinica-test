@@ -233,7 +233,6 @@ def tickets_reply(request, ticket_id):
     with transaction.atomic():
         attachment = request.FILES.get('attachment')
         msg = TicketMessage.objects.create(ticket=ticket, autor=request.user, contenido=body, adjunto=attachment, estado=TicketMessage.Estado.ENVIADO)
-        TicketMessage.objects.filter(ticket=ticket, estado=TicketMessage.Estado.ENVIADO).exclude(autor=request.user).update(estado=TicketMessage.Estado.RESPONDIDO)
         _notify_ticket_message(ticket, request.user, body)
 
     return _json({"detail": "Respuesta enviada.", "message": _message_item(msg)})
