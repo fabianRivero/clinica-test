@@ -393,17 +393,6 @@ def _payment_qr_config_item(config):
 
 def _appointment_item(cita):
     can_manage = cita.estado == CitaMedica.Estado.PROGRAMADA
-    confirmation_status = "pendiente"
-    confirmation_label = "Pendiente"
-    if cita.estado == CitaMedica.Estado.CONFIRMADA:
-        if cita.metodo_confirmacion == CitaMedica.MetodoConfirmacion.BIOMETRICO:
-            confirmation_status = "biometria"
-            confirmation_label = "Biometria"
-        elif cita.metodo_confirmacion == CitaMedica.MetodoConfirmacion.TABLET:
-            confirmation_status = "qr"
-            confirmation_label = "QR"
-        else:
-            confirmation_label = "Confirmada"
     verification_status = "pendiente"
     if cita.estado == CitaMedica.Estado.CONFIRMADA:
         verification_status = "verificada"
@@ -411,10 +400,12 @@ def _appointment_item(cita):
         verification_status = "no_requerida"
 
     verification_method = None
-    if confirmation_status == "biometria":
+    if cita.metodo_confirmacion == CitaMedica.MetodoConfirmacion.BIOMETRICO:
         verification_method = "biometria"
-    elif confirmation_status == "qr":
+    elif cita.metodo_confirmacion == CitaMedica.MetodoConfirmacion.TABLET:
         verification_method = "qr"
+    elif cita.metodo_confirmacion == CitaMedica.MetodoConfirmacion.MANUAL:
+        verification_method = "manual"
     return {
         "id": f"CIT-{cita.pk:04d}",
         "rawId": cita.pk,
@@ -424,9 +415,6 @@ def _appointment_item(cita):
         "dateTime": _datetime_label(cita.fecha_hora),
         "status": cita.get_estado_display(),
         "statusTone": _appointment_tone(cita),
-        "biometric": "Confirmada" if cita.verif_biometria else "Pendiente",
-        "confirmationStatus": confirmation_status,
-        "confirmationLabel": confirmation_label,
         "verificationStatus": verification_status,
         "verificationMethod": verification_method,
         "details": cita.detalles_cita or "Sin notas adicionales.",

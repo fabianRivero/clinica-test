@@ -274,7 +274,6 @@ class AppointmentConfirmationFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         appointment_item = next(item for item in payload["appointments"] if item["rawId"] == cita.id)
-        self.assertEqual(appointment_item["confirmationStatus"], "qr")
         self.assertEqual(appointment_item["verificationStatus"], "verificada")
         self.assertEqual(appointment_item["verificationMethod"], "qr")
 

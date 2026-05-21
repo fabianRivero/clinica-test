@@ -80,9 +80,6 @@ export type ClientAppointment = {
   dateTime: string
   status: string
   statusTone: 'approved' | 'warning' | 'danger' | 'observed' | 'pending'
-  biometric?: string
-  confirmationStatus?: 'qr' | 'biometria' | 'pendiente'
-  confirmationLabel?: string
   verificationStatus: 'pendiente' | 'verificada' | 'no_requerida'
   verificationMethod: 'biometria' | 'qr' | 'manual' | 'otro' | null
   details: string
