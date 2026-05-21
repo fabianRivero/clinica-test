@@ -231,10 +231,24 @@ class CitaMedica(TimeStampedModel):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        previous_status = None
+        if self.pk:
+            previous_status = (
+                type(self)
+                .objects.filter(pk=self.pk)
+                .values_list("estado", flat=True)
+                .first()
+            )
+
         # Compatibilidad temporal: derivamos campos nuevos desde el modelo legacy.
         if self.estado == self.Estado.CONFIRMADA:
             self.estado_verificacion = self.EstadoVerificacion.VERIFICADA
         elif self.estado == self.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+            self.estado_verificacion = self.EstadoVerificacion.PENDIENTE
+        elif (
+            self.estado == self.Estado.PROGRAMADA
+            and previous_status == self.Estado.NO_ASISTIO
+        ):
             self.estado_verificacion = self.EstadoVerificacion.PENDIENTE
         else:
             self.estado_verificacion = self.EstadoVerificacion.NO_REQUERIDA
