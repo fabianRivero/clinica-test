@@ -376,7 +376,6 @@ export type OperationDetailData = {
   medicalRecordDate: string
   medicalRecordReason: string
   medicalRecordNotes: string
-  consentAccepted: boolean
   documentPdfUrl: string
   documentPdfName: string
   hasBiometricEnrollment: boolean

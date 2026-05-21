@@ -554,7 +554,6 @@ def _operation_detail(operacion):
         "medicalRecordDate": _date_label(ficha.fecha_ficha) if ficha else "Sin ficha registrada",
         "medicalRecordReason": ficha.motivo_consulta if ficha and ficha.motivo_consulta else "Sin motivo registrado.",
         "medicalRecordNotes": ficha.observaciones if ficha and ficha.observaciones else "Sin observaciones registradas.",
-        "consentAccepted": bool(ficha and ficha.consentimiento_aceptado),
         "documentPdfUrl": document_url,
         "documentPdfName": document_name,
         "hasBiometricEnrollment": bool(huella and huella.activo),

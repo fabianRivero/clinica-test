@@ -408,10 +408,6 @@ export function AdminOperationDetailPage() {
                 <dd>{operation.medicalRecordNotes}</dd>
               </div>
               <div>
-                <dt>Consentimiento</dt>
-                <dd>{operation.consentAccepted ? 'Aceptado' : 'Pendiente o no registrado'}</dd>
-              </div>
-              <div>
                 <dt>Documento PDF</dt>
                 <dd>{operation.documentPdfName || 'Sin archivo adjunto'}</dd>
               </div>
