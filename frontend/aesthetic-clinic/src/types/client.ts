@@ -22,7 +22,7 @@ export type ClientOperation = {
   rawId: number
   procedure: string
   serviceType: string
-  specialist: string
+  branch: string
   status: string
   statusTone: 'primary' | 'success' | 'warning' | 'danger'
   price: string

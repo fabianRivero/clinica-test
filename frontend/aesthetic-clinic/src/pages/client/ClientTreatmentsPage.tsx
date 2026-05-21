@@ -49,8 +49,8 @@ export function ClientTreatmentsPage() {
 
                     <dl className="operation-card__details">
                       <div>
-                        <dt>Especialista</dt>
-                        <dd>{operation.specialist}</dd>
+                        <dt>Sucursal</dt>
+                        <dd>{operation.branch}</dd>
                       </div>
                       <div>
                         <dt>Zona</dt>
