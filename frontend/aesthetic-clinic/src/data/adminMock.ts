@@ -35,7 +35,7 @@ export const adminMetrics: AdminMetric[] = [
     id: 'appointments',
     label: 'Citas hoy',
     value: '21',
-    delta: '3 pendientes de biometria',
+    delta: '3 pendientes de verificacion',
     tone: 'danger',
   },
 ]

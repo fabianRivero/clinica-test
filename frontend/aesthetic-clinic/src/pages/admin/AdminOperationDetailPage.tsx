@@ -210,7 +210,7 @@ export function AdminOperationDetailPage() {
         description="Estado global del tratamiento, paciente, procedimiento y seguimiento activo."
       >
         {actionError ? (
-          <DataState title="No se pudo confirmar biometria" message={actionError} tone="danger" />
+          <DataState title="No se pudo confirmar verificacion" message={actionError} tone="danger" />
         ) : null}
         <div className="operation-detail-grid">
           <article className="operation-detail-panel">
@@ -475,7 +475,7 @@ export function AdminOperationDetailPage() {
                     <strong>{appointment.dateTime}</strong>
                     <p>{appointment.specialist}</p>
                     <span>{appointment.status}</span>
-                    <small>Biometria: {appointment.biometricStatus}</small>
+                    <small>Verificacion: {appointment.biometricStatus}</small>
                     {['programada', 'no asistio'].includes(appointment.status?.toLowerCase?.() ?? '') ? (
                       <div className="table-actions">
                         <button className="button button--ghost button--compact" type="button" onClick={() => setSelectedAppointment(appointment.rawId)}>

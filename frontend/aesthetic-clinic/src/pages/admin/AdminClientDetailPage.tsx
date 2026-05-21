@@ -98,7 +98,7 @@ export function AdminClientDetailPage() {
     try {
       const response = await markAdminAppointmentPendingBiometric(appointmentId)
       showNotification({
-        title: 'Cita pendiente de biometria',
+        title: 'Cita pendiente de verificacion',
         message: response.detail,
         tone: 'success',
       })
@@ -578,7 +578,7 @@ export function AdminClientDetailPage() {
         )}
       </section>
 
-      <SectionCard eyebrow="Agenda" title="Todas las citas del cliente" description="Historial completo de reservas, sesiones realizadas, cancelaciones y pendientes de biometria.">
+      <SectionCard eyebrow="Agenda" title="Todas las citas del cliente" description="Historial completo de reservas, sesiones realizadas, cancelaciones y pendientes de verificacion.">
         {data.appointments.length ? (
           <div className="table-card">
             <table>
@@ -702,7 +702,7 @@ export function AdminClientDetailPage() {
                 </article>
               ))}
             </div>
-          ) : <DataState title="Sin sesiones realizadas" message="Todavia no hay sesiones confirmadas con biometria." />}
+          ) : <DataState title="Sin sesiones realizadas" message="Todavia no hay sesiones confirmadas con verificacion." />}
         </SectionCard>
 
         <SectionCard eyebrow="Pagos" title="Pagos pendientes" description="Cuotas aun no pagadas o pendientes de completar.">
