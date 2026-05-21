@@ -242,6 +242,42 @@ class AppointmentConfirmationFlowTests(TestCase):
         self.assertEqual(event.metodo, EventoConfirmacionCita.Metodo.TABLET)
         self.assertEqual(event.ip_origen, "10.10.0.9")
 
+    def test_admin_dashboard_agenda_includes_explicit_verification_fields(self):
+        cita = CitaMedica.objects.create(
+            operacion=self.operacion,
+            sucursal=self.sucursal,
+            fecha_hora=timezone.now(),
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            metodo_confirmacion=CitaMedica.MetodoConfirmacion.BIOMETRICO,
+        )
+
+        response = self.admin_http.get("/api/admin/dashboard/agenda/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        agenda_item = next(item for item in payload["agenda"] if item["id"] == cita.id)
+        self.assertEqual(agenda_item["status"], "biometria")
+        self.assertEqual(agenda_item["appointmentStatus"], "pendiente_verificacion")
+        self.assertEqual(agenda_item["verificationStatus"], "pendiente")
+        self.assertEqual(agenda_item["verificationMethod"], "biometria")
+
+    def test_client_reservations_include_explicit_verification_fields(self):
+        cita = CitaMedica.objects.create(
+            operacion=self.operacion,
+            sucursal=self.sucursal,
+            fecha_hora=timezone.now(),
+            estado=CitaMedica.Estado.CONFIRMADA,
+            metodo_confirmacion=CitaMedica.MetodoConfirmacion.TABLET,
+            verif_biometria=False,
+        )
+
+        response = self.client_http.get("/api/client/reservas/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        appointment_item = next(item for item in payload["appointments"] if item["rawId"] == cita.id)
+        self.assertEqual(appointment_item["confirmationStatus"], "qr")
+        self.assertEqual(appointment_item["verificationStatus"], "verificada")
+        self.assertEqual(appointment_item["verificationMethod"], "qr")
+
     def test_tablet_kiosk_login_and_client_reset_flow(self):
         response = self.client_http.post(
             "/api/client/tablet/auth/login/",
