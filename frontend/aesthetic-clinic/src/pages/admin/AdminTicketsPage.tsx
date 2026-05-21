@@ -23,6 +23,8 @@ import {
 
 type TicketComposeState = {
   specialistId: number | null
+  adminRecipientId: number | null
+  recipientName: string
   subject: string
   message: string
   files: File[]
@@ -30,6 +32,8 @@ type TicketComposeState = {
 
 const initialComposeState: TicketComposeState = {
   specialistId: null,
+  adminRecipientId: null,
+  recipientName: '',
   subject: '',
   message: '',
   files: [],
@@ -92,7 +96,22 @@ export function AdminMessagingPermissionsPage() {
   const openComposeModal = (specialistId: number, specialistName: string) => {
     setComposeState({
       specialistId,
+      adminRecipientId: null,
+      recipientName: specialistName,
       subject: `Nueva ficha para ${specialistName}`,
+      message: '',
+      files: [],
+    })
+    setIsComposeOpen(true)
+  }
+
+
+  const openComposeForAdmin = (adminId: number, adminName: string) => {
+    setComposeState({
+      specialistId: null,
+      adminRecipientId: adminId,
+      recipientName: adminName,
+      subject: `Nueva ficha para ${adminName}` ,
       message: '',
       files: [],
     })
@@ -106,7 +125,7 @@ export function AdminMessagingPermissionsPage() {
 
   const onComposeSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!composeState.specialistId) return
+    if (!composeState.specialistId && !composeState.adminRecipientId) return
 
     const confirmSend = window.confirm('¿Deseas enviar esta ficha ahora?')
     if (!confirmSend) return
@@ -114,7 +133,8 @@ export function AdminMessagingPermissionsPage() {
     setIsSending(true)
     try {
       await createTicket({
-        specialistId: composeState.specialistId,
+        specialistId: composeState.specialistId ?? undefined,
+        adminRecipientId: composeState.adminRecipientId ?? undefined,
         subject: composeState.subject.trim(),
         message: composeState.message.trim(),
         attachment: composeState.files[0] ?? null,
@@ -169,7 +189,7 @@ export function AdminMessagingPermissionsPage() {
                       <td style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <button className="button button--ghost button--compact" disabled={admin.enabled} onClick={() => void onBranchAdminUpdate(admin.adminId, true)}>Habilitar</button>
                         <button className="button button--ghost button--compact" disabled={!admin.enabled} onClick={() => void onBranchAdminUpdate(admin.adminId, false)}>Bloquear</button>
-                        <button className="button button--compact">Crear ficha</button>
+                        <button className="button button--compact" onClick={() => openComposeForAdmin(admin.adminId, admin.adminName)}>Crear ficha</button>
                       </td>
                     </tr>
                   ))}
@@ -198,7 +218,7 @@ export function AdminMessagingPermissionsPage() {
                       <td>{admin.adminName}</td>
                       <td>{admin.branchName || 'Global'}</td>
                       <td><StatusBadge tone={admin.enabled ? 'success' : 'warning'}>{admin.enabled ? 'Habilitado' : 'Bloqueado'}</StatusBadge></td>
-                      <td><button className="button button--compact">Crear ficha</button></td>
+                      <td><button className="button button--compact" onClick={() => openComposeForAdmin(admin.adminId, admin.adminName)}>Crear ficha</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -259,7 +279,7 @@ export function AdminMessagingPermissionsPage() {
                   <span>Para</span>
                   <input
                     className="input"
-                    value={specialists.find((sp) => sp.specialistId === composeState.specialistId)?.specialistName ?? ''}
+                    value={composeState.recipientName}
                     readOnly
                   />
                 </label>
@@ -359,3 +379,4 @@ export function AdminMessagingTicketsPage() {
     </div>
   )
 }
+

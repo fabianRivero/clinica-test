@@ -73,12 +73,13 @@ export type OpenPermissionStatusResponse = {
 }
 
 export const getTickets = (status?: TicketStatus) => getJson<{tickets: Ticket[]}>(`/api/tickets/${status ? `?status=${status}`:''}`)
-export const createTicket = (payload: {subject:string; message:string; specialistId?:number; attachment?: File | null}) => {
+export const createTicket = (payload: {subject:string; message:string; specialistId?:number; adminRecipientId?: number; attachment?: File | null}) => {
   if (payload.attachment) {
     const formData = new FormData()
     formData.append('subject', payload.subject)
     formData.append('message', payload.message)
     if (payload.specialistId) formData.append('specialistId', String(payload.specialistId))
+    if (payload.adminRecipientId) formData.append('adminRecipientId', String(payload.adminRecipientId))
     formData.append('attachment', payload.attachment)
     return postForm('/api/tickets/crear/', formData)
   }
