@@ -612,7 +612,7 @@ export function AdminClientDetailPage() {
                             {appointmentActionId === appointment.rawId ? 'Actualizando...' : 'Cambiar a pendiente de verificacion'}
                           </button>
                         ) : null}
-                        {appointment.status?.toLowerCase() === 'programada' ? (
+                        {['programada', 'no asistio'].includes(appointment.status?.toLowerCase?.() ?? '') ? (
                           <button
                             className="button button--ghost button--compact"
                             disabled={appointmentActionId !== null}

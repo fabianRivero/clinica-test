@@ -476,14 +476,16 @@ export function AdminOperationDetailPage() {
                     <p>{appointment.specialist}</p>
                     <span>{appointment.status}</span>
                     <small>Biometria: {appointment.biometricStatus}</small>
-                    {appointment.canManage ? (
+                    {['programada', 'no asistio'].includes(appointment.status?.toLowerCase?.() ?? '') ? (
                       <div className="table-actions">
                         <button className="button button--ghost button--compact" type="button" onClick={() => setSelectedAppointment(appointment.rawId)}>
                           Reprogramar reserva
                         </button>
+                        {appointment.canManage ? (
                         <button className="button button--ghost button--compact" disabled={appointmentActionId !== null} type="button" onClick={() => void handleCancelAppointment(appointment.rawId)}>
                           {appointmentActionId === appointment.rawId ? 'Cancelando...' : 'Cancelar reserva'}
                         </button>
+                        ) : null}
                       </div>
                     ) : null}
                   </article>

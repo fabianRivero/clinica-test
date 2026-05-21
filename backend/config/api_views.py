@@ -2524,6 +2524,7 @@ def admin_update_prospect_medical_appointment(request, appointment_id):
 @require_GET
 @_admin_required
 def admin_cliente_detalle(request, client_id):
+    mark_expired_programmed_appointments_as_no_show()
     cliente = _admin_client_queryset().filter(pk=client_id).first()
     if not cliente:
         return _json({"detail": "No encontramos el cliente solicitado."}, status=404)
@@ -2907,8 +2908,8 @@ def admin_reschedule_appointment(request, appointment_id):
     if not appointment:
         return _json({"detail": "No encontramos la cita solicitada."}, status=404)
 
-    if appointment.estado != CitaMedica.Estado.PROGRAMADA:
-        return _json({"detail": "Solo se pueden reprogramar citas que sigan programadas."}, status=400)
+    if appointment.estado not in {CitaMedica.Estado.PROGRAMADA, CitaMedica.Estado.NO_ASISTIO}:
+        return _json({"detail": "Solo se pueden reprogramar citas programadas o no asistidas."}, status=400)
 
     payload = _load_payload(request)
     if payload is None:
@@ -2929,8 +2930,11 @@ def admin_reschedule_appointment(request, appointment_id):
         return _json({"detail": "La nueva fecha y hora debe ser futura."}, status=400)
 
     appointment.fecha_hora = new_date_time
+    appointment.estado = CitaMedica.Estado.PROGRAMADA
+    appointment.verif_biometria = False
+    appointment.metodo_confirmacion = ""
     appointment.detalles_cita = "Reserva reprogramada desde administracion."
-    appointment.save(update_fields=["fecha_hora", "detalles_cita", "updated_at"])
+    appointment.save(update_fields=["fecha_hora", "estado", "verif_biometria", "metodo_confirmacion", "detalles_cita", "updated_at"])
     return _json({"detail": "La reserva fue reprogramada correctamente.", "appointment": _client_appointment_item(appointment)})
 
 
