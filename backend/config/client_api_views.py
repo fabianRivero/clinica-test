@@ -404,6 +404,17 @@ def _appointment_item(cita):
             confirmation_label = "QR"
         else:
             confirmation_label = "Confirmada"
+    verification_status = "pendiente"
+    if cita.estado == CitaMedica.Estado.CONFIRMADA:
+        verification_status = "verificada"
+    elif cita.estado == CitaMedica.Estado.PROGRAMADA:
+        verification_status = "no_requerida"
+
+    verification_method = None
+    if confirmation_status == "biometria":
+        verification_method = "biometria"
+    elif confirmation_status == "qr":
+        verification_method = "qr"
     return {
         "id": f"CIT-{cita.pk:04d}",
         "rawId": cita.pk,
@@ -416,6 +427,8 @@ def _appointment_item(cita):
         "biometric": "Confirmada" if cita.verif_biometria else "Pendiente",
         "confirmationStatus": confirmation_status,
         "confirmationLabel": confirmation_label,
+        "verificationStatus": verification_status,
+        "verificationMethod": verification_method,
         "details": cita.detalles_cita or "Sin notas adicionales.",
         "canManage": can_manage,
         "canMarkPendingBiometric": cita.estado == CitaMedica.Estado.PROGRAMADA,

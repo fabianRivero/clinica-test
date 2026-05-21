@@ -13,16 +13,17 @@ const legacyStatusMap: Record<AgendaItemLegacy['status'], AppointmentStatus> = {
 }
 
 export function normalizeAgendaItem(item: AgendaItemLegacy): AgendaItem {
-  const mappedStatus = legacyStatusMap[item.status]
+  const mappedStatus = item.appointmentStatus ?? legacyStatusMap[item.status]
   const verificationStatus: VerificationStatus =
-    mappedStatus === 'pendiente_verificacion'
+    item.verificationStatus
+    ?? (mappedStatus === 'pendiente_verificacion'
       ? 'pendiente'
       : mappedStatus === 'confirmada'
         ? 'verificada'
-        : 'no_requerida'
+        : 'no_requerida')
 
   const verificationMethod: VerificationMethod =
-    item.status === 'biometria' ? 'biometria' : null
+    item.verificationMethod ?? (item.status === 'biometria' ? 'biometria' : null)
 
   return {
     ...item,
@@ -31,4 +32,3 @@ export function normalizeAgendaItem(item: AgendaItemLegacy): AgendaItem {
     verificationMethod,
   }
 }
-
