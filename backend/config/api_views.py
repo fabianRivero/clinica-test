@@ -1912,6 +1912,8 @@ def _parse_staff_payload(request, payload, errors, *, instance=None):
         errors["primerNombre"] = "El primer nombre es obligatorio."
     if not apellido_paterno:
         errors["apellidoPaterno"] = "El apellido paterno es obligatorio."
+    if not ci:
+        errors["ci"] = "El CI es obligatorio."
     if instance is None and not password:
         errors["password"] = "La contraseña inicial es obligatoria."
 
