@@ -276,6 +276,29 @@ class AppointmentConfirmationFlowTests(TestCase):
         appointment_item = next(item for item in payload["appointments"] if item["rawId"] == cita.id)
         self.assertEqual(appointment_item["verificationStatus"], "verificada")
         self.assertEqual(appointment_item["verificationMethod"], "qr")
+        self.assertNotIn("confirmationStatus", appointment_item)
+        self.assertNotIn("confirmationLabel", appointment_item)
+        self.assertNotIn("biometric", appointment_item)
+
+    def test_client_dashboard_appointment_payload_excludes_legacy_confirmation_fields(self):
+        cita = CitaMedica.objects.create(
+            operacion=self.operacion,
+            sucursal=self.sucursal,
+            fecha_hora=timezone.now(),
+            estado=CitaMedica.Estado.CONFIRMADA,
+            metodo_confirmacion=CitaMedica.MetodoConfirmacion.BIOMETRICO,
+            verif_biometria=True,
+        )
+
+        response = self.client_http.get("/api/client/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        appointment_item = next(item for item in payload["upcomingAppointments"] if item["rawId"] == cita.id)
+        self.assertEqual(appointment_item["verificationStatus"], "verificada")
+        self.assertEqual(appointment_item["verificationMethod"], "biometria")
+        self.assertNotIn("confirmationStatus", appointment_item)
+        self.assertNotIn("confirmationLabel", appointment_item)
+        self.assertNotIn("biometric", appointment_item)
 
     def test_tablet_kiosk_login_and_client_reset_flow(self):
         response = self.client_http.post(
