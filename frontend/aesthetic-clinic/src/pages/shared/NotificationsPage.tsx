@@ -4,6 +4,7 @@ import {
   getMyNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  notifyNotificationsUpdated,
   type NotificationItem,
 } from '../../services/api/notifications'
 
@@ -25,6 +26,7 @@ export function NotificationsPage() {
   const markAll = async () => {
     await markAllNotificationsRead()
     await load()
+    notifyNotificationsUpdated()
   }
 
   const openNotification = async (item: NotificationItem) => {
@@ -32,6 +34,7 @@ export function NotificationsPage() {
       await markNotificationRead(item.id)
       setItems((current) => current.map((n) => (n.id === item.id ? { ...n, isRead: true } : n)))
       setSelected({ ...item, isRead: true })
+      notifyNotificationsUpdated()
       return
     }
     setSelected(item)

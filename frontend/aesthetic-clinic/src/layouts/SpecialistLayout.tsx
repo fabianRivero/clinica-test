@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../providers/AuthProvider'
+import { NOTIFICATIONS_UPDATED_EVENT } from '../services/api/notifications'
 
 const navigation = [
   { to: '/trabajador/agenda', label: 'Agenda semanal' },
@@ -19,11 +20,18 @@ export function SpecialistLayout() {
   const { user, logout } = useAuth()
   const [unreadCount, setUnreadCount] = useState(0)
 
-  useEffect(() => {
+  const loadUnreadCount = () => {
     void fetch('/api/notifications/', { credentials: 'include' })
       .then((r) => r.json())
       .then((data) => setUnreadCount(data.unreadCount || 0))
       .catch(() => undefined)
+  }
+
+  useEffect(() => {
+    loadUnreadCount()
+    const handleNotificationsUpdated = () => loadUnreadCount()
+    window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, handleNotificationsUpdated)
+    return () => window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, handleNotificationsUpdated)
   }, [])
   const location = useLocation()
   const activePath = location.pathname
