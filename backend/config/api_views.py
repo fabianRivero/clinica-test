@@ -238,6 +238,34 @@ def _datetime_label(value):
     return timezone.localtime(value).strftime("%d/%m %H:%M")
 
 
+def _notify_client_appointment_scheduled(*, cliente, fecha_hora, sucursal_id, appointment_id, appointment_type):
+    recipient = getattr(cliente, "usuario", None)
+    if not recipient:
+        return
+
+    branch = Sucursal.objects.filter(pk=sucursal_id).first()
+    fecha_legible = _datetime_label(fecha_hora)
+    nombre_sucursal = branch.nombre if branch else "Sucursal no especificada"
+
+    create_notification(
+        recipient=recipient,
+        branch=branch,
+        type="appointment_scheduled",
+        title="Nueva cita programada",
+        message=f"Tu cita fue programada para el {fecha_legible} en {nombre_sucursal}.",
+        action_url="/cliente/reservas",
+        payload={
+            "appointmentType": appointment_type,
+            "appointmentId": appointment_id,
+            "scheduledAt": fecha_hora.isoformat(),
+            "branchId": sucursal_id,
+        },
+        source_event="appointment_scheduled",
+        source_entity_type=appointment_type,
+        source_entity_id=appointment_id,
+    )
+
+
 def _full_name(user):
     if not user:
         return "Sin asignar"
@@ -2628,6 +2656,13 @@ def admin_cliente_create_free_medical_appointment(request, client_id):
         estado=CitaClienteLibre.Estado.PROGRAMADA,
         detalles_cita="Cita medica libre agendada por administracion.",
     )
+    _notify_client_appointment_scheduled(
+        cliente=cliente,
+        fecha_hora=appointment.fecha_hora,
+        sucursal_id=appointment.sucursal_id,
+        appointment_id=appointment.pk,
+        appointment_type="cita_cliente_libre",
+    )
 
     return _json(
         {
@@ -2693,6 +2728,13 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
         fecha_hora=fecha_hora,
         estado=CitaMedica.Estado.PROGRAMADA,
         detalles_cita="Reserva creada libremente por administracion.",
+    )
+    _notify_client_appointment_scheduled(
+        cliente=cliente,
+        fecha_hora=cita.fecha_hora,
+        sucursal_id=cita.sucursal_id,
+        appointment_id=cita.pk,
+        appointment_type="cita_medica",
     )
 
     return _json(
