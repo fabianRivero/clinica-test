@@ -58,7 +58,7 @@ async function postForm<T>(path: string, formData: FormData): Promise<T> {
 export type TicketStatus = 'ABIERTO' | 'CERRADO'
 export type MessageStatus = 'ENVIADO' | 'RESPONDIDO'
 export type PermissionSummary = 'ALL_ENABLED' | 'ALL_BLOCKED' | 'MIXED'
-export type Ticket = { id:number; subject:string; status:TicketStatus; branchName:string; specialistName:string; updatedAt:string }
+export type Ticket = { id:number; subject:string; status:TicketStatus; branchName:string; specialistName:string; adminRecipientId?: number | null; adminRecipientName?: string; updatedAt:string }
 export type TicketMessage = { id:number; authorName:string; authorRole:string; body:string; status:MessageStatus; createdAt:string }
 export type SpecialistOpenPermission = { specialistId:number; specialistName:string; enabled:boolean }
 export type BranchAdminOpenPermission = { adminId:number; adminName:string; branchId:number | null; branchName:string; enabled:boolean }

@@ -54,6 +54,15 @@ def _admin_branch(request):
     return user.sucursal
 
 
+
+
+def _can_manage_ticket_status(user, ticket):
+    if not _is_admin(user):
+        return False
+    if ticket.destinatario_admin_id:
+        return bool(user.es_admin_principal or user.is_superuser)
+    return True
+
 def _ticket_visible_to_user(ticket, request):
     user = request.user
     if _is_admin(user):
@@ -294,9 +303,9 @@ def tickets_reply(request, ticket_id):
 @require_POST
 @_comms_required
 def tickets_close(request, ticket_id):
-    if not _is_admin(request.user):
-        return _json({"detail": "Solo admin puede cerrar fichas."}, status=403)
     ticket = get_object_or_404(Ticket, pk=ticket_id)
+    if not _can_manage_ticket_status(request.user, ticket):
+        return _json({"detail": "No tienes permiso para cerrar esta ficha."}, status=403)
     if not _ticket_visible_to_user(ticket, request):
         return _json({"detail": "No autorizado."}, status=403)
     ticket.estado = Ticket.Estado.CERRADO
@@ -308,9 +317,9 @@ def tickets_close(request, ticket_id):
 @require_POST
 @_comms_required
 def tickets_reopen(request, ticket_id):
-    if not _is_admin(request.user):
-        return _json({"detail": "Solo admin puede reabrir fichas."}, status=403)
     ticket = get_object_or_404(Ticket, pk=ticket_id)
+    if not _can_manage_ticket_status(request.user, ticket):
+        return _json({"detail": "No tienes permiso para reabrir esta ficha."}, status=403)
     if not _ticket_visible_to_user(ticket, request):
         return _json({"detail": "No autorizado."}, status=403)
     ticket.estado = Ticket.Estado.ABIERTO
