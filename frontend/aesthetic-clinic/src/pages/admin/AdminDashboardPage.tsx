@@ -9,8 +9,14 @@ import { Link } from 'react-router-dom'
 
 const agendaTone = {
   programada: 'neutral',
-  biometria: 'warning',
+  pendiente_verificacion: 'warning',
   confirmada: 'success',
+} as const
+
+const agendaStatusLabel = {
+  programada: 'Programada',
+  pendiente_verificacion: 'Pendiente de verificacion',
+  confirmada: 'Confirmada',
 } as const
 
 export function AdminDashboardPage() {
@@ -230,7 +236,7 @@ export function AdminDashboardPage() {
                           </Link>
                         </td>
                         <td>
-                          <StatusBadge tone={agendaTone[item.status]}>{item.status}</StatusBadge>
+                          <StatusBadge tone={agendaTone[item.status]}>{agendaStatusLabel[item.status]}</StatusBadge>
                         </td>
                       </tr>
                     )
