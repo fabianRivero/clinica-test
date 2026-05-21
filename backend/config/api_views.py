@@ -451,7 +451,7 @@ def _prospect_appointment_operation_card(appointment):
     return {
         "id": f"PRO-CIT-{appointment.pk:04d}",
         "rawId": None,
-        "patient": _prospect_name(appointment.prospecto),
+        "patient": str(appointment.prospecto),
         "procedure": "Consulta medica (prospecto)",
         "specialist": f"Sede: {appointment.sucursal.nombre}",
         "sessions": "No aplica",
