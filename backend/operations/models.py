@@ -133,6 +133,17 @@ class Operacion(TimeStampedModel):
 
 
 class CitaMedica(TimeStampedModel):
+    class EstadoVerificacion(models.TextChoices):
+        PENDIENTE = "PENDIENTE", "Pendiente"
+        VERIFICADA = "VERIFICADA", "Verificada"
+        NO_REQUERIDA = "NO_REQUERIDA", "No requerida"
+
+    class MetodoVerificacion(models.TextChoices):
+        BIOMETRIA = "BIOMETRIA", "Biometria"
+        QR = "QR", "QR"
+        MANUAL = "MANUAL", "Manual"
+        OTRO = "OTRO", "Otro"
+
     class MetodoConfirmacion(models.TextChoices):
         BIOMETRICO = "BIOMETRICO", "Biometrico"
         TABLET = "TABLET", "Tablet"
@@ -169,6 +180,17 @@ class CitaMedica(TimeStampedModel):
     metodo_confirmacion = models.CharField(
         max_length=16,
         choices=MetodoConfirmacion.choices,
+        blank=True,
+        default="",
+    )
+    estado_verificacion = models.CharField(
+        max_length=16,
+        choices=EstadoVerificacion.choices,
+        default=EstadoVerificacion.NO_REQUERIDA,
+    )
+    metodo_verificacion = models.CharField(
+        max_length=16,
+        choices=MetodoVerificacion.choices,
         blank=True,
         default="",
     )
@@ -209,6 +231,23 @@ class CitaMedica(TimeStampedModel):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        # Compatibilidad temporal: derivamos campos nuevos desde el modelo legacy.
+        if self.estado == self.Estado.CONFIRMADA:
+            self.estado_verificacion = self.EstadoVerificacion.VERIFICADA
+        elif self.estado == self.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+            self.estado_verificacion = self.EstadoVerificacion.PENDIENTE
+        else:
+            self.estado_verificacion = self.EstadoVerificacion.NO_REQUERIDA
+
+        if self.metodo_confirmacion == self.MetodoConfirmacion.BIOMETRICO:
+            self.metodo_verificacion = self.MetodoVerificacion.BIOMETRIA
+        elif self.metodo_confirmacion == self.MetodoConfirmacion.TABLET:
+            self.metodo_verificacion = self.MetodoVerificacion.QR
+        elif self.metodo_confirmacion == self.MetodoConfirmacion.MANUAL:
+            self.metodo_verificacion = self.MetodoVerificacion.MANUAL
+        else:
+            self.metodo_verificacion = ""
+
         if self.estado == self.Estado.CONFIRMADA and self.verif_biometria and not self.fecha_confirmacion_biometrica:
             self.fecha_confirmacion_biometrica = timezone.now()
         if self.estado != self.Estado.CONFIRMADA:
