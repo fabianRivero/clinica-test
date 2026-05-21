@@ -189,17 +189,20 @@ def get_available_dates(sucursal_id, start_date, end_date):
         return set()
 
     present_dates = set()
-    full_day_start = time(0, 0)
-    full_day_end = time(23, 59)
+    hourly_checkpoints = [time(hour, 0) for hour in range(24)]
     for current_date in available_dates:
         for specialist_id in specialist_ids:
-            if check_specialist_presence(
-                specialist_id,
-                sucursal_id,
-                current_date,
-                full_day_start,
-                full_day_end,
-            ):
+            specialist_has_any_range = any(
+                check_specialist_presence(
+                    specialist_id,
+                    sucursal_id,
+                    current_date,
+                    checkpoint,
+                    checkpoint,
+                )
+                for checkpoint in hourly_checkpoints
+            )
+            if specialist_has_any_range:
                 present_dates.add(current_date)
                 break
 
