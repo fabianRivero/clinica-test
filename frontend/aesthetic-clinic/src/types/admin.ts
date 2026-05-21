@@ -188,6 +188,7 @@ export type OperationCardData = {
   patient: string
   procedure: string
   branch: string
+  branchId: number | null
   sessions: string
   nextAppointment: string
   quotaStatus: string
@@ -338,6 +339,7 @@ export type OperationDetailAppointment = {
   status: string
   biometricStatus: string
   canConfirmBiometric: boolean
+  canManage: boolean
 }
 
 export type OperationDetailQuota = {
@@ -359,6 +361,7 @@ export type OperationDetailData = {
   serviceType: string
   procedureType: string
   branch: string
+  branchId: number | null
   sessions: string
   nextAppointment: string
   quotaStatus: string
@@ -549,6 +552,7 @@ export type CheckAdminProspectDuplicatesResponse = {
     id: number
     name: string
     branch: string
+  branchId: number
   }
 }
 
