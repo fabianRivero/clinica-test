@@ -184,7 +184,7 @@ export type ProspectMedicalAppointment = {
 
 export type OperationCardData = {
   id: string
-  rawId: number
+  rawId: number | null
   patient: string
   procedure: string
   specialist: string

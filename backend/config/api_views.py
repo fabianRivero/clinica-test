@@ -447,6 +447,21 @@ def _operation_card(operacion):
     }
 
 
+def _prospect_appointment_operation_card(appointment):
+    return {
+        "id": f"PRO-CIT-{appointment.pk:04d}",
+        "rawId": None,
+        "patient": _prospect_name(appointment.prospecto),
+        "procedure": "Consulta medica (prospecto)",
+        "specialist": f"Sede: {appointment.sucursal.nombre}",
+        "sessions": "No aplica",
+        "nextAppointment": _datetime_label(appointment.fecha_hora),
+        "quotaStatus": "No aplica",
+        "status": appointment.get_estado_display(),
+        "price": "No aplica",
+    }
+
+
 def _operation_detail(operacion):
     ficha = getattr(operacion, "ficha_clinica", None)
     huella = getattr(operacion.paciente, "huella_biometrica", None)
@@ -3174,7 +3189,11 @@ def admin_operaciones(request):
         ).order_by("-created_at")
     )
     if branch:
-        operaciones_qs = operaciones_qs.filter(citas_medicas__sucursal=branch).distinct()
+        operaciones_qs = operaciones_qs.filter(paciente__sucursal_registro=branch)
+
+    prospect_appointments_qs = CitaProspecto.objects.select_related("prospecto", "sucursal").order_by("-fecha_hora")
+    if branch:
+        prospect_appointments_qs = prospect_appointments_qs.filter(sucursal=branch)
     blocked_reservations = sum(
         1
         for operacion in operaciones_qs
@@ -3205,7 +3224,10 @@ def admin_operaciones(request):
                 "danger",
             ),
         ],
-        "operations": [_operation_card(operacion) for operacion in operaciones_qs],
+        "operations": [
+            *[_operation_card(operacion) for operacion in operaciones_qs],
+            *[_prospect_appointment_operation_card(cita) for cita in prospect_appointments_qs],
+        ],
     }
     return _json(data)
 
