@@ -6,6 +6,7 @@ import { AdminRelationshipTabs } from '../../components/admin/AdminRelationshipT
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
+import { verificationStatusLabel } from '../../constants/verification'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
@@ -599,7 +600,7 @@ export function AdminClientDetailPage() {
                     <td>{appointment.specialist}</td>
                     <td>{appointment.dateTime}</td>
                     <td><StatusBadge tone={appointment.statusTone}>{appointment.status}</StatusBadge></td>
-                    <td>{appointment.confirmationLabel}</td>
+                    <td>{verificationStatusLabel[appointment.verificationStatus]}</td>
                     <td>
                       <div className="table-action-list">
                         {appointment.canMarkPendingBiometric ? (
