@@ -109,6 +109,8 @@ def _notify_ticket_message(ticket, author, body):
     specialist_user_id = ticket.especialista.usuario_id if ticket.especialista_id else None
     if specialist_user_id and specialist_user_id != author.id:
         participant_ids.add(specialist_user_id)
+    if ticket.destinatario_admin_id and ticket.destinatario_admin_id != author.id:
+        participant_ids.add(ticket.destinatario_admin_id)
 
     recipients = Usuario.objects.filter(id__in=participant_ids, is_active=True)
     for recipient in recipients:
@@ -179,9 +181,13 @@ def tickets_list(request):
     user = request.user
     qs = Ticket.objects.select_related("sucursal", "especialista__usuario", "creado_por", "destinatario_admin").order_by("-updated_at")
     if _is_admin(user):
+        # Tickets admin↔admin must be visible to both participants regardless of selected branch.
+        admin_qs = qs.filter(destinatario_admin__isnull=False).filter(creado_por=user) | qs.filter(destinatario_admin=user)
+        specialist_qs = qs.filter(destinatario_admin__isnull=True)
         branch = _admin_branch(request)
         if branch:
-            qs = qs.filter(sucursal=branch)
+            specialist_qs = specialist_qs.filter(sucursal=branch)
+        qs = (admin_qs | specialist_qs).distinct()
     else:
         qs = qs.filter(especialista__usuario=user)
 
