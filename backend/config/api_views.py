@@ -2524,6 +2524,7 @@ def admin_update_prospect_medical_appointment(request, appointment_id):
 @require_GET
 @_admin_required
 def admin_cliente_detalle(request, client_id):
+    mark_expired_programmed_appointments_as_no_show()
     cliente = _admin_client_queryset().filter(pk=client_id).first()
     if not cliente:
         return _json({"detail": "No encontramos el cliente solicitado."}, status=404)
@@ -2893,6 +2894,48 @@ def admin_update_appointment_status(request, appointment_id):
             "new_status": appointment.estado,
         }
     )
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_reschedule_appointment(request, appointment_id):
+    appointment = (
+        CitaMedica.objects.select_related("operacion__paciente", "sucursal")
+        .filter(pk=appointment_id)
+        .first()
+    )
+    if not appointment:
+        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+
+    if appointment.estado not in {CitaMedica.Estado.PROGRAMADA, CitaMedica.Estado.NO_ASISTIO}:
+        return _json({"detail": "Solo se pueden reprogramar citas programadas o no asistidas."}, status=400)
+
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "Datos invalidos."}, status=400)
+    date_time_str = payload.get("dateTime")
+    if not date_time_str:
+        return _json({"detail": "Debes enviar la nueva fecha y hora."}, status=400)
+    try:
+        from django.utils import dateparse
+        new_date_time = dateparse.parse_datetime(date_time_str)
+        if timezone.is_naive(new_date_time):
+            new_date_time = timezone.make_aware(new_date_time)
+        if not new_date_time:
+            raise ValueError
+    except Exception:
+        return _json({"detail": "Formato de fecha u hora invalido."}, status=400)
+    if new_date_time <= timezone.now():
+        return _json({"detail": "La nueva fecha y hora debe ser futura."}, status=400)
+
+    appointment.fecha_hora = new_date_time
+    appointment.estado = CitaMedica.Estado.PROGRAMADA
+    appointment.verif_biometria = False
+    appointment.metodo_confirmacion = ""
+    appointment.detalles_cita = "Reserva reprogramada desde administracion."
+    appointment.save(update_fields=["fecha_hora", "estado", "verif_biometria", "metodo_confirmacion", "detalles_cita", "updated_at"])
+    return _json({"detail": "La reserva fue reprogramada correctamente.", "appointment": _client_appointment_item(appointment)})
 
 
 

@@ -7,12 +7,13 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import {
-  confirmAdminAppointmentBiometric,
+  cancelAdminAppointment,
+  checkAdminConcurrency,
   getAdminOperationDetail,
+  rescheduleAdminAppointment,
   updateAdminOperationDetails,
   updateAdminOperationPricePlan,
 } from '../../services/api/admin'
-import { verifyMockFingerprint } from '../../services/fingerprint/mockFingerprint'
 
 function getStatusTone(status: string) {
   const normalized = status.toLowerCase()
@@ -35,8 +36,13 @@ export function AdminOperationDetailPage() {
   const { operationId = '' } = useParams()
   const loader = useMemo(() => () => getAdminOperationDetail(operationId), [operationId])
   const { data, isLoading, error, reload } = useApiResource(loader)
-  const [biometricActionId, setBiometricActionId] = useState<number | null>(null)
+  const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [selectedAppointment, setSelectedAppointment] = useState<number | null>(null)
+  const [rescheduleDate, setRescheduleDate] = useState('')
+  const [rescheduleTime, setRescheduleTime] = useState('')
+  const [checkResult, setCheckResult] = useState<any | null>(null)
+  const [isChecking, setIsChecking] = useState(false)
   const [isEditingDetails, setIsEditingDetails] = useState(false)
   const [isEditingPrice, setIsEditingPrice] = useState(false)
   const [isSavingDetails, setIsSavingDetails] = useState(false)
@@ -51,31 +57,45 @@ export function AdminOperationDetailPage() {
     quotaCount: 1,
   })
 
-  const handleConfirmBiometric = async (appointmentId: number) => {
-    if (biometricActionId) return
-
+  const handleCancelAppointment = async (appointmentId: number) => {
+    setAppointmentActionId(appointmentId)
     setActionError(null)
-    setBiometricActionId(appointmentId)
     try {
-      if (!operation.biometricMockTemplate) {
-        throw new Error('Esta operacion no tiene una huella mock disponible para comparar.')
-      }
-      const capture = await verifyMockFingerprint(operation.biometricMockTemplate)
-      await confirmAdminAppointmentBiometric(appointmentId, {
-        provider: capture.provider,
-        template: capture.template,
-        quality: capture.quality,
-        deviceSerial: capture.deviceSerial,
-      })
+      await cancelAdminAppointment(appointmentId)
       reload()
     } catch (requestError) {
-      setActionError(
-        requestError instanceof Error
-          ? requestError.message
-          : 'No se pudo confirmar la cita con la huella simulada.',
-      )
+      setActionError(requestError instanceof Error ? requestError.message : 'No se pudo cancelar la cita.')
     } finally {
-      setBiometricActionId(null)
+      setAppointmentActionId(null)
+    }
+  }
+  const handleCheck = async () => {
+    if (!rescheduleDate || !rescheduleTime || !data) return
+    setIsChecking(true)
+    setActionError(null)
+    try {
+      const result = await checkAdminConcurrency(data.operation.branchId, rescheduleDate, rescheduleTime, rescheduleTime)
+      setCheckResult(result)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'No se pudo verificar disponibilidad.')
+    } finally {
+      setIsChecking(false)
+    }
+  }
+  const handleReschedule = async () => {
+    if (!selectedAppointment || !checkResult) return
+    setAppointmentActionId(selectedAppointment)
+    try {
+      await rescheduleAdminAppointment(selectedAppointment, { dateTime: `${rescheduleDate}T${rescheduleTime}:00` })
+      setSelectedAppointment(null)
+      setCheckResult(null)
+      setRescheduleDate('')
+      setRescheduleTime('')
+      reload()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'No se pudo reprogramar.')
+    } finally {
+      setAppointmentActionId(null)
     }
   }
 
@@ -456,17 +476,17 @@ export function AdminOperationDetailPage() {
                     <p>{appointment.specialist}</p>
                     <span>{appointment.status}</span>
                     <small>Biometria: {appointment.biometricStatus}</small>
-                    {appointment.canConfirmBiometric ? (
-                      <button
-                        className="button button--ghost button--compact"
-                        disabled={biometricActionId !== null}
-                        type="button"
-                        onClick={() => handleConfirmBiometric(appointment.rawId)}
-                      >
-                        {biometricActionId === appointment.rawId
-                          ? 'Validando...'
-                          : 'Confirmar huella mock'}
-                      </button>
+                    {['programada', 'no asistio'].includes(appointment.status?.toLowerCase?.() ?? '') ? (
+                      <div className="table-actions">
+                        <button className="button button--ghost button--compact" type="button" onClick={() => setSelectedAppointment(appointment.rawId)}>
+                          Reprogramar reserva
+                        </button>
+                        {appointment.canManage ? (
+                        <button className="button button--ghost button--compact" disabled={appointmentActionId !== null} type="button" onClick={() => void handleCancelAppointment(appointment.rawId)}>
+                          {appointmentActionId === appointment.rawId ? 'Cancelando...' : 'Cancelar reserva'}
+                        </button>
+                        ) : null}
+                      </div>
                     ) : null}
                   </article>
                 ))}
@@ -504,6 +524,20 @@ export function AdminOperationDetailPage() {
               />
             )}
           </article>
+          {selectedAppointment ? (
+            <article className="operation-detail-panel">
+              <div className="operation-detail-panel__header"><div><span>Reprogramar</span><strong>Antes y despues</strong></div></div>
+              <div className="form-grid">
+                <label className="field"><span>Fecha</span><input className="input" type="date" value={rescheduleDate} onChange={(e) => { setRescheduleDate(e.target.value); setCheckResult(null) }} /></label>
+                <label className="field"><span>Hora</span><input className="input" type="time" value={rescheduleTime} onChange={(e) => { setRescheduleTime(e.target.value); setCheckResult(null) }} /></label>
+                <div className="form-actions field--full">
+                  <button className="button button--ghost" type="button" onClick={() => void handleCheck()} disabled={!rescheduleDate || !rescheduleTime || isChecking}>{isChecking ? 'Verificando...' : 'Verificar disponibilidad'}</button>
+                  <button className="button" type="button" onClick={() => void handleReschedule()} disabled={!checkResult || appointmentActionId !== null}>Confirmar reprogramacion</button>
+                </div>
+                {checkResult ? <small className="field__hint">Disponibilidad: {checkResult.concurrency} cita(s) entre {checkResult.hora_inicio} y {checkResult.hora_fin}. Especialistas en turno: {checkResult.presentes?.length ?? 0}.</small> : null}
+              </div>
+            </article>
+          ) : null}
         </div>
       </SectionCard>
     </div>

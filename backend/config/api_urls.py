@@ -59,6 +59,7 @@ from config.api_views import (
     admin_prospect_check_duplicates,
     admin_clientes_global_search,
     admin_set_session_branch,
+    admin_reschedule_appointment,
 )
 from config.prospect_conversion_views import (
     admin_prospect_conversion_cancel,
@@ -242,6 +243,11 @@ urlpatterns = [
         "citas/<int:appointment_id>/confirmar-biometria/",
         admin_confirm_appointment_biometric,
         name="admin-appointment-biometric-confirm-api",
+    ),
+    path(
+        "citas/<int:appointment_id>/reprogramar/",
+        admin_reschedule_appointment,
+        name="admin-appointment-reschedule-api",
     ),
     path("disponibilidad/", admin_availability, name="admin-availability-api"),
     path(

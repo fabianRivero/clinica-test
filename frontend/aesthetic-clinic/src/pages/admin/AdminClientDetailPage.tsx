@@ -10,12 +10,14 @@ import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
   cancelAdminAppointment,
+  checkAdminConcurrency,
   createAdminClientFreeMedicalAppointment,
   confirmAdminAppointmentBiometric,
   createAdminClientReservation,
   getAdminClientDetail,
   inactivateAdminClient,
   markAdminAppointmentPendingBiometric,
+  rescheduleAdminAppointment,
   updateAdminPaymentStatus,
 } from '../../services/api/admin'
 import { verifyMockFingerprint } from '../../services/fingerprint/mockFingerprint'
@@ -23,7 +25,7 @@ import type {
   AdminConcurrencyCheckResponse,
 } from '../../types/admin'
 import { useBranchContext } from '../../providers/BranchProvider'
-import { checkAdminConcurrency, migrateAdminClient } from '../../services/api/admin'
+import { migrateAdminClient } from '../../services/api/admin'
 import { useAuth } from '../../providers/AuthProvider'
 
 export function AdminClientDetailPage() {
@@ -47,6 +49,11 @@ export function AdminClientDetailPage() {
   const [isFreeBookingKey, setIsFreeBookingKey] = useState<string | null>(null)
   const [isInactivating, setIsInactivating] = useState(false)
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
+  const [rescheduleAppointmentId, setRescheduleAppointmentId] = useState<number | null>(null)
+  const [rescheduleDate, setRescheduleDate] = useState('')
+  const [rescheduleTime, setRescheduleTime] = useState('')
+  const [rescheduleCheck, setRescheduleCheck] = useState<AdminConcurrencyCheckResponse | null>(null)
+  const [isCheckingReschedule, setIsCheckingReschedule] = useState(false)
   const [paymentNotes, setPaymentNotes] = useState<Record<number, string>>({})
   const [paymentActionId, setPaymentActionId] = useState<number | null>(null)
   const [operationStatusFilter, setOperationStatusFilter] = useState<string>('')
@@ -136,6 +143,46 @@ export function AdminClientDetailPage() {
     } catch (requestError) {
       showNotification({
         title: 'No se pudo confirmar la huella',
+        message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
+        tone: 'danger',
+      })
+    } finally {
+      setAppointmentActionId(null)
+    }
+  }
+
+  async function handleCheckRescheduleAvailability() {
+    if (!activeBranch || !rescheduleDate || !rescheduleTime) {
+      showNotification({ title: 'Atencion', message: 'Selecciona fecha y hora.', tone: 'warning' })
+      return
+    }
+    setIsCheckingReschedule(true)
+    try {
+      const info = await checkAdminConcurrency(activeBranch.id, rescheduleDate, rescheduleTime, rescheduleTime)
+      setRescheduleCheck(info)
+    } catch (err: any) {
+      showNotification({ title: 'Error', message: err.message, tone: 'danger' })
+    } finally {
+      setIsCheckingReschedule(false)
+    }
+  }
+
+  async function handleRescheduleAppointment() {
+    if (!rescheduleAppointmentId || !rescheduleCheck) return
+    setAppointmentActionId(rescheduleAppointmentId)
+    try {
+      const response = await rescheduleAdminAppointment(rescheduleAppointmentId, {
+        dateTime: `${rescheduleDate}T${rescheduleTime}:00`,
+      })
+      showNotification({ title: 'Reserva reprogramada', message: response.detail, tone: 'success' })
+      setRescheduleAppointmentId(null)
+      setRescheduleDate('')
+      setRescheduleTime('')
+      setRescheduleCheck(null)
+      reload()
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo reprogramar',
         message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
         tone: 'danger',
       })
@@ -562,7 +609,20 @@ export function AdminClientDetailPage() {
                             type="button"
                             onClick={() => void handleMarkPendingBiometric(appointment.rawId)}
                           >
-                            {appointmentActionId === appointment.rawId ? 'Actualizando...' : 'Cambiar a pendiente de biometria'}
+                            {appointmentActionId === appointment.rawId ? 'Actualizando...' : 'Cambiar a pendiente de verificacion'}
+                          </button>
+                        ) : null}
+                        {['programada', 'no asistio'].includes(appointment.status?.toLowerCase?.() ?? '') ? (
+                          <button
+                            className="button button--ghost button--compact"
+                            disabled={appointmentActionId !== null}
+                            type="button"
+                            onClick={() => {
+                              setRescheduleAppointmentId(appointment.rawId)
+                              setRescheduleCheck(null)
+                            }}
+                          >
+                            Reprogramar reserva
                           </button>
                         ) : null}
                         {appointment.canManage ? (
@@ -596,6 +656,37 @@ export function AdminClientDetailPage() {
             </table>
           </div>
         ) : <DataState title="Sin citas registradas" message="El cliente aun no tiene citas asociadas." />}
+        {rescheduleAppointmentId ? (
+          <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--c-neutral-100)', borderRadius: '8px' }}>
+            <p style={{ marginBottom: '1rem' }}><strong>Reprogramar cita seleccionada</strong></p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <label className="field">
+                <span>Nueva fecha</span>
+                <input type="date" className="input" value={rescheduleDate} onChange={(e) => { setRescheduleDate(e.target.value); setRescheduleCheck(null) }} />
+              </label>
+              <label className="field">
+                <span>Nueva hora</span>
+                <input type="time" className="input" value={rescheduleTime} onChange={(e) => { setRescheduleTime(e.target.value); setRescheduleCheck(null) }} />
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+              <button type="button" className="button button--secondary" disabled={!rescheduleDate || !rescheduleTime || isCheckingReschedule} onClick={() => void handleCheckRescheduleAvailability()}>
+                {isCheckingReschedule ? 'Verificando...' : 'Verificar disponibilidad'}
+              </button>
+              <button type="button" className="button button--primary" disabled={!rescheduleCheck || appointmentActionId !== null} onClick={() => void handleRescheduleAppointment()}>
+                {appointmentActionId === rescheduleAppointmentId ? 'Confirmando...' : 'Confirmar reprogramacion en esta hora'}
+              </button>
+              <button type="button" className="button button--ghost" onClick={() => { setRescheduleAppointmentId(null); setRescheduleCheck(null) }}>
+                Cancelar
+              </button>
+            </div>
+            {rescheduleCheck ? (
+              <p style={{ marginTop: '0.75rem' }}>
+                Citas simultaneas de 1 hora antes a 1 hora despues ({rescheduleCheck.hora_inicio} a {rescheduleCheck.hora_fin}): {rescheduleCheck.concurrency}. Especialistas en turno {rescheduleCheck.hora_seleccionada}: {rescheduleCheck.presentes.length > 0 ? rescheduleCheck.presentes.map((p) => p.usuario__primer_nombre).join(', ') : 'Ninguno registrado'}.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </SectionCard>
 
       <section className="dashboard-grid">
