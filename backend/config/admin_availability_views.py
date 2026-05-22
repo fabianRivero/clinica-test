@@ -1,6 +1,6 @@
 import json
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timedelta
 from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
@@ -273,9 +273,36 @@ def admin_create_specialist_exception(request):
             return _json({"detail": "La sucursal enviada no coincide con la sucursal activa."}, status=400)
         _validate_branch_specialists(branch, specialist_ids)
 
+        dates = set(data.get("dates", []))
+
+        range_start = data.get("rangeStartDate")
+        range_end = data.get("rangeEndDate")
+        weekday_codes = data.get("weekdayCodes") or []
+
+        if range_start or range_end or weekday_codes:
+            if not (range_start and range_end and weekday_codes):
+                return _json({"detail": "Para usar rango debes enviar fecha inicio, fecha fin y dias de semana."}, status=400)
+            start_date = datetime.strptime(range_start, "%Y-%m-%d").date()
+            end_date = datetime.strptime(range_end, "%Y-%m-%d").date()
+            if start_date > end_date:
+                return _json({"detail": "La fecha inicio no puede ser mayor que la fecha fin."}, status=400)
+            weekdays = {int(w) for w in weekday_codes}
+            cursor = start_date
+            while cursor <= end_date:
+                if cursor.weekday() == 6:
+                    django_weekday = 0
+                else:
+                    django_weekday = cursor.weekday() + 1
+                if django_weekday in weekdays:
+                    dates.add(cursor.strftime("%Y-%m-%d"))
+                cursor += timedelta(days=1)
+
+        if not dates:
+            return _json({"detail": "Debes enviar al menos una fecha valida."}, status=400)
+
         with transaction.atomic():
             for sp_id in specialist_ids:
-                for d_str in data.get("dates", []):
+                for d_str in sorted(dates):
                     AgendaExcepcionEspecialista.objects.create(
                         especialista_id=sp_id,
                         sucursal_id=data["branchId"],

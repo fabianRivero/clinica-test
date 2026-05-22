@@ -680,13 +680,17 @@ export type UpsertAdminHabitualSchedulePayload = {
 }
 
 export type CreateAdminAvailabilityExceptionPayload = {
-  specialistId: number | null
+  specialistId?: number | null
+  specialistIds?: number[]
   branchId: number | null
   type: 'AGREGAR' | 'BLOQUEAR'
   dates: string[]
   startTime: string
   endTime: string
   detail: string
+  rangeStartDate?: string
+  rangeEndDate?: string
+  weekdayCodes?: number[]
 }
 
 export type ManageAdminGlobalAvailabilityPayload = {

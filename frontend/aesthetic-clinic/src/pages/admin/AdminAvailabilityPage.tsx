@@ -41,6 +41,10 @@ function buildEmptyExceptionForm(branchId: number) {
     type: 'BLOQUEAR' as 'AGREGAR' | 'BLOQUEAR',
     dateInput: '',
     dates: [] as string[],
+    useDateRange: false,
+    rangeStartDate: '',
+    rangeEndDate: '',
+    rangeWeekdayCodes: [] as number[],
     startTime: '08:00',
     endTime: '18:00',
     detail: '',
@@ -118,8 +122,12 @@ export function AdminAvailabilityBlocksPage() {
       showNotification({ title: 'Error', message: 'Debe seleccionar al menos un especialista', tone: 'danger' })
       return
     }
-    if (exceptionForm.dates.length === 0) {
-      showNotification({ title: 'Error', message: 'Debe agregar al menos una fecha', tone: 'danger' })
+    if (exceptionForm.dates.length === 0 && !exceptionForm.useDateRange) {
+      showNotification({ title: 'Error', message: 'Debe agregar al menos una fecha o configurar un rango', tone: 'danger' })
+      return
+    }
+    if (exceptionForm.useDateRange && (!exceptionForm.rangeStartDate || !exceptionForm.rangeEndDate || exceptionForm.rangeWeekdayCodes.length === 0)) {
+      showNotification({ title: 'Error', message: 'Para rango debe elegir fecha inicio, fin y dias de la semana', tone: 'danger' })
       return
     }
 
@@ -130,6 +138,9 @@ export function AdminAvailabilityBlocksPage() {
         branchId: activeBranch?.id || 1,
         type: exceptionForm.type,
         dates: exceptionForm.dates,
+        rangeStartDate: exceptionForm.useDateRange ? exceptionForm.rangeStartDate : '',
+        rangeEndDate: exceptionForm.useDateRange ? exceptionForm.rangeEndDate : '',
+        weekdayCodes: exceptionForm.useDateRange ? exceptionForm.rangeWeekdayCodes : [],
         startTime: exceptionForm.isWholeDay ? '' : exceptionForm.startTime,
         endTime: exceptionForm.isWholeDay ? '' : exceptionForm.endTime,
         detail: exceptionForm.detail || (exceptionForm.type === 'BLOQUEAR' ? 'Dia libre / Bloqueo' : 'Horas extra'),
@@ -242,6 +253,48 @@ export function AdminAvailabilityBlocksPage() {
                       />
                     </div>
                   </div>
+                )}
+
+
+                <div className="form-group">
+                  <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={exceptionForm.useDateRange}
+                      onChange={(e) => setExceptionForm({ ...exceptionForm, useDateRange: e.target.checked })}
+                    />
+                    <span>Usar rango de fechas con dias de semana</span>
+                  </label>
+                </div>
+
+                {exceptionForm.useDateRange && (
+                  <>
+                    <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                      <div>
+                        <label>Desde</label>
+                        <input type="date" className="input" value={exceptionForm.rangeStartDate} onChange={(e) => setExceptionForm({ ...exceptionForm, rangeStartDate: e.target.value })} />
+                      </div>
+                      <div>
+                        <label>Hasta</label>
+                        <input type="date" className="input" value={exceptionForm.rangeEndDate} onChange={(e) => setExceptionForm({ ...exceptionForm, rangeEndDate: e.target.value })} />
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label>Dias de la semana a aplicar</label>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                        {data.filters.weekdayOptions.map((w) => (
+                          <label key={w.value} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'var(--c-neutral-100)', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
+                            <input
+                              type="checkbox"
+                              checked={exceptionForm.rangeWeekdayCodes.includes(w.value)}
+                              onChange={() => setExceptionForm({ ...exceptionForm, rangeWeekdayCodes: toggleSelection(exceptionForm.rangeWeekdayCodes, w.value) })}
+                            />
+                            <span style={{ fontSize: '0.875rem' }}>{w.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </>
                 )}
 
                 <div className="form-group">
