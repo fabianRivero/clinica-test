@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 
+import { AdminPaymentsTabs } from '../../components/admin/AdminPaymentsTabs'
+
 import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
@@ -27,7 +29,7 @@ function toComparableDate(value?: string) {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
-export function AdminPaymentsPage() {
+export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuotas' }) {
   const { activeBranch } = useBranchContext()
   const branchId = activeBranch?.id ?? null
   const [instructions, setInstructions] = useState('')
@@ -189,6 +191,8 @@ export function AdminPaymentsPage() {
         ]}
       />
 
+      <AdminPaymentsTabs />
+
       {isLoading && !data ? (
         <SectionCard title="Cargando pagos">
           <DataState
@@ -206,6 +210,7 @@ export function AdminPaymentsPage() {
 
       {data ? (
         <>
+          {view === 'qr' ? (
           <SectionCard
             eyebrow="Pago por QR"
             title="Configuracion del QR bancario"
@@ -275,7 +280,9 @@ export function AdminPaymentsPage() {
               </form>
             </div>
           </SectionCard>
+          ) : null}
 
+          {view === 'pendientes' ? (
           <SectionCard
             eyebrow="Comprobantes"
             title="Cola de verificacion"
@@ -453,6 +460,62 @@ export function AdminPaymentsPage() {
               />
             )}
           </SectionCard>
+          ) : null}
+
+          {view === 'cuotas' ? (
+            <SectionCard
+              eyebrow="Plan de pagos"
+              title="Cuotas de todos los estados"
+              description="Vista consolidada de cuotas pagadas, pendientes, vencidas, observadas o canceladas."
+            >
+              {data.quotas.length ? (
+                <div className="table-card">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Paciente</th>
+                        <th>Operacion</th>
+                        <th>Cuota</th>
+                        <th>Monto programado</th>
+                        <th>Vencimiento</th>
+                        <th>Estado</th>
+                        <th>Pagos registrados</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.quotas.map((quota) => (
+                        <tr key={quota.id}>
+                          <td>{quota.id}</td>
+                          <td>{quota.patient}</td>
+                          <td>{quota.operation}</td>
+                          <td>{quota.quotaNumber}</td>
+                          <td>{quota.amount}</td>
+                          <td>{quota.dueDate}</td>
+                          <td>
+                            <StatusBadge
+                              tone={
+                                quota.status === 'Pagado'
+                                  ? 'approved'
+                                  : quota.status === 'Observado' || quota.status === 'Cancelado'
+                                    ? 'observed'
+                                    : 'pending'
+                              }
+                            >
+                              {quota.status}
+                            </StatusBadge>
+                          </td>
+                          <td>{quota.paymentsCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <DataState title="Sin cuotas registradas" message="No hay cuotas en el backend conectado." />
+              )}
+            </SectionCard>
+          ) : null}
         </>
       ) : null}
     </div>

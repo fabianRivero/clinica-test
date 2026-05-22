@@ -127,7 +127,10 @@ function App() {
           <Route path="disponibilidad/visibles" element={<AdminAvailabilityVisiblePage />} />
           <Route path="disponibilidad/bloques" element={<AdminAvailabilityBlocksPage />} />
           <Route path="disponibilidad/gestionar" element={<AdminAvailabilitySchedulesPage />} />
-          <Route path="pagos" element={<AdminPaymentsPage />} />
+          <Route path="pagos" element={<Navigate to="/admin/pagos/qr" replace />} />
+          <Route path="pagos/qr" element={<AdminPaymentsPage view="qr" />} />
+          <Route path="pagos/pendientes" element={<AdminPaymentsPage view="pendientes" />} />
+          <Route path="pagos/cuotas" element={<AdminPaymentsPage view="cuotas" />} />
           <Route path="mensajes" element={<Navigate to="/admin/mensajes/permisos" replace />} />
           <Route path="mensajes/permisos" element={<AdminMessagingPermissionsPage />} />
           <Route path="mensajes/fichas" element={<AdminMessagingTicketsPage />} />

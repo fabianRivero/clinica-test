@@ -894,6 +894,21 @@ def _payment_qr_config_item(config):
     }
 
 
+def _admin_quota_item(cuota):
+    operacion = cuota.operacion
+    return {
+        "id": f"CUO-{cuota.pk:04d}",
+        "rawId": cuota.pk,
+        "patient": _full_name(operacion.paciente.usuario),
+        "operation": _procedure_name(operacion),
+        "quotaNumber": cuota.nro_cuota,
+        "amount": _currency(_quota_programmed_amount(cuota)),
+        "dueDate": _date_label(cuota.fecha_vencimiento),
+        "status": _quota_display_status(cuota),
+        "paymentsCount": cuota.pagos_realizados.count(),
+    }
+
+
 def _expense_category_item(category):
     return {
         "id": category.pk,
@@ -3527,6 +3542,12 @@ def admin_pagos(request):
         for payment in pagos_qs
         if payment.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE
     )
+    cuotas_qs = CuotaPlanPago.objects.select_related(
+        "operacion__paciente__usuario",
+        "operacion__servicio_config__proc_estetico",
+    ).prefetch_related("pagos_realizados").order_by("fecha_vencimiento", "nro_cuota")
+    if branch:
+        cuotas_qs = cuotas_qs.filter(operacion__paciente__sucursal_registro=branch).distinct()
 
     data = {
         "metrics": [
@@ -3561,6 +3582,7 @@ def admin_pagos(request):
         ],
         "paymentQrConfig": _payment_qr_config_item(ConfiguracionPagoQR.objects.order_by("-updated_at").first()),
         "payments": [_payment_item(payment) for payment in pagos_qs],
+        "quotas": [_admin_quota_item(cuota) for cuota in cuotas_qs],
     }
     return _json(data)
 
