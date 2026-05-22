@@ -62,7 +62,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
       setSearchFilter(searchInput.trim())
     }, 400)
 
-    return () => window.clearTimeout(timeoutId)
+  return () => window.clearTimeout(timeoutId)
   }, [searchInput])
 
   const handleQrFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -168,6 +168,36 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
     }
 
     const dueDate = toComparableDate(payment.dueDate)
+    if (dateFromFilter) {
+      const from = new Date(`${dateFromFilter}T00:00:00`)
+      if (dueDate && dueDate < from) return false
+    }
+    if (dateToFilter) {
+      const to = new Date(`${dateToFilter}T23:59:59`)
+      if (dueDate && dueDate > to) return false
+    }
+    return true
+  })
+
+  const filteredQuotas = (data?.quotas ?? []).filter((quota) => {
+    if (statusFilter) {
+      const normalizedStatus = quota.status.trim().toLowerCase()
+      const statusTokenMap: Record<'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO', string[]> = {
+        PENDIENTE: ['pendiente', 'vencida'],
+        APROBADO: ['pagado', 'aprobado'],
+        RECHAZADO: ['observado', 'rechazado'],
+        CANCELADO: ['cancelado'],
+      }
+      if (!statusTokenMap[statusFilter].some((token) => normalizedStatus.includes(token))) return false
+    }
+
+    if (searchFilter) {
+      const term = searchFilter.toLowerCase()
+      const haystack = `${quota.patient} ${quota.operation}`.toLowerCase()
+      if (!haystack.includes(term)) return false
+    }
+
+    const dueDate = toComparableDate(quota.dueDate)
     if (dateFromFilter) {
       const from = new Date(`${dateFromFilter}T00:00:00`)
       if (dueDate && dueDate < from) return false
@@ -468,7 +498,31 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
               title="Cuotas de todos los estados"
               description="Vista consolidada de cuotas pagadas, pendientes, vencidas, observadas o canceladas."
             >
-              {data.quotas.length ? (
+              <div className="form-grid" style={{ marginBottom: 16 }}>
+                <label className="field">
+                  <span>Estado</span>
+                  <select className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as AdminPaymentsFilters['status'])}>
+                    <option value="">Todos</option>
+                    <option value="PENDIENTE">Pendiente</option>
+                    <option value="APROBADO">Aprobado</option>
+                    <option value="RECHAZADO">Observado</option>
+                    <option value="CANCELADO">Cancelado</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Desde</span>
+                  <input className="input" type="date" value={dateFromFilter} onChange={(event) => setDateFromFilter(event.target.value)} />
+                </label>
+                <label className="field">
+                  <span>Hasta</span>
+                  <input className="input" type="date" value={dateToFilter} onChange={(event) => setDateToFilter(event.target.value)} />
+                </label>
+                <label className="field field--full">
+                  <span>Buscar paciente/procedimiento</span>
+                  <input className="input" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
+                </label>
+              </div>
+              {filteredQuotas.length ? (
                 <div className="table-card">
                   <table>
                     <thead>
@@ -484,7 +538,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                       </tr>
                     </thead>
                     <tbody>
-                      {data.quotas.map((quota) => (
+                      {filteredQuotas.map((quota) => (
                         <tr key={quota.id}>
                           <td>{quota.id}</td>
                           <td>{quota.patient}</td>

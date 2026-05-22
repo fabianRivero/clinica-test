@@ -33,7 +33,7 @@ const fullNavigation = [
     label: 'Pagos y cuotas',
     children: [
       { to: '/admin/pagos/qr', label: 'Configurar QR' },
-      { to: '/admin/pagos/pendientes', label: 'Pendientes de revision' },
+      { to: '/admin/pagos/pendientes', label: 'Pagos' },
       { to: '/admin/pagos/cuotas', label: 'Todas las cuotas' },
     ],
   },
