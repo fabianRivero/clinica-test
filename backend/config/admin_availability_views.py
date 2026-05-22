@@ -33,6 +33,12 @@ def _admin_required(view_func):
             return _json({"detail": "Autenticacion requerida."}, status=401)
         if not (user.is_superuser or user.es_administrador):
             return _json({"detail": "No tienes permisos para acceder a esta vista."}, status=403)
+        if not (user.is_superuser or user.es_admin_principal):
+            if not user.sucursal or not user.sucursal.activa:
+                return _json(
+                    {"detail": "Tu sucursal esta inactiva. Contacta al administrador principal."},
+                    status=403,
+                )
         return view_func(request, *args, **kwargs)
     return wrapped
 
