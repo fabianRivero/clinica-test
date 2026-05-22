@@ -43,6 +43,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
   const [dateToFilter, setDateToFilter] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
+  const [quotaStatusFilter, setQuotaStatusFilter] = useState('')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loader = useCallback(
     () => getAdminPayments(),
@@ -180,15 +181,17 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
   })
 
   const filteredQuotas = (data?.quotas ?? []).filter((quota) => {
-    if (statusFilter) {
+    if (quotaStatusFilter) {
       const normalizedStatus = quota.status.trim().toLowerCase()
-      const statusTokenMap: Record<'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO', string[]> = {
-        PENDIENTE: ['pendiente', 'vencida'],
-        APROBADO: ['pagado', 'aprobado'],
-        RECHAZADO: ['observado', 'rechazado'],
+      const statusTokenMap: Record<string, string[]> = {
+        PENDIENTE: ['pendiente'],
+        VENCIDA: ['vencida'],
+        PAGADO: ['pagado'],
+        NO_PAGADA: ['no pagada'],
+        OBSERVADO: ['observado', 'rechazado'],
         CANCELADO: ['cancelado'],
       }
-      if (!statusTokenMap[statusFilter].some((token) => normalizedStatus.includes(token))) return false
+      if (!statusTokenMap[quotaStatusFilter]?.some((token) => normalizedStatus.includes(token))) return false
     }
 
     if (searchFilter) {
@@ -501,11 +504,13 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
               <div className="form-grid" style={{ marginBottom: 16 }}>
                 <label className="field">
                   <span>Estado</span>
-                  <select className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as AdminPaymentsFilters['status'])}>
+                  <select className="input" value={quotaStatusFilter} onChange={(event) => setQuotaStatusFilter(event.target.value)}>
                     <option value="">Todos</option>
                     <option value="PENDIENTE">Pendiente</option>
-                    <option value="APROBADO">Aprobado</option>
-                    <option value="RECHAZADO">Observado</option>
+                    <option value="VENCIDA">Vencida</option>
+                    <option value="PAGADO">Pagado</option>
+                    <option value="NO_PAGADA">No pagada</option>
+                    <option value="OBSERVADO">Observado</option>
                     <option value="CANCELADO">Cancelado</option>
                   </select>
                 </label>
