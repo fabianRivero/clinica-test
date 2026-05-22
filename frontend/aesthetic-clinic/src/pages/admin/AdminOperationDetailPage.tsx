@@ -111,7 +111,7 @@ export function AdminOperationDetailPage() {
   }
 
   const startEditingPrice = () => {
-    if (!data) return
+    if (!data || !canEditPricePlan) return
     setActionError(null)
     setPriceForm({
       priceTotal: numberFromCurrency(data.operation.price),
@@ -194,6 +194,7 @@ export function AdminOperationDetailPage() {
   }
 
   const { operation } = data
+  const canEditPricePlan = operation.status.toLowerCase() === 'en proceso'
 
   return (
     <div className="page-stack">
@@ -299,7 +300,7 @@ export function AdminOperationDetailPage() {
           <button className="button button--ghost" type="button" onClick={startEditingDetails}>
             Cambiar detalles
           </button>
-          <button className="button button--ghost" type="button" onClick={startEditingPrice}>
+          <button className="button button--ghost" type="button" onClick={startEditingPrice} disabled={!canEditPricePlan}>
             Cambiar precio pactado
           </button>
         </div>
@@ -345,7 +346,11 @@ export function AdminOperationDetailPage() {
           </form>
         ) : null}
 
-        {isEditingPrice ? (
+        {!canEditPricePlan ? (
+          <small className="field__hint">Solo las operaciones en proceso pueden cambiar el precio pactado y/o la cantidad de cuotas.</small>
+        ) : null}
+
+        {isEditingPrice && canEditPricePlan ? (
           <form className="form-grid" onSubmit={handleSavePrice}>
             <label className="field">
               <span>Precio pactado</span>
