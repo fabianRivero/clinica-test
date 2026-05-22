@@ -404,6 +404,19 @@ export type PaymentsResponse = {
   metrics: AdminMetric[]
   paymentQrConfig: PaymentQrConfig
   payments: VerificationPayment[]
+  quotas: AdminPaymentQuota[]
+}
+
+export type AdminPaymentQuota = {
+  id: string
+  rawId: number
+  patient: string
+  operation: string
+  quotaNumber: number
+  amount: string
+  dueDate: string
+  status: string
+  paymentsCount: number
 }
 
 export type UpdateAdminPaymentQrConfigResponse = {

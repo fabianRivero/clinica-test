@@ -29,7 +29,14 @@ const fullNavigation = [
       { to: '/admin/disponibilidad/gestionar', label: 'Gestionar horarios' },
     ],
   },
-  { to: '/admin/pagos', label: 'Pagos' },
+  {
+    label: 'Pagos y cuotas',
+    children: [
+      { to: '/admin/pagos/qr', label: 'Configurar QR' },
+      { to: '/admin/pagos/pendientes', label: 'Pagos' },
+      { to: '/admin/pagos/cuotas', label: 'Todas las cuotas' },
+    ],
+  },
   { to: '/admin/notificaciones', label: 'Notificaciones' },
   {
     label: 'Mensajeria',

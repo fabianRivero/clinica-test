@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 
+import { AdminPaymentsTabs } from '../../components/admin/AdminPaymentsTabs'
+
 import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
@@ -27,7 +29,7 @@ function toComparableDate(value?: string) {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
-export function AdminPaymentsPage() {
+export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuotas' }) {
   const { activeBranch } = useBranchContext()
   const branchId = activeBranch?.id ?? null
   const [instructions, setInstructions] = useState('')
@@ -41,6 +43,7 @@ export function AdminPaymentsPage() {
   const [dateToFilter, setDateToFilter] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
+  const [quotaStatusFilter, setQuotaStatusFilter] = useState('')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loader = useCallback(
     () => getAdminPayments(),
@@ -60,7 +63,7 @@ export function AdminPaymentsPage() {
       setSearchFilter(searchInput.trim())
     }, 400)
 
-    return () => window.clearTimeout(timeoutId)
+  return () => window.clearTimeout(timeoutId)
   }, [searchInput])
 
   const handleQrFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -177,6 +180,38 @@ export function AdminPaymentsPage() {
     return true
   })
 
+  const filteredQuotas = (data?.quotas ?? []).filter((quota) => {
+    if (quotaStatusFilter) {
+      const normalizedStatus = quota.status.trim().toLowerCase()
+      const statusTokenMap: Record<string, string[]> = {
+        PENDIENTE: ['pendiente'],
+        VENCIDA: ['vencida'],
+        PAGADO: ['pagado'],
+        NO_PAGADA: ['no pagada'],
+        OBSERVADO: ['observado', 'rechazado'],
+        CANCELADO: ['cancelado'],
+      }
+      if (!statusTokenMap[quotaStatusFilter]?.some((token) => normalizedStatus.includes(token))) return false
+    }
+
+    if (searchFilter) {
+      const term = searchFilter.toLowerCase()
+      const haystack = `${quota.patient} ${quota.operation}`.toLowerCase()
+      if (!haystack.includes(term)) return false
+    }
+
+    const dueDate = toComparableDate(quota.dueDate)
+    if (dateFromFilter) {
+      const from = new Date(`${dateFromFilter}T00:00:00`)
+      if (dueDate && dueDate < from) return false
+    }
+    if (dateToFilter) {
+      const to = new Date(`${dateToFilter}T23:59:59`)
+      if (dueDate && dueDate > to) return false
+    }
+    return true
+  })
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -188,6 +223,8 @@ export function AdminPaymentsPage() {
           { label: 'Exportar movimientos', variant: 'ghost' },
         ]}
       />
+
+      <AdminPaymentsTabs />
 
       {isLoading && !data ? (
         <SectionCard title="Cargando pagos">
@@ -206,6 +243,7 @@ export function AdminPaymentsPage() {
 
       {data ? (
         <>
+          {view === 'qr' ? (
           <SectionCard
             eyebrow="Pago por QR"
             title="Configuracion del QR bancario"
@@ -275,7 +313,9 @@ export function AdminPaymentsPage() {
               </form>
             </div>
           </SectionCard>
+          ) : null}
 
+          {view === 'pendientes' ? (
           <SectionCard
             eyebrow="Comprobantes"
             title="Cola de verificacion"
@@ -453,6 +493,88 @@ export function AdminPaymentsPage() {
               />
             )}
           </SectionCard>
+          ) : null}
+
+          {view === 'cuotas' ? (
+            <SectionCard
+              eyebrow="Plan de pagos"
+              title="Cuotas de todos los estados"
+              description="Vista consolidada de cuotas pagadas, pendientes, vencidas, observadas o canceladas."
+            >
+              <div className="form-grid" style={{ marginBottom: 16 }}>
+                <label className="field">
+                  <span>Estado</span>
+                  <select className="input" value={quotaStatusFilter} onChange={(event) => setQuotaStatusFilter(event.target.value)}>
+                    <option value="">Todos</option>
+                    <option value="PENDIENTE">Pendiente</option>
+                    <option value="VENCIDA">Vencida</option>
+                    <option value="PAGADO">Pagado</option>
+                    <option value="NO_PAGADA">No pagada</option>
+                    <option value="OBSERVADO">Observado</option>
+                    <option value="CANCELADO">Cancelado</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Desde</span>
+                  <input className="input" type="date" value={dateFromFilter} onChange={(event) => setDateFromFilter(event.target.value)} />
+                </label>
+                <label className="field">
+                  <span>Hasta</span>
+                  <input className="input" type="date" value={dateToFilter} onChange={(event) => setDateToFilter(event.target.value)} />
+                </label>
+                <label className="field field--full">
+                  <span>Buscar paciente/procedimiento</span>
+                  <input className="input" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
+                </label>
+              </div>
+              {filteredQuotas.length ? (
+                <div className="table-card">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Paciente</th>
+                        <th>Operacion</th>
+                        <th>Cuota</th>
+                        <th>Monto programado</th>
+                        <th>Vencimiento</th>
+                        <th>Estado</th>
+                        <th>Pagos registrados</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredQuotas.map((quota) => (
+                        <tr key={quota.id}>
+                          <td>{quota.id}</td>
+                          <td>{quota.patient}</td>
+                          <td>{quota.operation}</td>
+                          <td>{quota.quotaNumber}</td>
+                          <td>{quota.amount}</td>
+                          <td>{quota.dueDate}</td>
+                          <td>
+                            <StatusBadge
+                              tone={
+                                quota.status === 'Pagado'
+                                  ? 'approved'
+                                  : quota.status === 'Observado' || quota.status === 'Cancelado'
+                                    ? 'observed'
+                                    : 'pending'
+                              }
+                            >
+                              {quota.status}
+                            </StatusBadge>
+                          </td>
+                          <td>{quota.paymentsCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <DataState title="Sin cuotas registradas" message="No hay cuotas en el backend conectado." />
+              )}
+            </SectionCard>
+          ) : null}
         </>
       ) : null}
     </div>
