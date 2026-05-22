@@ -38,6 +38,7 @@ class BranchManagementPhase1Test(TestCase):
             "/api/admin/sucursales/crear/",
             data=json.dumps({"nombre": "Sur", "ciudad": "Santa Cruz", "direccion": "Av. 3"}),
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="phase1-create-non-main",
         )
         self.assertEqual(response.status_code, 403)
 
@@ -46,6 +47,7 @@ class BranchManagementPhase1Test(TestCase):
             "/api/admin/sucursales/crear/",
             data=json.dumps({"nombre": "Sur", "ciudad": "Santa Cruz", "direccion": "Av. 3"}),
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="phase1-create-main",
         )
         self.assertEqual(ok.status_code, 201)
 
@@ -55,6 +57,7 @@ class BranchManagementPhase1Test(TestCase):
             f"/api/admin/sucursales/{self.sucursal_activa.id}/estado/",
             data=json.dumps({"active": False}),
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="phase1-toggle",
         )
         self.assertEqual(response.status_code, 200)
         self.sucursal_activa.refresh_from_db()
