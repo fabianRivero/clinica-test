@@ -28,6 +28,7 @@ import { AdminProspectConvertPage } from './pages/admin/AdminProspectConvertPage
 import { AdminProspectCreatePage } from './pages/admin/AdminProspectCreatePage'
 import { AdminProspectsPage } from './pages/admin/AdminProspectsPage'
 import { AdminStaffCreatePage, AdminStaffManagePage } from './pages/admin/AdminStaffPage'
+import { AdminBranchesPage } from './pages/admin/AdminBranchesPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { TabletKioskPage } from './pages/tablet/TabletKioskPage'
 import { ClientDashboardPage } from './pages/client/ClientDashboardPage'
@@ -149,6 +150,7 @@ function App() {
           <Route path="equipo/crear" element={<AdminStaffCreatePage />} />
           <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />
           <Route path="notificaciones" element={<NotificationsPage />} />
+          <Route path="sucursales" element={<AdminBranchesPage />} />
         </Route>
       </Route>
       <Route element={<RequireRole allowedRoles={['TRABAJADOR']} />}>

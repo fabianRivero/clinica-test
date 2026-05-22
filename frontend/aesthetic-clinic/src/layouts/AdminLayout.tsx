@@ -39,6 +39,11 @@ const fullNavigation = [
   },
   { to: '/admin/notificaciones', label: 'Notificaciones' },
   {
+    label: 'Sucursales',
+    mainAdminOnly: true,
+    children: [{ to: '/admin/sucursales', label: 'Gestionar sucursales' }],
+  },
+  {
     label: 'Mensajeria',
     children: [
       { to: '/admin/mensajes/permisos', label: 'Habilitar/Bloquear fichas' },
