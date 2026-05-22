@@ -359,7 +359,11 @@ def _quota_status(operacion):
     if pending_payments:
         return f"{pending_payments} pago(s) pendientes"
 
-    pending_quotas = sum(1 for cuota in cuotas if cuota.estado != CuotaPlanPago.Estado.PAGADO)
+    pending_quotas = sum(
+        1
+        for cuota in cuotas
+        if cuota.estado not in {CuotaPlanPago.Estado.PAGADO, CuotaPlanPago.Estado.NO_PAGADA}
+    )
     if pending_quotas:
         return f"{pending_quotas} cuota(s) pendientes"
 
@@ -2832,7 +2836,13 @@ def admin_cliente_inactivate(request, client_id):
         .prefetch_related(
             Prefetch(
                 "operaciones",
-                queryset=Operacion.objects.select_for_update(of=("self",)).prefetch_related("citas_medicas"),
+                queryset=Operacion.objects.select_for_update(of=("self",)).prefetch_related(
+                    "citas_medicas",
+                    Prefetch(
+                        "cuotas_plan_pagos",
+                        queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados"),
+                    ),
+                ),
             )
         )
         .filter(pk=client_id)
@@ -2860,11 +2870,25 @@ def admin_cliente_inactivate(request, client_id):
     pendientes = cliente.pendientes_operativos()
     cancelled_operations = 0
     cancelled_appointments = 0
+    converted_quotas = 0
+    skipped_pending_review_quotas = 0
     for operacion in cliente.operaciones.all():
         if operacion.estado == Operacion.Estado.EN_PROCESO:
             operacion.estado = Operacion.Estado.CANCELADA
             operacion.save(update_fields=["estado", "updated_at"])
             cancelled_operations += 1
+        for cuota in operacion.cuotas_plan_pagos.all():
+            if cuota.estado not in {CuotaPlanPago.Estado.PENDIENTE, CuotaPlanPago.Estado.VENCIDA}:
+                continue
+            has_pending_review = cuota.pagos_realizados.filter(
+                estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE
+            ).exists()
+            if has_pending_review:
+                skipped_pending_review_quotas += 1
+                continue
+            cuota.estado = CuotaPlanPago.Estado.NO_PAGADA
+            cuota.save(update_fields=["estado", "updated_at"])
+            converted_quotas += 1
         for cita in operacion.citas_medicas.all():
             if cita.estado == CitaMedica.Estado.PROGRAMADA:
                 cita.estado = CitaMedica.Estado.CANCELADA
@@ -2880,6 +2904,8 @@ def admin_cliente_inactivate(request, client_id):
                 "El cliente fue convertido a inactivo. "
                 f"Antes de la inactivacion tenia {pendientes['sesiones_pendientes']} sesion(es) "
                 f"y {pendientes['cuotas_pendientes']} cuota(s) pendiente(s). "
+                f"Se convirtieron {converted_quotas} cuota(s) a no pagadas "
+                f"y se omitieron {skipped_pending_review_quotas} por tener pagos pendientes de revision. "
                 f"Se cancelaron {cancelled_operations} procedimiento(s) en proceso y "
                 f"{cancelled_appointments} cita(s) programada(s)."
             ),
