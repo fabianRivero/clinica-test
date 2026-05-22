@@ -3666,9 +3666,9 @@ def admin_update_payment_status(request, payment_id):
     )
 
     if status_value == PagoRealizado.EstadoVerificacion.APROBADO:
-        create_notification(recipient=payment.cuota.operacion.paciente.usuario, branch=payment.cuota.operacion.sucursal, type=Notification.Type.CLIENT_PAYMENT_CONFIRMED, title="Pago confirmado", message="Tu pago fue confirmado por administracion.", action_url="/cliente/pagos", source_event="payment.approved", source_entity_type="payment", source_entity_id=payment.id, created_by_type="admin", created_by_id=request.user.id)
+        create_notification(recipient=payment.cuota.operacion.paciente.usuario, branch=payment.cuota.operacion.paciente.sucursal_registro, type=Notification.Type.CLIENT_PAYMENT_CONFIRMED, title="Pago confirmado", message="Tu pago fue confirmado por administracion.", action_url="/cliente/pagos", source_event="payment.approved", source_entity_type="payment", source_entity_id=payment.id, created_by_type="admin", created_by_id=request.user.id)
     elif status_value == PagoRealizado.EstadoVerificacion.RECHAZADO:
-        create_notification(recipient=payment.cuota.operacion.paciente.usuario, branch=payment.cuota.operacion.sucursal, type=Notification.Type.CLIENT_PAYMENT_REJECTED, title="Pago rechazado", message="Tu pago fue rechazado. Revisa el detalle en pagos.", action_url="/cliente/pagos", source_event="payment.rejected", source_entity_type="payment", source_entity_id=payment.id, created_by_type="admin", created_by_id=request.user.id)
+        create_notification(recipient=payment.cuota.operacion.paciente.usuario, branch=payment.cuota.operacion.paciente.sucursal_registro, type=Notification.Type.CLIENT_PAYMENT_REJECTED, title="Pago rechazado", message="Tu pago fue rechazado. Revisa el detalle en pagos.", action_url="/cliente/pagos", source_event="payment.rejected", source_entity_type="payment", source_entity_id=payment.id, created_by_type="admin", created_by_id=request.user.id)
 
     detail_map = {
         PagoRealizado.EstadoVerificacion.PENDIENTE: "El pago volvio a estado pendiente.",

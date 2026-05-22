@@ -345,9 +345,19 @@ export function AdminClientDetailPage() {
 
   async function handlePaymentStatusUpdate(
     paymentId: number,
+    currentStatus: string,
     status: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO',
     fallbackNote?: string,
   ) {
+    const normalizedCurrentStatus = currentStatus.trim().toUpperCase()
+    if (normalizedCurrentStatus === 'APROBADO') {
+      showNotification({
+        title: 'Pago bloqueado',
+        message: 'Los pagos aprobados ya no se pueden modificar.',
+        tone: 'warning',
+      })
+      return
+    }
     setPaymentActionId(paymentId)
     try {
       const note = status === 'PENDIENTE' ? '' : getPaymentNote(paymentId, fallbackNote)
@@ -770,10 +780,23 @@ export function AdminClientDetailPage() {
                     </td>
                     <td>
                       <div className="table-action-list">
-                        <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || payment.status === 'aprobado'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, 'APROBADO', payment.note)}>Aprobar</button>
-                        <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || payment.status === 'observado'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, 'RECHAZADO', payment.note)}>Observar</button>
-                        <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || payment.status === 'cancelado'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, 'CANCELADO', payment.note)}>Cancelar</button>
-                        <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || payment.status === 'pendiente'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, 'PENDIENTE', payment.note)}>Pendiente</button>
+                        {(() => {
+                          const normalizedStatus = payment.status.trim().toUpperCase()
+                          const isApproved = normalizedStatus === 'APROBADO'
+
+                          if (isApproved) {
+                            return <span className="table-muted">Sin cambios</span>
+                          }
+
+                          return (
+                            <>
+                              <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || normalizedStatus === 'APROBADO'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, payment.status, 'APROBADO', payment.note)}>Aprobar</button>
+                              <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || normalizedStatus === 'RECHAZADO'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, payment.status, 'RECHAZADO', payment.note)}>Observar</button>
+                              <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || normalizedStatus === 'CANCELADO'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, payment.status, 'CANCELADO', payment.note)}>Cancelar</button>
+                              <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || normalizedStatus === 'PENDIENTE'} type="button" onClick={() => void handlePaymentStatusUpdate(payment.rawId, payment.status, 'PENDIENTE', payment.note)}>Pendiente</button>
+                            </>
+                          )
+                        })()}
                       </div>
                     </td>
                   </tr>
