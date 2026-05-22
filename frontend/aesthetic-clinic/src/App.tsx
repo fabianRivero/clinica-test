@@ -42,6 +42,8 @@ import { useAuth } from './providers/AuthProvider'
 import { NotificationsPage } from './pages/shared/NotificationsPage'
 import type { RoleKey } from './types/auth'
 
+const ENABLE_BRANCH_MANAGEMENT = (import.meta.env.VITE_ENABLE_BRANCH_MANAGEMENT || 'false').toLowerCase() === 'true'
+
 function AppLoadingScreen() {
   return (
     <div className="app-state-screen">
@@ -150,7 +152,10 @@ function App() {
           <Route path="equipo/crear" element={<AdminStaffCreatePage />} />
           <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />
           <Route path="notificaciones" element={<NotificationsPage />} />
-          <Route path="sucursales" element={<AdminBranchesPage />} />
+          <Route
+            path="sucursales"
+            element={ENABLE_BRANCH_MANAGEMENT ? <AdminBranchesPage /> : <Navigate to="/admin" replace />}
+          />
         </Route>
       </Route>
       <Route element={<RequireRole allowedRoles={['TRABAJADOR']} />}>
