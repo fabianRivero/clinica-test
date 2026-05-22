@@ -65,6 +65,7 @@ from config.api_views import (
     admin_branch_management_update,
     admin_branch_management_toggle,
     admin_branch_management_change_admin,
+    admin_branch_management_deactivation_impact,
 )
 from config.prospect_conversion_views import (
     admin_prospect_conversion_cancel,
@@ -86,6 +87,7 @@ urlpatterns = [
     path("sucursales/<int:branch_id>/actualizar/", admin_branch_management_update, name="admin-branch-management-update-api"),
     path("sucursales/<int:branch_id>/estado/", admin_branch_management_toggle, name="admin-branch-management-toggle-api"),
     path("sucursales/<int:branch_id>/cambiar-admin/", admin_branch_management_change_admin, name="admin-branch-management-change-admin-api"),
+    path("sucursales/<int:branch_id>/deactivation-impact/", admin_branch_management_deactivation_impact, name="admin-branch-management-deactivation-impact-api"),
     path("dashboard/", admin_dashboard, name="admin-dashboard-api"),
     path("dashboard/payments/", admin_dashboard_payments, name="admin-dashboard-payments-api"),
     path("dashboard/agenda/", admin_dashboard_agenda, name="admin-dashboard-agenda-api"),

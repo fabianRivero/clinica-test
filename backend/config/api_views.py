@@ -12,6 +12,7 @@ from django.db.models import Prefetch, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.core.cache import cache
 from django.views.decorators.http import require_GET, require_POST
 
 from accounts.models import Rol, Usuario
@@ -52,6 +53,7 @@ from notifications.models import Notification
 from notifications.services import create_notification
 
 logger = logging.getLogger(__name__)
+IDEMPOTENCY_TTL_SECONDS = 60 * 60 * 24
 
 
 def _json(data, status=200):
@@ -136,6 +138,46 @@ def _branch_payload(payload, *, partial=False):
             continue
         data[field] = cleaned
     return data, errors
+
+
+def _idempotency_cache_key(request, scope):
+    idem_key = request.headers.get("Idempotency-Key")
+    if not idem_key:
+        return None, _json({"detail": "Idempotency-Key es obligatorio."}, status=400)
+    user_id = request.user.id if request.user.is_authenticated else "anon"
+    return f"idempotency:{scope}:{user_id}:{idem_key}", None
+
+
+def _idempotency_replay_or_store(cache_key, fn):
+    cached = cache.get(cache_key)
+    if cached:
+        return _json(cached["data"], status=cached["status"])
+    response = fn()
+    if 200 <= response.status_code < 300:
+        payload = json.loads(response.content.decode("utf-8"))
+        cache.set(cache_key, {"status": response.status_code, "data": payload}, IDEMPOTENCY_TTL_SECONDS)
+    return response
+
+
+def _branch_deactivation_impact(branch):
+    now = timezone.now()
+    appointments_pending = (
+        CitaMedica.objects.filter(sucursal=branch, fecha_hora__gte=now, estado=CitaMedica.Estado.PROGRAMADA).count()
+        + CitaProspecto.objects.filter(sucursal=branch, fecha_hora__gte=now, estado=CitaProspecto.Estado.PROGRAMADA).count()
+        + CitaClienteLibre.objects.filter(sucursal=branch, fecha_hora__gte=now, estado=CitaClienteLibre.Estado.PROGRAMADA).count()
+    )
+    payments_pending = PagoRealizado.objects.filter(
+        cuota__operacion__sucursal=branch,
+        estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
+    ).count()
+    processes_pending = Operacion.objects.filter(
+        sucursal=branch
+    ).exclude(estado=Operacion.Estado.CANCELADA).count()
+    return {
+        "appointments_pending": appointments_pending,
+        "payments_pending": payments_pending,
+        "processes_pending": processes_pending,
+    }
 
 
 @require_POST
@@ -4383,14 +4425,20 @@ def admin_branch_management_list(request):
 @_admin_principal_required
 @transaction.atomic
 def admin_branch_management_create(request):
-    payload = _load_payload(request)
-    if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
-    data, errors = _branch_payload(payload, partial=False)
-    if errors:
-        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
-    branch = Sucursal.objects.create(**data, activa=True)
-    return _json({"detail": "Sucursal creada correctamente.", "branchId": branch.id}, status=201)
+    cache_key, error_response = _idempotency_cache_key(request, "branch-create")
+    if error_response:
+        return error_response
+
+    def _create():
+        payload = _load_payload(request)
+        if payload is None:
+            return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        data, errors = _branch_payload(payload, partial=False)
+        if errors:
+            return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        branch = Sucursal.objects.create(**data, activa=True)
+        return _json({"detail": "Sucursal creada correctamente.", "branchId": branch.id}, status=201)
+    return _idempotency_replay_or_store(cache_key, _create)
 
 
 @require_POST
@@ -4416,34 +4464,66 @@ def admin_branch_management_update(request, branch_id):
 @_admin_principal_required
 @transaction.atomic
 def admin_branch_management_toggle(request, branch_id):
-    branch = get_object_or_404(Sucursal, pk=branch_id)
-    payload = _load_payload(request) or {}
-    active = payload.get("active")
-    if not isinstance(active, bool):
-        return _json({"detail": "Debes indicar si la sucursal quedará activa o inactiva."}, status=400)
-    branch.activa = active
-    branch.save(update_fields=["activa", "updated_at"])
-    return _json({"detail": "Sucursal activada correctamente." if active else "Sucursal desactivada correctamente."})
+    cache_key, error_response = _idempotency_cache_key(request, f"branch-toggle:{branch_id}")
+    if error_response:
+        return error_response
+
+    def _toggle():
+        branch = get_object_or_404(Sucursal, pk=branch_id)
+        payload = _load_payload(request) or {}
+        active = payload.get("active")
+        force = bool(payload.get("force"))
+        if not isinstance(active, bool):
+            return _json({"detail": "Debes indicar si la sucursal quedará activa o inactiva."}, status=400)
+        impact = _branch_deactivation_impact(branch)
+        has_pending = any(impact.values())
+        if active is False and has_pending and not force:
+            return _json(
+                {"detail": "La sucursal tiene pendientes operativos.", "impact": impact, "requiresConfirmation": True},
+                status=409,
+            )
+        branch.activa = active
+        branch.save(update_fields=["activa", "updated_at"])
+        return _json(
+            {
+                "detail": "Sucursal activada correctamente." if active else "Sucursal desactivada correctamente.",
+                "impact": impact,
+            }
+        )
+    return _idempotency_replay_or_store(cache_key, _toggle)
 
 
 @require_POST
 @_admin_principal_required
 @transaction.atomic
 def admin_branch_management_change_admin(request, branch_id):
+    cache_key, error_response = _idempotency_cache_key(request, f"branch-change-admin:{branch_id}")
+    if error_response:
+        return error_response
+
+    def _change_admin():
+        branch = get_object_or_404(Sucursal, pk=branch_id)
+        payload = _load_payload(request)
+        if payload is None:
+            return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        new_admin_id = payload.get("newAdminUserId")
+        if not new_admin_id:
+            return _json({"detail": "newAdminUserId es obligatorio."}, status=400)
+        new_admin = get_object_or_404(Usuario, pk=new_admin_id)
+        if not (new_admin.rol and new_admin.rol.rol == "ADMIN_SUCURSAL"):
+            return _json({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
+        if not new_admin.is_active:
+            return _json({"detail": "El admin de sucursal debe estar activo."}, status=400)
+        new_admin.sucursal = branch
+        new_admin.save(update_fields=["sucursal", "updated_at"])
+        if not Usuario.objects.filter(sucursal=branch, rol__rol="ADMIN_SUCURSAL", is_active=True).exists():
+            return _json({"detail": "La sucursal debe mantener al menos un admin activo."}, status=400)
+        return _json({"detail": "Administrador de sucursal actualizado correctamente."})
+    return _idempotency_replay_or_store(cache_key, _change_admin)
+
+
+@require_GET
+@_admin_principal_required
+def admin_branch_management_deactivation_impact(request, branch_id):
     branch = get_object_or_404(Sucursal, pk=branch_id)
-    payload = _load_payload(request)
-    if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
-    new_admin_id = payload.get("newAdminUserId")
-    if not new_admin_id:
-        return _json({"detail": "newAdminUserId es obligatorio."}, status=400)
-    new_admin = get_object_or_404(Usuario, pk=new_admin_id)
-    if not (new_admin.rol and new_admin.rol.rol == "ADMIN_SUCURSAL"):
-        return _json({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
-    if not new_admin.is_active:
-        return _json({"detail": "El admin de sucursal debe estar activo."}, status=400)
-    new_admin.sucursal = branch
-    new_admin.save(update_fields=["sucursal", "updated_at"])
-    if not Usuario.objects.filter(sucursal=branch, rol__rol="ADMIN_SUCURSAL", is_active=True).exists():
-        return _json({"detail": "La sucursal debe mantener al menos un admin activo."}, status=400)
-    return _json({"detail": "Administrador de sucursal actualizado correctamente."})
+    return _json({"branchId": branch.id, "impact": _branch_deactivation_impact(branch)})
