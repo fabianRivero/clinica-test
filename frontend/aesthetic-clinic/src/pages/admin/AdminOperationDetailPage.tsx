@@ -100,7 +100,7 @@ export function AdminOperationDetailPage() {
   }
 
   const startEditingDetails = () => {
-    if (!data) return
+    if (!data || !canEditPricePlan) return
     setActionError(null)
     setDetailsForm({
       details: data.operation.detallesOperacion === 'Sin detalles registrados.' ? '' : data.operation.detallesOperacion,
@@ -297,7 +297,7 @@ export function AdminOperationDetailPage() {
           </article>
         </div>
         <div className="form-actions">
-          <button className="button button--ghost" type="button" onClick={startEditingDetails}>
+          <button className="button button--ghost" type="button" onClick={startEditingDetails} disabled={!canEditPricePlan}>
             Cambiar detalles
           </button>
           <button className="button button--ghost" type="button" onClick={startEditingPrice} disabled={!canEditPricePlan}>
@@ -305,7 +305,7 @@ export function AdminOperationDetailPage() {
           </button>
         </div>
 
-        {isEditingDetails ? (
+        {isEditingDetails && canEditPricePlan ? (
           <form className="form-grid" onSubmit={handleSaveDetails}>
             <label className="field field--full">
               <span>Detalles de la operacion</span>
