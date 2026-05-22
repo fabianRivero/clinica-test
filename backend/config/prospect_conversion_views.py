@@ -1542,12 +1542,18 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
                 opcion_id=option_id,
             )
 
-    if draft.prospecto: draft.prospecto.marcar_como_convertido(cliente, save=True)
+    is_reactivation = draft.cliente is not None
+    if draft.prospecto:
+        draft.prospecto.marcar_como_convertido(cliente, save=True)
+    elif is_reactivation:
+        # La reactivacion debe dejar al cliente habilitado para nuevos procedimientos.
+        cliente.cambiar_estado(Cliente.Estado.ACTIVO, save=True, manual=True)
+
     draft.delete()
 
     return _json(
         {
-            "detail": "El proceso finalizo correctamente." if draft.cliente else "El prospecto fue convertido correctamente a cliente.",
+            "detail": "El proceso finalizo correctamente." if is_reactivation else "El prospecto fue convertido correctamente a cliente.",
             "client": {
                 "id": cliente.id,
                 "name": cliente.usuario.nombre_completo,
