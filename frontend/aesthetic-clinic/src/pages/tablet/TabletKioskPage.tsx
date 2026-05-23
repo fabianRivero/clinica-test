@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
   tabletClientLogin,
@@ -8,6 +8,12 @@ import {
   tabletKioskLogin,
 } from '../../services/api/tablet'
 import type { TabletCurrentAppointmentResponse } from '../../types/tablet'
+import {
+  countPendingOfflineEvents,
+  loadTabletSnapshot,
+  queueOfflineConfirmation,
+  saveTabletSnapshot,
+} from '../../services/tabletOfflineStore'
 
 type Step = 'kiosk' | 'client' | 'appointments' | 'done'
 
@@ -22,8 +28,24 @@ export function TabletKioskPage() {
   const [clientUsername, setClientUsername] = useState('paciente.demo')
   const [clientPassword, setClientPassword] = useState('paciente123456')
   const [summary, setSummary] = useState<TabletCurrentAppointmentResponse | null>(null)
+  const [isOfflineMode, setIsOfflineMode] = useState(!navigator.onLine)
+  const [pendingOfflineEvents, setPendingOfflineEvents] = useState(0)
 
   const procedures = useMemo(() => summary?.procedureOptions ?? [], [summary])
+
+  useEffect(() => {
+    function syncNetworkState() {
+      setIsOfflineMode(!navigator.onLine)
+    }
+    window.addEventListener('online', syncNetworkState)
+    window.addEventListener('offline', syncNetworkState)
+    void countPendingOfflineEvents().then(setPendingOfflineEvents).catch(() => undefined)
+    return () => {
+      window.removeEventListener('online', syncNetworkState)
+      window.removeEventListener('offline', syncNetworkState)
+    }
+  }, [])
+
 
   async function handleKioskLogin(event: React.FormEvent) {
     event.preventDefault()
@@ -44,9 +66,18 @@ export function TabletKioskPage() {
     setLoading(true)
     setError('')
     try {
+      if (isOfflineMode) {
+        const cached = await loadTabletSnapshot()
+        if (!cached) throw new Error('No hay snapshot offline disponible para hoy.')
+        setSummary(cached.data)
+        setStep('appointments')
+        return
+      }
+
       await tabletClientLogin(clientUsername, clientPassword)
       const data = await tabletCurrentAppointment()
       setSummary(data)
+      await saveTabletSnapshot(data)
       setStep('appointments')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo autenticar el cliente.')
@@ -60,6 +91,14 @@ export function TabletKioskPage() {
     setError('')
     setSuccess('')
     try {
+      if (isOfflineMode) {
+        await queueOfflineConfirmation(operationId)
+        setPendingOfflineEvents(await countPendingOfflineEvents())
+        setSuccess('Verificación registrada en cola offline. Se sincronizará al volver la red.')
+        setStep('done')
+        return
+      }
+
       const response = await tabletConfirmProcedure(operationId)
       setSuccess(response.detail)
       setStep('done')
@@ -83,6 +122,17 @@ export function TabletKioskPage() {
     <div className="auth-shell tablet-shell">
       <div className="auth-card tablet-shell__card">
         <h2>Interfaz Tablet · Confirmación de cita</h2>
+        {isOfflineMode ? (
+          <div className="auth-highlight" style={{ marginBottom: 12 }}>
+            <strong>Modo offline activo</strong>
+            <p>Se usará snapshot local y las confirmaciones quedarán en cola para sincronización.</p>
+          </div>
+        ) : null}
+        {pendingOfflineEvents > 0 ? (
+          <div className="auth-highlight" style={{ marginBottom: 12 }}>
+            <strong>Pendientes de sincronizar: {pendingOfflineEvents}</strong>
+          </div>
+        ) : null}
         {step === 'kiosk' && (
           <form className="auth-form" onSubmit={handleKioskLogin}>
             <label className="field">
