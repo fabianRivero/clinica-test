@@ -111,6 +111,23 @@ class BranchManagementPhase1Test(TestCase):
         self.assertEqual(self.admin_sucursal_nuevo.sucursal_id, self.sucursal_activa.id)
         self.assertEqual(self.admin_sucursal.sucursal_id, self.sucursal_inactiva.id)
 
+    def test_cannot_assign_branch_admin_when_main_admin_is_assigned_to_branch(self):
+        self.admin_general.sucursal = self.sucursal_activa
+        self.admin_general.is_active = True
+        self.admin_general.save(update_fields=["sucursal", "is_active", "updated_at"])
+        self.admin_sucursal_nuevo.is_active = True
+        self.admin_sucursal_nuevo.sucursal = None
+        self.admin_sucursal_nuevo.save(update_fields=["is_active", "sucursal", "updated_at"])
+
+        self.client.force_login(self.admin_general)
+        response = self.client.post(
+            f"/api/admin/sucursales/{self.sucursal_activa.id}/cambiar-admin/",
+            data=json.dumps({"newAdminUserId": self.admin_sucursal_nuevo.id}),
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="phase1-change-main-admin-conflict",
+        )
+        self.assertEqual(response.status_code, 409)
+
     def test_inactive_branch_admin_is_blocked(self):
         self.admin_sucursal.sucursal = self.sucursal_inactiva
         self.admin_sucursal.save(update_fields=["sucursal", "updated_at"])

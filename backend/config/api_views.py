@@ -4512,6 +4512,16 @@ def admin_branch_management_change_admin(request, branch_id):
         new_admin = get_object_or_404(Usuario, pk=new_admin_id)
         if not (new_admin.rol and new_admin.rol.rol == "ADMIN_SUCURSAL"):
             return _json({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
+        has_main_admin_assigned = Usuario.objects.filter(
+            rol__rol="ADMIN_PRINCIPAL",
+            sucursal=branch,
+            is_active=True,
+        ).exists()
+        if has_main_admin_assigned:
+            return _json(
+                {"detail": "La sucursal ya tiene un administrador principal asignado. No se puede asignar admin de sucursal."},
+                status=409,
+            )
         current_admin = (
             Usuario.objects.filter(rol__rol="ADMIN_SUCURSAL", sucursal=branch, is_active=True)
             .exclude(pk=new_admin.pk)
@@ -4529,6 +4539,9 @@ def admin_branch_management_change_admin(request, branch_id):
                 current_admin.sucursal = None
                 current_admin.save(update_fields=["is_active", "sucursal", "updated_at"])
             return _json({"detail": "Administrador inactivo activado y asignado correctamente.", "mode": "replace_with_inactive"})
+
+        if new_admin.sucursal_id == branch.id:
+            return _json({"detail": "El administrador ya está asignado a esta sucursal.", "mode": "assign"})
 
         new_admin.sucursal = branch
         new_admin.save(update_fields=["sucursal", "updated_at"])
