@@ -41,7 +41,10 @@ const fullNavigation = [
   {
     label: 'Gestion de sucursales',
     mainAdminOnly: true,
-    children: [{ to: '/admin/sucursales', label: 'Gestion de sucursales' }],
+    children: [
+      { to: '/admin/sucursales/editar', label: 'Editar sucursales' },
+      { to: '/admin/sucursales/crear', label: 'Crear sucursal' },
+    ],
   },
   {
     label: 'Mensajeria',
