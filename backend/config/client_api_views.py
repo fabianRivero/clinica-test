@@ -1091,6 +1091,28 @@ def client_tablet_sync_offline_events(request):
         )
 
         if not cita:
+            fallback_cita = (
+                CitaMedica.objects.select_related("operacion__paciente", "sucursal")
+                .filter(operacion__paciente=request.cliente, operacion_id=operation_id, fecha_hora__date=today)
+                .order_by("fecha_hora")
+                .first()
+            )
+            if fallback_cita:
+                EventoConfirmacionCita.objects.create(
+                    cita=fallback_cita,
+                    paciente=request.cliente,
+                    sucursal=fallback_cita.sucursal,
+                    metodo=EventoConfirmacionCita.Metodo.TABLET,
+                    confirmado_en=timezone.now(),
+                    ip_origen=_client_ip(request),
+                    event_id=event_id,
+                    origin_mode=EventoConfirmacionCita.ModoOrigen.OFFLINE,
+                    device_id=device_id,
+                    recorded_at_device=recorded_at,
+                    confirmed_at_server=timezone.now(),
+                    sync_status=EventoConfirmacionCita.EstadoSync.CONFLICT,
+                    conflict_reason="appointment_not_pending",
+                )
             results.append({"eventId": event_id, "status": "conflict", "reason": "appointment_not_pending"})
             continue
 
