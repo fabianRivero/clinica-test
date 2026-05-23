@@ -88,7 +88,6 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
           description="Crea un admin de sucursal (inactivo por defecto)."
         >
         <form className="form-grid" onSubmit={handleCreate}>
-          <div className="form-grid form-grid--three">
             <label className="field">
               <span>Username</span>
               <input className="input" required value={form.username} onChange={(e) => setForm((v) => ({ ...v, username: e.target.value }))} />
@@ -117,8 +116,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
               <span>Apellido materno</span>
               <input className="input" value={form.apellidoMaterno} onChange={(e) => setForm((v) => ({ ...v, apellidoMaterno: e.target.value }))} />
             </label>
-          </div>
-          <div className="form-actions">
+          <div className="form-actions field--full">
             <button className="button button--primary" type="submit" disabled={saving}>Crear admin sucursal</button>
           </div>
         </form>
