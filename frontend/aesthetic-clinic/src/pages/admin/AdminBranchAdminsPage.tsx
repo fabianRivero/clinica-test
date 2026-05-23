@@ -80,15 +80,38 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
         <form className="card" onSubmit={handleCreate}>
           <h3>Crear admin de sucursal (inactivo por defecto)</h3>
           <div className="form-grid form-grid--three">
-            <input className="input" placeholder="Username" value={form.username} onChange={(e) => setForm((v) => ({ ...v, username: e.target.value }))} />
-            <input className="input" placeholder="Email" value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} />
-            <input className="input" placeholder="Password" type="password" value={form.password} onChange={(e) => setForm((v) => ({ ...v, password: e.target.value }))} />
-            <input className="input" placeholder="Primer nombre" value={form.primerNombre} onChange={(e) => setForm((v) => ({ ...v, primerNombre: e.target.value }))} />
-            <input className="input" placeholder="Segundo nombre" value={form.segundoNombre} onChange={(e) => setForm((v) => ({ ...v, segundoNombre: e.target.value }))} />
-            <input className="input" placeholder="Apellido paterno" value={form.apellidoPaterno} onChange={(e) => setForm((v) => ({ ...v, apellidoPaterno: e.target.value }))} />
-            <input className="input" placeholder="Apellido materno" value={form.apellidoMaterno} onChange={(e) => setForm((v) => ({ ...v, apellidoMaterno: e.target.value }))} />
+            <label className="field">
+              <span>Username</span>
+              <input className="input" required value={form.username} onChange={(e) => setForm((v) => ({ ...v, username: e.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Email</span>
+              <input className="input" value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Password</span>
+              <input className="input" type="password" required value={form.password} onChange={(e) => setForm((v) => ({ ...v, password: e.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Primer nombre</span>
+              <input className="input" required value={form.primerNombre} onChange={(e) => setForm((v) => ({ ...v, primerNombre: e.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Segundo nombre</span>
+              <input className="input" value={form.segundoNombre} onChange={(e) => setForm((v) => ({ ...v, segundoNombre: e.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Apellido paterno</span>
+              <input className="input" required value={form.apellidoPaterno} onChange={(e) => setForm((v) => ({ ...v, apellidoPaterno: e.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Apellido materno</span>
+              <input className="input" value={form.apellidoMaterno} onChange={(e) => setForm((v) => ({ ...v, apellidoMaterno: e.target.value }))} />
+            </label>
           </div>
-          <button className="button" type="submit" disabled={saving}>Crear admin sucursal</button>
+          <div className="form-actions">
+            <button className="button" type="submit" disabled={saving}>Crear admin sucursal</button>
+          </div>
         </form>
       ) : null}
 
