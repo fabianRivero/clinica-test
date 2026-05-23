@@ -25,6 +25,8 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
 
   const [newBranch, setNewBranch] = useState({ nombre: '', ciudad: '', direccion: '' })
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
+  const [wizardStep1Completed, setWizardStep1Completed] = useState(false)
+  const [wizardStep2Completed, setWizardStep2Completed] = useState(false)
   const [wizardNewAdmin, setWizardNewAdmin] = useState({ username: '', email: '', primerNombre: '', apellidoPaterno: '', ci: '', password: '' })
   const [wizardTablet, setWizardTablet] = useState({ codigo: '', nombre: '', clave: '' })
   const [branchAdmins, setBranchAdmins] = useState<Array<{ id: number; username: string; fullName: string; isActive: boolean; branchId: number | null; branchName: string }>>([])
@@ -64,6 +66,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     setSaving(true)
     try {
       await saveAdminBranchWizardStep1(newBranch)
+      setWizardStep1Completed(true)
       setWizardStep(2)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar paso 1')
@@ -77,6 +80,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     setSaving(true)
     try {
       await saveAdminBranchWizardStep2CreateNew(wizardNewAdmin)
+      setWizardStep2Completed(true)
       setWizardStep(3)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar paso 2')
@@ -91,6 +95,8 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     try {
       await finalizeAdminBranchWizard(wizardTablet)
       setWizardStep(1)
+      setWizardStep1Completed(false)
+      setWizardStep2Completed(false)
       setNewBranch({ nombre: '', ciudad: '', direccion: '' })
       setWizardTablet({ codigo: '', nombre: '', clave: '' })
     } catch (err) {
@@ -104,6 +110,8 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     const ok = window.confirm('¿Seguro que deseas cancelar la creación de sucursal? Se perderán los cambios no finalizados.')
     if (!ok) return
     setWizardStep(1)
+    setWizardStep1Completed(false)
+    setWizardStep2Completed(false)
     setNewBranch({ nombre: '', ciudad: '', direccion: '' })
     setWizardNewAdmin({ username: '', email: '', primerNombre: '', apellidoPaterno: '', ci: '', password: '' })
     setWizardTablet({ codigo: '', nombre: '', clave: '' })
@@ -201,10 +209,10 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
           <button className={`stepper__item ${wizardStep === 1 ? 'is-active' : ''}`} type="button" onClick={() => setWizardStep(1)}>
             <span className="stepper__index">Paso 1</span><span className="stepper__label">Datos de sucursal</span>
           </button>
-          <button className={`stepper__item ${wizardStep === 2 ? 'is-active' : ''}`} type="button" onClick={() => setWizardStep(2)}>
+          <button className={`stepper__item ${wizardStep === 2 ? 'is-active' : ''}`} type="button" onClick={() => setWizardStep(2)} disabled={!wizardStep1Completed}>
             <span className="stepper__index">Paso 2</span><span className="stepper__label">Administrador</span>
           </button>
-          <button className={`stepper__item ${wizardStep === 3 ? 'is-active' : ''}`} type="button" onClick={() => setWizardStep(3)}>
+          <button className={`stepper__item ${wizardStep === 3 ? 'is-active' : ''}`} type="button" onClick={() => setWizardStep(3)} disabled={!wizardStep1Completed || !wizardStep2Completed}>
             <span className="stepper__index">Paso 3</span><span className="stepper__label">Tablet</span>
           </button>
         </div>
