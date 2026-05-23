@@ -385,6 +385,17 @@ class EventoConfirmacionCita(TimeStampedModel):
         TABLET = "TABLET", "Tablet"
         MANUAL = "MANUAL", "Manual"
 
+    class ModoOrigen(models.TextChoices):
+        ONLINE = "ONLINE", "Online"
+        OFFLINE = "OFFLINE", "Offline"
+
+    class EstadoSync(models.TextChoices):
+        PENDING = "PENDING", "Pendiente"
+        ACCEPTED = "ACCEPTED", "Aceptado"
+        DUPLICATE = "DUPLICATE", "Duplicado"
+        CONFLICT = "CONFLICT", "Conflicto"
+        REJECTED = "REJECTED", "Rechazado"
+
     cita = models.ForeignKey(
         "operations.CitaMedica",
         on_delete=models.CASCADE,
@@ -403,6 +414,13 @@ class EventoConfirmacionCita(TimeStampedModel):
     metodo = models.CharField(max_length=16, choices=Metodo.choices)
     confirmado_en = models.DateTimeField(default=timezone.now)
     ip_origen = models.GenericIPAddressField(null=True, blank=True)
+    event_id = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    origin_mode = models.CharField(max_length=16, choices=ModoOrigen.choices, default=ModoOrigen.ONLINE)
+    device_id = models.CharField(max_length=80, blank=True, default="")
+    recorded_at_device = models.DateTimeField(null=True, blank=True)
+    confirmed_at_server = models.DateTimeField(null=True, blank=True)
+    sync_status = models.CharField(max_length=16, choices=EstadoSync.choices, default=EstadoSync.ACCEPTED)
+    conflict_reason = models.CharField(max_length=120, blank=True, default="")
 
     class Meta:
         db_table = "eventos_confirmacion_citas"

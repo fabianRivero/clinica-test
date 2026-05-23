@@ -79,6 +79,6 @@ export interface TabletOfflineSyncResponse {
   results: TabletOfflineSyncResponseItem[]
 }
 
-export function tabletSyncOfflineEvents(events: TabletOfflineSyncEventPayload[]) {
-  return postJson<TabletOfflineSyncResponse>('/api/client/tablet/offline/sync-events/', { events })
+export function tabletSyncOfflineEvents(events: TabletOfflineSyncEventPayload[], deviceId: string) {
+  return postJson<TabletOfflineSyncResponse>('/api/client/tablet/offline/sync-events/', { events, deviceId })
 }

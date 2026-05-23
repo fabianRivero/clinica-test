@@ -114,3 +114,13 @@ export async function countPendingOfflineEvents(): Promise<number> {
   const pending = await listPendingOfflineEvents()
   return pending.length
 }
+
+const DEVICE_ID_KEY = 'tablet-offline-device-id'
+
+export function getOfflineDeviceId(): string {
+  const existing = window.localStorage.getItem(DEVICE_ID_KEY)
+  if (existing) return existing
+  const created = crypto.randomUUID()
+  window.localStorage.setItem(DEVICE_ID_KEY, created)
+  return created
+}

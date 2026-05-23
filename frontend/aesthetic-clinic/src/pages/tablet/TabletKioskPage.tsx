@@ -15,6 +15,7 @@ import {
   markOfflineEventStatus,
   queueOfflineConfirmation,
   saveTabletSnapshot,
+  getOfflineDeviceId,
 } from '../../services/tabletOfflineStore'
 import type { TabletCurrentAppointmentResponse } from '../../types/tablet'
 
@@ -47,6 +48,7 @@ export function TabletKioskPage() {
 
     const response = await tabletSyncOfflineEvents(
       pending.map((event) => ({ eventId: event.eventId, operationId: event.operationId, createdAt: event.createdAt })),
+      getOfflineDeviceId(),
     )
 
     await Promise.all(

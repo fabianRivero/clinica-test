@@ -8,6 +8,7 @@ from django.db import transaction
 from django.db.models import Prefetch, Q
 from django.http import JsonResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_GET, require_POST
 
 from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
@@ -1051,13 +1052,17 @@ def client_tablet_sync_offline_events(request):
     if not isinstance(events, list):
         return _json({"detail": "Debes enviar una lista de eventos."}, status=400)
 
+    device_id = str(payload.get("deviceId") or "").strip()
     results = []
     processed_ids = set()
     today = timezone.localdate()
 
     for item in events:
-        event_id = str((item or {}).get("eventId") or "").strip()
-        operation_id = (item or {}).get("operationId")
+        item = item or {}
+        event_id = str(item.get("eventId") or "").strip()
+        operation_id = item.get("operationId")
+        recorded_raw = item.get("createdAt")
+        recorded_at = parse_datetime(recorded_raw) if recorded_raw else None
 
         if not event_id or not operation_id:
             results.append({"eventId": event_id or None, "status": "rejected", "reason": "invalid_payload"})
@@ -1065,12 +1070,11 @@ def client_tablet_sync_offline_events(request):
         if event_id in processed_ids:
             results.append({"eventId": event_id, "status": "duplicate", "reason": "duplicated_in_batch"})
             continue
-
         processed_ids.add(event_id)
 
-        # idempotencia básica usando ip_origen como marcador temporal del eventId
-        if EventoConfirmacionCita.objects.filter(ip_origen=event_id).exists():
-            results.append({"eventId": event_id, "status": "duplicate", "reason": "already_processed"})
+        existing_event = EventoConfirmacionCita.objects.filter(event_id=event_id).first()
+        if existing_event:
+            results.append({"eventId": event_id, "status": "duplicate", "reason": "already_processed", "appointmentId": existing_event.cita_id})
             continue
 
         cita = (
@@ -1095,15 +1099,22 @@ def client_tablet_sync_offline_events(request):
         cita.verif_biometria = False
         cita.save(update_fields=["estado", "metodo_confirmacion", "verif_biometria", "updated_at"])
 
-        EventoConfirmacionCita.objects.create(
+        event = EventoConfirmacionCita.objects.create(
             cita=cita,
             paciente=request.cliente,
             sucursal=cita.sucursal,
             metodo=EventoConfirmacionCita.Metodo.TABLET,
             confirmado_en=timezone.now(),
-            ip_origen=event_id,
+            ip_origen=_client_ip(request),
+            event_id=event_id,
+            origin_mode=EventoConfirmacionCita.ModoOrigen.OFFLINE,
+            device_id=device_id,
+            recorded_at_device=recorded_at,
+            confirmed_at_server=timezone.now(),
+            sync_status=EventoConfirmacionCita.EstadoSync.ACCEPTED,
+            conflict_reason="",
         )
-        results.append({"eventId": event_id, "status": "accepted", "appointmentId": cita.id})
+        results.append({"eventId": event_id, "status": "accepted", "appointmentId": event.cita_id})
 
     return _json({"detail": "Sincronizacion procesada.", "results": results})
 
