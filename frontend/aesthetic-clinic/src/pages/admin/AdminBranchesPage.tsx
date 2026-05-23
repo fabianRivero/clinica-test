@@ -102,6 +102,18 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     }
   }
 
+  function handleCancelWizard() {
+    const ok = window.confirm('¿Seguro que deseas cancelar la creación de sucursal? Se perderán los cambios no finalizados.')
+    if (!ok) return
+    setWizardStep(1)
+    setNewBranch({ nombre: '', ciudad: '', direccion: '' })
+    setWizardMode('existing_inactive')
+    setWizardAdminId('')
+    setWizardNewAdmin({ username: '', email: '', primerNombre: '', apellidoPaterno: '', ci: '', password: '' })
+    setWizardTablet({ codigo: '', nombre: '', clave: '' })
+    void initializeAdminBranchWizard().catch(() => undefined)
+  }
+
   async function handleToggle(row: BranchRow) {
     try {
       if (row.activa) {
@@ -182,32 +194,43 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
       {error ? <p className="error-text">{error}</p> : null}
 
       {view === 'create' ? <div className="card">
-        <h3>Crear sucursal - Paso {wizardStep} de 3</h3>
+        <h3>Crear sucursal</h3>
+        <div className="stepper">
+          <button className={`stepper__item ${wizardStep === 1 ? 'is-active' : ''}`} type="button" onClick={() => setWizardStep(1)}>
+            <span className="stepper__index">Paso 1</span><span className="stepper__label">Datos de sucursal</span>
+          </button>
+          <button className={`stepper__item ${wizardStep === 2 ? 'is-active' : ''}`} type="button" onClick={() => setWizardStep(2)}>
+            <span className="stepper__index">Paso 2</span><span className="stepper__label">Administrador</span>
+          </button>
+          <button className={`stepper__item ${wizardStep === 3 ? 'is-active' : ''}`} type="button" onClick={() => setWizardStep(3)}>
+            <span className="stepper__index">Paso 3</span><span className="stepper__label">Tablet</span>
+          </button>
+        </div>
         {wizardStep === 1 ? <form onSubmit={handleWizardStep1}><div className="form-grid form-grid--three">
-          <input className="input" placeholder="Nombre" value={newBranch.nombre} onChange={(e) => setNewBranch((v) => ({ ...v, nombre: e.target.value }))} />
-          <input className="input" placeholder="Ciudad" value={newBranch.ciudad} onChange={(e) => setNewBranch((v) => ({ ...v, ciudad: e.target.value }))} />
-          <input className="input" placeholder="Direccion" value={newBranch.direccion} onChange={(e) => setNewBranch((v) => ({ ...v, direccion: e.target.value }))} />
-        </div><button className="button" disabled={saving} type="submit">Continuar</button></form> : null}
+          <label className="field"><span>Nombre de sucursal</span><input className="input" value={newBranch.nombre} onChange={(e) => setNewBranch((v) => ({ ...v, nombre: e.target.value }))} /></label>
+          <label className="field"><span>Ciudad</span><input className="input" value={newBranch.ciudad} onChange={(e) => setNewBranch((v) => ({ ...v, ciudad: e.target.value }))} /></label>
+          <label className="field"><span>Dirección</span><input className="input" value={newBranch.direccion} onChange={(e) => setNewBranch((v) => ({ ...v, direccion: e.target.value }))} /></label>
+        </div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><button className="button" disabled={saving} type="submit">Continuar</button></div></form> : null}
         {wizardStep === 2 ? <form onSubmit={handleWizardStep2}>
           <div style={{ display: 'flex', gap: '1rem' }}>
             <label><input type="radio" checked={wizardMode === 'existing_inactive'} onChange={() => setWizardMode('existing_inactive')} /> Admin inactivo</label>
             <label><input type="radio" checked={wizardMode === 'create_new'} onChange={() => setWizardMode('create_new')} /> Admin nuevo</label>
           </div>
-          {wizardMode === 'existing_inactive' ? <select className="input" value={wizardAdminId} onChange={(e) => setWizardAdminId(e.target.value)}><option value="">Seleccionar</option>{branchAdmins.filter(a => !a.isActive && !a.branchId).map(a => <option key={a.id} value={a.id}>{a.fullName} ({a.username})</option>)}</select> : <div className="form-grid form-grid--three">
-            <input className="input" placeholder="Username" value={wizardNewAdmin.username} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, username: e.target.value }))} />
-            <input className="input" placeholder="Primer nombre" value={wizardNewAdmin.primerNombre} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, primerNombre: e.target.value }))} />
-            <input className="input" placeholder="Apellido paterno" value={wizardNewAdmin.apellidoPaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoPaterno: e.target.value }))} />
-            <input className="input" placeholder="CI" value={wizardNewAdmin.ci} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, ci: e.target.value }))} />
-            <input className="input" placeholder="Email" value={wizardNewAdmin.email} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, email: e.target.value }))} />
-            <input className="input" placeholder="Password" type="password" value={wizardNewAdmin.password} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, password: e.target.value }))} />
+          {wizardMode === 'existing_inactive' ? <label className="field"><span>Admin inactivo</span><select className="input" value={wizardAdminId} onChange={(e) => setWizardAdminId(e.target.value)}><option value="">Seleccionar</option>{branchAdmins.filter(a => !a.isActive && !a.branchId).map(a => <option key={a.id} value={a.id}>{a.fullName} ({a.username})</option>)}</select></label> : <div className="form-grid form-grid--three">
+            <label className="field"><span>Username</span><input className="input" value={wizardNewAdmin.username} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, username: e.target.value }))} /></label>
+            <label className="field"><span>Primer nombre</span><input className="input" value={wizardNewAdmin.primerNombre} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, primerNombre: e.target.value }))} /></label>
+            <label className="field"><span>Apellido paterno</span><input className="input" value={wizardNewAdmin.apellidoPaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoPaterno: e.target.value }))} /></label>
+            <label className="field"><span>CI</span><input className="input" value={wizardNewAdmin.ci} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, ci: e.target.value }))} /></label>
+            <label className="field"><span>Email</span><input className="input" value={wizardNewAdmin.email} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, email: e.target.value }))} /></label>
+            <label className="field"><span>Contraseña</span><input className="input" type="password" value={wizardNewAdmin.password} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, password: e.target.value }))} /></label>
           </div>}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="submit">Continuar</button></div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="submit">Continuar</button></div></div>
         </form> : null}
         {wizardStep === 3 ? <form onSubmit={handleWizardStep3}><div className="form-grid form-grid--three">
-          <input className="input" placeholder="Codigo tablet" value={wizardTablet.codigo} onChange={(e) => setWizardTablet((v) => ({ ...v, codigo: e.target.value }))} />
-          <input className="input" placeholder="Nombre tablet" value={wizardTablet.nombre} onChange={(e) => setWizardTablet((v) => ({ ...v, nombre: e.target.value }))} />
-          <input className="input" placeholder="Clave tablet" type="password" value={wizardTablet.clave} onChange={(e) => setWizardTablet((v) => ({ ...v, clave: e.target.value }))} />
-        </div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(2)}>Volver</button><button className="button" disabled={saving} type="submit">Finalizar</button></div></form> : null}
+          <label className="field"><span>Código tablet</span><input className="input" value={wizardTablet.codigo} onChange={(e) => setWizardTablet((v) => ({ ...v, codigo: e.target.value }))} /></label>
+          <label className="field"><span>Nombre tablet</span><input className="input" value={wizardTablet.nombre} onChange={(e) => setWizardTablet((v) => ({ ...v, nombre: e.target.value }))} /></label>
+          <label className="field"><span>Clave tablet</span><input className="input" type="password" value={wizardTablet.clave} onChange={(e) => setWizardTablet((v) => ({ ...v, clave: e.target.value }))} /></label>
+        </div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(2)}>Volver</button><button className="button" disabled={saving} type="submit">Finalizar</button></div></div></form> : null}
       </div> : null}
 
       {view === 'edit' ? <><div className="card">
