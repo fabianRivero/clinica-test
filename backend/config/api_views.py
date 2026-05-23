@@ -38,6 +38,7 @@ from operations.models import (
     FichaCampo,
     FichaSeccion,
     Operacion,
+    TabletKiosko,
 )
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 from config.client_api_views import (
@@ -54,6 +55,7 @@ from notifications.services import create_notification
 
 logger = logging.getLogger(__name__)
 IDEMPOTENCY_TTL_SECONDS = 60 * 60 * 24
+BRANCH_CREATE_WIZARD_SESSION_KEY = "admin_branch_create_wizard_draft"
 
 
 def _json(data, status=200):
@@ -178,6 +180,11 @@ def _branch_deactivation_impact(branch):
         "payments_pending": payments_pending,
         "processes_pending": processes_pending,
     }
+
+
+def _get_branch_admin_role():
+    role, _ = Rol.objects.get_or_create(rol="ADMIN_SUCURSAL")
+    return role
 
 
 @require_POST
@@ -4419,6 +4426,157 @@ def admin_branch_management_list(request):
             }
         )
     return _json({"branches": items, "total": len(items)})
+
+
+@require_POST
+@_admin_principal_required
+def admin_branch_wizard_initialize(request):
+    request.session[BRANCH_CREATE_WIZARD_SESSION_KEY] = {}
+    request.session.modified = True
+    return _json({"detail": "Wizard de sucursal inicializado.", "draft": {}})
+
+
+@require_POST
+@_admin_principal_required
+def admin_branch_wizard_step1(request):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+    data, errors = _branch_payload(payload, partial=False)
+    if errors:
+        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+    draft = request.session.get(BRANCH_CREATE_WIZARD_SESSION_KEY) or {}
+    draft["branch"] = data
+    request.session[BRANCH_CREATE_WIZARD_SESSION_KEY] = draft
+    request.session.modified = True
+    return _json({"detail": "Paso 1 guardado.", "draft": draft})
+
+
+@require_POST
+@_admin_principal_required
+def admin_branch_wizard_step2(request):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+    draft = request.session.get(BRANCH_CREATE_WIZARD_SESSION_KEY) or {}
+    if not draft.get("branch"):
+        return _json({"detail": "Debes completar el paso 1 primero."}, status=409)
+
+    mode = (payload.get("mode") or "").strip()
+    if mode not in {"existing_inactive", "create_new"}:
+        return _json({"detail": "mode debe ser existing_inactive o create_new."}, status=400)
+
+    if mode == "existing_inactive":
+        admin_id = payload.get("adminUserId")
+        if not admin_id:
+            return _json({"detail": "adminUserId es obligatorio para existing_inactive."}, status=400)
+        admin_user = get_object_or_404(Usuario, pk=admin_id)
+        if not (admin_user.rol and admin_user.rol.rol == "ADMIN_SUCURSAL"):
+            return _json({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
+        if admin_user.is_active or admin_user.sucursal_id is not None:
+            return _json({"detail": "El admin seleccionado debe estar inactivo y sin sucursal."}, status=409)
+        draft["admin"] = {"mode": "existing_inactive", "adminUserId": admin_user.id}
+    else:
+        username = (payload.get("username") or "").strip()
+        primer_nombre = (payload.get("primerNombre") or "").strip()
+        apellido_paterno = (payload.get("apellidoPaterno") or "").strip()
+        password = payload.get("password") or ""
+        ci = (payload.get("ci") or "").strip()
+        errors = {}
+        if not username:
+            errors["username"] = "El nombre de usuario es obligatorio."
+        if Usuario.objects.filter(username=username).exists():
+            errors["username"] = "Este nombre de usuario ya existe."
+        if not primer_nombre:
+            errors["primerNombre"] = "El primer nombre es obligatorio."
+        if not apellido_paterno:
+            errors["apellidoPaterno"] = "El apellido paterno es obligatorio."
+        if not ci:
+            errors["ci"] = "El CI es obligatorio."
+        if not password:
+            errors["password"] = "La contraseña inicial es obligatoria."
+        if errors:
+            return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        draft["admin"] = {
+            "mode": "create_new",
+            "username": username,
+            "email": (payload.get("email") or "").strip(),
+            "primerNombre": primer_nombre,
+            "segundoNombre": (payload.get("segundoNombre") or "").strip(),
+            "apellidoPaterno": apellido_paterno,
+            "apellidoMaterno": (payload.get("apellidoMaterno") or "").strip(),
+            "ci": ci,
+            "telefono": (payload.get("telefono") or "").strip(),
+            "password": password,
+        }
+
+    request.session[BRANCH_CREATE_WIZARD_SESSION_KEY] = draft
+    request.session.modified = True
+    return _json({"detail": "Paso 2 guardado.", "draft": draft})
+
+
+@require_POST
+@_admin_principal_required
+@transaction.atomic
+def admin_branch_wizard_finalize(request):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+    draft = request.session.get(BRANCH_CREATE_WIZARD_SESSION_KEY) or {}
+    branch_data = draft.get("branch")
+    admin_data = draft.get("admin")
+    if not branch_data or not admin_data:
+        return _json({"detail": "Debes completar los pasos 1 y 2 antes de finalizar."}, status=409)
+
+    codigo = (payload.get("codigo") or "").strip()
+    nombre = (payload.get("nombre") or "").strip()
+    clave = (payload.get("clave") or "").strip()
+    if not codigo or not nombre or not clave:
+        return _json({"detail": "codigo, nombre y clave de tablet son obligatorios."}, status=400)
+    if TabletKiosko.objects.filter(codigo=codigo).exists():
+        return _json({"detail": "El código de tablet ya existe."}, status=409)
+
+    branch = Sucursal.objects.create(**branch_data, activa=True)
+    if admin_data["mode"] == "existing_inactive":
+        admin_user = get_object_or_404(Usuario, pk=admin_data["adminUserId"])
+        admin_user.is_active = True
+        admin_user.sucursal = branch
+        admin_user.save(update_fields=["is_active", "sucursal", "updated_at"])
+    else:
+        admin_user = Usuario(
+            username=admin_data["username"],
+            email=admin_data.get("email", ""),
+            primer_nombre=admin_data["primerNombre"],
+            segundo_nombre=admin_data.get("segundoNombre", ""),
+            apellido_paterno=admin_data["apellidoPaterno"],
+            apellido_materno=admin_data.get("apellidoMaterno", ""),
+            rol=_get_branch_admin_role(),
+            sucursal=branch,
+            is_active=True,
+        )
+        admin_user.set_password(admin_data["password"])
+        admin_user.save()
+
+    kiosko = TabletKiosko(
+        codigo=codigo,
+        nombre=nombre,
+        sucursal=branch,
+        activo=True,
+    )
+    kiosko.set_clave(clave)
+    kiosko.save()
+
+    request.session.pop(BRANCH_CREATE_WIZARD_SESSION_KEY, None)
+    request.session.modified = True
+    return _json(
+        {
+            "detail": "Sucursal creada correctamente con administrador y tablet.",
+            "branchId": branch.id,
+            "adminUserId": admin_user.id,
+            "tabletKioskId": kiosko.id,
+        },
+        status=201,
+    )
 
 
 @require_POST

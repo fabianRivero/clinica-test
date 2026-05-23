@@ -135,3 +135,33 @@ class BranchManagementPhase1Test(TestCase):
         self.client.force_login(self.admin_sucursal)
         response = self.client.get("/api/admin/disponibilidad/sucursales/")
         self.assertEqual(response.status_code, 403)
+
+    def test_branch_create_wizard_can_finalize_with_existing_inactive_admin(self):
+        self.admin_sucursal_nuevo.is_active = False
+        self.admin_sucursal_nuevo.sucursal = None
+        self.admin_sucursal_nuevo.save(update_fields=["is_active", "sucursal", "updated_at"])
+
+        self.client.force_login(self.admin_general)
+        init_response = self.client.post("/api/admin/sucursales/wizard/inicializar/", content_type="application/json")
+        self.assertEqual(init_response.status_code, 200)
+
+        step1_response = self.client.post(
+            "/api/admin/sucursales/wizard/paso-1/",
+            data=json.dumps({"nombre": "Sur", "ciudad": "Santa Cruz", "direccion": "Av. 3"}),
+            content_type="application/json",
+        )
+        self.assertEqual(step1_response.status_code, 200)
+
+        step2_response = self.client.post(
+            "/api/admin/sucursales/wizard/paso-2/",
+            data=json.dumps({"mode": "existing_inactive", "adminUserId": self.admin_sucursal_nuevo.id}),
+            content_type="application/json",
+        )
+        self.assertEqual(step2_response.status_code, 200)
+
+        final_response = self.client.post(
+            "/api/admin/sucursales/wizard/finalizar/",
+            data=json.dumps({"codigo": "KIOSKO-TEST-SUR", "nombre": "Tablet Sur", "clave": "tablet-sur-123"}),
+            content_type="application/json",
+        )
+        self.assertEqual(final_response.status_code, 201)
