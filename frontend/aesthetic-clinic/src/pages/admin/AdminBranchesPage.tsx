@@ -161,6 +161,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     setChangingAdminBranch(row)
     setChangeAdminStep(1)
     setNewAdminUserId('')
+    void getAdminBranchAdmins().then((r) => setBranchAdmins(r.admins)).catch(() => undefined)
   }
 
   async function handleConfirmAdminChange() {
@@ -328,7 +329,18 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
               <p><strong>Paso 2:</strong> Selecciona el administrador de sucursal.</p>
               <select className="input" value={newAdminUserId} onChange={(e) => setNewAdminUserId(e.target.value)}>
                 <option value="">Seleccionar admin</option>
-                {branchAdmins.map((a) => <option key={a.id} value={a.id}>{a.fullName} ({a.username}) - {a.branchName}</option>)}
+                {branchAdmins
+                  .filter((a) => {
+                    // Si la sucursal está administrada por admin principal (sin admin de sucursal en fila),
+                    // solo permitir admins activos para intercambio con principal.
+                    if (!changingAdminBranch?.admin) return a.isActive
+                    return true
+                  })
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.fullName} ({a.username}) - {a.isActive ? 'Activo' : 'Inactivo'} - {a.branchName}
+                    </option>
+                  ))}
               </select>
               <p style={{ marginTop: '0.75rem', color: 'var(--c-neutral-600)' }}>
                 Aviso: si el admin elegido está activo en otra sucursal, se hará intercambio; si está inactivo y sin sucursal, se activará y el admin actual quedará inactivo.
