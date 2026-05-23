@@ -4,6 +4,7 @@ import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
+import { useNotifications } from '../../providers/NotificationProvider'
 
 import { createAdminBranchAdmin, getAdminBranchAdmins, toggleAdminBranchAdmin, updateAdminBranchAdmin } from '../../services/api/admin'
 
@@ -18,10 +19,20 @@ type AdminItem = {
 }
 
 export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
+  const { showNotification } = useNotifications()
   const [rows, setRows] = useState<AdminItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ username: '', email: '', primerNombre: '', segundoNombre: '', apellidoPaterno: '', apellidoMaterno: '', password: '' })
+  const [form, setForm] = useState({
+    username: '',
+    email: '',
+    telefono: '',
+    primerNombre: '',
+    segundoNombre: '',
+    apellidoPaterno: '',
+    apellidoMaterno: '',
+    password: '',
+  })
 
   async function load() {
     try {
@@ -42,10 +53,16 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
     setSaving(true)
     try {
       await createAdminBranchAdmin(form)
-      setForm({ username: '', email: '', primerNombre: '', segundoNombre: '', apellidoPaterno: '', apellidoMaterno: '', password: '' })
+      showNotification({ title: 'Administrador creado', message: 'El admin de sucursal se creo correctamente.', tone: 'success' })
+      setForm({ username: '', email: '', telefono: '', primerNombre: '', segundoNombre: '', apellidoPaterno: '', apellidoMaterno: '', password: '' })
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo crear admin de sucursal')
+      showNotification({
+        title: 'No se pudo crear',
+        message: err instanceof Error ? err.message : 'No se pudo crear admin de sucursal.',
+        tone: 'danger',
+      })
     } finally {
       setSaving(false)
     }
@@ -91,7 +108,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
         >
         <form className="form-grid" onSubmit={handleCreate}>
             <label className="field">
-              <span>Username</span>
+              <span>Nombre de usuario <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
               <input className="input" required value={form.username} onChange={(e) => setForm((v) => ({ ...v, username: e.target.value }))} />
             </label>
             <label className="field">
@@ -99,11 +116,11 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
               <input className="input" value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} />
             </label>
             <label className="field">
-              <span>Password</span>
+              <span>Contraseña <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
               <input className="input" type="password" required value={form.password} onChange={(e) => setForm((v) => ({ ...v, password: e.target.value }))} />
             </label>
             <label className="field">
-              <span>Primer nombre</span>
+              <span>Primer nombre <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
               <input className="input" required value={form.primerNombre} onChange={(e) => setForm((v) => ({ ...v, primerNombre: e.target.value }))} />
             </label>
             <label className="field">
@@ -111,12 +128,16 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
               <input className="input" value={form.segundoNombre} onChange={(e) => setForm((v) => ({ ...v, segundoNombre: e.target.value }))} />
             </label>
             <label className="field">
-              <span>Apellido paterno</span>
+              <span>Apellido paterno <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
               <input className="input" required value={form.apellidoPaterno} onChange={(e) => setForm((v) => ({ ...v, apellidoPaterno: e.target.value }))} />
             </label>
             <label className="field">
               <span>Apellido materno</span>
               <input className="input" value={form.apellidoMaterno} onChange={(e) => setForm((v) => ({ ...v, apellidoMaterno: e.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Telefono</span>
+              <input className="input" value={form.telefono} onChange={(e) => setForm((v) => ({ ...v, telefono: e.target.value }))} />
             </label>
           <div className="form-actions field--full">
             <button className="button button--primary" type="submit" disabled={saving}>Crear admin sucursal</button>

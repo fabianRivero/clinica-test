@@ -704,6 +704,7 @@ export function getAdminBranchAdmins() {
 export function createAdminBranchAdmin(payload: {
   username: string
   email?: string
+  telefono?: string
   primerNombre: string
   segundoNombre?: string
   apellidoPaterno: string
