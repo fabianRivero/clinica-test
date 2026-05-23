@@ -698,7 +698,7 @@ export function changeAdminBranchManager(branchId: number, newAdminUserId: numbe
 }
 
 export function getAdminBranchAdmins() {
-  return requestJson<{ admins: Array<{ id: number; username: string; fullName: string; email: string; isActive: boolean; branchId: number | null; branchName: string }> }>('/api/admin/equipo/admins-sucursal/')
+  return requestJson<{ admins: Array<{ id: number; username: string; fullName: string; email: string; telefono?: string; fechaNacimiento?: string; isActive: boolean; branchId: number | null; branchName: string }> }>('/api/admin/equipo/admins-sucursal/')
 }
 
 export function createAdminBranchAdmin(payload: {
@@ -712,6 +712,11 @@ export function createAdminBranchAdmin(payload: {
   password: string
 }) {
   return requestJsonWithBody<{ detail: string }>('/api/admin/equipo/admins-sucursal/crear/', payload)
+}
+
+
+export function getAdminBranchAdminDetail(userId: number) {
+  return requestJson<{ admin: { id: number; username: string; fullName: string; email: string; telefono?: string; fechaNacimiento?: string; isActive: boolean; branchId: number | null; branchName: string } }>(`/api/admin/equipo/admins-sucursal/${userId}/`)
 }
 
 export function updateAdminBranchAdmin(userId: number, payload: Partial<{ email: string; primerNombre: string; segundoNombre: string; apellidoPaterno: string; apellidoMaterno: string }>) {

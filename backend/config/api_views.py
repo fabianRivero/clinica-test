@@ -199,8 +199,8 @@ def _branch_admin_item(user):
         "username": user.username,
         "fullName": user.nombre_completo or user.username,
         "email": user.email or "",
-        "ci": "",
-        "phone": "",
+        "telefono": user.telefono or "",
+        "fechaNacimiento": user.fecha_nacimiento.isoformat() if user.fecha_nacimiento else "",
         "isActive": bool(user.is_active),
         "branchId": user.sucursal_id,
         "branchName": user.sucursal.nombre if user.sucursal else "Inactivo",
@@ -4287,8 +4287,9 @@ def admin_branch_admins_create(request):
     primer_nombre = _capitalize_first_letter(payload.get("primerNombre"))
     apellido_paterno = _capitalize_first_letter(payload.get("apellidoPaterno"))
     password = payload.get("password") or ""
-    if not username or not primer_nombre or not apellido_paterno or not password:
-        return _json({"detail": "username, primerNombre, apellidoPaterno y password son obligatorios."}, status=400)
+    fecha_nacimiento = payload.get("fechaNacimiento")
+    if not username or not primer_nombre or not apellido_paterno or not password or not fecha_nacimiento:
+        return _json({"detail": "username, primerNombre, apellidoPaterno, password y fechaNacimiento son obligatorios."}, status=400)
     if Usuario.objects.filter(username=username).exists():
         return _json({"detail": "Este nombre de usuario ya existe."}, status=409)
 
@@ -4300,12 +4301,21 @@ def admin_branch_admins_create(request):
         apellido_paterno=apellido_paterno,
         apellido_materno=_capitalize_first_letter(payload.get("apellidoMaterno")),
         rol=_get_branch_admin_role(),
+        telefono=(payload.get("telefono") or "").strip(),
+        fecha_nacimiento=fecha_nacimiento,
         is_active=False,
         sucursal=None,
     )
     user.set_password(password)
     user.save()
     return _json({"detail": "Administrador de sucursal creado como inactivo.", "admin": _branch_admin_item(user)}, status=201)
+
+
+@require_GET
+@_admin_principal_required
+def admin_branch_admins_detail(request, user_id):
+    user = get_object_or_404(Usuario.objects.select_related("sucursal"), pk=user_id, rol__rol="ADMIN_SUCURSAL")
+    return _json({"admin": _branch_admin_item(user)})
 
 
 @require_POST
@@ -4318,18 +4328,21 @@ def admin_branch_admins_update(request, user_id):
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     for field, key in (
+        ("username", "username"),
         ("email", "email"),
-        ("primer_nombre", "primerNombre"),
-        ("segundo_nombre", "segundoNombre"),
-        ("apellido_paterno", "apellidoPaterno"),
-        ("apellido_materno", "apellidoMaterno"),
+        ("telefono", "telefono"),
     ):
         if key in payload:
-            if key in {"primerNombre", "segundoNombre", "apellidoPaterno", "apellidoMaterno"}:
-                setattr(user, field, _capitalize_first_letter(payload.get(key)))
-            else:
-                setattr(user, field, (payload.get(key) or "").strip())
-    user.save(update_fields=["email", "primer_nombre", "segundo_nombre", "apellido_paterno", "apellido_materno", "updated_at"])
+            setattr(user, field, (payload.get(key) or "").strip())
+    if "fechaNacimiento" in payload:
+        user.fecha_nacimiento = payload.get("fechaNacimiento") or None
+    new_password = (payload.get("password") or "").strip()
+    if new_password:
+        user.set_password(new_password)
+    update_fields=["username", "email", "telefono", "fecha_nacimiento", "updated_at"]
+    if new_password:
+        update_fields.append("password")
+    user.save(update_fields=update_fields)
     return _json({"detail": "Administrador de sucursal actualizado.", "admin": _branch_admin_item(user)})
 
 

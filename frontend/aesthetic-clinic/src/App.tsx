@@ -30,6 +30,7 @@ import { AdminProspectsPage } from './pages/admin/AdminProspectsPage'
 import { AdminStaffCreatePage, AdminStaffManagePage } from './pages/admin/AdminStaffPage'
 import { AdminBranchesPage } from './pages/admin/AdminBranchesPage'
 import { AdminBranchAdminsPage } from './pages/admin/AdminBranchAdminsPage'
+import { AdminBranchAdminDetailPage } from './pages/admin/AdminBranchAdminDetailPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { TabletKioskPage } from './pages/tablet/TabletKioskPage'
 import { ClientDashboardPage } from './pages/client/ClientDashboardPage'
@@ -152,6 +153,7 @@ function App() {
           <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />
           <Route path="equipo/admin-sucursal/crear" element={<AdminBranchAdminsPage view="create" />} />
           <Route path="equipo/admin-sucursal/gestionar" element={<AdminBranchAdminsPage view="manage" />} />
+          <Route path="equipo/admin-sucursal/:userId" element={<AdminBranchAdminDetailPage />} />
           <Route path="notificaciones" element={<NotificationsPage />} />
           <Route path="sucursales" element={<Navigate to="/admin/sucursales/editar" replace />} />
           <Route path="sucursales/editar" element={<AdminBranchesPage view="edit" />} />
