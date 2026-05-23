@@ -51,9 +51,9 @@ export function AdminBranchAdminDetailPage() {
         <label className='field'><span>Sucursal asignada</span><input className='input' value={branchName} readOnly /></label>
         <label className='field'><span>Estado</span><input className='input' value={isActive ? 'Activo' : 'Inactivo'} readOnly /></label>
         <label className='field'><span>Nombre de usuario</span><input className='input' required value={form.username} onChange={(e)=>setForm(v=>({...v, username:e.target.value}))} /></label>
-        <label className='field'><span>Email</span><input className='input' value={form.email} onChange={(e)=>setForm(v=>({...v, email:e.target.value}))} /></label>
+        <label className='field'><span>Email</span><input className='input' type='email' value={form.email} onChange={(e)=>setForm(v=>({...v, email:e.target.value}))} /></label>
         <label className='field'><span>Nueva contraseña (opcional)</span><input className='input' type='password' value={form.password} onChange={(e)=>setForm(v=>({...v, password:e.target.value}))} /></label>
-        <label className='field'><span>Telefono</span><input className='input' value={form.telefono} onChange={(e)=>setForm(v=>({...v, telefono:e.target.value}))} /></label>
+        <label className='field'><span>Telefono</span><input className='input' type='number' value={form.telefono} onChange={(e)=>setForm(v=>({...v, telefono:e.target.value}))} /></label>
         <label className='field'><span>Fecha de nacimiento</span><input className='input' type='date' value={form.fechaNacimiento} disabled /></label>
         <div className='form-actions field--full'>
           <button className='button button--ghost' type='button' onClick={() => navigate('/admin/equipo/admin-sucursal/gestionar')}>Cancelar</button>

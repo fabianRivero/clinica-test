@@ -96,7 +96,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
             </label>
             <label className="field">
               <span>Email</span>
-              <input className="input" value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} />
+              <input className="input" type="email" value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} />
             </label>
             <label className="field">
               <span>Contraseña <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
@@ -120,7 +120,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
             </label>
             <label className="field">
               <span>Telefono</span>
-              <input className="input" value={form.telefono} onChange={(e) => setForm((v) => ({ ...v, telefono: e.target.value }))} />
+              <input className="input" type="number" value={form.telefono} onChange={(e) => setForm((v) => ({ ...v, telefono: e.target.value }))} />
             </label>
             <label className="field">
               <span>Fecha de nacimiento <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
