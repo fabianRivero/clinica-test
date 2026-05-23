@@ -12,6 +12,8 @@ export function AdminBranchAdminDetailPage() {
   const navigate = useNavigate()
   const [form, setForm] = useState<FormState>({ username:'', email:'', telefono:'', fechaNacimiento:'', password:'' })
   const [fullName, setFullName] = useState('')
+  const [branchName, setBranchName] = useState('')
+  const [isActive, setIsActive] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -21,6 +23,8 @@ export function AdminBranchAdminDetailPage() {
       const res = await getAdminBranchAdminDetail(Number(userId))
       const a = res.admin
       setFullName(a.fullName)
+      setBranchName(a.branchName || 'Sin sucursal')
+      setIsActive(Boolean(a.isActive))
       setForm({ username: a.username || '', email: a.email || '', telefono: a.telefono || '', fechaNacimiento: a.fechaNacimiento || '', password: '' })
     } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo cargar detalle') }
   })() }, [userId])
@@ -42,6 +46,10 @@ export function AdminBranchAdminDetailPage() {
     {error ? <p className='error-text'>{error}</p> : null}
     <SectionCard eyebrow='Edicion' title={fullName || 'Admin de sucursal'} description='Solo se puede editar usuario, email, contraseña (opcional) y telefono.'>
       <form className='form-grid' onSubmit={onSave}>
+        <label className='field'><span>ID</span><input className='input' value={userId || ''} readOnly /></label>
+        <label className='field'><span>Nombre completo</span><input className='input' value={fullName} readOnly /></label>
+        <label className='field'><span>Sucursal asignada</span><input className='input' value={branchName} readOnly /></label>
+        <label className='field'><span>Estado</span><input className='input' value={isActive ? 'Activo' : 'Inactivo'} readOnly /></label>
         <label className='field'><span>Nombre de usuario</span><input className='input' required value={form.username} onChange={(e)=>setForm(v=>({...v, username:e.target.value}))} /></label>
         <label className='field'><span>Email</span><input className='input' value={form.email} onChange={(e)=>setForm(v=>({...v, email:e.target.value}))} /></label>
         <label className='field'><span>Nueva contraseña (opcional)</span><input className='input' type='password' value={form.password} onChange={(e)=>setForm(v=>({...v, password:e.target.value}))} /></label>
