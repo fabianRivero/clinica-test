@@ -55,7 +55,10 @@ export function AdminBranchAdminDetailPage() {
         <label className='field'><span>Nueva contraseña (opcional)</span><input className='input' type='password' value={form.password} onChange={(e)=>setForm(v=>({...v, password:e.target.value}))} /></label>
         <label className='field'><span>Telefono</span><input className='input' value={form.telefono} onChange={(e)=>setForm(v=>({...v, telefono:e.target.value}))} /></label>
         <label className='field'><span>Fecha de nacimiento</span><input className='input' type='date' value={form.fechaNacimiento} disabled /></label>
-        <div className='form-actions field--full'><button className='button button--primary' disabled={saving} type='submit'>Guardar cambios</button></div>
+        <div className='form-actions field--full'>
+          <button className='button button--ghost' type='button' onClick={() => navigate('/admin/equipo/admin-sucursal/gestionar')}>Cancelar</button>
+          <button className='button button--primary' disabled={saving} type='submit'>Guardar cambios</button>
+        </div>
       </form>
     </SectionCard>
   </section>
