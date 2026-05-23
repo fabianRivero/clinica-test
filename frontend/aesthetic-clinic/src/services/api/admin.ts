@@ -729,6 +729,45 @@ export function getAdminBranchAuditLogs(branchId?: number | null) {
   )
 }
 
+export function initializeAdminBranchWizard() {
+  return requestJsonWithBody<{ detail: string; draft: Record<string, unknown> }>('/api/admin/sucursales/wizard/inicializar/', {})
+}
+
+export function saveAdminBranchWizardStep1(payload: { nombre: string; ciudad: string; direccion: string }) {
+  return requestJsonWithBody<{ detail: string; draft: Record<string, unknown> }>('/api/admin/sucursales/wizard/paso-1/', payload)
+}
+
+export function saveAdminBranchWizardStep2ExistingInactive(adminUserId: number) {
+  return requestJsonWithBody<{ detail: string; draft: Record<string, unknown> }>('/api/admin/sucursales/wizard/paso-2/', {
+    mode: 'existing_inactive',
+    adminUserId,
+  })
+}
+
+export function saveAdminBranchWizardStep2CreateNew(payload: {
+  username: string
+  email?: string
+  primerNombre: string
+  segundoNombre?: string
+  apellidoPaterno: string
+  apellidoMaterno?: string
+  ci: string
+  telefono?: string
+  password: string
+}) {
+  return requestJsonWithBody<{ detail: string; draft: Record<string, unknown> }>('/api/admin/sucursales/wizard/paso-2/', {
+    mode: 'create_new',
+    ...payload,
+  })
+}
+
+export function finalizeAdminBranchWizard(payload: { codigo: string; nombre: string; clave: string }) {
+  return requestJsonWithBody<{ detail: string; branchId: number; adminUserId: number; tabletKioskId: number }>(
+    '/api/admin/sucursales/wizard/finalizar/',
+    payload,
+  )
+}
+
 // Client Reactivation
 export function initializeAdminClientReactivation(clientId: string) {
   return requestJson<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/initialize/`)

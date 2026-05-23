@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { AdminBranchTabs } from '../../components/admin/AdminBranchTabs'
-import { changeAdminBranchManager, createAdminBranch, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
+import { changeAdminBranchManager, finalizeAdminBranchWizard, getAdminBranchAdmins, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, initializeAdminBranchWizard, saveAdminBranchWizardStep1, saveAdminBranchWizardStep2CreateNew, saveAdminBranchWizardStep2ExistingInactive, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
 
 type BranchRow = {
   id: number
@@ -22,6 +22,12 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   const [saving, setSaving] = useState(false)
 
   const [newBranch, setNewBranch] = useState({ nombre: '', ciudad: '', direccion: '' })
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
+  const [wizardMode, setWizardMode] = useState<'existing_inactive' | 'create_new'>('existing_inactive')
+  const [wizardAdminId, setWizardAdminId] = useState('')
+  const [wizardNewAdmin, setWizardNewAdmin] = useState({ username: '', email: '', primerNombre: '', apellidoPaterno: '', ci: '', password: '' })
+  const [wizardTablet, setWizardTablet] = useState({ codigo: '', nombre: '', clave: '' })
+  const [branchAdmins, setBranchAdmins] = useState<Array<{ id: number; username: string; fullName: string; isActive: boolean; branchId: number | null; branchName: string }>>([])
   const [editingBranch, setEditingBranch] = useState<BranchRow | null>(null)
   const [editForm, setEditForm] = useState({ nombre: '', ciudad: '', direccion: '' })
   const [changingAdminBranch, setChangingAdminBranch] = useState<BranchRow | null>(null)
@@ -47,15 +53,50 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     void load()
   }, [status, city, adminName, branchId])
 
-  async function handleCreate(e: React.FormEvent) {
+  useEffect(() => {
+    if (view !== 'create') return
+    void initializeAdminBranchWizard().catch(() => undefined)
+    void getAdminBranchAdmins().then((r) => setBranchAdmins(r.admins)).catch(() => undefined)
+  }, [view])
+
+  async function handleWizardStep1(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
     try {
-      await createAdminBranch(newBranch)
-      setNewBranch({ nombre: '', ciudad: '', direccion: '' })
-      await load()
+      await saveAdminBranchWizardStep1(newBranch)
+      setWizardStep(2)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo crear la sucursal')
+      setError(err instanceof Error ? err.message : 'No se pudo guardar paso 1')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleWizardStep2(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      if (wizardMode === 'existing_inactive') await saveAdminBranchWizardStep2ExistingInactive(Number(wizardAdminId))
+      else await saveAdminBranchWizardStep2CreateNew(wizardNewAdmin)
+      setWizardStep(3)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo guardar paso 2')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleWizardStep3(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await finalizeAdminBranchWizard(wizardTablet)
+      setWizardStep(1)
+      setNewBranch({ nombre: '', ciudad: '', direccion: '' })
+      setWizardAdminId('')
+      setWizardTablet({ codigo: '', nombre: '', clave: '' })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo finalizar creación')
     } finally {
       setSaving(false)
     }
@@ -140,15 +181,34 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
 
       {error ? <p className="error-text">{error}</p> : null}
 
-      {view === 'create' ? <form className="card" onSubmit={handleCreate}>
-        <h3>Crear sucursal</h3>
-        <div className="form-grid form-grid--three">
+      {view === 'create' ? <div className="card">
+        <h3>Crear sucursal - Paso {wizardStep} de 3</h3>
+        {wizardStep === 1 ? <form onSubmit={handleWizardStep1}><div className="form-grid form-grid--three">
           <input className="input" placeholder="Nombre" value={newBranch.nombre} onChange={(e) => setNewBranch((v) => ({ ...v, nombre: e.target.value }))} />
           <input className="input" placeholder="Ciudad" value={newBranch.ciudad} onChange={(e) => setNewBranch((v) => ({ ...v, ciudad: e.target.value }))} />
           <input className="input" placeholder="Direccion" value={newBranch.direccion} onChange={(e) => setNewBranch((v) => ({ ...v, direccion: e.target.value }))} />
-        </div>
-        <button className="button" disabled={saving} type="submit">Crear</button>
-      </form> : null}
+        </div><button className="button" disabled={saving} type="submit">Continuar</button></form> : null}
+        {wizardStep === 2 ? <form onSubmit={handleWizardStep2}>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <label><input type="radio" checked={wizardMode === 'existing_inactive'} onChange={() => setWizardMode('existing_inactive')} /> Admin inactivo</label>
+            <label><input type="radio" checked={wizardMode === 'create_new'} onChange={() => setWizardMode('create_new')} /> Admin nuevo</label>
+          </div>
+          {wizardMode === 'existing_inactive' ? <select className="input" value={wizardAdminId} onChange={(e) => setWizardAdminId(e.target.value)}><option value="">Seleccionar</option>{branchAdmins.filter(a => !a.isActive && !a.branchId).map(a => <option key={a.id} value={a.id}>{a.fullName} ({a.username})</option>)}</select> : <div className="form-grid form-grid--three">
+            <input className="input" placeholder="Username" value={wizardNewAdmin.username} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, username: e.target.value }))} />
+            <input className="input" placeholder="Primer nombre" value={wizardNewAdmin.primerNombre} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, primerNombre: e.target.value }))} />
+            <input className="input" placeholder="Apellido paterno" value={wizardNewAdmin.apellidoPaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoPaterno: e.target.value }))} />
+            <input className="input" placeholder="CI" value={wizardNewAdmin.ci} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, ci: e.target.value }))} />
+            <input className="input" placeholder="Email" value={wizardNewAdmin.email} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, email: e.target.value }))} />
+            <input className="input" placeholder="Password" type="password" value={wizardNewAdmin.password} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, password: e.target.value }))} />
+          </div>}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="submit">Continuar</button></div>
+        </form> : null}
+        {wizardStep === 3 ? <form onSubmit={handleWizardStep3}><div className="form-grid form-grid--three">
+          <input className="input" placeholder="Codigo tablet" value={wizardTablet.codigo} onChange={(e) => setWizardTablet((v) => ({ ...v, codigo: e.target.value }))} />
+          <input className="input" placeholder="Nombre tablet" value={wizardTablet.nombre} onChange={(e) => setWizardTablet((v) => ({ ...v, nombre: e.target.value }))} />
+          <input className="input" placeholder="Clave tablet" type="password" value={wizardTablet.clave} onChange={(e) => setWizardTablet((v) => ({ ...v, clave: e.target.value }))} />
+        </div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(2)}>Volver</button><button className="button" disabled={saving} type="submit">Finalizar</button></div></form> : null}
+      </div> : null}
 
       {view === 'edit' ? <><div className="card">
         <h3>Filtros</h3>
@@ -242,8 +302,11 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                 <button className="button" type="button" onClick={() => setChangeAdminStep(2)}>Siguiente</button>
               </div>
             </> : <>
-              <p><strong>Paso 2:</strong> Ingresa el <code>rawId</code> del administrador de sucursal.</p>
-              <input className="input" placeholder="ID admin sucursal (rawId)" value={newAdminUserId} onChange={(e) => setNewAdminUserId(e.target.value)} />
+              <p><strong>Paso 2:</strong> Selecciona el administrador de sucursal.</p>
+              <select className="input" value={newAdminUserId} onChange={(e) => setNewAdminUserId(e.target.value)}>
+                <option value="">Seleccionar admin</option>
+                {branchAdmins.map((a) => <option key={a.id} value={a.id}>{a.fullName} ({a.username}) - {a.branchName}</option>)}
+              </select>
               <p style={{ marginTop: '0.75rem', color: 'var(--c-neutral-600)' }}>
                 Aviso: si el admin elegido está activo en otra sucursal, se hará intercambio; si está inactivo y sin sucursal, se activará y el admin actual quedará inactivo.
               </p>
