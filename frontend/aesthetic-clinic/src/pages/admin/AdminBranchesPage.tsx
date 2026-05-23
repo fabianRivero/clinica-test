@@ -28,7 +28,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   const [wizardStep1Completed, setWizardStep1Completed] = useState(false)
   const [wizardStep2Completed, setWizardStep2Completed] = useState(false)
   const [wizardNewAdmin, setWizardNewAdmin] = useState({ username: '', email: '', primerNombre: '', apellidoPaterno: '', ci: '', password: '' })
-  const [wizardTablet, setWizardTablet] = useState({ codigo: '', nombre: '', clave: '' })
+  const [wizardTablet, setWizardTablet] = useState({ nombre: '', clave: '' })
   const [branchAdmins, setBranchAdmins] = useState<Array<{ id: number; username: string; fullName: string; isActive: boolean; branchId: number | null; branchName: string }>>([])
   const [editingBranch, setEditingBranch] = useState<BranchRow | null>(null)
   const [editForm, setEditForm] = useState({ nombre: '', ciudad: '', direccion: '' })
@@ -98,7 +98,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
       setWizardStep1Completed(false)
       setWizardStep2Completed(false)
       setNewBranch({ nombre: '', ciudad: '', direccion: '' })
-      setWizardTablet({ codigo: '', nombre: '', clave: '' })
+      setWizardTablet({ nombre: '', clave: '' })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo finalizar creación')
     } finally {
@@ -114,7 +114,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     setWizardStep2Completed(false)
     setNewBranch({ nombre: '', ciudad: '', direccion: '' })
     setWizardNewAdmin({ username: '', email: '', primerNombre: '', apellidoPaterno: '', ci: '', password: '' })
-    setWizardTablet({ codigo: '', nombre: '', clave: '' })
+    setWizardTablet({ nombre: '', clave: '' })
     void initializeAdminBranchWizard().catch(() => undefined)
   }
 
@@ -236,9 +236,8 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="submit">Continuar</button></div></div>
         </form> : null}
         {wizardStep === 3 ? <form onSubmit={handleWizardStep3}><div className="form-grid form-grid--three">
-          <label className="field"><span>Código tablet</span><input className="input" value={wizardTablet.codigo} onChange={(e) => setWizardTablet((v) => ({ ...v, codigo: e.target.value }))} /></label>
-          <label className="field"><span>Nombre tablet</span><input className="input" value={wizardTablet.nombre} onChange={(e) => setWizardTablet((v) => ({ ...v, nombre: e.target.value }))} /></label>
-          <label className="field"><span>Clave tablet</span><input className="input" type="password" value={wizardTablet.clave} onChange={(e) => setWizardTablet((v) => ({ ...v, clave: e.target.value }))} /></label>
+          <label className="field"><span>Nombre tablet <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={wizardTablet.nombre} onChange={(e) => setWizardTablet((v) => ({ ...v, nombre: e.target.value }))} /></label>
+          <label className="field"><span>Clave tablet <span style={{ color: "#dc2626" }}>*</span></span><input className="input" type="password" value={wizardTablet.clave} onChange={(e) => setWizardTablet((v) => ({ ...v, clave: e.target.value }))} /></label>
         </div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(2)}>Volver</button><button className="button" disabled={saving} type="submit">Finalizar</button></div></div></form> : null}
       </SectionCard> : null}
 

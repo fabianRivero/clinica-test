@@ -4774,15 +4774,16 @@ def admin_branch_wizard_finalize(request):
     if not branch_data or not admin_data:
         return _json({"detail": "Debes completar los pasos 1 y 2 antes de finalizar."}, status=409)
 
-    codigo = (payload.get("codigo") or "").strip()
     nombre = (payload.get("nombre") or "").strip()
     clave = (payload.get("clave") or "").strip()
-    if not codigo or not nombre or not clave:
-        return _json({"detail": "codigo, nombre y clave de tablet son obligatorios."}, status=400)
-    if TabletKiosko.objects.filter(codigo=codigo).exists():
-        return _json({"detail": "El código de tablet ya existe."}, status=409)
+    if not nombre or not clave:
+        return _json({"detail": "nombre y clave de tablet son obligatorios."}, status=400)
 
     branch = Sucursal.objects.create(**branch_data, activa=True)
+
+    codigo = f"KIOSKO-{branch.id}"
+    if TabletKiosko.objects.filter(codigo=codigo).exists():
+        return _json({"detail": "No se pudo autogenerar un código único de tablet."}, status=409)
     if admin_data["mode"] == "existing_inactive":
         admin_user = get_object_or_404(Usuario, pk=admin_data["adminUserId"])
         admin_user.is_active = True

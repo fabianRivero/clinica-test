@@ -761,7 +761,7 @@ export function saveAdminBranchWizardStep2CreateNew(payload: {
   })
 }
 
-export function finalizeAdminBranchWizard(payload: { codigo: string; nombre: string; clave: string }) {
+export function finalizeAdminBranchWizard(payload: { nombre: string; clave: string }) {
   return requestJsonWithBody<{ detail: string; branchId: number; adminUserId: number; tabletKioskId: number }>(
     '/api/admin/sucursales/wizard/finalizar/',
     payload,
