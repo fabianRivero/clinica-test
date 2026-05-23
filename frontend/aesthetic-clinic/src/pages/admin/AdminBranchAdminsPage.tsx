@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { AdminStaffTabs } from '../../components/admin/AdminStaffTabs'
+import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
+import { StatusBadge } from '../../components/admin/StatusBadge'
 
 import { createAdminBranchAdmin, getAdminBranchAdmins, toggleAdminBranchAdmin, updateAdminBranchAdmin } from '../../services/api/admin'
 
@@ -124,24 +126,53 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
       ) : null}
 
       {view === 'manage' ? (
-        <div className="card">
-          <h3>Gestionar admins de sucursal</h3>
-          <table className="table">
-            <thead><tr><th>Usuario</th><th>Nombre</th><th>Email</th><th>Sucursal</th><th>Estado</th><th>Acciones</th></tr></thead>
-            <tbody>
+        <SectionCard
+          eyebrow="Edicion"
+          title="Admins de sucursal actuales"
+          description="Seguimiento de admins creados, sucursal asignada y estado de actividad."
+        >
+          {rows.length ? (
+            <div className="catalog-admin-grid">
               {rows.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.username}</td>
-                  <td>{row.fullName}</td>
-                  <td><input className="input" defaultValue={row.email} onBlur={(e) => void handleQuickEmailSave(row, e.target.value)} /></td>
-                  <td>{row.branchName}</td>
-                  <td>{row.isActive ? 'Activo' : 'Inactivo'}</td>
-                  <td><button className="button button--ghost" type="button" onClick={() => void handleToggle(row)}>{row.isActive ? 'Inactivar' : 'Activar'}</button></td>
-                </tr>
+                <article className="catalog-admin-card" key={row.id}>
+                  <div className="catalog-admin-card__content">
+                    <div className="catalog-admin-card__header">
+                      <h3>{row.fullName}</h3>
+                      <div className="table-actions">
+                        <StatusBadge tone={row.isActive ? 'success' : 'default'}>
+                          {row.isActive ? 'Activo' : 'Inactivo'}
+                        </StatusBadge>
+                      </div>
+                    </div>
+
+                    <div className="table-muted">Usuario: {row.username}</div>
+                    <div className="table-muted">Sucursal: {row.branchName || 'Sin sucursal'}</div>
+
+                    <label className="field field--full">
+                      <span>Email</span>
+                      <input
+                        className="input"
+                        defaultValue={row.email}
+                        onBlur={(e) => void handleQuickEmailSave(row, e.target.value)}
+                      />
+                    </label>
+
+                    <div className="catalog-admin-card__actions">
+                      <button className="button button--ghost button--compact" type="button" onClick={() => void handleToggle(row)}>
+                        {row.isActive ? 'Inactivar' : 'Activar'}
+                      </button>
+                    </div>
+                  </div>
+                </article>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          ) : (
+            <DataState
+              title="Sin admins de sucursal"
+              message="Todavia no hay administradores de sucursal registrados en la base conectada."
+            />
+          )}
+        </SectionCard>
       ) : null}
     </section>
   )
