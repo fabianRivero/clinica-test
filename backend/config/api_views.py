@@ -125,6 +125,11 @@ def _admin_principal_required(view_func):
     return wrapped
 
 
+def _capitalize_first_letter(value):
+    value = (value or "").strip()
+    return value[:1].upper() + value[1:] if value else ""
+
+
 def _branch_payload(payload, *, partial=False):
     fields = ("nombre", "ciudad", "direccion")
     errors = {}
@@ -4279,8 +4284,8 @@ def admin_branch_admins_create(request):
         return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     username = (payload.get("username") or "").strip()
-    primer_nombre = (payload.get("primerNombre") or "").strip()
-    apellido_paterno = (payload.get("apellidoPaterno") or "").strip()
+    primer_nombre = _capitalize_first_letter(payload.get("primerNombre"))
+    apellido_paterno = _capitalize_first_letter(payload.get("apellidoPaterno"))
     password = payload.get("password") or ""
     if not username or not primer_nombre or not apellido_paterno or not password:
         return _json({"detail": "username, primerNombre, apellidoPaterno y password son obligatorios."}, status=400)
@@ -4291,9 +4296,9 @@ def admin_branch_admins_create(request):
         username=username,
         email=(payload.get("email") or "").strip(),
         primer_nombre=primer_nombre,
-        segundo_nombre=(payload.get("segundoNombre") or "").strip(),
+        segundo_nombre=_capitalize_first_letter(payload.get("segundoNombre")),
         apellido_paterno=apellido_paterno,
-        apellido_materno=(payload.get("apellidoMaterno") or "").strip(),
+        apellido_materno=_capitalize_first_letter(payload.get("apellidoMaterno")),
         rol=_get_branch_admin_role(),
         is_active=False,
         sucursal=None,
@@ -4320,7 +4325,10 @@ def admin_branch_admins_update(request, user_id):
         ("apellido_materno", "apellidoMaterno"),
     ):
         if key in payload:
-            setattr(user, field, (payload.get(key) or "").strip())
+            if key in {"primerNombre", "segundoNombre", "apellidoPaterno", "apellidoMaterno"}:
+                setattr(user, field, _capitalize_first_letter(payload.get(key)))
+            else:
+                setattr(user, field, (payload.get(key) or "").strip())
     user.save(update_fields=["email", "primer_nombre", "segundo_nombre", "apellido_paterno", "apellido_materno", "updated_at"])
     return _json({"detail": "Administrador de sucursal actualizado.", "admin": _branch_admin_item(user)})
 
