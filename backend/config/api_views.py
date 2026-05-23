@@ -38,6 +38,7 @@ from operations.models import (
     FichaCampo,
     FichaSeccion,
     Operacion,
+    BranchAdminAuditLog,
     TabletKiosko,
 )
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
@@ -199,6 +200,16 @@ def _branch_admin_item(user):
         "branchId": user.sucursal_id,
         "branchName": user.sucursal.nombre if user.sucursal else "Inactivo",
     }
+
+
+def _log_branch_admin_audit(*, request, branch, action, detail="", metadata=None):
+    BranchAdminAuditLog.objects.create(
+        branch=branch,
+        actor=request.user if request.user.is_authenticated else None,
+        action=action,
+        detail=detail,
+        metadata=metadata or {},
+    )
 
 
 @require_POST
@@ -4210,6 +4221,14 @@ def admin_branch_admins_toggle(request, user_id):
         user.save(update_fields=["is_active", "sucursal", "updated_at"])
     else:
         user.save(update_fields=["is_active", "updated_at"])
+    if user.sucursal:
+        _log_branch_admin_audit(
+            request=request,
+            branch=user.sucursal,
+            action=BranchAdminAuditLog.Action.TOGGLE_BRANCH_ADMIN,
+            detail=f"Estado de admin sucursal {user.username} actualizado a {'activo' if active else 'inactivo'}.",
+            metadata={"adminUserId": user.id, "active": active},
+        )
     return _json({"detail": "Estado actualizado.", "admin": _branch_admin_item(user)})
 
 
@@ -4659,6 +4678,13 @@ def admin_branch_wizard_finalize(request):
     )
     kiosko.set_clave(clave)
     kiosko.save()
+    _log_branch_admin_audit(
+        request=request,
+        branch=branch,
+        action=BranchAdminAuditLog.Action.CREATE_BRANCH_WIZARD,
+        detail="Sucursal creada via wizard con admin y tablet.",
+        metadata={"adminUserId": admin_user.id, "tabletKioskId": kiosko.id},
+    )
 
     request.session.pop(BRANCH_CREATE_WIZARD_SESSION_KEY, None)
     request.session.modified = True
@@ -4736,6 +4762,13 @@ def admin_branch_management_toggle(request, branch_id):
             )
         branch.activa = active
         branch.save(update_fields=["activa", "updated_at"])
+        _log_branch_admin_audit(
+            request=request,
+            branch=branch,
+            action=BranchAdminAuditLog.Action.TOGGLE_BRANCH,
+            detail=f"Sucursal {'activada' if active else 'desactivada'}.",
+            metadata={"active": active, "force": force, "impact": impact},
+        )
         return _json(
             {
                 "detail": "Sucursal activada correctamente." if active else "Sucursal desactivada correctamente.",
@@ -4790,6 +4823,13 @@ def admin_branch_management_change_admin(request, branch_id):
                 current_admin.is_active = False
                 current_admin.sucursal = None
                 current_admin.save(update_fields=["is_active", "sucursal", "updated_at"])
+            _log_branch_admin_audit(
+                request=request,
+                branch=branch,
+                action=BranchAdminAuditLog.Action.CHANGE_ADMIN,
+                detail="Reemplazo por admin inactivo.",
+                metadata={"newAdminUserId": new_admin.id, "previousAdminUserId": current_admin.id if current_admin else None, "mode": "replace_with_inactive"},
+            )
             return _json({"detail": "Administrador inactivo activado y asignado correctamente.", "mode": "replace_with_inactive"})
 
         if new_admin.sucursal_id == branch.id:
@@ -4800,7 +4840,21 @@ def admin_branch_management_change_admin(request, branch_id):
         if current_admin and previous_branch and previous_branch.id != branch.id:
             current_admin.sucursal = previous_branch
             current_admin.save(update_fields=["sucursal", "updated_at"])
+            _log_branch_admin_audit(
+                request=request,
+                branch=branch,
+                action=BranchAdminAuditLog.Action.CHANGE_ADMIN,
+                detail="Intercambio de administradores entre sucursales.",
+                metadata={"newAdminUserId": new_admin.id, "previousAdminUserId": current_admin.id, "fromBranchId": previous_branch.id, "mode": "swap"},
+            )
             return _json({"detail": "Administradores intercambiados correctamente.", "mode": "swap"})
+        _log_branch_admin_audit(
+            request=request,
+            branch=branch,
+            action=BranchAdminAuditLog.Action.CHANGE_ADMIN,
+            detail="Asignación directa de administrador.",
+            metadata={"newAdminUserId": new_admin.id, "mode": "assign"},
+        )
         return _json({"detail": "Administrador de sucursal actualizado correctamente.", "mode": "assign"})
     return _idempotency_replay_or_store(cache_key, _change_admin)
 
@@ -4810,3 +4864,26 @@ def admin_branch_management_change_admin(request, branch_id):
 def admin_branch_management_deactivation_impact(request, branch_id):
     branch = get_object_or_404(Sucursal, pk=branch_id)
     return _json({"branchId": branch.id, "impact": _branch_deactivation_impact(branch)})
+
+
+@require_GET
+@_admin_principal_required
+def admin_branch_admin_audit_logs(request):
+    branch_id = request.GET.get("branchId")
+    logs = BranchAdminAuditLog.objects.select_related("branch", "actor")
+    if branch_id:
+        logs = logs.filter(branch_id=branch_id)
+    items = [
+        {
+            "id": log.id,
+            "createdAt": log.created_at.isoformat(),
+            "action": log.action,
+            "detail": log.detail,
+            "branchId": log.branch_id,
+            "branchName": log.branch.nombre,
+            "actor": log.actor.nombre_completo if log.actor else "Sistema",
+            "metadata": log.metadata or {},
+        }
+        for log in logs[:200]
+    ]
+    return _json({"items": items, "total": len(items)})
