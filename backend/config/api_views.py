@@ -4532,6 +4532,7 @@ def admin_branch_management_list(request):
             | Q(apellido_paterno__icontains=admin_name)
             | Q(username__icontains=admin_name)
         )
+        branches = branches.filter(pk__in=admins.values_list("sucursal_id", flat=True))
     admin_by_branch = {}
     for admin in admins:
         if admin.sucursal_id and admin.sucursal_id not in admin_by_branch:
