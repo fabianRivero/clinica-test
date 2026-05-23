@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { AdminBranchTabs } from '../../components/admin/AdminBranchTabs'
+import { PageHeader } from '../../components/admin/PageHeader'
+import { SectionCard } from '../../components/admin/SectionCard'
 import { changeAdminBranchManager, finalizeAdminBranchWizard, getAdminBranchAdmins, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, initializeAdminBranchWizard, saveAdminBranchWizardStep1, saveAdminBranchWizardStep2CreateNew, saveAdminBranchWizardStep2ExistingInactive, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
 
 type BranchRow = {
@@ -185,17 +187,22 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
 
   return (
     <section className="page-stack">
-      <header className="page-header">
-        <h1>Gestion de sucursales</h1>
-        <p>Modulo para administracion general de sucursales.</p>
-      </header>
+      <PageHeader
+        eyebrow="Administracion"
+        title="Gestion de sucursales"
+        description="Modulo para administracion general de sucursales."
+      />
 
       <AdminBranchTabs />
 
       {error ? <p className="error-text">{error}</p> : null}
 
-      {view === 'create' ? <div className="card">
-        <h3>Crear sucursal</h3>
+      {view === 'create' ? <SectionCard title="Crear sucursal" description="Completa el wizard para registrar una nueva sucursal, su administrador y su tablet.">
+        <section className="wizard-summary">
+          <p className="wizard-summary__title">Wizard de creacion</p>
+          <p className="wizard-summary__description">Avanza paso a paso y valida los datos antes de finalizar.</p>
+        </section>
+
         <div className="stepper">
           <button className={`stepper__item ${wizardStep === 1 ? 'is-active' : ''}`} type="button" onClick={() => setWizardStep(1)}>
             <span className="stepper__index">Paso 1</span><span className="stepper__label">Datos de sucursal</span>
@@ -232,7 +239,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
           <label className="field"><span>Nombre tablet</span><input className="input" value={wizardTablet.nombre} onChange={(e) => setWizardTablet((v) => ({ ...v, nombre: e.target.value }))} /></label>
           <label className="field"><span>Clave tablet</span><input className="input" type="password" value={wizardTablet.clave} onChange={(e) => setWizardTablet((v) => ({ ...v, clave: e.target.value }))} /></label>
         </div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(2)}>Volver</button><button className="button" disabled={saving} type="submit">Finalizar</button></div></div></form> : null}
-      </div> : null}
+      </SectionCard> : null}
 
       {view === 'edit' ? <><div className="card">
         <h3>Filtros</h3>
