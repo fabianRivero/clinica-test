@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { AdminBranchTabs } from '../../components/admin/AdminBranchTabs'
-import { changeAdminBranchManager, createAdminBranch, getAdminBranchDeactivationImpact, getAdminBranchesManagement, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
+import { changeAdminBranchManager, createAdminBranch, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
 
 type BranchRow = {
   id: number
@@ -27,6 +27,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   const [changingAdminBranch, setChangingAdminBranch] = useState<BranchRow | null>(null)
   const [changeAdminStep, setChangeAdminStep] = useState<1 | 2>(1)
   const [newAdminUserId, setNewAdminUserId] = useState('')
+  const [auditRows, setAuditRows] = useState<Array<{ id: number; createdAt: string; action: string; detail: string; branchName: string; actor: string }>>([])
 
   const branchOptions = useMemo(() => rows.map((b) => ({ id: b.id, name: b.nombre })), [rows])
 
@@ -35,6 +36,8 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
       setError(null)
       const response = await getAdminBranchesManagement({ status, city: city || undefined, adminName: adminName || undefined, branchId })
       setRows(response.branches)
+      const audit = await getAdminBranchAuditLogs(branchId)
+      setAuditRows(audit.items)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo cargar sucursales')
     }
@@ -180,6 +183,24 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                   <button className="button button--ghost" type="button" onClick={() => openChangeAdminModal(row)}>Cambiar administrador</button>
                   <button className="button button--ghost" type="button" onClick={() => void handleToggle(row)}>{row.activa ? 'Desactivar' : 'Activar'}</button>
                 </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card">
+        <h3>Historial de cambios</h3>
+        <table className="table">
+          <thead><tr><th>Fecha</th><th>Sucursal</th><th>Accion</th><th>Detalle</th><th>Actor</th></tr></thead>
+          <tbody>
+            {auditRows.map((row) => (
+              <tr key={row.id}>
+                <td>{new Date(row.createdAt).toLocaleString()}</td>
+                <td>{row.branchName}</td>
+                <td>{row.action}</td>
+                <td>{row.detail}</td>
+                <td>{row.actor}</td>
               </tr>
             ))}
           </tbody>

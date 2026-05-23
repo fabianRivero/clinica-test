@@ -721,6 +721,14 @@ export function toggleAdminBranchAdmin(userId: number, active: boolean) {
   return requestJsonWithBody<{ detail: string }>(`/api/admin/equipo/admins-sucursal/${userId}/estado/`, { active })
 }
 
+export function getAdminBranchAuditLogs(branchId?: number | null) {
+  const query = new URLSearchParams()
+  if (branchId) query.set('branchId', String(branchId))
+  return requestJson<{ items: Array<{ id: number; createdAt: string; action: string; detail: string; branchId: number; branchName: string; actor: string; metadata: Record<string, unknown> }>; total: number }>(
+    `/api/admin/sucursales/auditoria/${query.size ? `?${query.toString()}` : ''}`,
+  )
+}
+
 // Client Reactivation
 export function initializeAdminClientReactivation(clientId: string) {
   return requestJson<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/initialize/`)
