@@ -13,6 +13,7 @@ import {
   listPendingOfflineEvents,
   loadTabletSnapshot,
   markOfflineEventStatus,
+  purgeOldOfflineData,
   queueOfflineConfirmation,
   saveTabletSnapshot,
   getOfflineDeviceId,
@@ -79,6 +80,7 @@ export function TabletKioskPage() {
 
     window.addEventListener('online', onOnline)
     window.addEventListener('offline', onOffline)
+    void purgeOldOfflineData().catch(() => undefined)
     void refreshPendingCount().catch(() => undefined)
     void trySyncOfflineQueue().catch(() => undefined)
 

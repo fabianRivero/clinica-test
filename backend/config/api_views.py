@@ -2236,6 +2236,49 @@ def admin_resolve_offline_confirmation_conflict(request, event_id):
     return _json({"detail": "Conflicto resuelto.", "eventId": event.event_id, "syncStatus": event.sync_status})
 
 
+
+
+@require_GET
+@_admin_required
+def admin_offline_confirmation_metrics(request):
+    branch_id = request.GET.get("branchId")
+    days = request.GET.get("days")
+    try:
+        days_int = int(days) if days else 7
+    except ValueError:
+        return _json({"detail": "days inválido."}, status=400)
+    days_int = max(1, min(days_int, 60))
+
+    start_at = timezone.now() - timedelta(days=days_int)
+    qs = EventoConfirmacionCita.objects.filter(origin_mode=EventoConfirmacionCita.ModoOrigen.OFFLINE, confirmado_en__gte=start_at)
+    if branch_id:
+        try:
+            qs = qs.filter(sucursal_id=int(branch_id))
+        except ValueError:
+            return _json({"detail": "branchId inválido."}, status=400)
+
+    total = qs.count()
+    accepted = qs.filter(sync_status=EventoConfirmacionCita.EstadoSync.ACCEPTED).count()
+    conflicts = qs.filter(sync_status=EventoConfirmacionCita.EstadoSync.CONFLICT).count()
+    rejected = qs.filter(sync_status=EventoConfirmacionCita.EstadoSync.REJECTED).count()
+    duplicates = qs.filter(sync_status=EventoConfirmacionCita.EstadoSync.DUPLICATE).count()
+
+    return _json({
+        "windowDays": days_int,
+        "totals": {
+            "total": total,
+            "accepted": accepted,
+            "conflicts": conflicts,
+            "rejected": rejected,
+            "duplicates": duplicates,
+        },
+        "rates": {
+            "conflictRate": round((conflicts / total), 4) if total else 0,
+            "rejectRate": round((rejected / total), 4) if total else 0,
+        },
+    })
+
+
 @_admin_required
 def admin_dashboard(request):
     """Retorna solo las metricas basicas y alertas del dashboard"""

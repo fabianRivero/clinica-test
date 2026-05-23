@@ -77,6 +77,7 @@ from config.api_views import (
     admin_branch_admins_toggle,
     admin_offline_confirmation_conflicts,
     admin_resolve_offline_confirmation_conflict,
+    admin_offline_confirmation_metrics,
 )
 from config.prospect_conversion_views import (
     admin_prospect_conversion_cancel,
@@ -109,6 +110,7 @@ urlpatterns = [
     path("dashboard/agenda/", admin_dashboard_agenda, name="admin-dashboard-agenda-api"),
     path("citas/offline/conflictos/", admin_offline_confirmation_conflicts, name="admin-offline-confirmation-conflicts-api"),
     path("citas/offline/conflictos/<slug:event_id>/resolver/", admin_resolve_offline_confirmation_conflict, name="admin-offline-confirmation-conflict-resolve-api"),
+    path("citas/offline/metricas/", admin_offline_confirmation_metrics, name="admin-offline-confirmation-metrics-api"),
     path("gastos/", admin_gastos, name="admin-gastos-api"),
     path("gastos/categorias/", admin_gastos_categorias, name="admin-gastos-categorias-api"),
     path("gastos/crear/", admin_gasto_crear, name="admin-gastos-crear-api"),

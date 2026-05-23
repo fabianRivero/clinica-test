@@ -124,3 +124,43 @@ export function getOfflineDeviceId(): string {
   window.localStorage.setItem(DEVICE_ID_KEY, created)
   return created
 }
+
+
+const OFFLINE_RETENTION_HOURS = 48
+
+function toMillis(value: string): number {
+  const ts = Date.parse(value)
+  return Number.isFinite(ts) ? ts : 0
+}
+
+export async function purgeOldOfflineData(now = Date.now()): Promise<void> {
+  const db = await openDb()
+  const cutoff = now - OFFLINE_RETENTION_HOURS * 60 * 60 * 1000
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([SNAPSHOT_STORE, EVENTS_STORE], 'readwrite')
+    const snapshotStore = tx.objectStore(SNAPSHOT_STORE)
+    const eventsStore = tx.objectStore(EVENTS_STORE)
+
+    const snapshotReq = snapshotStore.get('today')
+    snapshotReq.onsuccess = () => {
+      const snapshot = snapshotReq.result as TabletOfflineSnapshot | undefined
+      if (snapshot && toMillis(snapshot.savedAt) < cutoff) {
+        snapshotStore.delete('today')
+      }
+    }
+
+    const eventsReq = eventsStore.getAll()
+    eventsReq.onsuccess = () => {
+      const events = (eventsReq.result as TabletOfflineEvent[]) || []
+      for (const event of events) {
+        if (toMillis(event.createdAt) < cutoff) {
+          eventsStore.delete(event.eventId)
+        }
+      }
+    }
+
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+  db.close()
+}
