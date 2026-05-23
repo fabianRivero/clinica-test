@@ -200,7 +200,7 @@ def _branch_admin_item(user):
         "fullName": user.nombre_completo or user.username,
         "email": user.email or "",
         "telefono": user.telefono or "",
-        "fechaNacimiento": user.fecha_nacimiento.isoformat() if user.fecha_nacimiento else "",
+        "fechaNacimiento": user.fecha_nacimiento.isoformat() if isinstance(user.fecha_nacimiento, date) else (user.fecha_nacimiento or ""),
         "isActive": bool(user.is_active),
         "branchId": user.sucursal_id,
         "branchName": user.sucursal.nombre if user.sucursal else "Inactivo",
@@ -4287,9 +4287,13 @@ def admin_branch_admins_create(request):
     primer_nombre = _capitalize_first_letter(payload.get("primerNombre"))
     apellido_paterno = _capitalize_first_letter(payload.get("apellidoPaterno"))
     password = payload.get("password") or ""
-    fecha_nacimiento = payload.get("fechaNacimiento")
-    if not username or not primer_nombre or not apellido_paterno or not password or not fecha_nacimiento:
+    fecha_nacimiento_raw = (payload.get("fechaNacimiento") or "").strip()
+    if not username or not primer_nombre or not apellido_paterno or not password or not fecha_nacimiento_raw:
         return _json({"detail": "username, primerNombre, apellidoPaterno, password y fechaNacimiento son obligatorios."}, status=400)
+    try:
+        fecha_nacimiento = date.fromisoformat(fecha_nacimiento_raw)
+    except ValueError:
+        return _json({"detail": "fechaNacimiento debe tener formato YYYY-MM-DD."}, status=400)
     if Usuario.objects.filter(username=username).exists():
         return _json({"detail": "Este nombre de usuario ya existe."}, status=409)
 
@@ -4335,7 +4339,14 @@ def admin_branch_admins_update(request, user_id):
         if key in payload:
             setattr(user, field, (payload.get(key) or "").strip())
     if "fechaNacimiento" in payload:
-        user.fecha_nacimiento = payload.get("fechaNacimiento") or None
+        fecha_nacimiento_raw = (payload.get("fechaNacimiento") or "").strip()
+        if fecha_nacimiento_raw:
+            try:
+                user.fecha_nacimiento = date.fromisoformat(fecha_nacimiento_raw)
+            except ValueError:
+                return _json({"detail": "fechaNacimiento debe tener formato YYYY-MM-DD."}, status=400)
+        else:
+            user.fecha_nacimiento = None
     new_password = (payload.get("password") or "").strip()
     if new_password:
         user.set_password(new_password)
