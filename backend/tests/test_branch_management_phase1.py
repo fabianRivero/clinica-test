@@ -75,6 +75,42 @@ class BranchManagementPhase1Test(TestCase):
             Usuario.objects.filter(sucursal=self.sucursal_activa, rol__rol="ADMIN_SUCURSAL", is_active=True).exists()
         )
 
+    def test_replace_with_inactive_admin_activates_new_and_inactivates_current(self):
+        self.admin_sucursal_nuevo.is_active = False
+        self.admin_sucursal_nuevo.sucursal = None
+        self.admin_sucursal_nuevo.save(update_fields=["is_active", "sucursal", "updated_at"])
+
+        self.client.force_login(self.admin_general)
+        response = self.client.post(
+            f"/api/admin/sucursales/{self.sucursal_activa.id}/cambiar-admin/",
+            data=json.dumps({"newAdminUserId": self.admin_sucursal_nuevo.id}),
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="phase1-change-inactive",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.admin_sucursal.refresh_from_db()
+        self.admin_sucursal_nuevo.refresh_from_db()
+        self.assertFalse(self.admin_sucursal.is_active)
+        self.assertIsNone(self.admin_sucursal.sucursal_id)
+        self.assertTrue(self.admin_sucursal_nuevo.is_active)
+        self.assertEqual(self.admin_sucursal_nuevo.sucursal_id, self.sucursal_activa.id)
+
+    def test_swap_admins_between_branches(self):
+        self.client.force_login(self.admin_general)
+        response = self.client.post(
+            f"/api/admin/sucursales/{self.sucursal_activa.id}/cambiar-admin/",
+            data=json.dumps({"newAdminUserId": self.admin_sucursal_nuevo.id}),
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="phase1-change-swap",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.admin_sucursal.refresh_from_db()
+        self.admin_sucursal_nuevo.refresh_from_db()
+        self.assertEqual(self.admin_sucursal_nuevo.sucursal_id, self.sucursal_activa.id)
+        self.assertEqual(self.admin_sucursal.sucursal_id, self.sucursal_inactiva.id)
+
     def test_inactive_branch_admin_is_blocked(self):
         self.admin_sucursal.sucursal = self.sucursal_inactiva
         self.admin_sucursal.save(update_fields=["sucursal", "updated_at"])

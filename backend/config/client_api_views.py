@@ -893,7 +893,7 @@ def tablet_kiosk_login(request):
         return _json({"detail": "Debes enviar codigo y clave del kiosko."}, status=400)
 
     kiosko = TabletKiosko.objects.filter(codigo=codigo, activo=True).select_related("sucursal").first()
-    if not kiosko or kiosko.clave != clave:
+    if not kiosko or not kiosko.check_clave(clave):
         return _json({"detail": "Credenciales de kiosko invalidas."}, status=401)
 
     request.session["tablet_kiosk_id"] = kiosko.id

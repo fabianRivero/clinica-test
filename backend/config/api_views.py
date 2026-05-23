@@ -4512,13 +4512,31 @@ def admin_branch_management_change_admin(request, branch_id):
         new_admin = get_object_or_404(Usuario, pk=new_admin_id)
         if not (new_admin.rol and new_admin.rol.rol == "ADMIN_SUCURSAL"):
             return _json({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
-        if not new_admin.is_active:
-            return _json({"detail": "El admin de sucursal debe estar activo."}, status=400)
+        current_admin = (
+            Usuario.objects.filter(rol__rol="ADMIN_SUCURSAL", sucursal=branch, is_active=True)
+            .exclude(pk=new_admin.pk)
+            .first()
+        )
+        previous_branch = new_admin.sucursal
+        selected_is_inactive = (not new_admin.is_active) or (new_admin.sucursal_id is None)
+
+        if selected_is_inactive:
+            new_admin.is_active = True
+            new_admin.sucursal = branch
+            new_admin.save(update_fields=["is_active", "sucursal", "updated_at"])
+            if current_admin:
+                current_admin.is_active = False
+                current_admin.sucursal = None
+                current_admin.save(update_fields=["is_active", "sucursal", "updated_at"])
+            return _json({"detail": "Administrador inactivo activado y asignado correctamente.", "mode": "replace_with_inactive"})
+
         new_admin.sucursal = branch
         new_admin.save(update_fields=["sucursal", "updated_at"])
-        if not Usuario.objects.filter(sucursal=branch, rol__rol="ADMIN_SUCURSAL", is_active=True).exists():
-            return _json({"detail": "La sucursal debe mantener al menos un admin activo."}, status=400)
-        return _json({"detail": "Administrador de sucursal actualizado correctamente."})
+        if current_admin and previous_branch and previous_branch.id != branch.id:
+            current_admin.sucursal = previous_branch
+            current_admin.save(update_fields=["sucursal", "updated_at"])
+            return _json({"detail": "Administradores intercambiados correctamente.", "mode": "swap"})
+        return _json({"detail": "Administrador de sucursal actualizado correctamente.", "mode": "assign"})
     return _idempotency_replay_or_store(cache_key, _change_admin)
 
 

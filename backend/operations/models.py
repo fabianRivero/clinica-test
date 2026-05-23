@@ -3,6 +3,7 @@ from django.core.validators import FileExtensionValidator
 from django.core.validators import MinValueValidator
 from django.core.validators import FileExtensionValidator
 from django.db import models
+from django.contrib.auth.hashers import check_password, identify_hasher, make_password
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -429,6 +430,20 @@ class TabletKiosko(TimeStampedModel):
 
     def __str__(self):
         return f"{self.nombre} ({self.codigo})"
+
+    def set_clave(self, raw_clave: str):
+        self.clave = make_password(raw_clave)
+
+    def check_clave(self, raw_clave: str) -> bool:
+        return check_password(raw_clave, self.clave)
+
+    def save(self, *args, **kwargs):
+        if self.clave:
+            try:
+                identify_hasher(self.clave)
+            except Exception:
+                self.clave = make_password(self.clave)
+        super().save(*args, **kwargs)
 
 
 class AgendaHabitualEspecialista(TimeStampedModel):
