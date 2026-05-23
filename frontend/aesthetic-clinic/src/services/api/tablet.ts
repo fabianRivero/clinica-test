@@ -59,3 +59,26 @@ export function tabletConfirmProcedure(operationId: number) {
 export function tabletClientReset() {
   return postJson<TabletResetResponse>('/api/client/tablet/client/reset/', {})
 }
+
+
+export interface TabletOfflineSyncEventPayload {
+  eventId: string
+  operationId: number
+  createdAt: string
+}
+
+export interface TabletOfflineSyncResponseItem {
+  eventId: string | null
+  status: "accepted" | "duplicate" | "conflict" | "rejected"
+  reason?: string
+  appointmentId?: number
+}
+
+export interface TabletOfflineSyncResponse {
+  detail: string
+  results: TabletOfflineSyncResponseItem[]
+}
+
+export function tabletSyncOfflineEvents(events: TabletOfflineSyncEventPayload[], deviceId: string) {
+  return postJson<TabletOfflineSyncResponse>('/api/client/tablet/offline/sync-events/', { events, deviceId })
+}

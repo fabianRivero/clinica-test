@@ -2167,6 +2167,119 @@ def _dashboard_alerts():
 
 @require_GET
 @_admin_required
+def admin_offline_confirmation_conflicts(request):
+    branch_id = request.GET.get("branchId")
+    qs = EventoConfirmacionCita.objects.select_related("cita", "paciente", "sucursal").filter(
+        origin_mode=EventoConfirmacionCita.ModoOrigen.OFFLINE,
+        sync_status=EventoConfirmacionCita.EstadoSync.CONFLICT,
+    )
+    if branch_id:
+        try:
+            qs = qs.filter(sucursal_id=int(branch_id))
+        except ValueError:
+            return _json({"detail": "branchId inválido."}, status=400)
+
+    items = []
+    for event in qs.order_by("-confirmado_en")[:200]:
+        items.append({
+            "eventId": event.event_id,
+            "appointmentId": event.cita_id,
+            "branchId": event.sucursal_id,
+            "branch": event.sucursal.nombre if event.sucursal_id else "",
+            "clientId": event.paciente_id,
+            "clientName": event.paciente.nombre_completo,
+            "deviceId": event.device_id,
+            "recordedAtDevice": event.recorded_at_device.isoformat() if event.recorded_at_device else None,
+            "confirmedAtServer": event.confirmed_at_server.isoformat() if event.confirmed_at_server else None,
+            "conflictReason": event.conflict_reason,
+            "syncStatus": event.sync_status,
+        })
+    return _json({"items": items})
+
+
+@require_POST
+@_admin_required
+@transaction.atomic
+def admin_resolve_offline_confirmation_conflict(request, event_id):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    resolution = (payload.get("resolution") or "").strip().upper()
+    reason = (payload.get("reason") or "").strip()
+    if resolution not in {"ACCEPT", "REJECT"}:
+        return _json({"detail": "resolution debe ser ACCEPT o REJECT."}, status=400)
+    if not reason:
+        return _json({"detail": "reason es obligatorio para resolver conflictos."}, status=400)
+
+    event = EventoConfirmacionCita.objects.select_for_update(of=("self",)).select_related("cita").filter(event_id=event_id).first()
+    if not event:
+        return _json({"detail": "No encontramos el evento solicitado."}, status=404)
+    if event.sync_status != EventoConfirmacionCita.EstadoSync.CONFLICT:
+        return _json({"detail": "El evento no está en estado de conflicto."}, status=400)
+
+    if resolution == "ACCEPT":
+        event.sync_status = EventoConfirmacionCita.EstadoSync.ACCEPTED
+        cita = event.cita
+        if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+            cita.estado = CitaMedica.Estado.CONFIRMADA
+            cita.metodo_confirmacion = CitaMedica.MetodoConfirmacion.MANUAL
+            cita.verif_biometria = False
+            cita.save(update_fields=["estado", "metodo_confirmacion", "verif_biometria", "updated_at"])
+    else:
+        event.sync_status = EventoConfirmacionCita.EstadoSync.REJECTED
+
+    event.conflict_reason = f"RESOLVED:{resolution}:{reason}"
+    event.confirmed_at_server = timezone.now()
+    event.save(update_fields=["sync_status", "conflict_reason", "confirmed_at_server", "updated_at"])
+
+    return _json({"detail": "Conflicto resuelto.", "eventId": event.event_id, "syncStatus": event.sync_status})
+
+
+
+
+@require_GET
+@_admin_required
+def admin_offline_confirmation_metrics(request):
+    branch_id = request.GET.get("branchId")
+    days = request.GET.get("days")
+    try:
+        days_int = int(days) if days else 7
+    except ValueError:
+        return _json({"detail": "days inválido."}, status=400)
+    days_int = max(1, min(days_int, 60))
+
+    start_at = timezone.now() - timedelta(days=days_int)
+    qs = EventoConfirmacionCita.objects.filter(origin_mode=EventoConfirmacionCita.ModoOrigen.OFFLINE, confirmado_en__gte=start_at)
+    if branch_id:
+        try:
+            qs = qs.filter(sucursal_id=int(branch_id))
+        except ValueError:
+            return _json({"detail": "branchId inválido."}, status=400)
+
+    total = qs.count()
+    accepted = qs.filter(sync_status=EventoConfirmacionCita.EstadoSync.ACCEPTED).count()
+    conflicts = qs.filter(sync_status=EventoConfirmacionCita.EstadoSync.CONFLICT).count()
+    rejected = qs.filter(sync_status=EventoConfirmacionCita.EstadoSync.REJECTED).count()
+    duplicates = qs.filter(sync_status=EventoConfirmacionCita.EstadoSync.DUPLICATE).count()
+
+    return _json({
+        "windowDays": days_int,
+        "totals": {
+            "total": total,
+            "accepted": accepted,
+            "conflicts": conflicts,
+            "rejected": rejected,
+            "duplicates": duplicates,
+        },
+        "rates": {
+            "conflictRate": round((conflicts / total), 4) if total else 0,
+            "rejectRate": round((rejected / total), 4) if total else 0,
+        },
+    })
+
+
+@_admin_required
 def admin_dashboard(request):
     """Retorna solo las metricas basicas y alertas del dashboard"""
     mark_expired_programmed_appointments_as_no_show()
