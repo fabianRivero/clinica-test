@@ -4818,16 +4818,11 @@ def admin_branch_management_change_admin(request, branch_id):
         new_admin = get_object_or_404(Usuario, pk=new_admin_id)
         if not (new_admin.rol and new_admin.rol.rol == "ADMIN_SUCURSAL"):
             return _json({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
-        has_main_admin_assigned = Usuario.objects.filter(
+        current_main_admin = Usuario.objects.filter(
             rol__rol="ADMIN_PRINCIPAL",
             sucursal=branch,
             is_active=True,
-        ).exists()
-        if has_main_admin_assigned:
-            return _json(
-                {"detail": "La sucursal ya tiene un administrador principal asignado. No se puede asignar admin de sucursal."},
-                status=409,
-            )
+        ).first()
         current_admin = (
             Usuario.objects.filter(rol__rol="ADMIN_SUCURSAL", sucursal=branch, is_active=True)
             .exclude(pk=new_admin.pk)
@@ -4835,6 +4830,36 @@ def admin_branch_management_change_admin(request, branch_id):
         )
         previous_branch = new_admin.sucursal
         selected_is_inactive = (not new_admin.is_active) or (new_admin.sucursal_id is None)
+
+        if current_main_admin:
+            if selected_is_inactive:
+                return _json(
+                    {"detail": "El administrador principal solo puede intercambiar con un admin de sucursal activo y con sucursal."},
+                    status=409,
+                )
+            if not previous_branch:
+                return _json(
+                    {"detail": "El admin de sucursal seleccionado debe tener una sucursal activa para intercambiar con el admin principal."},
+                    status=409,
+                )
+            new_admin.sucursal = branch
+            new_admin.save(update_fields=["sucursal", "updated_at"])
+            current_main_admin.sucursal = previous_branch
+            current_main_admin.is_active = True
+            current_main_admin.save(update_fields=["sucursal", "is_active", "updated_at"])
+            _log_branch_admin_audit(
+                request=request,
+                branch=branch,
+                action=BranchAdminAuditLog.Action.CHANGE_ADMIN,
+                detail="Intercambio entre admin principal y admin de sucursal.",
+                metadata={
+                    "mainAdminUserId": current_main_admin.id,
+                    "newAdminUserId": new_admin.id,
+                    "fromBranchId": previous_branch.id,
+                    "mode": "swap_with_main_admin",
+                },
+            )
+            return _json({"detail": "Intercambio con administrador principal realizado correctamente.", "mode": "swap_with_main_admin"})
 
         if selected_is_inactive:
             new_admin.is_active = True
