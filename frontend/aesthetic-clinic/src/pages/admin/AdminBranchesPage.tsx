@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AdminBranchTabs } from '../../components/admin/AdminBranchTabs'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
-import { changeAdminBranchManager, finalizeAdminBranchWizard, getAdminBranchAdmins, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, initializeAdminBranchWizard, saveAdminBranchWizardStep1, saveAdminBranchWizardStep2CreateNew, saveAdminBranchWizardStep2ExistingInactive, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
+import { changeAdminBranchManager, finalizeAdminBranchWizard, getAdminBranchAdmins, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, initializeAdminBranchWizard, saveAdminBranchWizardStep1, saveAdminBranchWizardStep2CreateNew, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
 
 type BranchRow = {
   id: number
@@ -25,8 +25,6 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
 
   const [newBranch, setNewBranch] = useState({ nombre: '', ciudad: '', direccion: '' })
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
-  const [wizardMode, setWizardMode] = useState<'existing_inactive' | 'create_new'>('existing_inactive')
-  const [wizardAdminId, setWizardAdminId] = useState('')
   const [wizardNewAdmin, setWizardNewAdmin] = useState({ username: '', email: '', primerNombre: '', apellidoPaterno: '', ci: '', password: '' })
   const [wizardTablet, setWizardTablet] = useState({ codigo: '', nombre: '', clave: '' })
   const [branchAdmins, setBranchAdmins] = useState<Array<{ id: number; username: string; fullName: string; isActive: boolean; branchId: number | null; branchName: string }>>([])
@@ -78,8 +76,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     e.preventDefault()
     setSaving(true)
     try {
-      if (wizardMode === 'existing_inactive') await saveAdminBranchWizardStep2ExistingInactive(Number(wizardAdminId))
-      else await saveAdminBranchWizardStep2CreateNew(wizardNewAdmin)
+      await saveAdminBranchWizardStep2CreateNew(wizardNewAdmin)
       setWizardStep(3)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar paso 2')
@@ -95,7 +92,6 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
       await finalizeAdminBranchWizard(wizardTablet)
       setWizardStep(1)
       setNewBranch({ nombre: '', ciudad: '', direccion: '' })
-      setWizardAdminId('')
       setWizardTablet({ codigo: '', nombre: '', clave: '' })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo finalizar creación')
@@ -109,8 +105,6 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     if (!ok) return
     setWizardStep(1)
     setNewBranch({ nombre: '', ciudad: '', direccion: '' })
-    setWizardMode('existing_inactive')
-    setWizardAdminId('')
     setWizardNewAdmin({ username: '', email: '', primerNombre: '', apellidoPaterno: '', ci: '', password: '' })
     setWizardTablet({ codigo: '', nombre: '', clave: '' })
     void initializeAdminBranchWizard().catch(() => undefined)
@@ -220,18 +214,17 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
           <label className="field"><span>Dirección</span><input className="input" value={newBranch.direccion} onChange={(e) => setNewBranch((v) => ({ ...v, direccion: e.target.value }))} /></label>
         </div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><button className="button" disabled={saving} type="submit">Continuar</button></div></form> : null}
         {wizardStep === 2 ? <form onSubmit={handleWizardStep2}>
-          <div style={{ display: 'flex', gap: '1rem' }}>
-            <label><input type="radio" checked={wizardMode === 'existing_inactive'} onChange={() => setWizardMode('existing_inactive')} /> Admin inactivo</label>
-            <label><input type="radio" checked={wizardMode === 'create_new'} onChange={() => setWizardMode('create_new')} /> Admin nuevo</label>
-          </div>
-          {wizardMode === 'existing_inactive' ? <label className="field"><span>Admin inactivo</span><select className="input" value={wizardAdminId} onChange={(e) => setWizardAdminId(e.target.value)}><option value="">Seleccionar</option>{branchAdmins.filter(a => !a.isActive && !a.branchId).map(a => <option key={a.id} value={a.id}>{a.fullName} ({a.username})</option>)}</select></label> : <div className="form-grid form-grid--three">
+          <p style={{ marginBottom: '0.75rem', color: 'var(--c-neutral-600)' }}>
+            En este paso siempre se crea un administrador nuevo. El usuario se registra como inactivo y sin sucursal por defecto.
+          </p>
+          <div className="form-grid form-grid--three">
             <label className="field"><span>Username</span><input className="input" value={wizardNewAdmin.username} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, username: e.target.value }))} /></label>
             <label className="field"><span>Primer nombre</span><input className="input" value={wizardNewAdmin.primerNombre} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, primerNombre: e.target.value }))} /></label>
             <label className="field"><span>Apellido paterno</span><input className="input" value={wizardNewAdmin.apellidoPaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoPaterno: e.target.value }))} /></label>
             <label className="field"><span>CI</span><input className="input" value={wizardNewAdmin.ci} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, ci: e.target.value }))} /></label>
             <label className="field"><span>Email</span><input className="input" value={wizardNewAdmin.email} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, email: e.target.value }))} /></label>
             <label className="field"><span>Contraseña</span><input className="input" type="password" value={wizardNewAdmin.password} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, password: e.target.value }))} /></label>
-          </div>}
+          </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="submit">Continuar</button></div></div>
         </form> : null}
         {wizardStep === 3 ? <form onSubmit={handleWizardStep3}><div className="form-grid form-grid--three">
