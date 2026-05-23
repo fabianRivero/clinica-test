@@ -251,8 +251,11 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
         </div>
       </div>
 
-      <div className="card">
-        <table className="table">
+      <div className="branch-management-panels">
+        <div className="section-card branch-management-panel">
+          <h3>Lista de sucursales</h3>
+          <div className="table-card">
+            <table>
           <thead><tr><th>Nombre</th><th>Ciudad</th><th>Direccion</th><th>Admin</th><th>Estado</th><th>Acciones</th></tr></thead>
           <tbody>
             {rows.map((row) => (
@@ -270,12 +273,14 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
+            </table>
+          </div>
+        </div>
 
-      <div className="card">
-        <h3>Historial de cambios</h3>
-        <table className="table">
+        <div className="section-card branch-management-panel">
+          <h3>Historial de cambios</h3>
+          <div className="table-card">
+            <table>
           <thead><tr><th>Fecha</th><th>Sucursal</th><th>Accion</th><th>Detalle</th><th>Actor</th></tr></thead>
           <tbody>
             {auditRows.map((row) => (
@@ -288,7 +293,9 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
               </tr>
             ))}
           </tbody>
-        </table>
+            </table>
+          </div>
+        </div>
       </div>
 
       {editingBranch ? <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Editar sucursal">
