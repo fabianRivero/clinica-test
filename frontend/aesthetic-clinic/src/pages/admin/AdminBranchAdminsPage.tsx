@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react'
+import { AdminStaffTabs } from '../../components/admin/AdminStaffTabs'
+import { PageHeader } from '../../components/admin/PageHeader'
+import { SectionCard } from '../../components/admin/SectionCard'
 
 import { createAdminBranchAdmin, getAdminBranchAdmins, toggleAdminBranchAdmin, updateAdminBranchAdmin } from '../../services/api/admin'
 
@@ -69,17 +72,22 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
 
   return (
     <section className="page-stack">
-      <header className="page-header">
-        <h1>Administradores de sucursal</h1>
-        <p>Gestionados solo por administrador principal.</p>
-      </header>
+      <PageHeader
+        eyebrow="Equipo clinico"
+        title="Administradores de sucursal"
+        description="Gestionados solo por administrador principal."
+      />
+      <AdminStaffTabs />
 
       {error ? <p className="error-text">{error}</p> : null}
 
       {view === 'create' ? (
-        <form className="card" onSubmit={handleCreate}>
-          <h3>Crear admin de sucursal (inactivo por defecto)</h3>
-          <div className="form-grid form-grid--three">
+        <SectionCard
+          eyebrow="Edicion"
+          title="Crear admin de sucursal"
+          description="Crea un admin de sucursal (inactivo por defecto)."
+        >
+        <form className="form-grid" onSubmit={handleCreate}>
             <label className="field">
               <span>Username</span>
               <input className="input" required value={form.username} onChange={(e) => setForm((v) => ({ ...v, username: e.target.value }))} />
@@ -108,11 +116,11 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
               <span>Apellido materno</span>
               <input className="input" value={form.apellidoMaterno} onChange={(e) => setForm((v) => ({ ...v, apellidoMaterno: e.target.value }))} />
             </label>
-          </div>
-          <div className="form-actions">
-            <button className="button" type="submit" disabled={saving}>Crear admin sucursal</button>
+          <div className="form-actions field--full">
+            <button className="button button--primary" type="submit" disabled={saving}>Crear admin sucursal</button>
           </div>
         </form>
+        </SectionCard>
       ) : null}
 
       {view === 'manage' ? (
