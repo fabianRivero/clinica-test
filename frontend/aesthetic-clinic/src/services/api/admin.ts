@@ -116,6 +116,29 @@ async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
   return responseBody as T
 }
 
+async function requestJsonWithBodyIdempotent<T>(path: string, body: unknown, idempotencyKey: string): Promise<T> {
+  const csrfToken = await ensureCsrfCookie()
+  const branchId = getActiveBranchId()
+
+  const response = await fetch(`${API_BASE_URL}${_appendBranchId(path)}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrfToken,
+      'X-Selected-Branch-Id': branchId ? String(branchId) : '',
+      'Idempotency-Key': idempotencyKey,
+    },
+    body: JSON.stringify(body),
+  })
+  const responseBody = (await response.json().catch(() => null)) as { detail?: string; errors?: Record<string, string> } | null
+  if (!response.ok) {
+    throw new Error(responseBody?.detail || `No se pudo completar ${path} (${response.status})`)
+  }
+  return responseBody as T
+}
+
 async function requestFormDataWithBody<T>(path: string, body: FormData): Promise<T> {
   const csrfToken = await ensureCsrfCookie()
   const branchId = getActiveBranchId()
@@ -622,6 +645,48 @@ export function getAdminBranches() {
 
 export function setAdminSessionBranch(branchId: number) {
   return requestJsonWithBody<{ detail: string; branchId: number }>('/api/admin/disponibilidad/sucursales/cambiar/', { branchId })
+}
+
+type BranchManagementFilters = {
+  status?: 'active' | 'inactive' | 'all'
+  city?: string
+  adminName?: string
+  branchId?: number | null
+}
+
+export function getAdminBranchesManagement(filters: BranchManagementFilters = {}) {
+  const query = new URLSearchParams()
+  if (filters.status) query.set('status', filters.status)
+  if (filters.city) query.set('city', filters.city)
+  if (filters.adminName) query.set('admin_name', filters.adminName)
+  if (filters.branchId) query.set('branch_id', String(filters.branchId))
+  return requestJson<{ branches: any[]; total: number }>(`/api/admin/sucursales/${query.size ? `?${query.toString()}` : ''}`)
+}
+
+export function getAdminBranchDeactivationImpact(branchId: number) {
+  return requestJson<{ branchId: number; impact: { appointments_pending: number; payments_pending: number; processes_pending: number } }>(
+    `/api/admin/sucursales/${branchId}/deactivation-impact/`,
+  )
+}
+
+export function createAdminBranch(payload: { nombre: string; ciudad: string; direccion: string }) {
+  return requestJsonWithBodyIdempotent<{ detail: string; branchId: number }>(
+    '/api/admin/sucursales/crear/',
+    payload,
+    crypto.randomUUID(),
+  )
+}
+
+export function updateAdminBranch(branchId: number, payload: Partial<{ nombre: string; ciudad: string; direccion: string }>) {
+  return requestJsonWithBody<{ detail: string }>(`/api/admin/sucursales/${branchId}/actualizar/`, payload)
+}
+
+export function toggleAdminBranch(branchId: number, active: boolean, force = false) {
+  return requestJsonWithBodyIdempotent<{ detail: string; impact?: Record<string, number> }>(
+    `/api/admin/sucursales/${branchId}/estado/`,
+    { active, force },
+    crypto.randomUUID(),
+  )
 }
 
 // Client Reactivation

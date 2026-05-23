@@ -5,6 +5,8 @@ import { useAuth } from '../providers/AuthProvider'
 import { BranchProvider, useBranchContext } from '../providers/BranchProvider'
 import { NOTIFICATIONS_UPDATED_EVENT } from '../services/api/notifications'
 
+const ENABLE_BRANCH_MANAGEMENT = (import.meta.env.VITE_ENABLE_BRANCH_MANAGEMENT || 'false').toLowerCase() === 'true'
+
 const fullNavigation = [
   { to: '/admin', label: 'Resumen' },
   {
@@ -38,6 +40,15 @@ const fullNavigation = [
     ],
   },
   { to: '/admin/notificaciones', label: 'Notificaciones' },
+  ...(ENABLE_BRANCH_MANAGEMENT
+    ? [
+        {
+          label: 'Sucursales',
+          mainAdminOnly: true,
+          children: [{ to: '/admin/sucursales', label: 'Gestionar sucursales' }],
+        },
+      ]
+    : []),
   {
     label: 'Mensajeria',
     children: [

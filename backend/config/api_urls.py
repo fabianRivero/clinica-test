@@ -60,6 +60,12 @@ from config.api_views import (
     admin_clientes_global_search,
     admin_set_session_branch,
     admin_reschedule_appointment,
+    admin_branch_management_list,
+    admin_branch_management_create,
+    admin_branch_management_update,
+    admin_branch_management_toggle,
+    admin_branch_management_change_admin,
+    admin_branch_management_deactivation_impact,
 )
 from config.prospect_conversion_views import (
     admin_prospect_conversion_cancel,
@@ -76,6 +82,12 @@ from config.prospect_conversion_views import (
 
 urlpatterns = [
     path("disponibilidad/sucursales/cambiar/", admin_set_session_branch, name="admin-set-session-branch-api"),
+    path("sucursales/", admin_branch_management_list, name="admin-branch-management-list-api"),
+    path("sucursales/crear/", admin_branch_management_create, name="admin-branch-management-create-api"),
+    path("sucursales/<int:branch_id>/actualizar/", admin_branch_management_update, name="admin-branch-management-update-api"),
+    path("sucursales/<int:branch_id>/estado/", admin_branch_management_toggle, name="admin-branch-management-toggle-api"),
+    path("sucursales/<int:branch_id>/cambiar-admin/", admin_branch_management_change_admin, name="admin-branch-management-change-admin-api"),
+    path("sucursales/<int:branch_id>/deactivation-impact/", admin_branch_management_deactivation_impact, name="admin-branch-management-deactivation-impact-api"),
     path("dashboard/", admin_dashboard, name="admin-dashboard-api"),
     path("dashboard/payments/", admin_dashboard_payments, name="admin-dashboard-payments-api"),
     path("dashboard/agenda/", admin_dashboard_agenda, name="admin-dashboard-agenda-api"),
