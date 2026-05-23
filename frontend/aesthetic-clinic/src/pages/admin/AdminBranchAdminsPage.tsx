@@ -120,7 +120,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
             </label>
             <label className="field">
               <span>Telefono</span>
-              <input className="input" type="number" value={form.telefono} onChange={(e) => setForm((v) => ({ ...v, telefono: e.target.value }))} />
+              <input className="input" type="tel" inputMode="numeric" pattern="[0-9]+" value={form.telefono} onChange={(e) => setForm((v) => ({ ...v, telefono: e.target.value }))} />
             </label>
             <label className="field">
               <span>Fecha de nacimiento <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
