@@ -6,14 +6,17 @@ import {
   tabletConfirmProcedure,
   tabletCurrentAppointment,
   tabletKioskLogin,
+  tabletSyncOfflineEvents,
 } from '../../services/api/tablet'
-import type { TabletCurrentAppointmentResponse } from '../../types/tablet'
 import {
   countPendingOfflineEvents,
+  listPendingOfflineEvents,
   loadTabletSnapshot,
+  markOfflineEventStatus,
   queueOfflineConfirmation,
   saveTabletSnapshot,
 } from '../../services/tabletOfflineStore'
+import type { TabletCurrentAppointmentResponse } from '../../types/tablet'
 
 type Step = 'kiosk' | 'client' | 'appointments' | 'done'
 
@@ -33,19 +36,55 @@ export function TabletKioskPage() {
 
   const procedures = useMemo(() => summary?.procedureOptions ?? [], [summary])
 
+  async function refreshPendingCount() {
+    setPendingOfflineEvents(await countPendingOfflineEvents())
+  }
+
+  async function trySyncOfflineQueue() {
+    if (!navigator.onLine) return
+    const pending = await listPendingOfflineEvents()
+    if (!pending.length) return
+
+    const response = await tabletSyncOfflineEvents(
+      pending.map((event) => ({ eventId: event.eventId, operationId: event.operationId, createdAt: event.createdAt })),
+    )
+
+    await Promise.all(
+      response.results.map((result) => {
+        if (!result.eventId) return Promise.resolve()
+        if (result.status === 'accepted' || result.status === 'duplicate') {
+          return markOfflineEventStatus(result.eventId, 'synced')
+        }
+        if (result.status === 'conflict') {
+          return markOfflineEventStatus(result.eventId, 'conflict')
+        }
+        return markOfflineEventStatus(result.eventId, 'rejected')
+      }),
+    )
+
+    await refreshPendingCount()
+  }
+
   useEffect(() => {
-    function syncNetworkState() {
-      setIsOfflineMode(!navigator.onLine)
+    function onOnline() {
+      setIsOfflineMode(false)
+      void trySyncOfflineQueue().catch(() => undefined)
     }
-    window.addEventListener('online', syncNetworkState)
-    window.addEventListener('offline', syncNetworkState)
-    void countPendingOfflineEvents().then(setPendingOfflineEvents).catch(() => undefined)
+
+    function onOffline() {
+      setIsOfflineMode(true)
+    }
+
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    void refreshPendingCount().catch(() => undefined)
+    void trySyncOfflineQueue().catch(() => undefined)
+
     return () => {
-      window.removeEventListener('online', syncNetworkState)
-      window.removeEventListener('offline', syncNetworkState)
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
     }
   }, [])
-
 
   async function handleKioskLogin(event: React.FormEvent) {
     event.preventDefault()
@@ -78,6 +117,7 @@ export function TabletKioskPage() {
       const data = await tabletCurrentAppointment()
       setSummary(data)
       await saveTabletSnapshot(data)
+      await trySyncOfflineQueue()
       setStep('appointments')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo autenticar el cliente.')
@@ -93,7 +133,7 @@ export function TabletKioskPage() {
     try {
       if (isOfflineMode) {
         await queueOfflineConfirmation(operationId)
-        setPendingOfflineEvents(await countPendingOfflineEvents())
+        await refreshPendingCount()
         setSuccess('Verificación registrada en cola offline. Se sincronizará al volver la red.')
         setStep('done')
         return

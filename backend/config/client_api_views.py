@@ -1036,6 +1036,78 @@ def client_tablet_confirm_appointment_for_operation(request):
     )
 
 
+
+
+@require_POST
+@_tablet_kiosk_required
+@_tablet_client_required
+@transaction.atomic
+def client_tablet_sync_offline_events(request):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    events = payload.get("events")
+    if not isinstance(events, list):
+        return _json({"detail": "Debes enviar una lista de eventos."}, status=400)
+
+    results = []
+    processed_ids = set()
+    today = timezone.localdate()
+
+    for item in events:
+        event_id = str((item or {}).get("eventId") or "").strip()
+        operation_id = (item or {}).get("operationId")
+
+        if not event_id or not operation_id:
+            results.append({"eventId": event_id or None, "status": "rejected", "reason": "invalid_payload"})
+            continue
+        if event_id in processed_ids:
+            results.append({"eventId": event_id, "status": "duplicate", "reason": "duplicated_in_batch"})
+            continue
+
+        processed_ids.add(event_id)
+
+        # idempotencia básica usando ip_origen como marcador temporal del eventId
+        if EventoConfirmacionCita.objects.filter(ip_origen=event_id).exists():
+            results.append({"eventId": event_id, "status": "duplicate", "reason": "already_processed"})
+            continue
+
+        cita = (
+            CitaMedica.objects.select_for_update(of=("self",))
+            .select_related("operacion__paciente", "sucursal")
+            .filter(
+                operacion__paciente=request.cliente,
+                operacion_id=operation_id,
+                estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+                fecha_hora__date=today,
+            )
+            .order_by("fecha_hora")
+            .first()
+        )
+
+        if not cita:
+            results.append({"eventId": event_id, "status": "conflict", "reason": "appointment_not_pending"})
+            continue
+
+        cita.estado = CitaMedica.Estado.CONFIRMADA
+        cita.metodo_confirmacion = CitaMedica.MetodoConfirmacion.TABLET
+        cita.verif_biometria = False
+        cita.save(update_fields=["estado", "metodo_confirmacion", "verif_biometria", "updated_at"])
+
+        EventoConfirmacionCita.objects.create(
+            cita=cita,
+            paciente=request.cliente,
+            sucursal=cita.sucursal,
+            metodo=EventoConfirmacionCita.Metodo.TABLET,
+            confirmado_en=timezone.now(),
+            ip_origen=event_id,
+        )
+        results.append({"eventId": event_id, "status": "accepted", "appointmentId": cita.id})
+
+    return _json({"detail": "Sincronizacion procesada.", "results": results})
+
+
 @require_GET
 @_client_required
 def client_reservation_availability(request, operation_id):

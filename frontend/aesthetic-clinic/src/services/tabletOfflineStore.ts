@@ -15,7 +15,7 @@ export interface TabletOfflineEvent {
   eventId: string
   operationId: number
   createdAt: string
-  status: 'pending'
+  status: 'pending' | 'synced' | 'conflict' | 'rejected'
 }
 
 function openDb(): Promise<IDBDatabase> {
@@ -76,14 +76,41 @@ export async function queueOfflineConfirmation(operationId: number): Promise<Tab
   return event
 }
 
-export async function countPendingOfflineEvents(): Promise<number> {
+export async function listPendingOfflineEvents(): Promise<TabletOfflineEvent[]> {
   const db = await openDb()
-  const count = await new Promise<number>((resolve, reject) => {
+  const pending = await new Promise<TabletOfflineEvent[]>((resolve, reject) => {
     const tx = db.transaction(EVENTS_STORE, 'readonly')
-    const req = tx.objectStore(EVENTS_STORE).count()
-    req.onsuccess = () => resolve(req.result)
+    const req = tx.objectStore(EVENTS_STORE).getAll()
+    req.onsuccess = () => resolve((req.result as TabletOfflineEvent[]).filter((item) => item.status === 'pending'))
     req.onerror = () => reject(req.error)
   })
   db.close()
-  return count
+  return pending
+}
+
+export async function markOfflineEventStatus(eventId: string, status: TabletOfflineEvent['status']): Promise<void> {
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(EVENTS_STORE, 'readwrite')
+    const store = tx.objectStore(EVENTS_STORE)
+    const req = store.get(eventId)
+    req.onsuccess = () => {
+      const item = req.result as TabletOfflineEvent | undefined
+      if (!item) {
+        resolve()
+        return
+      }
+      item.status = status
+      store.put(item)
+    }
+    req.onerror = () => reject(req.error)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+  db.close()
+}
+
+export async function countPendingOfflineEvents(): Promise<number> {
+  const pending = await listPendingOfflineEvents()
+  return pending.length
 }
