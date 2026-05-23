@@ -5,8 +5,6 @@ import { useAuth } from '../providers/AuthProvider'
 import { BranchProvider, useBranchContext } from '../providers/BranchProvider'
 import { NOTIFICATIONS_UPDATED_EVENT } from '../services/api/notifications'
 
-const ENABLE_BRANCH_MANAGEMENT = (import.meta.env.VITE_ENABLE_BRANCH_MANAGEMENT || 'false').toLowerCase() === 'true'
-
 const fullNavigation = [
   { to: '/admin', label: 'Resumen' },
   {
@@ -40,15 +38,14 @@ const fullNavigation = [
     ],
   },
   { to: '/admin/notificaciones', label: 'Notificaciones' },
-  ...(ENABLE_BRANCH_MANAGEMENT
-    ? [
-        {
-          label: 'Sucursales',
-          mainAdminOnly: true,
-          children: [{ to: '/admin/sucursales', label: 'Gestionar sucursales' }],
-        },
-      ]
-    : []),
+  {
+    label: 'Gestion de sucursales',
+    mainAdminOnly: true,
+    children: [
+      { to: '/admin/sucursales/editar', label: 'Editar sucursales' },
+      { to: '/admin/sucursales/crear', label: 'Crear sucursal' },
+    ],
+  },
   {
     label: 'Mensajeria',
     children: [
@@ -73,6 +70,8 @@ const fullNavigation = [
     children: [
       { to: '/admin/equipo/crear', label: 'Crear especialista' },
       { to: '/admin/equipo/gestionar', label: 'Gestionar especialistas' },
+      { to: '/admin/equipo/admin-sucursal/crear', label: 'Crear admin sucursal' },
+      { to: '/admin/equipo/admin-sucursal/gestionar', label: 'Gestionar admins sucursal' },
     ],
   },
 ] as const

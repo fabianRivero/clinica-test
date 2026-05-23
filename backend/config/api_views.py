@@ -38,6 +38,8 @@ from operations.models import (
     FichaCampo,
     FichaSeccion,
     Operacion,
+    BranchAdminAuditLog,
+    TabletKiosko,
 )
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 from config.client_api_views import (
@@ -54,6 +56,7 @@ from notifications.services import create_notification
 
 logger = logging.getLogger(__name__)
 IDEMPOTENCY_TTL_SECONDS = 60 * 60 * 24
+BRANCH_CREATE_WIZARD_SESSION_KEY = "admin_branch_create_wizard_draft"
 
 
 def _json(data, status=200):
@@ -178,6 +181,41 @@ def _branch_deactivation_impact(branch):
         "payments_pending": payments_pending,
         "processes_pending": processes_pending,
     }
+
+
+def _get_branch_admin_role():
+    role, _ = Rol.objects.get_or_create(rol="ADMIN_SUCURSAL")
+    return role
+
+
+def _branch_admin_item(user):
+    return {
+        "id": user.id,
+        "username": user.username,
+        "fullName": user.nombre_completo or user.username,
+        "email": user.email or "",
+        "ci": "",
+        "phone": "",
+        "isActive": bool(user.is_active),
+        "branchId": user.sucursal_id,
+        "branchName": user.sucursal.nombre if user.sucursal else "Inactivo",
+    }
+
+
+def _log_branch_admin_audit(*, request, branch, action, detail="", metadata=None):
+    BranchAdminAuditLog.objects.create(
+        branch=branch,
+        actor=request.user if request.user.is_authenticated else None,
+        action=action,
+        detail=detail,
+        metadata=metadata or {},
+    )
+
+
+def _active_branch_has_any_admin(branch):
+    has_main_admin = Usuario.objects.filter(rol__rol="ADMIN_PRINCIPAL", is_active=True, sucursal=branch).exists()
+    has_branch_admin = Usuario.objects.filter(rol__rol="ADMIN_SUCURSAL", is_active=True, sucursal=branch).exists()
+    return has_main_admin or has_branch_admin
 
 
 @require_POST
@@ -4112,6 +4150,107 @@ def admin_equipo(request):
     return _json(data)
 
 
+@require_GET
+@_admin_principal_required
+def admin_branch_admins_list(request):
+    admins = Usuario.objects.select_related("sucursal").filter(rol__rol="ADMIN_SUCURSAL").order_by("-is_active", "username")
+    return _json({"admins": [_branch_admin_item(admin) for admin in admins]})
+
+
+@require_POST
+@_admin_principal_required
+@transaction.atomic
+def admin_branch_admins_create(request):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    username = (payload.get("username") or "").strip()
+    primer_nombre = (payload.get("primerNombre") or "").strip()
+    apellido_paterno = (payload.get("apellidoPaterno") or "").strip()
+    password = payload.get("password") or ""
+    if not username or not primer_nombre or not apellido_paterno or not password:
+        return _json({"detail": "username, primerNombre, apellidoPaterno y password son obligatorios."}, status=400)
+    if Usuario.objects.filter(username=username).exists():
+        return _json({"detail": "Este nombre de usuario ya existe."}, status=409)
+
+    user = Usuario(
+        username=username,
+        email=(payload.get("email") or "").strip(),
+        primer_nombre=primer_nombre,
+        segundo_nombre=(payload.get("segundoNombre") or "").strip(),
+        apellido_paterno=apellido_paterno,
+        apellido_materno=(payload.get("apellidoMaterno") or "").strip(),
+        rol=_get_branch_admin_role(),
+        is_active=False,
+        sucursal=None,
+    )
+    user.set_password(password)
+    user.save()
+    return _json({"detail": "Administrador de sucursal creado como inactivo.", "admin": _branch_admin_item(user)}, status=201)
+
+
+@require_POST
+@_admin_principal_required
+@transaction.atomic
+def admin_branch_admins_update(request, user_id):
+    user = get_object_or_404(Usuario.objects.select_related("sucursal"), pk=user_id, rol__rol="ADMIN_SUCURSAL")
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    for field, key in (
+        ("email", "email"),
+        ("primer_nombre", "primerNombre"),
+        ("segundo_nombre", "segundoNombre"),
+        ("apellido_paterno", "apellidoPaterno"),
+        ("apellido_materno", "apellidoMaterno"),
+    ):
+        if key in payload:
+            setattr(user, field, (payload.get(key) or "").strip())
+    user.save(update_fields=["email", "primer_nombre", "segundo_nombre", "apellido_paterno", "apellido_materno", "updated_at"])
+    return _json({"detail": "Administrador de sucursal actualizado.", "admin": _branch_admin_item(user)})
+
+
+@require_POST
+@_admin_principal_required
+@transaction.atomic
+def admin_branch_admins_toggle(request, user_id):
+    user = get_object_or_404(Usuario.objects.select_related("sucursal"), pk=user_id, rol__rol="ADMIN_SUCURSAL")
+    payload = _load_payload(request) or {}
+    active = payload.get("active")
+    if not isinstance(active, bool):
+        return _json({"detail": "Debes indicar active true/false."}, status=400)
+    old_branch = user.sucursal
+    user.is_active = active
+    if not active:
+        if old_branch and old_branch.activa:
+            has_other_admin = Usuario.objects.filter(
+                rol__rol="ADMIN_SUCURSAL",
+                is_active=True,
+                sucursal=old_branch,
+            ).exclude(pk=user.pk).exists() or Usuario.objects.filter(
+                rol__rol="ADMIN_PRINCIPAL",
+                is_active=True,
+                sucursal=old_branch,
+            ).exists()
+            if not has_other_admin:
+                return _json({"detail": "No puedes inactivar este administrador porque la sucursal activa quedaría sin admin."}, status=409)
+        user.sucursal = None
+        user.save(update_fields=["is_active", "sucursal", "updated_at"])
+    else:
+        user.save(update_fields=["is_active", "updated_at"])
+    if old_branch:
+        _log_branch_admin_audit(
+            request=request,
+            branch=old_branch,
+            action=BranchAdminAuditLog.Action.TOGGLE_BRANCH_ADMIN,
+            detail=f"Estado de admin sucursal {user.username} actualizado a {'activo' if active else 'inactivo'}.",
+            metadata={"adminUserId": user.id, "active": active},
+        )
+    return _json({"detail": "Estado actualizado.", "admin": _branch_admin_item(user)})
+
+
 @require_POST
 @_admin_required
 @transaction.atomic
@@ -4423,6 +4562,164 @@ def admin_branch_management_list(request):
 
 @require_POST
 @_admin_principal_required
+def admin_branch_wizard_initialize(request):
+    request.session[BRANCH_CREATE_WIZARD_SESSION_KEY] = {}
+    request.session.modified = True
+    return _json({"detail": "Wizard de sucursal inicializado.", "draft": {}})
+
+
+@require_POST
+@_admin_principal_required
+def admin_branch_wizard_step1(request):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+    data, errors = _branch_payload(payload, partial=False)
+    if errors:
+        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+    draft = request.session.get(BRANCH_CREATE_WIZARD_SESSION_KEY) or {}
+    draft["branch"] = data
+    request.session[BRANCH_CREATE_WIZARD_SESSION_KEY] = draft
+    request.session.modified = True
+    return _json({"detail": "Paso 1 guardado.", "draft": draft})
+
+
+@require_POST
+@_admin_principal_required
+def admin_branch_wizard_step2(request):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+    draft = request.session.get(BRANCH_CREATE_WIZARD_SESSION_KEY) or {}
+    if not draft.get("branch"):
+        return _json({"detail": "Debes completar el paso 1 primero."}, status=409)
+
+    mode = (payload.get("mode") or "").strip()
+    if mode not in {"existing_inactive", "create_new"}:
+        return _json({"detail": "mode debe ser existing_inactive o create_new."}, status=400)
+
+    if mode == "existing_inactive":
+        admin_id = payload.get("adminUserId")
+        if not admin_id:
+            return _json({"detail": "adminUserId es obligatorio para existing_inactive."}, status=400)
+        admin_user = get_object_or_404(Usuario, pk=admin_id)
+        if not (admin_user.rol and admin_user.rol.rol == "ADMIN_SUCURSAL"):
+            return _json({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
+        if admin_user.is_active or admin_user.sucursal_id is not None:
+            return _json({"detail": "El admin seleccionado debe estar inactivo y sin sucursal."}, status=409)
+        draft["admin"] = {"mode": "existing_inactive", "adminUserId": admin_user.id}
+    else:
+        username = (payload.get("username") or "").strip()
+        primer_nombre = (payload.get("primerNombre") or "").strip()
+        apellido_paterno = (payload.get("apellidoPaterno") or "").strip()
+        password = payload.get("password") or ""
+        ci = (payload.get("ci") or "").strip()
+        errors = {}
+        if not username:
+            errors["username"] = "El nombre de usuario es obligatorio."
+        if Usuario.objects.filter(username=username).exists():
+            errors["username"] = "Este nombre de usuario ya existe."
+        if not primer_nombre:
+            errors["primerNombre"] = "El primer nombre es obligatorio."
+        if not apellido_paterno:
+            errors["apellidoPaterno"] = "El apellido paterno es obligatorio."
+        if not ci:
+            errors["ci"] = "El CI es obligatorio."
+        if not password:
+            errors["password"] = "La contraseña inicial es obligatoria."
+        if errors:
+            return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        draft["admin"] = {
+            "mode": "create_new",
+            "username": username,
+            "email": (payload.get("email") or "").strip(),
+            "primerNombre": primer_nombre,
+            "segundoNombre": (payload.get("segundoNombre") or "").strip(),
+            "apellidoPaterno": apellido_paterno,
+            "apellidoMaterno": (payload.get("apellidoMaterno") or "").strip(),
+            "ci": ci,
+            "telefono": (payload.get("telefono") or "").strip(),
+            "password": password,
+        }
+
+    request.session[BRANCH_CREATE_WIZARD_SESSION_KEY] = draft
+    request.session.modified = True
+    return _json({"detail": "Paso 2 guardado.", "draft": draft})
+
+
+@require_POST
+@_admin_principal_required
+@transaction.atomic
+def admin_branch_wizard_finalize(request):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+    draft = request.session.get(BRANCH_CREATE_WIZARD_SESSION_KEY) or {}
+    branch_data = draft.get("branch")
+    admin_data = draft.get("admin")
+    if not branch_data or not admin_data:
+        return _json({"detail": "Debes completar los pasos 1 y 2 antes de finalizar."}, status=409)
+
+    codigo = (payload.get("codigo") or "").strip()
+    nombre = (payload.get("nombre") or "").strip()
+    clave = (payload.get("clave") or "").strip()
+    if not codigo or not nombre or not clave:
+        return _json({"detail": "codigo, nombre y clave de tablet son obligatorios."}, status=400)
+    if TabletKiosko.objects.filter(codigo=codigo).exists():
+        return _json({"detail": "El código de tablet ya existe."}, status=409)
+
+    branch = Sucursal.objects.create(**branch_data, activa=True)
+    if admin_data["mode"] == "existing_inactive":
+        admin_user = get_object_or_404(Usuario, pk=admin_data["adminUserId"])
+        admin_user.is_active = True
+        admin_user.sucursal = branch
+        admin_user.save(update_fields=["is_active", "sucursal", "updated_at"])
+    else:
+        admin_user = Usuario(
+            username=admin_data["username"],
+            email=admin_data.get("email", ""),
+            primer_nombre=admin_data["primerNombre"],
+            segundo_nombre=admin_data.get("segundoNombre", ""),
+            apellido_paterno=admin_data["apellidoPaterno"],
+            apellido_materno=admin_data.get("apellidoMaterno", ""),
+            rol=_get_branch_admin_role(),
+            sucursal=branch,
+            is_active=True,
+        )
+        admin_user.set_password(admin_data["password"])
+        admin_user.save()
+
+    kiosko = TabletKiosko(
+        codigo=codigo,
+        nombre=nombre,
+        sucursal=branch,
+        activo=True,
+    )
+    kiosko.set_clave(clave)
+    kiosko.save()
+    _log_branch_admin_audit(
+        request=request,
+        branch=branch,
+        action=BranchAdminAuditLog.Action.CREATE_BRANCH_WIZARD,
+        detail="Sucursal creada via wizard con admin y tablet.",
+        metadata={"adminUserId": admin_user.id, "tabletKioskId": kiosko.id},
+    )
+
+    request.session.pop(BRANCH_CREATE_WIZARD_SESSION_KEY, None)
+    request.session.modified = True
+    return _json(
+        {
+            "detail": "Sucursal creada correctamente con administrador y tablet.",
+            "branchId": branch.id,
+            "adminUserId": admin_user.id,
+            "tabletKioskId": kiosko.id,
+        },
+        status=201,
+    )
+
+
+@require_POST
+@_admin_principal_required
 @transaction.atomic
 def admin_branch_management_create(request):
     cache_key, error_response = _idempotency_cache_key(request, "branch-create")
@@ -4482,8 +4779,17 @@ def admin_branch_management_toggle(request, branch_id):
                 {"detail": "La sucursal tiene pendientes operativos.", "impact": impact, "requiresConfirmation": True},
                 status=409,
             )
+        if active is True and not _active_branch_has_any_admin(branch):
+            return _json({"detail": "No puedes activar una sucursal sin un administrador asignado."}, status=409)
         branch.activa = active
         branch.save(update_fields=["activa", "updated_at"])
+        _log_branch_admin_audit(
+            request=request,
+            branch=branch,
+            action=BranchAdminAuditLog.Action.TOGGLE_BRANCH,
+            detail=f"Sucursal {'activada' if active else 'desactivada'}.",
+            metadata={"active": active, "force": force, "impact": impact},
+        )
         return _json(
             {
                 "detail": "Sucursal activada correctamente." if active else "Sucursal desactivada correctamente.",
@@ -4512,13 +4818,90 @@ def admin_branch_management_change_admin(request, branch_id):
         new_admin = get_object_or_404(Usuario, pk=new_admin_id)
         if not (new_admin.rol and new_admin.rol.rol == "ADMIN_SUCURSAL"):
             return _json({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
-        if not new_admin.is_active:
-            return _json({"detail": "El admin de sucursal debe estar activo."}, status=400)
+        current_main_admin = Usuario.objects.filter(
+            rol__rol="ADMIN_PRINCIPAL",
+            sucursal=branch,
+            is_active=True,
+        ).first()
+        current_admin = (
+            Usuario.objects.filter(rol__rol="ADMIN_SUCURSAL", sucursal=branch, is_active=True)
+            .exclude(pk=new_admin.pk)
+            .first()
+        )
+        previous_branch = new_admin.sucursal
+        selected_is_inactive = (not new_admin.is_active) or (new_admin.sucursal_id is None)
+
+        if current_main_admin:
+            if selected_is_inactive:
+                return _json(
+                    {"detail": "El administrador principal solo puede intercambiar con un admin de sucursal activo y con sucursal."},
+                    status=409,
+                )
+            if not previous_branch:
+                return _json(
+                    {"detail": "El admin de sucursal seleccionado debe tener una sucursal activa para intercambiar con el admin principal."},
+                    status=409,
+                )
+            new_admin.sucursal = branch
+            new_admin.save(update_fields=["sucursal", "updated_at"])
+            current_main_admin.sucursal = previous_branch
+            current_main_admin.is_active = True
+            current_main_admin.save(update_fields=["sucursal", "is_active", "updated_at"])
+            _log_branch_admin_audit(
+                request=request,
+                branch=branch,
+                action=BranchAdminAuditLog.Action.CHANGE_ADMIN,
+                detail="Intercambio entre admin principal y admin de sucursal.",
+                metadata={
+                    "mainAdminUserId": current_main_admin.id,
+                    "newAdminUserId": new_admin.id,
+                    "fromBranchId": previous_branch.id,
+                    "mode": "swap_with_main_admin",
+                },
+            )
+            return _json({"detail": "Intercambio con administrador principal realizado correctamente.", "mode": "swap_with_main_admin"})
+
+        if selected_is_inactive:
+            new_admin.is_active = True
+            new_admin.sucursal = branch
+            new_admin.save(update_fields=["is_active", "sucursal", "updated_at"])
+            if current_admin:
+                current_admin.is_active = False
+                current_admin.sucursal = None
+                current_admin.save(update_fields=["is_active", "sucursal", "updated_at"])
+            _log_branch_admin_audit(
+                request=request,
+                branch=branch,
+                action=BranchAdminAuditLog.Action.CHANGE_ADMIN,
+                detail="Reemplazo por admin inactivo.",
+                metadata={"newAdminUserId": new_admin.id, "previousAdminUserId": current_admin.id if current_admin else None, "mode": "replace_with_inactive"},
+            )
+            return _json({"detail": "Administrador inactivo activado y asignado correctamente.", "mode": "replace_with_inactive"})
+
+        if new_admin.sucursal_id == branch.id:
+            return _json({"detail": "El administrador ya está asignado a esta sucursal.", "mode": "assign"})
+
         new_admin.sucursal = branch
         new_admin.save(update_fields=["sucursal", "updated_at"])
-        if not Usuario.objects.filter(sucursal=branch, rol__rol="ADMIN_SUCURSAL", is_active=True).exists():
-            return _json({"detail": "La sucursal debe mantener al menos un admin activo."}, status=400)
-        return _json({"detail": "Administrador de sucursal actualizado correctamente."})
+        if current_admin and previous_branch and previous_branch.id != branch.id:
+            current_admin.sucursal = previous_branch
+            current_admin.save(update_fields=["sucursal", "updated_at"])
+            _log_branch_admin_audit(
+                request=request,
+                branch=branch,
+                action=BranchAdminAuditLog.Action.CHANGE_ADMIN,
+                detail="Intercambio de administradores entre sucursales.",
+                metadata={"newAdminUserId": new_admin.id, "previousAdminUserId": current_admin.id, "fromBranchId": previous_branch.id, "mode": "swap"},
+            )
+            return _json({"detail": "Administradores intercambiados correctamente.", "mode": "swap"})
+        _log_branch_admin_audit(
+            request=request,
+            branch=branch,
+            action=BranchAdminAuditLog.Action.CHANGE_ADMIN,
+            detail="Asignación directa de administrador.",
+            metadata={"newAdminUserId": new_admin.id, "mode": "assign"},
+        )
+        return _json({"detail": "Administrador de sucursal actualizado correctamente.", "mode": "assign"})
     return _idempotency_replay_or_store(cache_key, _change_admin)
 
 
@@ -4527,3 +4910,26 @@ def admin_branch_management_change_admin(request, branch_id):
 def admin_branch_management_deactivation_impact(request, branch_id):
     branch = get_object_or_404(Sucursal, pk=branch_id)
     return _json({"branchId": branch.id, "impact": _branch_deactivation_impact(branch)})
+
+
+@require_GET
+@_admin_principal_required
+def admin_branch_admin_audit_logs(request):
+    branch_id = request.GET.get("branchId")
+    logs = BranchAdminAuditLog.objects.select_related("branch", "actor")
+    if branch_id:
+        logs = logs.filter(branch_id=branch_id)
+    items = [
+        {
+            "id": log.id,
+            "createdAt": log.created_at.isoformat(),
+            "action": log.action,
+            "detail": log.detail,
+            "branchId": log.branch_id,
+            "branchName": log.branch.nombre,
+            "actor": log.actor.nombre_completo if log.actor else "Sistema",
+            "metadata": log.metadata or {},
+        }
+        for log in logs[:200]
+    ]
+    return _json({"items": items, "total": len(items)})

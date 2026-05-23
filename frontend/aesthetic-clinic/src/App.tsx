@@ -29,6 +29,7 @@ import { AdminProspectCreatePage } from './pages/admin/AdminProspectCreatePage'
 import { AdminProspectsPage } from './pages/admin/AdminProspectsPage'
 import { AdminStaffCreatePage, AdminStaffManagePage } from './pages/admin/AdminStaffPage'
 import { AdminBranchesPage } from './pages/admin/AdminBranchesPage'
+import { AdminBranchAdminsPage } from './pages/admin/AdminBranchAdminsPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { TabletKioskPage } from './pages/tablet/TabletKioskPage'
 import { ClientDashboardPage } from './pages/client/ClientDashboardPage'
@@ -41,8 +42,6 @@ import { SpecialistMessageDetailPage, SpecialistMessagesCreatePage, SpecialistMe
 import { useAuth } from './providers/AuthProvider'
 import { NotificationsPage } from './pages/shared/NotificationsPage'
 import type { RoleKey } from './types/auth'
-
-const ENABLE_BRANCH_MANAGEMENT = (import.meta.env.VITE_ENABLE_BRANCH_MANAGEMENT || 'false').toLowerCase() === 'true'
 
 function AppLoadingScreen() {
   return (
@@ -151,11 +150,12 @@ function App() {
           <Route path="equipo" element={<Navigate to="/admin/equipo/gestionar" replace />} />
           <Route path="equipo/crear" element={<AdminStaffCreatePage />} />
           <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />
+          <Route path="equipo/admin-sucursal/crear" element={<AdminBranchAdminsPage view="create" />} />
+          <Route path="equipo/admin-sucursal/gestionar" element={<AdminBranchAdminsPage view="manage" />} />
           <Route path="notificaciones" element={<NotificationsPage />} />
-          <Route
-            path="sucursales"
-            element={ENABLE_BRANCH_MANAGEMENT ? <AdminBranchesPage /> : <Navigate to="/admin" replace />}
-          />
+          <Route path="sucursales" element={<Navigate to="/admin/sucursales/editar" replace />} />
+          <Route path="sucursales/editar" element={<AdminBranchesPage view="edit" />} />
+          <Route path="sucursales/crear" element={<AdminBranchesPage view="create" />} />
         </Route>
       </Route>
       <Route element={<RequireRole allowedRoles={['TRABAJADOR']} />}>
