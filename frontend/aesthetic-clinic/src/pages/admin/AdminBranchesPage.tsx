@@ -118,7 +118,7 @@ export function AdminBranchesPage() {
           <tbody>
             {rows.map((row) => (
               <tr key={row.id}>
-                <td>{row.nombre}</td>
+                <td><input className="input" defaultValue={row.nombre} onBlur={(e) => void updateAdminBranch(row.id, { nombre: e.target.value })} /></td>
                 <td><input className="input" defaultValue={row.ciudad} onBlur={(e) => void updateAdminBranch(row.id, { ciudad: e.target.value })} /></td>
                 <td><input className="input" defaultValue={row.direccion} onBlur={(e) => void updateAdminBranch(row.id, { direccion: e.target.value })} /></td>
                 <td>{row.admin?.nombre || '-'}</td>
