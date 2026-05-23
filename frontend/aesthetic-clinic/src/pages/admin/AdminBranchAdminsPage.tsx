@@ -6,7 +6,7 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useNotifications } from '../../providers/NotificationProvider'
 
-import { createAdminBranchAdmin, getAdminBranchAdmins, toggleAdminBranchAdmin, updateAdminBranchAdmin } from '../../services/api/admin'
+import { createAdminBranchAdmin, getAdminBranchAdmins, updateAdminBranchAdmin } from '../../services/api/admin'
 
 type AdminItem = {
   id: number
@@ -63,18 +63,6 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
         message: err instanceof Error ? err.message : 'No se pudo crear admin de sucursal.',
         tone: 'danger',
       })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleToggle(row: AdminItem) {
-    setSaving(true)
-    try {
-      await toggleAdminBranchAdmin(row.id, !row.isActive)
-      await load()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo cambiar estado')
     } finally {
       setSaving(false)
     }
@@ -150,7 +138,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
         <SectionCard
           eyebrow="Edicion"
           title="Admins de sucursal actuales"
-          description="Seguimiento de admins creados, sucursal asignada y estado de actividad."
+          description="Seguimiento de admins creados y sucursal asignada. El estado se gestiona al asignar o retirar sucursal."
         >
           {rows.length ? (
             <div className="catalog-admin-grid">
@@ -178,11 +166,6 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
                       />
                     </label>
 
-                    <div className="catalog-admin-card__actions">
-                      <button className="button button--ghost button--compact" type="button" onClick={() => void handleToggle(row)}>
-                        {row.isActive ? 'Inactivar' : 'Activar'}
-                      </button>
-                    </div>
                   </div>
                 </article>
               ))}
