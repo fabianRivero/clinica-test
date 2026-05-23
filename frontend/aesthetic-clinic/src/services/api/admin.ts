@@ -689,6 +689,14 @@ export function toggleAdminBranch(branchId: number, active: boolean, force = fal
   )
 }
 
+export function changeAdminBranchManager(branchId: number, newAdminUserId: number) {
+  return requestJsonWithBodyIdempotent<{ detail: string; mode?: 'replace_with_inactive' | 'swap' | 'assign' }>(
+    `/api/admin/sucursales/${branchId}/cambiar-admin/`,
+    { newAdminUserId },
+    crypto.randomUUID(),
+  )
+}
+
 // Client Reactivation
 export function initializeAdminClientReactivation(clientId: string) {
   return requestJson<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/initialize/`)
