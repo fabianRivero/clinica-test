@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { AdminBranchTabs } from '../../components/admin/AdminBranchTabs'
 import { createAdminBranch, getAdminBranchDeactivationImpact, getAdminBranchesManagement, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
 
 type BranchRow = {
@@ -11,7 +12,7 @@ type BranchRow = {
   admin: { id: number; nombre: string; username: string } | null
 }
 
-export function AdminBranchesPage() {
+export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' }) {
   const [rows, setRows] = useState<BranchRow[]>([])
   const [status, setStatus] = useState<'all' | 'active' | 'inactive'>('all')
   const [city, setCity] = useState('')
@@ -83,9 +84,11 @@ export function AdminBranchesPage() {
         <p>Modulo para administracion general de sucursales.</p>
       </header>
 
+      <AdminBranchTabs />
+
       {error ? <p className="error-text">{error}</p> : null}
 
-      <form className="card" onSubmit={handleCreate}>
+      {view === 'create' ? <form className="card" onSubmit={handleCreate}>
         <h3>Crear sucursal</h3>
         <div className="form-grid form-grid--three">
           <input className="input" placeholder="Nombre" value={newBranch.nombre} onChange={(e) => setNewBranch((v) => ({ ...v, nombre: e.target.value }))} />
@@ -93,9 +96,9 @@ export function AdminBranchesPage() {
           <input className="input" placeholder="Direccion" value={newBranch.direccion} onChange={(e) => setNewBranch((v) => ({ ...v, direccion: e.target.value }))} />
         </div>
         <button className="button" disabled={saving} type="submit">Crear</button>
-      </form>
+      </form> : null}
 
-      <div className="card">
+      {view === 'edit' ? <><div className="card">
         <h3>Filtros</h3>
         <div className="form-grid form-grid--four">
           <select className="input" value={status} onChange={(e) => setStatus(e.target.value as 'all' | 'active' | 'inactive')}>
@@ -128,7 +131,7 @@ export function AdminBranchesPage() {
             ))}
           </tbody>
         </table>
-      </div>
+      </div></> : null}
     </section>
   )
 }

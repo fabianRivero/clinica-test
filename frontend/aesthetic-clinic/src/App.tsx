@@ -150,10 +150,9 @@ function App() {
           <Route path="equipo/crear" element={<AdminStaffCreatePage />} />
           <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />
           <Route path="notificaciones" element={<NotificationsPage />} />
-          <Route
-            path="sucursales"
-            element={<AdminBranchesPage />}
-          />
+          <Route path="sucursales" element={<Navigate to="/admin/sucursales/editar" replace />} />
+          <Route path="sucursales/editar" element={<AdminBranchesPage view="edit" />} />
+          <Route path="sucursales/crear" element={<AdminBranchesPage view="create" />} />
         </Route>
       </Route>
       <Route element={<RequireRole allowedRoles={['TRABAJADOR']} />}>
