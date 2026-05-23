@@ -212,6 +212,12 @@ def _log_branch_admin_audit(*, request, branch, action, detail="", metadata=None
     )
 
 
+def _active_branch_has_any_admin(branch):
+    has_main_admin = Usuario.objects.filter(rol__rol="ADMIN_PRINCIPAL", is_active=True, sucursal=branch).exists()
+    has_branch_admin = Usuario.objects.filter(rol__rol="ADMIN_SUCURSAL", is_active=True, sucursal=branch).exists()
+    return has_main_admin or has_branch_admin
+
+
 @require_POST
 @_admin_required
 def admin_set_session_branch(request):
@@ -4215,16 +4221,29 @@ def admin_branch_admins_toggle(request, user_id):
     active = payload.get("active")
     if not isinstance(active, bool):
         return _json({"detail": "Debes indicar active true/false."}, status=400)
+    old_branch = user.sucursal
     user.is_active = active
     if not active:
+        if old_branch and old_branch.activa:
+            has_other_admin = Usuario.objects.filter(
+                rol__rol="ADMIN_SUCURSAL",
+                is_active=True,
+                sucursal=old_branch,
+            ).exclude(pk=user.pk).exists() or Usuario.objects.filter(
+                rol__rol="ADMIN_PRINCIPAL",
+                is_active=True,
+                sucursal=old_branch,
+            ).exists()
+            if not has_other_admin:
+                return _json({"detail": "No puedes inactivar este administrador porque la sucursal activa quedaría sin admin."}, status=409)
         user.sucursal = None
         user.save(update_fields=["is_active", "sucursal", "updated_at"])
     else:
         user.save(update_fields=["is_active", "updated_at"])
-    if user.sucursal:
+    if old_branch:
         _log_branch_admin_audit(
             request=request,
-            branch=user.sucursal,
+            branch=old_branch,
             action=BranchAdminAuditLog.Action.TOGGLE_BRANCH_ADMIN,
             detail=f"Estado de admin sucursal {user.username} actualizado a {'activo' if active else 'inactivo'}.",
             metadata={"adminUserId": user.id, "active": active},
@@ -4760,6 +4779,8 @@ def admin_branch_management_toggle(request, branch_id):
                 {"detail": "La sucursal tiene pendientes operativos.", "impact": impact, "requiresConfirmation": True},
                 status=409,
             )
+        if active is True and not _active_branch_has_any_admin(branch):
+            return _json({"detail": "No puedes activar una sucursal sin un administrador asignado."}, status=409)
         branch.activa = active
         branch.save(update_fields=["activa", "updated_at"])
         _log_branch_admin_audit(

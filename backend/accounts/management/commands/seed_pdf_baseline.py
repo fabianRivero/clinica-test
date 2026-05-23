@@ -179,6 +179,23 @@ class Command(BaseCommand):
         admin_suc.set_password("admin123456")
         admin_suc.save()
 
+        # Admin Sucursal Norte (garantiza cobertura de sucursales activas)
+        admin_suc_norte, created = Usuario.objects.update_or_create(
+            username="admin.sucursal.norte",
+            defaults={
+                "primer_nombre": "Admin",
+                "apellido_paterno": "Sucursal Norte",
+                "email": "admin.sucursal.norte@clinic.local",
+                "rol": roles["ADMIN_SUCURSAL"],
+                "sucursal": branches["A"],
+                "is_active": True,
+                "is_staff": True,
+                "is_superuser": False,
+            },
+        )
+        admin_suc_norte.set_password("admin123456")
+        admin_suc_norte.save()
+
     def _seed_specialist_users(self, worker_role, branches):
         user_specs = {
             "lucia.laser": {
