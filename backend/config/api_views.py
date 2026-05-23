@@ -187,6 +187,20 @@ def _get_branch_admin_role():
     return role
 
 
+def _branch_admin_item(user):
+    return {
+        "id": user.id,
+        "username": user.username,
+        "fullName": user.nombre_completo or user.username,
+        "email": user.email or "",
+        "ci": "",
+        "phone": "",
+        "isActive": bool(user.is_active),
+        "branchId": user.sucursal_id,
+        "branchName": user.sucursal.nombre if user.sucursal else "Inactivo",
+    }
+
+
 @require_POST
 @_admin_required
 def admin_set_session_branch(request):
@@ -4117,6 +4131,86 @@ def admin_equipo(request):
         ],
     }
     return _json(data)
+
+
+@require_GET
+@_admin_principal_required
+def admin_branch_admins_list(request):
+    admins = Usuario.objects.select_related("sucursal").filter(rol__rol="ADMIN_SUCURSAL").order_by("-is_active", "username")
+    return _json({"admins": [_branch_admin_item(admin) for admin in admins]})
+
+
+@require_POST
+@_admin_principal_required
+@transaction.atomic
+def admin_branch_admins_create(request):
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    username = (payload.get("username") or "").strip()
+    primer_nombre = (payload.get("primerNombre") or "").strip()
+    apellido_paterno = (payload.get("apellidoPaterno") or "").strip()
+    password = payload.get("password") or ""
+    if not username or not primer_nombre or not apellido_paterno or not password:
+        return _json({"detail": "username, primerNombre, apellidoPaterno y password son obligatorios."}, status=400)
+    if Usuario.objects.filter(username=username).exists():
+        return _json({"detail": "Este nombre de usuario ya existe."}, status=409)
+
+    user = Usuario(
+        username=username,
+        email=(payload.get("email") or "").strip(),
+        primer_nombre=primer_nombre,
+        segundo_nombre=(payload.get("segundoNombre") or "").strip(),
+        apellido_paterno=apellido_paterno,
+        apellido_materno=(payload.get("apellidoMaterno") or "").strip(),
+        rol=_get_branch_admin_role(),
+        is_active=False,
+        sucursal=None,
+    )
+    user.set_password(password)
+    user.save()
+    return _json({"detail": "Administrador de sucursal creado como inactivo.", "admin": _branch_admin_item(user)}, status=201)
+
+
+@require_POST
+@_admin_principal_required
+@transaction.atomic
+def admin_branch_admins_update(request, user_id):
+    user = get_object_or_404(Usuario.objects.select_related("sucursal"), pk=user_id, rol__rol="ADMIN_SUCURSAL")
+    payload = _load_payload(request)
+    if payload is None:
+        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    for field, key in (
+        ("email", "email"),
+        ("primer_nombre", "primerNombre"),
+        ("segundo_nombre", "segundoNombre"),
+        ("apellido_paterno", "apellidoPaterno"),
+        ("apellido_materno", "apellidoMaterno"),
+    ):
+        if key in payload:
+            setattr(user, field, (payload.get(key) or "").strip())
+    user.save(update_fields=["email", "primer_nombre", "segundo_nombre", "apellido_paterno", "apellido_materno", "updated_at"])
+    return _json({"detail": "Administrador de sucursal actualizado.", "admin": _branch_admin_item(user)})
+
+
+@require_POST
+@_admin_principal_required
+@transaction.atomic
+def admin_branch_admins_toggle(request, user_id):
+    user = get_object_or_404(Usuario.objects.select_related("sucursal"), pk=user_id, rol__rol="ADMIN_SUCURSAL")
+    payload = _load_payload(request) or {}
+    active = payload.get("active")
+    if not isinstance(active, bool):
+        return _json({"detail": "Debes indicar active true/false."}, status=400)
+    user.is_active = active
+    if not active:
+        user.sucursal = None
+        user.save(update_fields=["is_active", "sucursal", "updated_at"])
+    else:
+        user.save(update_fields=["is_active", "updated_at"])
+    return _json({"detail": "Estado actualizado.", "admin": _branch_admin_item(user)})
 
 
 @require_POST

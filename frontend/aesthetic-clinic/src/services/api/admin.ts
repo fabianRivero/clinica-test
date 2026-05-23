@@ -697,6 +697,30 @@ export function changeAdminBranchManager(branchId: number, newAdminUserId: numbe
   )
 }
 
+export function getAdminBranchAdmins() {
+  return requestJson<{ admins: Array<{ id: number; username: string; fullName: string; email: string; isActive: boolean; branchId: number | null; branchName: string }> }>('/api/admin/equipo/admins-sucursal/')
+}
+
+export function createAdminBranchAdmin(payload: {
+  username: string
+  email?: string
+  primerNombre: string
+  segundoNombre?: string
+  apellidoPaterno: string
+  apellidoMaterno?: string
+  password: string
+}) {
+  return requestJsonWithBody<{ detail: string }>('/api/admin/equipo/admins-sucursal/crear/', payload)
+}
+
+export function updateAdminBranchAdmin(userId: number, payload: Partial<{ email: string; primerNombre: string; segundoNombre: string; apellidoPaterno: string; apellidoMaterno: string }>) {
+  return requestJsonWithBody<{ detail: string }>(`/api/admin/equipo/admins-sucursal/${userId}/actualizar/`, payload)
+}
+
+export function toggleAdminBranchAdmin(userId: number, active: boolean) {
+  return requestJsonWithBody<{ detail: string }>(`/api/admin/equipo/admins-sucursal/${userId}/estado/`, { active })
+}
+
 // Client Reactivation
 export function initializeAdminClientReactivation(clientId: string) {
   return requestJson<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/initialize/`)

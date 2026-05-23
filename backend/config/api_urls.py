@@ -70,6 +70,10 @@ from config.api_views import (
     admin_branch_management_toggle,
     admin_branch_management_change_admin,
     admin_branch_management_deactivation_impact,
+    admin_branch_admins_list,
+    admin_branch_admins_create,
+    admin_branch_admins_update,
+    admin_branch_admins_toggle,
 )
 from config.prospect_conversion_views import (
     admin_prospect_conversion_cancel,
@@ -323,6 +327,10 @@ urlpatterns = [
         name="admin-catalogo-state-api",
     ),
     path("equipo/", admin_equipo, name="admin-equipo-api"),
+    path("equipo/admins-sucursal/", admin_branch_admins_list, name="admin-branch-admins-list-api"),
+    path("equipo/admins-sucursal/crear/", admin_branch_admins_create, name="admin-branch-admins-create-api"),
+    path("equipo/admins-sucursal/<int:user_id>/actualizar/", admin_branch_admins_update, name="admin-branch-admins-update-api"),
+    path("equipo/admins-sucursal/<int:user_id>/estado/", admin_branch_admins_toggle, name="admin-branch-admins-toggle-api"),
     path("equipo/crear/", admin_crear_especialista, name="admin-equipo-create-api"),
     path(
         "equipo/<int:specialist_id>/actualizar/",

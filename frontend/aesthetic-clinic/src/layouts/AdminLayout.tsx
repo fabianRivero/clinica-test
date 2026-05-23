@@ -67,6 +67,8 @@ const fullNavigation = [
     children: [
       { to: '/admin/equipo/crear', label: 'Crear especialista' },
       { to: '/admin/equipo/gestionar', label: 'Gestionar especialistas' },
+      { to: '/admin/equipo/admin-sucursal/crear', label: 'Crear admin sucursal' },
+      { to: '/admin/equipo/admin-sucursal/gestionar', label: 'Gestionar admins sucursal' },
     ],
   },
 ] as const
