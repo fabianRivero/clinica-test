@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { AdminStaffTabs } from '../../components/admin/AdminStaffTabs'
 import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
@@ -6,7 +7,7 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useNotifications } from '../../providers/NotificationProvider'
 
-import { createAdminBranchAdmin, getAdminBranchAdmins, toggleAdminBranchAdmin, updateAdminBranchAdmin } from '../../services/api/admin'
+import { createAdminBranchAdmin, getAdminBranchAdmins } from '../../services/api/admin'
 
 type AdminItem = {
   id: number
@@ -20,6 +21,7 @@ type AdminItem = {
 
 export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
   const { showNotification } = useNotifications()
+  const navigate = useNavigate()
   const [rows, setRows] = useState<AdminItem[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -32,6 +34,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
     apellidoPaterno: '',
     apellidoMaterno: '',
     password: '',
+    fechaNacimiento: '',
   })
 
   async function load() {
@@ -54,7 +57,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
     try {
       await createAdminBranchAdmin(form)
       showNotification({ title: 'Administrador creado', message: 'El admin de sucursal se creo correctamente.', tone: 'success' })
-      setForm({ username: '', email: '', telefono: '', primerNombre: '', segundoNombre: '', apellidoPaterno: '', apellidoMaterno: '', password: '' })
+      setForm({ username: '', email: '', telefono: '', primerNombre: '', segundoNombre: '', apellidoPaterno: '', apellidoMaterno: '', password: '', fechaNacimiento: '' })
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo crear admin de sucursal')
@@ -68,26 +71,6 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
     }
   }
 
-  async function handleToggle(row: AdminItem) {
-    setSaving(true)
-    try {
-      await toggleAdminBranchAdmin(row.id, !row.isActive)
-      await load()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo cambiar estado')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleQuickEmailSave(row: AdminItem, email: string) {
-    try {
-      await updateAdminBranchAdmin(row.id, { email })
-      await load()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo actualizar admin')
-    }
-  }
 
   return (
     <section className="page-stack">
@@ -113,7 +96,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
             </label>
             <label className="field">
               <span>Email</span>
-              <input className="input" value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} />
+              <input className="input" type="email" value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} />
             </label>
             <label className="field">
               <span>Contraseña <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
@@ -137,7 +120,11 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
             </label>
             <label className="field">
               <span>Telefono</span>
-              <input className="input" value={form.telefono} onChange={(e) => setForm((v) => ({ ...v, telefono: e.target.value }))} />
+              <input className="input" type="tel" inputMode="numeric" pattern="[0-9]+" value={form.telefono} onChange={(e) => setForm((v) => ({ ...v, telefono: e.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Fecha de nacimiento <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+              <input className="input" type="date" required value={form.fechaNacimiento} onChange={(e) => setForm((v) => ({ ...v, fechaNacimiento: e.target.value }))} />
             </label>
           <div className="form-actions field--full">
             <button className="button button--primary" type="submit" disabled={saving}>Crear admin sucursal</button>
@@ -150,7 +137,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
         <SectionCard
           eyebrow="Edicion"
           title="Admins de sucursal actuales"
-          description="Seguimiento de admins creados, sucursal asignada y estado de actividad."
+          description="Seguimiento de admins creados y sucursal asignada. El estado se gestiona al asignar o retirar sucursal."
         >
           {rows.length ? (
             <div className="catalog-admin-grid">
@@ -169,20 +156,10 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
                     <div className="table-muted">Usuario: {row.username}</div>
                     <div className="table-muted">Sucursal: {row.branchName || 'Sin sucursal'}</div>
 
-                    <label className="field field--full">
-                      <span>Email</span>
-                      <input
-                        className="input"
-                        defaultValue={row.email}
-                        onBlur={(e) => void handleQuickEmailSave(row, e.target.value)}
-                      />
-                    </label>
-
                     <div className="catalog-admin-card__actions">
-                      <button className="button button--ghost button--compact" type="button" onClick={() => void handleToggle(row)}>
-                        {row.isActive ? 'Inactivar' : 'Activar'}
-                      </button>
+                      <button className="button button--ghost button--compact" type="button" onClick={() => navigate(`/admin/equipo/admin-sucursal/${row.id}`)}>Detalles</button>
                     </div>
+
                   </div>
                 </article>
               ))}

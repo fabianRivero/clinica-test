@@ -30,6 +30,8 @@ class Usuario(AbstractUser, TimeStampedModel):
         null=True,
         blank=True,
     )
+    telefono = models.CharField(max_length=30, blank=True)
+    fecha_nacimiento = models.DateField(null=True, blank=True)
     sucursal = models.ForeignKey(
         "catalogs.Sucursal",
         on_delete=models.SET_NULL,
