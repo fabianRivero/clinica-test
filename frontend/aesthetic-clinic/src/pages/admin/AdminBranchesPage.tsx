@@ -341,7 +341,13 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
             <select className="input" value={newAdminUserId} onChange={(e) => setNewAdminUserId(e.target.value)}>
               <option value="">Seleccionar admin</option>
               {branchAdmins
-                .filter((a) => a.isActive && a.branchId !== null)
+                .filter((a) => {
+                  // Si la sucursal está bajo admin principal (no hay admin de sucursal activo en la fila),
+                  // el backend solo permite intercambio con admin de sucursal activo y con sucursal.
+                  if (!changingAdminBranch?.admin) return a.isActive && a.branchId !== null
+                  // Si ya existe admin de sucursal en la fila, también se permite elegir admins inactivos/sin sucursal.
+                  return true
+                })
                 .map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.fullName} ({a.username}) - {a.isActive ? 'Activo' : 'Inactivo'} - {a.branchName}
