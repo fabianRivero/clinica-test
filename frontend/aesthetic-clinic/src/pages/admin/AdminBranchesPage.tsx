@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { AdminBranchTabs } from '../../components/admin/AdminBranchTabs'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { changeAdminBranchManager, finalizeAdminBranchWizard, getAdminBranchAdmins, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, initializeAdminBranchWizard, saveAdminBranchWizardStep1, saveAdminBranchWizardStep2CreateNew, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
+import { useAuth } from '../../providers/AuthProvider'
 
 type BranchRow = {
   id: number
@@ -16,6 +17,7 @@ type BranchRow = {
 }
 
 export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' }) {
+  const { logout } = useAuth()
   const [rows, setRows] = useState<BranchRow[]>([])
   const [status, setStatus] = useState<'all' | 'active' | 'inactive'>('all')
   const [city, setCity] = useState('')
@@ -35,8 +37,10 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   const [editForm, setEditForm] = useState({ nombre: '', ciudad: '', direccion: '' })
   const [changingAdminBranch, setChangingAdminBranch] = useState<BranchRow | null>(null)
   const [newAdminUserId, setNewAdminUserId] = useState('')
+  const [changeNotice, setChangeNotice] = useState<{ message: string; requiresLogout: boolean } | null>(null)
   const [auditRows, setAuditRows] = useState<Array<{ id: number; createdAt: string; action: string; detail: string; branchName: string; actor: string }>>([])
   const recentAuditRows = useMemo(() => auditRows.slice(0, 5), [auditRows])
+  const logoutTimerRef = useRef<number | null>(null)
 
   const branchOptions = useMemo(() => rows.map((b) => ({ id: b.id, name: b.nombre })), [rows])
 
@@ -61,6 +65,27 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     void initializeAdminBranchWizard().catch(() => undefined)
     void getAdminBranchAdmins().then((r) => setBranchAdmins(r.admins)).catch(() => undefined)
   }, [view])
+
+  useEffect(() => {
+    if (!changeNotice?.requiresLogout) return undefined
+
+    if (logoutTimerRef.current) {
+      window.clearTimeout(logoutTimerRef.current)
+    }
+
+    logoutTimerRef.current = window.setTimeout(() => {
+      void logout().finally(() => {
+        window.location.href = '/login'
+      })
+    }, 3500)
+
+    return () => {
+      if (logoutTimerRef.current) {
+        window.clearTimeout(logoutTimerRef.current)
+        logoutTimerRef.current = null
+      }
+    }
+  }, [changeNotice, logout])
 
   async function handleWizardStep1(e: React.FormEvent) {
     e.preventDefault()
@@ -165,6 +190,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   function openChangeAdminModal(row: BranchRow) {
     setChangingAdminBranch(row)
     setNewAdminUserId('')
+    setChangeNotice(null)
     void getAdminBranchAdmins().then((r) => setBranchAdmins(r.admins)).catch(() => undefined)
   }
 
@@ -177,30 +203,43 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     }
     setSaving(true)
     try {
-      await changeAdminBranchManager(changingAdminBranch.id, parsedId)
+      const result = await changeAdminBranchManager(changingAdminBranch.id, parsedId)
       setChangingAdminBranch(null)
       setNewAdminUserId('')
-      try {
-        await load()
-      } catch (err) {
-        const message = err instanceof Error ? err.message : ''
-        if (message.includes('(401)')) {
-          window.location.href = '/login'
-          return
-        }
-        throw err
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'No se pudo cambiar el administrador'
-      if (message.includes('(401)')) {
-        setError('Tu sesión cambió por la reasignación de sucursal. Inicia sesión nuevamente.')
-        window.location.href = '/login'
+      if (result.mode === 'swap_with_main_admin') {
+        setError(null)
+        setChangeNotice({
+          message: 'El cambio se realizó correctamente. Tu sesión se cerrará en unos segundos para proteger el acceso a la sucursal anterior.',
+          requiresLogout: true,
+        })
         return
       }
-      setError(message)
+      await load()
+      setError(null)
+      setChangeNotice({
+        message: 'El cambio se realizó correctamente.',
+        requiresLogout: false,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo cambiar el administrador')
     } finally {
       setSaving(false)
     }
+  }
+
+  function handleCloseChangeNotice() {
+    if (changeNotice?.requiresLogout) return
+    setChangeNotice(null)
+  }
+
+  async function handleLogoutNow() {
+    if (logoutTimerRef.current) {
+      window.clearTimeout(logoutTimerRef.current)
+      logoutTimerRef.current = null
+    }
+    await logout().finally(() => {
+      window.location.href = '/login'
+    })
   }
 
   return (
@@ -214,6 +253,21 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
       <AdminBranchTabs />
 
       {error ? <p className="error-text">{error}</p> : null}
+
+      {changeNotice ? <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Aviso de cambio de administrador">
+        <div className="booking-modal-content" style={{ maxWidth: '640px' }}>
+          <header className="booking-modal-header">
+            <h2 style={{ margin: 0 }}>Cambio realizado</h2>
+          </header>
+          <div className="booking-modal-body" style={{ padding: '1rem 1.5rem' }}>
+            <p style={{ marginTop: 0 }}>{changeNotice.message}</p>
+            {changeNotice.requiresLogout ? <p style={{ color: 'var(--c-neutral-600)' }}>Puedes cerrar sesión ahora o esperar unos segundos.</p> : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              {changeNotice.requiresLogout ? <button className="button" type="button" onClick={() => void handleLogoutNow()}>Cerrar sesión ahora</button> : <button className="button" type="button" onClick={() => void handleCloseChangeNotice()}>Aceptar</button>}
+            </div>
+          </div>
+        </div>
+      </div> : null}
 
       {view === 'create' ? <SectionCard title="Crear sucursal" description="Completa el wizard para registrar una nueva sucursal, su administrador y su tablet.">
         <section className="wizard-summary">

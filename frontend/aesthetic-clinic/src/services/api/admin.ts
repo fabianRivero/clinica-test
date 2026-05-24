@@ -690,7 +690,7 @@ export function toggleAdminBranch(branchId: number, active: boolean, force = fal
 }
 
 export function changeAdminBranchManager(branchId: number, newAdminUserId: number) {
-  return requestJsonWithBodyIdempotent<{ detail: string; mode?: 'replace_with_inactive' | 'swap' | 'assign' }>(
+  return requestJsonWithBodyIdempotent<{ detail: string; mode?: 'replace_with_inactive' | 'swap' | 'assign' | 'swap_with_main_admin' }>(
     `/api/admin/sucursales/${branchId}/cambiar-admin/`,
     { newAdminUserId },
     crypto.randomUUID(),
