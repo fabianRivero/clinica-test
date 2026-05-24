@@ -34,7 +34,6 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   const [editingBranch, setEditingBranch] = useState<BranchRow | null>(null)
   const [editForm, setEditForm] = useState({ nombre: '', ciudad: '', direccion: '' })
   const [changingAdminBranch, setChangingAdminBranch] = useState<BranchRow | null>(null)
-  const [changeAdminStep, setChangeAdminStep] = useState<1 | 2>(1)
   const [newAdminUserId, setNewAdminUserId] = useState('')
   const [auditRows, setAuditRows] = useState<Array<{ id: number; createdAt: string; action: string; detail: string; branchName: string; actor: string }>>([])
   const recentAuditRows = useMemo(() => auditRows.slice(0, 5), [auditRows])
@@ -165,7 +164,6 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
 
   function openChangeAdminModal(row: BranchRow) {
     setChangingAdminBranch(row)
-    setChangeAdminStep(1)
     setNewAdminUserId('')
     void getAdminBranchAdmins().then((r) => setBranchAdmins(r.admins)).catch(() => undefined)
   }
@@ -336,41 +334,32 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
         <div className="booking-modal-content" style={{ maxWidth: '760px' }}>
           <header className="booking-modal-header">
             <h2 style={{ margin: 0 }}>Cambiar administrador de sucursal</h2>
-            <button className="booking-modal-close" type="button" onClick={() => setChangingAdminBranch(null)}>×</button>
+            <button className="booking-modal-close" type="button" onClick={() => { setChangingAdminBranch(null); setNewAdminUserId('') }}>×</button>
           </header>
           <div className="booking-modal-body" style={{ padding: '1rem 1.5rem' }}>
-            {changeAdminStep === 1 ? <>
-              <p><strong>Paso 1:</strong> Sucursal seleccionada: {changingAdminBranch.nombre}</p>
-              <p style={{ color: 'var(--c-neutral-600)' }}>Pasa al Paso 2 para ingresar el ID del administrador de sucursal a asignar.</p>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-                <button className="button button--ghost" type="button" onClick={() => setChangingAdminBranch(null)}>Cancelar</button>
-                <button className="button" type="button" onClick={() => setChangeAdminStep(2)}>Siguiente</button>
-              </div>
-            </> : <>
-              <p><strong>Paso 2:</strong> Selecciona el administrador de sucursal.</p>
-              <select className="input" value={newAdminUserId} onChange={(e) => setNewAdminUserId(e.target.value)}>
-                <option value="">Seleccionar admin</option>
-                {branchAdmins
-                  .filter((a) => {
-                    // Si la sucursal está administrada por admin principal (sin admin de sucursal en fila),
-                    // solo permitir admins activos para intercambio con principal.
-                    if (!changingAdminBranch?.admin) return a.isActive
-                    return true
-                  })
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.fullName} ({a.username}) - {a.isActive ? 'Activo' : 'Inactivo'} - {a.branchName}
-                    </option>
-                  ))}
-              </select>
-              <p style={{ marginTop: '0.75rem', color: 'var(--c-neutral-600)' }}>
-                Aviso: si el admin elegido está activo en otra sucursal, se hará intercambio; si está inactivo y sin sucursal, se activará y el admin actual quedará inactivo.
-              </p>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
-                <button className="button button--ghost" type="button" onClick={() => setChangeAdminStep(1)}>Volver</button>
-                <button className="button" type="button" onClick={() => void handleConfirmAdminChange()} disabled={saving}>Confirmar cambio</button>
-              </div>
-            </>}
+            <p>Selecciona el administrador de sucursal para {changingAdminBranch.nombre}.</p>
+            <select className="input" value={newAdminUserId} onChange={(e) => setNewAdminUserId(e.target.value)}>
+              <option value="">Seleccionar admin</option>
+              {branchAdmins
+                .filter((a) => {
+                  // Si la sucursal está administrada por admin principal (sin admin de sucursal en fila),
+                  // solo permitir admins activos para intercambio con principal.
+                  if (!changingAdminBranch?.admin) return a.isActive
+                  return true
+                })
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.fullName} ({a.username}) - {a.isActive ? 'Activo' : 'Inactivo'} - {a.branchName}
+                  </option>
+                ))}
+            </select>
+            <p style={{ marginTop: '0.75rem', color: 'var(--c-neutral-600)' }}>
+              Aviso: si el admin elegido está activo en otra sucursal, se hará intercambio; si está inactivo y sin sucursal, se activará y el admin actual quedará inactivo.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button className="button button--ghost" type="button" onClick={() => { setChangingAdminBranch(null); setNewAdminUserId('') }}>Cancelar</button>
+              <button className="button" type="button" onClick={() => void handleConfirmAdminChange()} disabled={saving}>Confirmar cambio</button>
+            </div>
           </div>
         </div>
       </div> : null}
