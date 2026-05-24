@@ -9,6 +9,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db import models
 from django.db.models import Prefetch, Q
+from django.contrib.sessions.models import Session
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -215,6 +216,25 @@ def _log_branch_admin_audit(*, request, branch, action, detail="", metadata=None
         detail=detail,
         metadata=metadata or {},
     )
+
+
+def _invalidate_user_sessions(user_ids):
+    user_ids = {int(user_id) for user_id in user_ids if user_id}
+    if not user_ids:
+        return
+
+    stale_session_keys = []
+    for session in Session.objects.filter(expire_date__gte=timezone.now()).only("session_key", "session_data"):
+        try:
+            session_data = session.get_decoded()
+            auth_user_id = int(session_data.get("_auth_user_id") or 0)
+        except Exception:
+            continue
+        if auth_user_id in user_ids:
+            stale_session_keys.append(session.session_key)
+
+    if stale_session_keys:
+        Session.objects.filter(session_key__in=stale_session_keys).delete()
 
 
 def _active_branch_has_any_admin(branch):
@@ -5006,6 +5026,7 @@ def admin_branch_management_change_admin(request, branch_id):
                     "mode": "swap_with_main_admin",
                 },
             )
+            transaction.on_commit(lambda user_ids=[current_main_admin.id, new_admin.id]: _invalidate_user_sessions(user_ids))
             return _json({"detail": "Intercambio con administrador principal realizado correctamente.", "mode": "swap_with_main_admin"})
 
         if selected_is_inactive:
@@ -5023,6 +5044,10 @@ def admin_branch_management_change_admin(request, branch_id):
                 detail="Reemplazo por admin inactivo.",
                 metadata={"newAdminUserId": new_admin.id, "previousAdminUserId": current_admin.id if current_admin else None, "mode": "replace_with_inactive"},
             )
+            affected_user_ids = [new_admin.id]
+            if current_admin:
+                affected_user_ids.append(current_admin.id)
+            transaction.on_commit(lambda user_ids=affected_user_ids: _invalidate_user_sessions(user_ids))
             return _json({"detail": "Administrador inactivo activado y asignado correctamente.", "mode": "replace_with_inactive"})
 
         if new_admin.sucursal_id == branch.id:
@@ -5040,6 +5065,7 @@ def admin_branch_management_change_admin(request, branch_id):
                 detail="Intercambio de administradores entre sucursales.",
                 metadata={"newAdminUserId": new_admin.id, "previousAdminUserId": current_admin.id, "fromBranchId": previous_branch.id, "mode": "swap"},
             )
+            transaction.on_commit(lambda user_ids=[new_admin.id, current_admin.id]: _invalidate_user_sessions(user_ids))
             return _json({"detail": "Administradores intercambiados correctamente.", "mode": "swap"})
         _log_branch_admin_audit(
             request=request,
@@ -5048,6 +5074,7 @@ def admin_branch_management_change_admin(request, branch_id):
             detail="Asignación directa de administrador.",
             metadata={"newAdminUserId": new_admin.id, "mode": "assign"},
         )
+        transaction.on_commit(lambda user_ids=[new_admin.id]: _invalidate_user_sessions(user_ids))
         return _json({"detail": "Administrador de sucursal actualizado correctamente.", "mode": "assign"})
     return _idempotency_replay_or_store(cache_key, _change_admin)
 
