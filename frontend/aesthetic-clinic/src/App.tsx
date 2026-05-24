@@ -29,6 +29,7 @@ import { AdminProspectCreatePage } from './pages/admin/AdminProspectCreatePage'
 import { AdminProspectsPage } from './pages/admin/AdminProspectsPage'
 import { AdminStaffCreatePage, AdminStaffManagePage } from './pages/admin/AdminStaffPage'
 import { AdminBranchesPage } from './pages/admin/AdminBranchesPage'
+import { AdminBranchHistoryPage } from './pages/admin/AdminBranchHistoryPage'
 import { AdminBranchAdminsPage } from './pages/admin/AdminBranchAdminsPage'
 import { AdminBranchAdminDetailPage } from './pages/admin/AdminBranchAdminDetailPage'
 import { LoginPage } from './pages/auth/LoginPage'
@@ -157,6 +158,7 @@ function App() {
           <Route path="notificaciones" element={<NotificationsPage />} />
           <Route path="sucursales" element={<Navigate to="/admin/sucursales/editar" replace />} />
           <Route path="sucursales/editar" element={<AdminBranchesPage view="edit" />} />
+          <Route path="sucursales/historial" element={<AdminBranchHistoryPage />} />
           <Route path="sucursales/crear" element={<AdminBranchesPage view="create" />} />
         </Route>
       </Route>
