@@ -179,9 +179,25 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     try {
       await changeAdminBranchManager(changingAdminBranch.id, parsedId)
       setChangingAdminBranch(null)
-      await load()
+      setNewAdminUserId('')
+      try {
+        await load()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : ''
+        if (message.includes('(401)')) {
+          window.location.href = '/login'
+          return
+        }
+        throw err
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo cambiar el administrador')
+      const message = err instanceof Error ? err.message : 'No se pudo cambiar el administrador'
+      if (message.includes('(401)')) {
+        setError('Tu sesión cambió por la reasignación de sucursal. Inicia sesión nuevamente.')
+        window.location.href = '/login'
+        return
+      }
+      setError(message)
     } finally {
       setSaving(false)
     }
