@@ -1,6 +1,7 @@
 import json
 
 from django.test import TestCase
+from django.test import Client
 
 from accounts.models import Rol, Usuario
 from catalogs.models import Sucursal
@@ -80,8 +81,14 @@ class BranchManagementPhase1Test(TestCase):
         self.admin_sucursal_nuevo.sucursal = None
         self.admin_sucursal_nuevo.save(update_fields=["is_active", "sucursal", "updated_at"])
 
-        self.client.force_login(self.admin_general)
-        response = self.client.post(
+        requester = Client()
+        requester.force_login(self.admin_general)
+        current_admin_client = Client()
+        current_admin_client.force_login(self.admin_sucursal)
+        inactive_new_admin_client = Client()
+        inactive_new_admin_client.force_login(self.admin_sucursal_nuevo)
+
+        response = requester.post(
             f"/api/admin/sucursales/{self.sucursal_activa.id}/cambiar-admin/",
             data=json.dumps({"newAdminUserId": self.admin_sucursal_nuevo.id}),
             content_type="application/json",
@@ -95,10 +102,16 @@ class BranchManagementPhase1Test(TestCase):
         self.assertIsNone(self.admin_sucursal.sucursal_id)
         self.assertTrue(self.admin_sucursal_nuevo.is_active)
         self.assertEqual(self.admin_sucursal_nuevo.sucursal_id, self.sucursal_activa.id)
+        self.assertEqual(current_admin_client.get("/api/auth/me/").status_code, 401)
+        self.assertEqual(inactive_new_admin_client.get("/api/auth/me/").status_code, 401)
 
     def test_swap_admins_between_branches(self):
-        self.client.force_login(self.admin_general)
-        response = self.client.post(
+        requester = Client()
+        requester.force_login(self.admin_general)
+        new_admin_client = Client()
+        new_admin_client.force_login(self.admin_sucursal_nuevo)
+
+        response = requester.post(
             f"/api/admin/sucursales/{self.sucursal_activa.id}/cambiar-admin/",
             data=json.dumps({"newAdminUserId": self.admin_sucursal_nuevo.id}),
             content_type="application/json",
@@ -110,6 +123,8 @@ class BranchManagementPhase1Test(TestCase):
         self.admin_sucursal_nuevo.refresh_from_db()
         self.assertEqual(self.admin_sucursal_nuevo.sucursal_id, self.sucursal_activa.id)
         self.assertEqual(self.admin_sucursal.sucursal_id, self.sucursal_inactiva.id)
+        self.assertEqual(requester.get("/api/auth/me/").status_code, 401)
+        self.assertEqual(new_admin_client.get("/api/auth/me/").status_code, 401)
 
     def test_cannot_assign_branch_admin_when_main_admin_is_assigned_to_branch(self):
         self.admin_general.sucursal = self.sucursal_activa
