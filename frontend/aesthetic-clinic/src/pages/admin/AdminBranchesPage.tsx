@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { AdminBranchTabs } from '../../components/admin/AdminBranchTabs'
 import { PageHeader } from '../../components/admin/PageHeader'
@@ -36,6 +37,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   const [changeAdminStep, setChangeAdminStep] = useState<1 | 2>(1)
   const [newAdminUserId, setNewAdminUserId] = useState('')
   const [auditRows, setAuditRows] = useState<Array<{ id: number; createdAt: string; action: string; detail: string; branchName: string; actor: string }>>([])
+  const recentAuditRows = useMemo(() => auditRows.slice(0, 5), [auditRows])
 
   const branchOptions = useMemo(() => rows.map((b) => ({ id: b.id, name: b.nombre })), [rows])
 
@@ -290,7 +292,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
             <table>
           <thead><tr><th>Fecha</th><th>Sucursal</th><th>Accion</th><th>Detalle</th><th>Actor</th></tr></thead>
           <tbody>
-            {auditRows.map((row) => (
+            {recentAuditRows.map((row) => (
               <tr key={row.id}>
                 <td>{new Date(row.createdAt).toLocaleString()}</td>
                 <td>{row.branchName}</td>
@@ -301,6 +303,11 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
             ))}
           </tbody>
             </table>
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.75rem' }}>
+              <Link className="button button--ghost" to="/admin/sucursales/historial">
+                Ver todo el historial
+              </Link>
+            </div>
           </div>
         </div>
       </div>
