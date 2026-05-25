@@ -2,9 +2,12 @@ import { useCallback, useMemo, useState, type ChangeEvent, type FormEvent } from
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
+import { FieldError } from '../../components/admin/FieldError'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useConfirmDialog } from '../../hooks/useConfirmDialog'
+import { useFormSubmission } from '../../hooks/useFormSubmission'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
@@ -77,12 +80,11 @@ export function AdminExpensesPage() {
   const [year, setYear] = useState(now.getFullYear())
   const [form, setForm] = useState<UpsertAdminExpensePayload>(emptyForm)
   const [editingExpense, setEditingExpense] = useState<ExpenseItem | null>(null)
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
-  const [submitError, setSubmitError] = useState<string | null>(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { showNotification } = useNotifications()
+  const { isSubmitting, submitError, fieldErrors, setFieldErrors, clearFieldError, handleSubmit } = useFormSubmission(showNotification)
+  const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [activeTab, setActiveTab] = useState<ExpenseTab>('list')
-  const { showNotification } = useNotifications()
 
   const loader = useCallback(() => getAdminExpenses(month, year), [month, year, branchId])
   const { data, isLoading, error, reload } = useApiResource(loader)
@@ -136,8 +138,7 @@ export function AdminExpensesPage() {
       }
       return next
     })
-    setFieldErrors((current) => ({ ...current, [field]: '' }))
-    setSubmitError(null)
+    clearFieldError(field)
   }
 
   const handleInvoiceChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -148,45 +149,42 @@ export function AdminExpensesPage() {
     setForm({ ...emptyForm, date: new Date().toISOString().slice(0, 10) })
     setEditingExpense(null)
     setFieldErrors({})
-    setSubmitError(null)
   }
 
   const handleEdit = (expense: ExpenseItem) => {
     setEditingExpense(expense)
     setForm(expenseToForm(expense))
     setFieldErrors({})
-    setSubmitError(null)
     setActiveTab('create')
   }
 
-  const handleSubmit = async (event: FormEvent) => {
+  const handleFormSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    setIsSubmitting(true)
-    setSubmitError(null)
-    setFieldErrors({})
-    try {
-      const response = editingExpense
-        ? await updateAdminExpense(editingExpense.rawId, form)
-        : await createAdminExpense(form)
-      showNotification({
-        title: editingExpense ? 'Gasto actualizado' : 'Gasto registrado',
-        message: response.detail,
-        tone: 'success',
-      })
-      resetForm()
-      setActiveTab('list')
-      reload()
-    } catch (requestError) {
-      const errorWithFields = requestError as Error & { fieldErrors?: Record<string, string> }
-      setSubmitError(errorWithFields.message || 'No se pudo guardar el gasto.')
-      setFieldErrors(errorWithFields.fieldErrors || {})
-    } finally {
-      setIsSubmitting(false)
-    }
+    await handleSubmit(
+      async () => {
+        const response = editingExpense
+          ? await updateAdminExpense(editingExpense.rawId, form)
+          : await createAdminExpense(form)
+        return response
+      },
+      {
+        successTitle: editingExpense ? 'Gasto actualizado' : 'Gasto registrado',
+        successMessage: (response) => (response as { detail: string }).detail,
+        onSuccess: () => {
+          resetForm()
+          setActiveTab('list')
+          reload()
+        },
+      },
+    ).catch?.()
   }
 
   const handleDelete = async (expense: ExpenseItem) => {
-    const confirmed = window.confirm(`Eliminar el gasto "${expense.concept}" de ${expense.totalLabel}?`)
+    const confirmed = await confirm({
+      title: 'Confirmar eliminacion',
+      message: `Eliminar el gasto "${expense.concept}" de ${expense.totalLabel}?`,
+      tone: 'danger',
+    })
     if (!confirmed) return
     setDeletingId(expense.rawId)
     try {
@@ -250,7 +248,7 @@ export function AdminExpensesPage() {
               title={editingExpense ? editingExpense.concept : 'Registrar gasto'}
               description="Los gastos se guardan en la sucursal activa del selector global."
             >
-              <form className="catalog-form" onSubmit={handleSubmit}>
+              <form className="catalog-form" onSubmit={handleFormSubmit}>
               <label className="field">
                 <span>Fecha</span>
                 <input
@@ -259,7 +257,7 @@ export function AdminExpensesPage() {
                   value={form.date}
                   onChange={(event) => updateForm('date', event.target.value)}
                 />
-                {fieldErrors.date ? <small className="field__error">{fieldErrors.date}</small> : null}
+                <FieldError message={fieldErrors.date} />
               </label>
 
               <label className="field">
@@ -276,7 +274,7 @@ export function AdminExpensesPage() {
                     </option>
                   ))}
                 </select>
-                {fieldErrors.categoryId ? <small className="field__error">{fieldErrors.categoryId}</small> : null}
+                <FieldError message={fieldErrors.categoryId} />
               </label>
 
               <label className="field field--full">
@@ -287,7 +285,7 @@ export function AdminExpensesPage() {
                   onChange={(event) => updateForm('concept', event.target.value)}
                   placeholder="Ej. Compra de guantes nitrilo"
                 />
-                {fieldErrors.concept ? <small className="field__error">{fieldErrors.concept}</small> : null}
+                <FieldError message={fieldErrors.concept} />
               </label>
 
               <label className="field">
@@ -300,7 +298,7 @@ export function AdminExpensesPage() {
                   value={form.units}
                   onChange={(event) => updateForm('units', event.target.value)}
                 />
-                {fieldErrors.units ? <small className="field__error">{fieldErrors.units}</small> : null}
+                <FieldError message={fieldErrors.units} />
               </label>
 
               <label className="field">
@@ -313,7 +311,7 @@ export function AdminExpensesPage() {
                   value={form.unitCost}
                   onChange={(event) => updateForm('unitCost', event.target.value)}
                 />
-                {fieldErrors.unitCost ? <small className="field__error">{fieldErrors.unitCost}</small> : null}
+                <FieldError message={fieldErrors.unitCost} />
               </label>
 
               <label className="field">
@@ -326,7 +324,7 @@ export function AdminExpensesPage() {
                   value={form.total}
                   onChange={(event) => updateForm('total', event.target.value)}
                 />
-                {fieldErrors.total ? <small className="field__error">{fieldErrors.total}</small> : null}
+                <FieldError message={fieldErrors.total} />
               </label>
 
               <label className="field">
@@ -495,6 +493,7 @@ export function AdminExpensesPage() {
           ) : null}
         </>
       ) : null}
+      <ConfirmDialogModal />
     </div>
   )
 }
@@ -749,6 +748,7 @@ export function AdminExpenseListPage() {
   const [year, setYear] = useState(now.getFullYear())
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const { showNotification } = useNotifications()
+  const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
 
   const loader = useCallback(() => getAdminExpenses(month, year), [month, year, branchId])
   const { data, isLoading, error, reload } = useApiResource(loader)
@@ -791,7 +791,11 @@ export function AdminExpenseListPage() {
   }
 
   const handleDelete = async (expense: ExpenseItem) => {
-    const confirmed = window.confirm(`Eliminar el gasto "${expense.concept}" de ${expense.totalLabel}?`)
+    const confirmed = await confirm({
+      title: 'Confirmar eliminacion',
+      message: `Eliminar el gasto "${expense.concept}" de ${expense.totalLabel}?`,
+      tone: 'danger',
+    })
     if (!confirmed) return
     setDeletingId(expense.rawId)
     try {
@@ -944,6 +948,7 @@ export function AdminExpenseListPage() {
           </SectionCard>
         </>
       ) : null}
+      <ConfirmDialogModal />
     </div>
   )
 }

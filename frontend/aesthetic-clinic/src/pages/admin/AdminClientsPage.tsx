@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { 
@@ -23,6 +24,7 @@ export function AdminClientsPage() {
   const loader = useCallback(() => getAdminProspects(), [branchId])
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
+  const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('TODOS')
 
@@ -55,7 +57,10 @@ export function AdminClientsPage() {
 
   const handleImportClient = async (clientId: number, clientName: string) => {
     if (!branchId) return
-    const confirmed = window.confirm(`¿Seguro que deseas importar a ${clientName} a esta sucursal?`)
+    const confirmed = await confirm({
+      title: 'Confirmar importacion',
+      message: `¿Seguro que deseas importar a ${clientName} a esta sucursal?`,
+    })
     if (!confirmed) return
 
     try {
@@ -268,6 +273,7 @@ export function AdminClientsPage() {
           </SectionCard>
         </>
       ) : null}
+      <ConfirmDialogModal />
     </div>
   )
 }

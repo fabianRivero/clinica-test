@@ -6,6 +6,7 @@ import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
+import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
 import {
@@ -41,6 +42,7 @@ const initialComposeState: TicketComposeState = {
 
 export function AdminMessagingPermissionsPage() {
   const { showNotification } = useNotifications()
+  const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
   const [specialists, setSpecialists] = useState<SpecialistOpenPermission[]>([])
   const [summary, setSummary] = useState<PermissionSummary>('MIXED')
   const [branchAdmins, setBranchAdmins] = useState<BranchAdminOpenPermission[]>([])
@@ -72,7 +74,11 @@ export function AdminMessagingPermissionsPage() {
 
   const onMassUpdate = async (enabled: boolean) => {
     const action = enabled ? 'habilitar' : 'bloquear'
-    const ok = window.confirm(`¿Seguro que deseas ${action} a TODOS los especialistas para abrir nuevas fichas?`)
+    const ok = await confirm({
+      title: 'Cambiar permisos masivamente',
+      message: `¿Seguro que deseas ${action} a TODOS los especialistas para abrir nuevas fichas?`,
+      tone: 'warning',
+    })
     if (!ok) return
     await setSpecialistOpenPermission(enabled)
     await loadPermissions()
@@ -127,7 +133,10 @@ export function AdminMessagingPermissionsPage() {
     event.preventDefault()
     if (!composeState.specialistId && !composeState.adminRecipientId) return
 
-    const confirmSend = window.confirm('¿Deseas enviar esta ficha ahora?')
+    const confirmSend = await confirm({
+      title: 'Enviar ficha',
+      message: '¿Deseas enviar esta ficha ahora?',
+    })
     if (!confirmSend) return
 
     setIsSending(true)
@@ -324,6 +333,7 @@ export function AdminMessagingPermissionsPage() {
           </div>
         </div>
       ) : null}
+      <ConfirmDialogModal />
     </div>
   )
 }

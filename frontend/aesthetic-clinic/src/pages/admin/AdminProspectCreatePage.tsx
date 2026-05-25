@@ -2,6 +2,7 @@ import { useState, useEffect, type ChangeEvent, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
+import { FieldError } from '../../components/admin/FieldError'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { createAdminProspect, checkAdminProspectDuplicates } from '../../services/api/admin'
@@ -143,7 +144,7 @@ export function AdminProspectCreatePage() {
               placeholder="Ej. Carla"
               value={form.primerNombre}
             />
-            {fieldErrors.primerNombre ? <small className="field__error">{fieldErrors.primerNombre}</small> : null}
+            <FieldError message={fieldErrors.primerNombre} />
           </label>
 
           <label className="field">

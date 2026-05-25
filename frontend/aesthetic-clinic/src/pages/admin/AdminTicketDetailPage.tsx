@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { closeTicket, getTicketDetail, replyTicket, reopenTicket, type Ticket, type TicketMessage } from '../../services/api/tickets'
+import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { useAuth } from '../../providers/AuthProvider'
@@ -76,6 +77,7 @@ export function AdminTicketDetailPage() {
   const [ticket, setTicket] = useState<Ticket | null>(null)
   const [messages, setMessages] = useState<TicketMessage[]>([])
   const { showNotification } = useNotifications()
+  const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
   const [reply, setReply] = useState('')
   const [isReplyModalOpen, setIsReplyModalOpen] = useState(false)
   const [replyFiles, setReplyFiles] = useState<File[]>([])
@@ -183,8 +185,11 @@ export function AdminTicketDetailPage() {
                 showNotification({ title: 'Mensaje requerido', message: 'Debes escribir un mensaje para responder.', tone: 'warning' })
                 return
               }
-              const confirmSend = window.confirm('¿Deseas enviar esta respuesta ahora?')
-              if (!confirmSend) return
+const confirmSend = await confirm({
+                    title: 'Enviar respuesta',
+                    message: '¿Deseas enviar esta respuesta ahora?',
+                  })
+                  if (!confirmSend) return
               setIsSendingReply(true)
               void replyTicket(ticket.id, reply.trim(), replyFiles[0] ?? null).then(async () => {
                 await load()
@@ -244,5 +249,6 @@ export function AdminTicketDetailPage() {
         </div>
       </div>
     ) : null}
+    <ConfirmDialogModal />
   </div>
 }

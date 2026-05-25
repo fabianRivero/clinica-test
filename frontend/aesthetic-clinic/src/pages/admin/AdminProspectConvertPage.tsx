@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
+import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import {
   cancelAdminProspectConversion,
   finalizeAdminProspectConversion,
@@ -107,6 +108,7 @@ export function AdminProspectConvertPage() {
   const navigate = useNavigate()
   const { prospectId = '', clientId = '' } = useParams()
   const isReactivation = !!clientId
+  const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
 
   const [data, setData] = useState<ProspectConversionResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -539,7 +541,11 @@ export function AdminProspectConvertPage() {
       return
     }
 
-    const shouldContinue = window.confirm('¿Estás seguro de que toda la información es correcta para finalizar el proceso?')
+    const shouldContinue = await confirm({
+      title: 'Confirmar finalizacion',
+      message: '¿Estás seguro de que toda la informacion es correcta para finalizar el proceso?',
+      tone: 'warning',
+    })
     if (!shouldContinue) {
       return
     }
@@ -573,9 +579,11 @@ export function AdminProspectConvertPage() {
   const handleCancelDraft = async () => {
     if (isSaving || isCancelling) return
 
-    const shouldCancel = window.confirm(
-      'Se eliminara todo el borrador de conversion guardado hasta ahora. ¿Deseas continuar?',
-    )
+    const shouldCancel = await confirm({
+      title: 'Cancelar conversion',
+      message: 'Se eliminara todo el borrador de conversion guardado hasta ahora. ¿Deseas continuar?',
+      tone: 'danger',
+    })
 
     if (!shouldCancel) {
       return
@@ -1642,6 +1650,7 @@ export function AdminProspectConvertPage() {
           </div>
         </div>
       ) : null}
+      <ConfirmDialogModal />
     </div>
   )
 }

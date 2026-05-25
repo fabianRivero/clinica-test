@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
   cancelAdminProspectMedicalAppointment,
@@ -33,6 +34,7 @@ export function AdminProspectsPage() {
   const location = useLocation()
   const { showNotification } = useNotifications()
   const { activeBranch } = useBranchContext()
+  const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loader = useCallback(() => getAdminProspects(activeBranch?.id), [activeBranch?.id])
@@ -157,7 +159,11 @@ export function AdminProspectsPage() {
   }
 
   async function handleCancelAppointment(appointmentId: number) {
-    const confirmed = window.confirm('Se cancelara la cita medica del prospecto. ¿Deseas continuar?')
+    const confirmed = await confirm({
+      title: 'Cancelar cita',
+      message: 'Se cancelara la cita medica del prospecto. ¿Deseas continuar?',
+      tone: 'warning',
+    })
     if (!confirmed) return
 
     try {
@@ -175,7 +181,10 @@ export function AdminProspectsPage() {
 
   async function handleMigrateProspect(prospectId: number, branchId: number) {
     const branchName = branches.find(b => b.id === branchId)?.nombre || 'esta sucursal'
-    const confirmed = window.confirm(`¿Seguro que deseas migrar este prospecto a la sucursal ${branchName}?`)
+    const confirmed = await confirm({
+      title: 'Migrar prospecto',
+      message: `¿Seguro que deseas migrar este prospecto a la sucursal ${branchName}?`,
+    })
     if (!confirmed) return
 
     setIsMigratingKey(prospectId)
@@ -432,6 +441,7 @@ export function AdminProspectsPage() {
           ) : null}
         </>
       ) : null}
+      <ConfirmDialogModal />
     </div>
   )
 }

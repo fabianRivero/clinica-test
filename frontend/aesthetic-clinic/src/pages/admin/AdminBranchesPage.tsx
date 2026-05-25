@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { changeAdminBranchManager, finalizeAdminBranchWizard, getAdminBranchAdmins, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, initializeAdminBranchWizard, saveAdminBranchWizardStep1, saveAdminBranchWizardStep2CreateNew, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
 import { useAuth } from '../../providers/AuthProvider'
+import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 
 type BranchRow = {
   id: number
@@ -18,6 +19,7 @@ type BranchRow = {
 
 export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' }) {
   const { logout } = useAuth()
+  const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
   const [rows, setRows] = useState<BranchRow[]>([])
   const [status, setStatus] = useState<'all' | 'active' | 'inactive'>('all')
   const [city, setCity] = useState('')
@@ -133,7 +135,11 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   }
 
   function handleCancelWizard() {
-    const ok = window.confirm('¿Seguro que deseas cancelar la creación de sucursal? Se perderán los cambios no finalizados.')
+    const ok = await confirm({
+      title: 'Cancelar creacion',
+      message: '¿Seguro que deseas cancelar la creación de sucursal? Se perderán los cambios no finalizados.',
+      tone: 'danger',
+    })
     if (!ok) return
     setWizardStep(1)
     setWizardStep1Completed(false)
@@ -151,9 +157,11 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
         const p = impact.impact
         const hasPending = p.appointments_pending + p.payments_pending + p.processes_pending > 0
         if (hasPending) {
-          const ok = window.confirm(
-            `Hay pendientes en la sucursal:\n- Citas: ${p.appointments_pending}\n- Pagos: ${p.payments_pending}\n- Procesos: ${p.processes_pending}\n\n¿Deseas desactivar de todas formas?`,
-          )
+          const ok = await confirm({
+            title: 'Desactivar sucursal',
+            message: `Hay pendientes en la sucursal:\n- Citas: ${p.appointments_pending}\n- Pagos: ${p.payments_pending}\n- Procesos: ${p.processes_pending}\n\n¿Deseas desactivar de todas formas?`,
+            tone: 'warning',
+          })
           if (!ok) return
           await toggleAdminBranch(row.id, false, true)
         } else {
@@ -435,6 +443,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
         </div>
       </div> : null}
       </> : null}
+      <ConfirmDialogModal />
     </section>
   )
 }

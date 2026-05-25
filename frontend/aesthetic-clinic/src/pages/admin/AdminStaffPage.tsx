@@ -3,10 +3,12 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import { AdminStaffTabs } from '../../components/admin/AdminStaffTabs'
 import { DataState } from '../../components/admin/DataState'
+import { FieldError } from '../../components/admin/FieldError'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
   createAdminStaff,
@@ -213,7 +215,7 @@ function StaffEditorForm({
             value={formState.username}
             onChange={(event) => handleChange('username', event.target.value)}
           />
-          {fieldErrors.username ? <small className="field__error">{fieldErrors.username}</small> : null}
+          <FieldError message={fieldErrors.username} />
         </label>
 
         <label className="field" htmlFor="staff-password">
@@ -225,7 +227,7 @@ function StaffEditorForm({
             value={formState.password}
             onChange={(event) => handleChange('password', event.target.value)}
           />
-          {fieldErrors.password ? <small className="field__error">{fieldErrors.password}</small> : null}
+          <FieldError message={fieldErrors.password} />
         </label>
 
         <label className="field" htmlFor="staff-email">
@@ -237,7 +239,7 @@ function StaffEditorForm({
             value={formState.email}
             onChange={(event) => handleChange('email', event.target.value)}
           />
-          {fieldErrors.email ? <small className="field__error">{fieldErrors.email}</small> : null}
+          <FieldError message={fieldErrors.email} />
         </label>
 
         <label className="field" htmlFor="staff-ci">
@@ -249,7 +251,7 @@ function StaffEditorForm({
             onChange={(event) => handleChange('ci', event.target.value)}
             required
           />
-          {fieldErrors.ci ? <small className="field__error">{fieldErrors.ci}</small> : null}
+          <FieldError message={fieldErrors.ci} />
         </label>
 
         <label className="field" htmlFor="staff-primer-nombre">
@@ -260,7 +262,7 @@ function StaffEditorForm({
             value={formState.primerNombre}
             onChange={(event) => handleChange('primerNombre', event.target.value)}
           />
-          {fieldErrors.primerNombre ? <small className="field__error">{fieldErrors.primerNombre}</small> : null}
+          <FieldError message={fieldErrors.primerNombre} />
         </label>
 
         <label className="field" htmlFor="staff-segundo-nombre">
@@ -271,7 +273,7 @@ function StaffEditorForm({
             value={formState.segundoNombre}
             onChange={(event) => handleChange('segundoNombre', event.target.value)}
           />
-          {fieldErrors.segundoNombre ? <small className="field__error">{fieldErrors.segundoNombre}</small> : null}
+          <FieldError message={fieldErrors.segundoNombre} />
         </label>
 
         <label className="field" htmlFor="staff-apellido-paterno">
@@ -282,7 +284,7 @@ function StaffEditorForm({
             value={formState.apellidoPaterno}
             onChange={(event) => handleChange('apellidoPaterno', event.target.value)}
           />
-          {fieldErrors.apellidoPaterno ? <small className="field__error">{fieldErrors.apellidoPaterno}</small> : null}
+          <FieldError message={fieldErrors.apellidoPaterno} />
         </label>
 
         <label className="field" htmlFor="staff-apellido-materno">
@@ -293,7 +295,7 @@ function StaffEditorForm({
             value={formState.apellidoMaterno}
             onChange={(event) => handleChange('apellidoMaterno', event.target.value)}
           />
-          {fieldErrors.apellidoMaterno ? <small className="field__error">{fieldErrors.apellidoMaterno}</small> : null}
+          <FieldError message={fieldErrors.apellidoMaterno} />
         </label>
 
         <label className="field" htmlFor="staff-telefono">
@@ -304,7 +306,7 @@ function StaffEditorForm({
             value={formState.telefono}
             onChange={(event) => handleChange('telefono', event.target.value)}
           />
-          {fieldErrors.telefono ? <small className="field__error">{fieldErrors.telefono}</small> : null}
+          <FieldError message={fieldErrors.telefono} />
         </label>
 
         <label className="field field--full" htmlFor="staff-observaciones">
@@ -315,7 +317,7 @@ function StaffEditorForm({
             value={formState.observaciones}
             onChange={(event) => handleChange('observaciones', event.target.value)}
           />
-          {fieldErrors.observaciones ? <small className="field__error">{fieldErrors.observaciones}</small> : null}
+          <FieldError message={fieldErrors.observaciones} />
         </label>
 
         <div className="field field--full">
@@ -332,7 +334,7 @@ function StaffEditorForm({
               </label>
             ))}
           </div>
-          {fieldErrors.specialtyIds ? <small className="field__error">{fieldErrors.specialtyIds}</small> : null}
+          <FieldError message={fieldErrors.specialtyIds} />
         </div>
 
         {submitError ? <div className="form-error field--full">{submitError}</div> : null}
@@ -424,16 +426,18 @@ export function AdminStaffManagePage() {
   const loader = useCallback(() => getAdminStaff(branchId), [branchId])
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
+  const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
   const { user } = useAuth()
   const isMainAdmin = user?.isMainAdmin || user?.isSuperuser
   const [isChangingBranchId, setIsChangingBranchId] = useState<number | null>(null)
 
   async function handleChangeBranch(staffMember: StaffCapacityItem, branchId: number) {
     const branchName = branches.find(b => b.id === branchId)?.nombre || 'esta sucursal'
-    const confirmed = window.confirm(
-      `¿Seguro que deseas mover a ${staffMember.specialist} a la sucursal ${branchName}?\n\n` +
-      `¡ATENCIÓN!: Al cambiar de sucursal, TODOS los horarios de disponibilidad y excepciones de este especialista en la sucursal actual se ELIMINARÁN automáticamente.`
-    )
+    const confirmed = await confirm({
+      title: 'Cambiar sucursal',
+      message: `¿Seguro que deseas mover a ${staffMember.specialist} a la sucursal ${branchName}?\n\n¡ATENCIÓN!: Al cambiar de sucursal, TODOS los horarios de disponibilidad y excepciones de este especialista en la sucursal actual se ELIMINARÁN automáticamente.`,
+      tone: 'warning',
+    })
     if (!confirmed) return
 
     setIsChangingBranchId(staffMember.rawId)
@@ -577,6 +581,7 @@ export function AdminStaffManagePage() {
           </SectionCard>
         </>
       ) : null}
+      <ConfirmDialogModal />
     </StaffPageShell>
   )
 }

@@ -8,6 +8,7 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { verificationStatusLabel } from '../../constants/verification'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
   cancelAdminAppointment,
@@ -33,6 +34,7 @@ export function AdminClientDetailPage() {
   const navigate = useNavigate()
   const { clientId = '' } = useParams()
   const { showNotification } = useNotifications()
+  const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
   const loader = useCallback(() => getAdminClientDetail(clientId), [clientId])
   const { data, isLoading, error, reload } = useApiResource(loader)
   const [selectedOperationId, setSelectedOperationId] = useState<number | ''>('')
@@ -75,7 +77,11 @@ export function AdminClientDetailPage() {
 
 
   async function handleCancelAppointment(appointmentId: number) {
-    const shouldCancel = window.confirm('Se cancelara esta reserva y el cupo volvera a quedar disponible. ¿Deseas continuar?')
+    const shouldCancel = await confirm({
+      title: 'Cancelar reserva',
+      message: 'Se cancelara esta reserva y el cupo volvera a quedar disponible. ¿Deseas continuar?',
+      tone: 'warning',
+    })
     if (!shouldCancel) return
 
     try {
@@ -92,7 +98,11 @@ export function AdminClientDetailPage() {
   }
 
   async function handleMarkPendingBiometric(appointmentId: number) {
-    const confirmed = window.confirm('Solo se debe cambiar a este estado cuando el cliente asiste al tratamiento. ¿Deseas continuar?')
+    const confirmed = await confirm({
+      title: 'Confirmar cambio de estado',
+      message: 'Solo se debe cambiar a este estado cuando el cliente asiste al tratamiento. ¿Deseas continuar?',
+      tone: 'warning',
+    })
     if (!confirmed) return
 
     setAppointmentActionId(appointmentId)
@@ -289,9 +299,11 @@ export function AdminClientDetailPage() {
       pendingSessions || pendingQuotas
         ? `Advertencia: este cliente aun tiene ${pendingSessions} sesion(es) y ${pendingQuotas} cuota(s) pendiente(s). `
         : ''
-    const confirmed = window.confirm(
-      `${warningDetail}El cliente pasara a inactivo, se cancelaran sus procedimientos en proceso y sus citas programadas. ¿Deseas continuar?`,
-    )
+    const confirmed = await confirm({
+      title: 'Inactivar cliente',
+      message: `${warningDetail}El cliente pasara a inactivo, se cancelaran sus procedimientos en proceso y sus citas programadas. ¿Deseas continuar?`,
+      tone: 'danger',
+    })
     if (!confirmed) return
 
     setIsInactivating(true)
@@ -313,7 +325,10 @@ export function AdminClientDetailPage() {
   async function handleMigrateClient(branchId: number) {
     if (!data) return
     const branchName = branches.find(b => b.id === branchId)?.nombre || 'esta sucursal'
-    const confirmed = window.confirm(`¿Seguro que deseas migrar este cliente a la sucursal ${branchName}? Podra ser gestionado por los administradores de esa sucursal.`)
+    const confirmed = await confirm({
+      title: 'Migrar cliente',
+      message: `¿Seguro que deseas migrar este cliente a la sucursal ${branchName}? Podra ser gestionado por los administradores de esa sucursal.`,
+    })
     if (!confirmed) return
 
     setIsMigrating(true)
@@ -845,6 +860,7 @@ export function AdminClientDetailPage() {
           </>
         ) : <DataState title="Sin procedimientos" message="No hay procedimientos asociados a este cliente." />}
       </SectionCard>
+      <ConfirmDialogModal />
     </div>
   )
 }
