@@ -137,7 +137,7 @@ export function AdminProspectsPage() {
       const response = await createAdminProspectMedicalAppointment(bookingProspect.rawId, {
         branchId: activeBranch.id,
         dateTime: `${selectedDate}T${selectedTime}:00`
-      } as any)
+      })
       showNotification({ title: 'Cita medica agendada', message: response.detail, tone: 'success' })
       setBookingProspect(null)
       setAvailability(null)

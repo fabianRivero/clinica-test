@@ -12,73 +12,11 @@ import type {
   UploadClientPaymentReceiptPayload,
   UploadClientPaymentReceiptResponse,
 } from '../../types/client'
-import { ensureCsrfCookie } from './auth'
+import { requestJsonNoBranch, requestJsonWithBody, requestFormDataWithBody } from './apiClient'
 import { normalizeClientAppointment, normalizeClientAppointments } from '../../mappers/clientVerification'
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
-
-async function requestJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-    },
-  })
-
-  if (!response.ok) {
-    throw new Error(`No se pudo cargar ${path} (${response.status})`)
-  }
-
-  return (await response.json()) as T
-}
-
-async function requestJsonWithBody<T>(path: string, body: unknown): Promise<T> {
-  const csrfToken = await ensureCsrfCookie()
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-CSRFToken': csrfToken,
-    },
-    body: JSON.stringify(body),
-  })
-
-  const responseBody = (await response.json().catch(() => null)) as { detail?: string } | null
-
-  if (!response.ok) {
-    throw new Error(responseBody?.detail || `No se pudo completar ${path} (${response.status})`)
-  }
-
-  return responseBody as T
-}
-
-async function requestFormDataWithBody<T>(path: string, body: FormData): Promise<T> {
-  const csrfToken = await ensureCsrfCookie()
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-      'X-CSRFToken': csrfToken,
-    },
-    body,
-  })
-
-  const responseBody = (await response.json().catch(() => null)) as { detail?: string } | null
-
-  if (!response.ok) {
-    throw new Error(responseBody?.detail || `No se pudo completar ${path} (${response.status})`)
-  }
-
-  return responseBody as T
-}
-
 export async function getClientDashboard() {
-  const response = await requestJson<ClientDashboardResponse>('/api/client/dashboard/')
+  const response = await requestJsonNoBranch<ClientDashboardResponse>('/api/client/dashboard/')
   return {
     ...response,
     upcomingAppointments: normalizeClientAppointments(response.upcomingAppointments),
@@ -86,15 +24,15 @@ export async function getClientDashboard() {
 }
 
 export function getClientTreatments() {
-  return requestJson<ClientTreatmentsResponse>('/api/client/tratamientos/')
+  return requestJsonNoBranch<ClientTreatmentsResponse>('/api/client/tratamientos/')
 }
 
 export function getClientPayments() {
-  return requestJson<ClientPaymentsResponse>('/api/client/pagos/')
+  return requestJsonNoBranch<ClientPaymentsResponse>('/api/client/pagos/')
 }
 
 export async function getClientReservations() {
-  const response = await requestJson<ClientReservationsResponse>('/api/client/reservas/')
+  const response = await requestJsonNoBranch<ClientReservationsResponse>('/api/client/reservas/')
   return {
     ...response,
     appointments: normalizeClientAppointments(response.appointments),
@@ -102,7 +40,7 @@ export async function getClientReservations() {
 }
 
 export async function getClientReservationAvailability(operationId: string) {
-  const response = await requestJson<ClientReservationAvailabilityResponse>(
+  const response = await requestJsonNoBranch<ClientReservationAvailabilityResponse>(
     `/api/client/reservas/${operationId}/disponibilidad/`,
   )
   return {
@@ -112,7 +50,7 @@ export async function getClientReservationAvailability(operationId: string) {
 }
 
 export async function getClientEditReservationAvailability(appointmentId: string) {
-  const response = await requestJson<ClientReservationAvailabilityResponse>(
+  const response = await requestJsonNoBranch<ClientReservationAvailabilityResponse>(
     `/api/client/reservas/citas/${appointmentId}/disponibilidad/`,
   )
   return {

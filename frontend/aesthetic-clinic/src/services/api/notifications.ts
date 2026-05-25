@@ -1,6 +1,4 @@
-import { ensureCsrfCookie } from './auth'
-
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+import { requestJsonNoBranch, postJson } from './apiClient'
 
 export type NotificationItem = {
   id: number
@@ -18,38 +16,14 @@ export function notifyNotificationsUpdated() {
   window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT))
 }
 
-export async function getMyNotifications() {
-  const response = await fetch(`${API_BASE_URL}/api/notifications/`, {
-    credentials: 'include',
-    headers: { Accept: 'application/json' },
-  })
-  if (!response.ok) {
-    throw new Error(`No se pudo cargar notificaciones (${response.status})`)
-  }
-  return (await response.json()) as { items: NotificationItem[]; latest: NotificationItem[]; unreadCount: number }
-}
-
-async function post(path: string) {
-  const csrfToken = await ensureCsrfCookie()
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-CSRFToken': csrfToken,
-    },
-    body: JSON.stringify({}),
-  })
-  const data = (await response.json().catch(() => null)) as { detail?: string } | null
-  if (!response.ok) throw new Error(data?.detail || `No se pudo completar ${path} (${response.status})`)
-  return data
+export function getMyNotifications() {
+  return requestJsonNoBranch<{ items: NotificationItem[]; latest: NotificationItem[]; unreadCount: number }>('/api/notifications/')
 }
 
 export function markAllNotificationsRead() {
-  return post('/api/notifications/mark-all-read/')
+  return postJson<{ detail?: string }>('/api/notifications/mark-all-read/', {})
 }
 
 export function markNotificationRead(notificationId: number) {
-  return post(`/api/notifications/${notificationId}/read/`)
+  return postJson<{ detail?: string }>(`/api/notifications/${notificationId}/read/`, {})
 }

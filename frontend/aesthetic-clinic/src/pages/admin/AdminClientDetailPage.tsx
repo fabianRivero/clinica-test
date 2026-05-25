@@ -233,7 +233,7 @@ export function AdminClientDetailPage() {
       const response = await createAdminClientReservation(data.client.rawId, effectiveOperationId, {
         branchId: activeBranch.id,
         dateTime: `${selectedDate}T${selectedTime}:00`
-      } as any)
+      })
       showNotification({ title: 'Reserva registrada', message: response.detail, tone: 'success' })
       reload()
       setSelectedOperationId('')
@@ -259,7 +259,7 @@ export function AdminClientDetailPage() {
       const response = await createAdminClientFreeMedicalAppointment(data.client.rawId, {
         branchId: activeBranch.id,
         dateTime: `${freeSelectedDate}T${freeSelectedTime}:00`
-      } as any)
+      })
       showNotification({ title: 'Cita medica registrada', message: response.detail, tone: 'success' })
       reload()
       setFreeSelectedDate('')

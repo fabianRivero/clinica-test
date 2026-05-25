@@ -5,7 +5,7 @@ import type {
   ClientQuota,
   ClientReservationAvailabilityResponse,
   CreateClientReservationResponse,
-} from './client'
+} from './common'
 
 export type AdminMetric = {
   id: string

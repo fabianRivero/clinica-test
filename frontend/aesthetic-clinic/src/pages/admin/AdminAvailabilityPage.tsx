@@ -144,7 +144,7 @@ export function AdminAvailabilityBlocksPage() {
         startTime: exceptionForm.isWholeDay ? '' : exceptionForm.startTime,
         endTime: exceptionForm.isWholeDay ? '' : exceptionForm.endTime,
         detail: exceptionForm.detail || (exceptionForm.type === 'BLOQUEAR' ? 'Dia libre / Bloqueo' : 'Horas extra'),
-      } as any)
+      })
       showNotification({ title: 'Exito', message: 'Excepcion(es) creada(s) correctamente', tone: 'success' })
       setExceptionForm(buildEmptyExceptionForm(activeBranch?.id || 1))
       await reload()
@@ -211,7 +211,7 @@ export function AdminAvailabilityBlocksPage() {
                   <select
                     className="input"
                     value={exceptionForm.type}
-                    onChange={(e) => setExceptionForm({ ...exceptionForm, type: e.target.value as any })}
+                    onChange={(e) => setExceptionForm({ ...exceptionForm, type: e.target.value as 'AGREGAR' | 'BLOQUEAR' })}
                     required
                   >
                     <option value="BLOQUEAR">Bloquear disponibilidad (Dia libre / Permiso)</option>
