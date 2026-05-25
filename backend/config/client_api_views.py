@@ -6,13 +6,20 @@ from functools import wraps
 from django.contrib.auth import authenticate
 from django.db import transaction
 from django.db.models import Prefetch, Q
-from django.http import JsonResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_GET, require_POST
 
 from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
 from clinical.models import AnalisisEstetico
+from config.api_helpers import (
+    currency,
+    date_label,
+    full_name,
+    json_response,
+    metric,
+    procedure_name,
+)
 from customers.models import Cliente
 from operations.models import CitaClienteLibre, CitaMedica, CitaProspecto, EventoConfirmacionCita, Operacion, TabletKiosko
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
@@ -24,10 +31,6 @@ BLOCKING_RESERVATION_STATES = {
     CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
     CitaMedica.Estado.CONFIRMADA,
 }
-
-
-def _json(data, status=200):
-    return JsonResponse(data, status=status, json_dumps_params={"ensure_ascii": False})
 
 
 def _load_payload(request):
@@ -49,13 +52,13 @@ def _client_required(view_func):
     def wrapped(request, *args, **kwargs):
         user = request.user
         if not user.is_authenticated:
-            return _json({"detail": "Autenticacion requerida."}, status=401)
+            return json_response({"detail": "Autenticacion requerida."}, status=401)
         if not user.es_cliente:
-            return _json({"detail": "No tienes permisos para acceder a esta vista."}, status=403)
+            return json_response({"detail": "No tienes permisos para acceder a esta vista."}, status=403)
         try:
             request.cliente = user.cliente
         except Cliente.DoesNotExist:
-            return _json({"detail": "No existe un perfil de cliente asociado a esta cuenta."}, status=404)
+            return json_response({"detail": "No existe un perfil de cliente asociado a esta cuenta."}, status=404)
         return view_func(request, *args, **kwargs)
 
     return wrapped
@@ -66,11 +69,11 @@ def _tablet_kiosk_required(view_func):
     def wrapped(request, *args, **kwargs):
         kiosk_id = request.session.get("tablet_kiosk_id")
         if not kiosk_id:
-            return _json({"detail": "Sesion de tablet requerida."}, status=401)
+            return json_response({"detail": "Sesion de tablet requerida."}, status=401)
         kiosk = TabletKiosko.objects.filter(pk=kiosk_id, activo=True).select_related("sucursal").first()
         if not kiosk:
             request.session.pop("tablet_kiosk_id", None)
-            return _json({"detail": "La sesion de tablet no es valida."}, status=401)
+            return json_response({"detail": "La sesion de tablet no es valida."}, status=401)
         request.tablet_kiosk = kiosk
         return view_func(request, *args, **kwargs)
 
@@ -82,48 +85,21 @@ def _tablet_client_required(view_func):
     def wrapped(request, *args, **kwargs):
         client_id = request.session.get("tablet_client_id")
         if not client_id:
-            return _json({"detail": "Debes identificar al cliente en la tablet."}, status=401)
+            return json_response({"detail": "Debes identificar al cliente en la tablet."}, status=401)
         cliente = Cliente.objects.filter(pk=client_id).select_related("usuario").first()
         if not cliente:
             request.session.pop("tablet_client_id", None)
-            return _json({"detail": "No se encontro el cliente de la sesion actual."}, status=401)
+            return json_response({"detail": "No se encontro el cliente de la sesion actual."}, status=401)
         request.cliente = cliente
         return view_func(request, *args, **kwargs)
 
     return wrapped
 
 
-def _currency(amount):
-    return f"Bs {amount:.2f}"
-
-
-def _date_label(value):
-    if not value:
-        return "Sin fecha"
-    return value.strftime("%d/%m/%Y")
-
-
-def _datetime_label(value):
-    if not value:
-        return "Sin fecha"
-    return timezone.localtime(value).strftime("%d/%m/%Y %H:%M")
-
-
 def _month_label(value):
     if not value:
         return "Sin mes"
     return value.strftime("%B %Y").capitalize()
-
-
-def _full_name(user):
-    return user.nombre_completo or user.username
-
-
-def _procedure_name(operacion):
-    procedimiento = operacion.servicio_config.proc_estetico
-    if procedimiento:
-        return procedimiento.proceso
-    return operacion.servicio_config.tipo_servicio.tipo
 
 
 def _operation_branch(operacion):
@@ -195,22 +171,12 @@ def _reserve_message(operacion):
     return operacion.motivo_bloqueo_reserva or "Tu tratamiento ya no tiene sesiones disponibles para nuevas reservas."
 
 
-def _metric(identifier, label, value, delta, tone):
-    return {
-        "id": identifier,
-        "label": label,
-        "value": str(value),
-        "delta": delta,
-        "tone": tone,
-    }
-
-
 def _operation_item(operacion):
     next_appointment = _next_appointment(operacion)
     return {
         "id": f"OP-{operacion.pk:04d}",
         "rawId": operacion.pk,
-        "procedure": _procedure_name(operacion),
+        "procedure": procedure_name(operacion),
         "serviceType": operacion.servicio_config.tipo_servicio.tipo,
         "branch": _operation_branch(operacion),
         "status": operacion.get_estado_display(),
@@ -223,13 +189,13 @@ def _operation_item(operacion):
             if operacion.estado == Operacion.Estado.BORRADOR
             else "primary"
         ),
-        "price": _currency(operacion.precio_total),
+        "price": currency(operacion.precio_total),
         "zone": ", ".join(
             [value for value in [operacion.zona_general, operacion.zona_especifica] if value]
         )
         or "Sin zona registrada",
-        "startedAt": _date_label(operacion.fecha_inicio),
-        "endedAt": _date_label(operacion.fecha_final) if operacion.fecha_final else "En curso",
+        "startedAt": date_label(operacion.fecha_inicio),
+        "endedAt": date_label(operacion.fecha_final) if operacion.fecha_final else "En curso",
         "nextAppointment": _datetime_label(next_appointment.fecha_hora) if next_appointment else "Sin cita futura",
         "recommendations": operacion.recomendaciones or "Sin recomendaciones registradas.",
         "details": operacion.detalles_op or "Sin detalle operativo.",
@@ -346,11 +312,11 @@ def _quota_item(cuota):
     return {
         "id": f"CUO-{cuota.pk:04d}",
         "rawId": cuota.pk,
-        "operation": _procedure_name(cuota.operacion),
+        "operation": procedure_name(cuota.operacion),
         "quotaLabel": f"Cuota {cuota.nro_cuota}",
-        "amount": _currency(amount_value),
+        "amount": currency(amount_value),
         "amountValue": f"{amount_value:.2f}",
-        "dueDate": _date_label(cuota.fecha_vencimiento),
+        "dueDate": date_label(cuota.fecha_vencimiento),
         "status": status,
         "statusTone": status_tone,
         "latestPaymentStatus": latest_payment_status,
@@ -369,15 +335,15 @@ def _payment_item(payment):
     return {
         "id": f"PAY-{payment.pk:04d}",
         "rawId": payment.pk,
-        "operation": _procedure_name(payment.cuota.operacion),
+        "operation": procedure_name(payment.cuota.operacion),
         "quotaLabel": f"Cuota {payment.cuota.nro_cuota}",
-        "amount": _currency(payment.monto_pagado),
+        "amount": currency(payment.monto_pagado),
         "submittedAt": _datetime_label(payment.created_at),
         "status": payment.get_estado_verificacion_display(),
         "statusTone": _payment_tone(payment),
-        "dueDate": _date_label(payment.cuota.fecha_vencimiento),
+        "dueDate": date_label(payment.cuota.fecha_vencimiento),
         "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
-        "verifier": _full_name(payment.verificado_por) if payment.verificado_por else "Pendiente de revision",
+        "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Pendiente de revision",
         "note": payment.observacion_verificacion or payment.detalles_pago or "Sin observaciones.",
     }
 
@@ -418,7 +384,7 @@ def _appointment_item(cita):
         "id": f"CIT-{cita.pk:04d}",
         "rawId": cita.pk,
         "operationRawId": cita.operacion_id,
-        "operation": _procedure_name(cita.operacion),
+        "operation": procedure_name(cita.operacion),
         "specialist": "Sin asignar",
         "dateTime": _datetime_label(cita.fecha_hora),
         "status": cita.get_estado_display(),
@@ -580,37 +546,37 @@ def client_dashboard(request):
 
     data = {
         "welcome": {
-            "name": _full_name(cliente.usuario),
+            "name": full_name(cliente.usuario),
             "status": cliente.get_estado_cliente_display(),
             "phone": cliente.telefono or "Sin telefono",
             "ci": cliente.ci or "Sin CI registrado",
-            "lastAnalysis": _date_label(latest_analysis.fecha_analisis) if latest_analysis else "Sin analisis",
+            "lastAnalysis": date_label(latest_analysis.fecha_analisis) if latest_analysis else "Sin analisis",
             "activeOperations": len(active_operations),
             "totalOperations": operations_qs.count(),
         },
         "metrics": [
-            _metric(
+            metric(
                 "client-active-operations",
                 "Tratamientos activos",
                 len(active_operations),
                 f"{operations_qs.filter(estado=Operacion.Estado.FINALIZADA).count()} finalizados",
                 "primary",
             ),
-            _metric(
+            metric(
                 "client-pending-quotas",
                 "Cuotas activas",
                 len(pending_quotas),
                 f"{len([cuota for cuota in pending_quotas if cuota.estado == CuotaPlanPago.Estado.VENCIDA])} vencidas",
                 "warning",
             ),
-            _metric(
+            metric(
                 "client-pending-payments",
                 "Pagos en revision",
                 payments_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE).count(),
                 f"{payments_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO).count()} aprobados",
                 "success",
             ),
-            _metric(
+            metric(
                 "client-upcoming-appointments",
                 "Proximas citas",
                 len(upcoming_appointments),
@@ -630,7 +596,7 @@ def client_dashboard(request):
         "recentPayments": [_payment_item(payment) for payment in payments_qs[:4]],
         "upcomingAppointments": [_appointment_item(cita) for cita in upcoming_appointments[:4]],
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_GET
@@ -640,28 +606,28 @@ def client_treatments(request):
 
     data = {
         "metrics": [
-            _metric(
+            metric(
                 "client-treatments-total",
                 "Tratamientos totales",
                 operations_qs.count(),
                 "Incluye historial y tratamientos vigentes",
                 "primary",
             ),
-            _metric(
+            metric(
                 "client-treatments-active",
                 "En proceso",
                 operations_qs.filter(estado=Operacion.Estado.EN_PROCESO).count(),
                 "Con reservas o sesiones disponibles",
                 "success",
             ),
-            _metric(
+            metric(
                 "client-treatments-finished",
                 "Finalizados",
                 operations_qs.filter(estado=Operacion.Estado.FINALIZADA).count(),
                 "Historial clinico consolidado",
                 "warning",
             ),
-            _metric(
+            metric(
                 "client-treatments-sessions",
                 "Sesiones confirmadas",
                 appointments_qs.filter(estado=CitaMedica.Estado.CONFIRMADA, verif_biometria=True).count(),
@@ -671,7 +637,7 @@ def client_treatments(request):
         ],
         "operations": [_operation_item(operacion) for operacion in operations_qs],
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_GET
@@ -681,28 +647,28 @@ def client_payments(request):
 
     data = {
         "metrics": [
-            _metric(
+            metric(
                 "client-payments-pending",
                 "Pagos en revision",
                 payments_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE).count(),
                 "Comprobantes enviados a administracion",
                 "warning",
             ),
-            _metric(
+            metric(
                 "client-payments-approved",
                 "Pagos aprobados",
                 payments_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO).count(),
                 "Ya impactaron tus cuotas",
                 "success",
             ),
-            _metric(
+            metric(
                 "client-payments-observed",
                 "Pagos observados",
                 payments_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.RECHAZADO).count(),
                 "Necesitan correccion o nuevo comprobante",
                 "danger",
             ),
-            _metric(
+            metric(
                 "client-payments-quotas",
                 "Cuotas vigentes",
                 quotas_qs.exclude(estado__in=[CuotaPlanPago.Estado.PAGADO, CuotaPlanPago.Estado.NO_PAGADA]).count(),
@@ -719,7 +685,7 @@ def client_payments(request):
         ],
         "payments": [_payment_item(payment) for payment in payments_qs],
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_POST
@@ -737,20 +703,20 @@ def client_upload_payment_receipt(request, quota_id):
         .first()
     )
     if not cuota:
-        return _json({"detail": "No encontramos la cuota solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cuota solicitada."}, status=404)
     if cuota.estado == CuotaPlanPago.Estado.PAGADO:
-        return _json({"detail": "Esta cuota ya fue pagada y no admite nuevos comprobantes."}, status=400)
+        return json_response({"detail": "Esta cuota ya fue pagada y no admite nuevos comprobantes."}, status=400)
 
     receipt_file = request.FILES.get("receiptFile")
     if not receipt_file:
-        return _json({"detail": "Debes adjuntar el comprobante del pago."}, status=400)
+        return json_response({"detail": "Debes adjuntar el comprobante del pago."}, status=400)
 
     amount = (request.POST.get("amount") or "").strip()
     details = (request.POST.get("details") or "").strip()
     try:
         amount_value = Decimal(amount)
     except Exception:
-        return _json({"detail": "Debes indicar un monto valido para registrar el pago."}, status=400)
+        return json_response({"detail": "Debes indicar un monto valido para registrar el pago."}, status=400)
 
     editable_payment = cuota.pagos_realizados.filter(
         estado_verificacion__in=[
@@ -782,7 +748,7 @@ def client_upload_payment_receipt(request, quota_id):
 
     cuota.refresh_from_db(fields=["estado"])
 
-    return _json(
+    return json_response(
         {
             "detail": detail,
             "payment": _payment_item(payment),
@@ -801,28 +767,28 @@ def client_reservations(request):
 
     data = {
         "metrics": [
-            _metric(
+            metric(
                 "client-reservations-upcoming",
                 "Citas futuras",
                 upcoming_appointments.count(),
                 "Reservas ya registradas para tus tratamientos",
                 "primary",
             ),
-            _metric(
+            metric(
                 "client-reservations-reservable",
                 "Tratamientos con cupo",
                 sum(1 for operacion in reservable_operations if operacion.puede_reservar),
                 "Puedes solicitar una nueva reserva en estos casos",
                 "success",
             ),
-            _metric(
+            metric(
                 "client-reservations-blocked",
                 "Tratamientos sin cupo",
                 sum(1 for operacion in reservable_operations if not operacion.puede_reservar),
                 "No permiten nuevas reservas por ahora",
                 "warning",
             ),
-            _metric(
+            metric(
                 "client-reservations-biometric",
                 "Pendientes de biometria",
                 appointments_qs.filter(estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA).count(),
@@ -833,7 +799,7 @@ def client_reservations(request):
         "appointments": [_appointment_item(cita) for cita in appointments_qs],
         "operations": [_operation_item(operacion) for operacion in reservable_operations],
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_GET
@@ -874,7 +840,7 @@ def client_tablet_current_appointment(request):
         operation_map[operation.id]["appointments"].append(_appointment_item(cita))
     procedure_options = list(operation_map.values())
 
-    return _json(
+    return json_response(
         {
             "currentAppointment": _appointment_item(current) if current else None,
             "pendingAppointmentsCount": pending_count,
@@ -887,21 +853,21 @@ def client_tablet_current_appointment(request):
 def tablet_kiosk_login(request):
     payload = _load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
     codigo = (payload.get("codigo") or "").strip()
     clave = (payload.get("clave") or "").strip()
     if not codigo or not clave:
-        return _json({"detail": "Debes enviar codigo y clave del kiosko."}, status=400)
+        return json_response({"detail": "Debes enviar codigo y clave del kiosko."}, status=400)
 
     kiosko = TabletKiosko.objects.filter(codigo=codigo, activo=True).select_related("sucursal").first()
     if not kiosko or not kiosko.check_clave(clave):
-        return _json({"detail": "Credenciales de kiosko invalidas."}, status=401)
+        return json_response({"detail": "Credenciales de kiosko invalidas."}, status=401)
 
     request.session["tablet_kiosk_id"] = kiosko.id
     request.session.pop("tablet_client_id", None)
     kiosko.ultimo_acceso = timezone.now()
     kiosko.save(update_fields=["ultimo_acceso", "updated_at"])
-    return _json(
+    return json_response(
         {
             "detail": "Kiosko autenticado correctamente.",
             "kiosk": {"id": kiosko.id, "codigo": kiosko.codigo, "nombre": kiosko.nombre, "branchId": kiosko.sucursal_id},
@@ -914,26 +880,26 @@ def tablet_kiosk_login(request):
 def tablet_client_login(request):
     payload = _load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
     username = (payload.get("username") or "").strip()
     password = (payload.get("password") or "").strip()
     if not username or not password:
-        return _json({"detail": "Debes ingresar usuario y contraseña del cliente."}, status=400)
+        return json_response({"detail": "Debes ingresar usuario y contraseña del cliente."}, status=400)
     user = authenticate(request, username=username, password=password)
     if not user or not user.es_cliente:
-        return _json({"detail": "Credenciales de cliente invalidas."}, status=401)
+        return json_response({"detail": "Credenciales de cliente invalidas."}, status=401)
     cliente = Cliente.objects.filter(usuario=user).first()
     if not cliente:
-        return _json({"detail": "No existe un perfil de cliente para esta cuenta."}, status=404)
+        return json_response({"detail": "No existe un perfil de cliente para esta cuenta."}, status=404)
     request.session["tablet_client_id"] = cliente.id
-    return _json({"detail": "Cliente autenticado en tablet.", "clientId": cliente.id, "fullName": user.nombre_completo or user.username})
+    return json_response({"detail": "Cliente autenticado en tablet.", "clientId": cliente.id, "fullName": user.nombre_completo or user.username})
 
 
 @require_POST
 @_tablet_kiosk_required
 def tablet_client_reset(request):
     request.session.pop("tablet_client_id", None)
-    return _json({"detail": "Sesion del cliente reiniciada en la tablet."})
+    return json_response({"detail": "Sesion del cliente reiniciada en la tablet."})
 
 
 @require_POST
@@ -955,7 +921,7 @@ def client_tablet_confirm_current_appointment(request):
         .first()
     )
     if not cita:
-        return _json(
+        return json_response(
             {"detail": "No tienes una cita pendiente de biometria para confirmar hoy."},
             status=404,
         )
@@ -974,7 +940,7 @@ def client_tablet_confirm_current_appointment(request):
         ip_origen=_client_ip(request),
     )
 
-    return _json(
+    return json_response(
         {
             "detail": "Cita realizada",
             "appointment": _appointment_item(cita),
@@ -990,11 +956,11 @@ def client_tablet_confirm_appointment_for_operation(request):
     mark_expired_programmed_appointments_as_no_show()
     payload = _load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     operation_id = payload.get("operationId")
     if not operation_id:
-        return _json({"detail": "Debes seleccionar un procedimiento para confirmar la cita."}, status=400)
+        return json_response({"detail": "Debes seleccionar un procedimiento para confirmar la cita."}, status=400)
 
     today = timezone.localdate()
     cita = (
@@ -1010,7 +976,7 @@ def client_tablet_confirm_appointment_for_operation(request):
         .first()
     )
     if not cita:
-        return _json(
+        return json_response(
             {"detail": "No tienes una cita pendiente de biometria hoy para el procedimiento seleccionado."},
             status=404,
         )
@@ -1029,7 +995,7 @@ def client_tablet_confirm_appointment_for_operation(request):
         ip_origen=_client_ip(request),
     )
 
-    return _json(
+    return json_response(
         {
             "detail": "Cita realizada",
             "appointment": _appointment_item(cita),
@@ -1046,11 +1012,11 @@ def client_tablet_confirm_appointment_for_operation(request):
 def client_tablet_sync_offline_events(request):
     payload = _load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     events = payload.get("events")
     if not isinstance(events, list):
-        return _json({"detail": "Debes enviar una lista de eventos."}, status=400)
+        return json_response({"detail": "Debes enviar una lista de eventos."}, status=400)
 
     device_id = str(payload.get("deviceId") or "").strip()
     results = []
@@ -1138,7 +1104,7 @@ def client_tablet_sync_offline_events(request):
         )
         results.append({"eventId": event_id, "status": "accepted", "appointmentId": event.cita_id})
 
-    return _json({"detail": "Sincronizacion procesada.", "results": results})
+    return json_response({"detail": "Sincronizacion procesada.", "results": results})
 
 
 @require_GET
@@ -1146,15 +1112,15 @@ def client_tablet_sync_offline_events(request):
 def client_reservation_availability(request, operation_id):
     operacion = _get_client_operation(request.cliente, operation_id)
     if not operacion:
-        return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la operacion solicitada."}, status=404)
     if operacion.estado != Operacion.Estado.EN_PROCESO:
-        return _json({"detail": "Solo puedes reservar citas para tratamientos en proceso."}, status=400)
+        return json_response({"detail": "Solo puedes reservar citas para tratamientos en proceso."}, status=400)
 
     data = {
         "operation": _operation_item(operacion),
         "calendar": _build_operation_slot_map(operacion),
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_GET
@@ -1162,9 +1128,9 @@ def client_reservation_availability(request, operation_id):
 def client_edit_reservation_availability(request, appointment_id):
     cita = _get_client_appointment(request.cliente, appointment_id)
     if not cita:
-        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
     if cita.estado != CitaMedica.Estado.PROGRAMADA or cita.fecha_hora <= timezone.now():
-        return _json(
+        return json_response(
             {"detail": "Solo puedes editar reservas futuras que sigan programadas."},
             status=400,
         )
@@ -1175,7 +1141,7 @@ def client_edit_reservation_availability(request, appointment_id):
         "appointment": _appointment_item(cita),
         "currentSlotId": cita.disponibilidad_id,
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_POST
@@ -1184,9 +1150,9 @@ def client_edit_reservation_availability(request, appointment_id):
 def client_create_reservation(request, operation_id):
     operacion = _get_client_operation(request.cliente, operation_id)
     if not operacion:
-        return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la operacion solicitada."}, status=404)
     if not operacion.puede_reservar:
-        return _json(
+        return json_response(
             {
                 "detail": operacion.motivo_bloqueo_reserva
                 or "Esta operacion ya no permite nuevas reservas por ahora."
@@ -1196,11 +1162,11 @@ def client_create_reservation(request, operation_id):
 
     payload = _load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     slot_id = payload.get("slotId")
     if not slot_id:
-        return _json({"detail": "Debes seleccionar un horario disponible antes de confirmar la reserva."}, status=400)
+        return json_response({"detail": "Debes seleccionar un horario disponible antes de confirmar la reserva."}, status=400)
 
     slot = (
         DisponibilidadCita.objects.select_for_update()
@@ -1210,23 +1176,23 @@ def client_create_reservation(request, operation_id):
         .first()
     )
     if not slot or not slot.coincide_con_operacion(operacion):
-        return _json(
+        return json_response(
             {"detail": "El horario seleccionado ya no esta disponible para este tratamiento."},
             status=409,
         )
 
     if slot.citas_origen.filter(estado__in=BLOCKING_RESERVATION_STATES).exists():
-        return _json(
+        return json_response(
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,
         )
     if slot.citas_prospectos_origen.filter(estado=CitaProspecto.Estado.PROGRAMADA).exists():
-        return _json(
+        return json_response(
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,
         )
     if slot.citas_clientes_libres_origen.filter(estado=CitaClienteLibre.Estado.PROGRAMADA).exists():
-        return _json(
+        return json_response(
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,
         )
@@ -1239,7 +1205,7 @@ def client_create_reservation(request, operation_id):
         detalles_cita="Reserva web creada por el cliente desde el portal.",
     )
 
-    return _json(
+    return json_response(
         {
             "detail": "La cita fue reservada correctamente.",
             "appointment": _appointment_item(cita),
@@ -1266,20 +1232,20 @@ def client_update_reservation(request, appointment_id):
         .first()
     )
     if not cita:
-        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
     if cita.estado != CitaMedica.Estado.PROGRAMADA or cita.fecha_hora <= timezone.now():
-        return _json(
+        return json_response(
             {"detail": "Solo puedes editar reservas futuras que sigan programadas."},
             status=400,
         )
 
     payload = _load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     slot_id = payload.get("slotId")
     if not slot_id:
-        return _json({"detail": "Debes seleccionar un horario disponible antes de guardar."}, status=400)
+        return json_response({"detail": "Debes seleccionar un horario disponible antes de guardar."}, status=400)
 
     slot = (
         DisponibilidadCita.objects.select_for_update()
@@ -1289,23 +1255,23 @@ def client_update_reservation(request, appointment_id):
         .first()
     )
     if not slot or not slot.coincide_con_operacion(cita.operacion):
-        return _json(
+        return json_response(
             {"detail": "El horario seleccionado ya no esta disponible para este tratamiento."},
             status=409,
         )
 
     if slot.citas_origen.exclude(pk=cita.pk).filter(estado__in=BLOCKING_RESERVATION_STATES).exists():
-        return _json(
+        return json_response(
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,
         )
     if slot.citas_prospectos_origen.filter(estado=CitaProspecto.Estado.PROGRAMADA).exists():
-        return _json(
+        return json_response(
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,
         )
     if slot.citas_clientes_libres_origen.filter(estado=CitaClienteLibre.Estado.PROGRAMADA).exists():
-        return _json(
+        return json_response(
             {"detail": "El horario seleccionado acaba de ocuparse. Actualiza el calendario e intenta de nuevo."},
             status=409,
         )
@@ -1314,7 +1280,7 @@ def client_update_reservation(request, appointment_id):
     cita.detalles_cita = "Reserva web actualizada por el cliente desde el portal."
     cita.save(update_fields=["disponibilidad", "fecha_hora", "detalles_cita", "updated_at"])
 
-    return _json(
+    return json_response(
         {
             "detail": "La reserva fue actualizada correctamente.",
             "appointment": _appointment_item(cita),
@@ -1338,9 +1304,9 @@ def client_cancel_reservation(request, appointment_id):
         .first()
     )
     if not cita:
-        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
     if cita.estado != CitaMedica.Estado.PROGRAMADA or cita.fecha_hora <= timezone.now():
-        return _json(
+        return json_response(
             {"detail": "Solo puedes cancelar reservas futuras que sigan programadas."},
             status=400,
         )
@@ -1349,7 +1315,7 @@ def client_cancel_reservation(request, appointment_id):
     cita.detalles_cita = "Reserva cancelada por el cliente desde el portal."
     cita.save(update_fields=["estado", "detalles_cita", "updated_at"])
 
-    return _json(
+    return json_response(
         {
             "detail": "La reserva fue cancelada correctamente.",
             "appointment": _appointment_item(cita),
@@ -1370,14 +1336,14 @@ def client_confirm_pending_appointment_tablet(request, appointment_id):
         .first()
     )
     if not cita:
-        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
     if cita.estado != CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
-        return _json(
+        return json_response(
             {"detail": "Solo se pueden confirmar por tablet citas pendientes de biometria."},
             status=400,
         )
     if timezone.localdate(cita.fecha_hora) != timezone.localdate():
-        return _json({"detail": "Solo puedes confirmar la cita el mismo dia de la atencion."}, status=400)
+        return json_response({"detail": "Solo puedes confirmar la cita el mismo dia de la atencion."}, status=400)
 
     cita.estado = CitaMedica.Estado.CONFIRMADA
     cita.metodo_confirmacion = CitaMedica.MetodoConfirmacion.TABLET
@@ -1393,7 +1359,7 @@ def client_confirm_pending_appointment_tablet(request, appointment_id):
         ip_origen=_client_ip(request),
     )
 
-    return _json(
+    return json_response(
         {
             "detail": "Cita realizada",
             "appointment": _appointment_item(cita),

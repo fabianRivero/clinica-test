@@ -2,16 +2,13 @@ import json
 import logging
 
 from django.contrib.auth import authenticate, login as django_login, logout as django_logout
-from django.http import JsonResponse
 from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
+from config.api_helpers import json_response
+
 logger = logging.getLogger(__name__)
-
-
-def _json(data, status=200):
-    return JsonResponse(data, status=status, json_dumps_params={"ensure_ascii": False})
 
 
 def _dashboard_path(user):
@@ -47,14 +44,14 @@ def _serialize_user(user):
 @ensure_csrf_cookie
 @require_GET
 def auth_csrf(request):
-    return _json({"detail": "CSRF cookie establecida.", "csrfToken": get_token(request)})
+    return json_response({"detail": "CSRF cookie establecida.", "csrfToken": get_token(request)})
 
 
 @require_GET
 def auth_me(request):
     if not request.user.is_authenticated:
-        return _json({"detail": "No autenticado."}, status=401)
-    return _json({"user": _serialize_user(request.user)})
+        return json_response({"detail": "No autenticado."}, status=401)
+    return json_response({"user": _serialize_user(request.user)})
 
 
 @require_POST
@@ -62,29 +59,29 @@ def auth_login(request):
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     username = (payload.get("username") or "").strip()
     password = payload.get("password") or ""
 
     if not username or not password:
-        return _json({"detail": "Usuario y contraseña son obligatorios."}, status=400)
+        return json_response({"detail": "Usuario y contraseña son obligatorios."}, status=400)
 
     user = authenticate(request, username=username, password=password)
     if not user:
-        return _json({"detail": "Credenciales invalidas."}, status=401)
+        return json_response({"detail": "Credenciales invalidas."}, status=401)
     if not user.is_active:
-        return _json({"detail": "La cuenta esta inactiva."}, status=403)
+        return json_response({"detail": "La cuenta esta inactiva."}, status=403)
 
     try:
         django_login(request, user)
-        return _json({"user": _serialize_user(user)})
+        return json_response({"user": _serialize_user(user)})
     except Exception:
         logger.exception("Fallo el login para el usuario '%s'.", username)
-        return _json({"detail": "Ocurrio un error interno al iniciar sesion."}, status=500)
+        return json_response({"detail": "Ocurrio un error interno al iniciar sesion."}, status=500)
 
 
 @require_POST
 def auth_logout(request):
     django_logout(request)
-    return _json({"detail": "Sesion cerrada correctamente."})
+    return json_response({"detail": "Sesion cerrada correctamente."})

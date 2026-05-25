@@ -5,7 +5,6 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.contrib.auth.hashers import make_password
 from django.db import transaction
-from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
@@ -23,7 +22,13 @@ from catalogs.models import (
     TipoPiel,
 )
 from clinical.models import AnalisisEstetico, PatologiaPorAnalisis
-from config.api_views import _admin_required, _prospect_item
+from config.api_helpers import (
+    admin_required,
+    get_user_branch,
+    json_response,
+    split_amount,
+)
+from config.api_views import _prospect_item
 from customers.models import Cliente, HuellaBiometricaCliente, Prospecto, ProspectoConversionBorrador
 from operations.models import (
     FichaAntecedenteMedico,
@@ -41,10 +46,6 @@ from operations.models import (
 logger = logging.getLogger(__name__)
 
 
-def _json(data, status=200):
-    return JsonResponse(data, status=status, json_dumps_params={"ensure_ascii": False})
-
-
 def _get_branch_for_scope_check(request):
     """Sucursal para control de alcance en conversiones (sin depender de sesión)."""
     user = request.user
@@ -53,17 +54,8 @@ def _get_branch_for_scope_check(request):
     return user.sucursal
 
 
-def _load_payload(request):
-    try:
-        return json.loads(request.body.decode("utf-8"))
-    except json.JSONDecodeError:
-        return None
-
-
 def _check_cross_city_procedures(request, prospecto=None, cliente=None):
-    from config.api_views import _get_user_branch
-    
-    current_branch = _get_user_branch(request)
+    current_branch = get_user_branch(request)
     if not current_branch or not current_branch.ciudad:
         return None
 
@@ -97,11 +89,11 @@ def _get_required_pdf_file(request, draft=None):
         document = draft.documento_pdf
 
     if not document:
-        return None, _json({"detail": "Debes adjuntar el PDF escaneado de la ficha medica."}, status=400)
+        return None, json_response({"detail": "Debes adjuntar el PDF escaneado de la ficha medica."}, status=400)
 
     filename = (document.name or "").lower()
     if not filename.endswith(".pdf"):
-        return None, _json({"detail": "El documento adjunto debe estar en formato PDF."}, status=400)
+        return None, json_response({"detail": "El documento adjunto debe estar en formato PDF."}, status=400)
 
     return document, None
 
@@ -158,15 +150,6 @@ def _parse_decimal(value, field_name, errors, *, required=True, min_value=Decima
         return None
 
     return parsed.quantize(Decimal("0.01"))
-
-
-def _split_amount(total, count):
-    if count <= 0:
-        return []
-    base = (total / Decimal(count)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    amounts = [base for _ in range(count)]
-    amounts[-1] = (total - sum(amounts[:-1])).quantize(Decimal("0.01"))
-    return amounts
 
 
 def _parse_bool(value):
@@ -626,15 +609,15 @@ def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_prospect_conversion_initialize(request, prospecto_id):
     draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id)
     if error:
-        return _json({"detail": error}, status=400)
+        return json_response({"detail": error}, status=400)
 
     warning = _check_cross_city_procedures(request, prospecto=draft.prospecto)
 
-    return _json(
+    return json_response(
         {
             "draft": _serialize_draft(draft),
             "crossCityWarning": warning,
@@ -646,17 +629,17 @@ def admin_prospect_conversion_initialize(request, prospecto_id):
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_client_reactivation_initialize(request, cliente_id):
     draft, error = _get_draft_convertible(request, cliente_id=cliente_id)
     if error:
-        return _json({"detail": error}, status=400)
+        return json_response({"detail": error}, status=400)
 
     warning = _check_cross_city_procedures(request, cliente=draft.cliente)
     detail = _admin_conversion_detail(draft)
     detail["crossCityWarning"] = warning
 
-    return _json(detail)
+    return json_response(detail)
 
 
 def _serialize_conversion_payload(prospecto, draft):
@@ -1119,11 +1102,11 @@ def _admin_conversion_detail(draft):
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_prospect_conversion_detail(request, prospecto_id):
     draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id)
     if error:
-        return _json({"detail": error}, status=400)
+        return json_response({"detail": error}, status=400)
     payload = _admin_conversion_detail(draft)
     logger.warning(
         "[PREFILL] response(prospect) draft_id=%s antecedentes=%s implantes=%s cirugias=%s",
@@ -1132,15 +1115,15 @@ def admin_prospect_conversion_detail(request, prospecto_id):
         len((payload.get("medicalData") or {}).get("implantes", [])),
         len((payload.get("medicalData") or {}).get("cirugias", [])),
     )
-    return _json(payload)
+    return json_response(payload)
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_client_reactivation_detail(request, cliente_id):
     draft, error = _get_draft_convertible(request, cliente_id=cliente_id)
     if error:
-        return _json({"detail": error}, status=400)
+        return json_response({"detail": error}, status=400)
     payload = _admin_conversion_detail(draft)
     logger.warning(
         "[PREFILL] response(client) draft_id=%s cliente_id=%s antecedentes=%s implantes=%s cirugias=%s",
@@ -1150,34 +1133,34 @@ def admin_client_reactivation_detail(request, cliente_id):
         len((payload.get("medicalData") or {}).get("implantes", [])),
         len((payload.get("medicalData") or {}).get("cirugias", [])),
     )
-    return _json(payload)
+    return json_response(payload)
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_prospect_conversion_cancel(request, prospecto_id=None, cliente_id=None):
     draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
     if error:
-        return _json({"detail": error}, status=400)
+        return json_response({"detail": error}, status=400)
 
     draft.delete()
-    return _json({"detail": "El borrador de conversion fue descartado correctamente."})
+    return json_response({"detail": "El borrador de conversion fue descartado correctamente."})
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_prospect_conversion_user_step(request, prospecto_id=None, cliente_id=None):
     draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
     if error:
-        return _json({"detail": error}, status=400)
+        return json_response({"detail": error}, status=400)
 
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     user_data, errors = _validate_user_step(payload, draft)
     if errors:
-        return _json({"detail": "Corrige los errores del paso 1.", "errors": errors}, status=400)
+        return json_response({"detail": "Corrige los errores del paso 1.", "errors": errors}, status=400)
 
     draft.datos_usuario = user_data
     draft.paso_usuario_completado = True
@@ -1190,27 +1173,27 @@ def admin_prospect_conversion_user_step(request, prospecto_id=None, cliente_id=N
             "updated_at",
         ]
     )
-    return _json(_admin_conversion_detail(draft))
+    return json_response(_admin_conversion_detail(draft))
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_prospect_conversion_operation_step(request, prospecto_id=None, cliente_id=None):
     draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
     if error:
-        return _json({"detail": error}, status=400)
+        return json_response({"detail": error}, status=400)
 
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     if not draft.paso_usuario_completado:
-        return _json({"detail": "Debes completar primero los datos de usuario."}, status=400)
+        return json_response({"detail": "Debes completar primero los datos de usuario."}, status=400)
 
     previous_service_config_id = (draft.datos_operacion or {}).get("serviceConfigId")
     operation_data, service_config, errors = _validate_operation_step(payload)
     if errors:
-        return _json({"detail": "Corrige los errores del paso 2.", "errors": errors}, status=400)
+        return json_response({"detail": "Corrige los errores del paso 2.", "errors": errors}, status=400)
 
     draft.datos_operacion = operation_data
     draft.paso_operacion_completado = True
@@ -1228,24 +1211,24 @@ def admin_prospect_conversion_operation_step(request, prospecto_id=None, cliente
             "updated_at",
         ]
     )
-    return _json(_admin_conversion_detail(draft))
+    return json_response(_admin_conversion_detail(draft))
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_prospect_conversion_medical_step(request, prospecto_id=None, cliente_id=None):
     draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
     if error:
-        return _json({"detail": error}, status=400)
+        return json_response({"detail": error}, status=400)
 
     if request.content_type and request.content_type.startswith("multipart/form-data"):
         payload_raw = request.POST.get("payload")
         if not payload_raw:
-            return _json({"detail": "Falta el campo 'payload' en el form-data."}, status=400)
+            return json_response({"detail": "Falta el campo 'payload' en el form-data."}, status=400)
         try:
             payload = json.loads(payload_raw)
         except json.JSONDecodeError:
-            return _json({"detail": "El campo 'payload' no es JSON valido."}, status=400)
+            return json_response({"detail": "El campo 'payload' no es JSON valido."}, status=400)
         
         # Guardamos el PDF si viene
         pdf_file = request.FILES.get("documento_escaneado_pdf")
@@ -1253,12 +1236,12 @@ def admin_prospect_conversion_medical_step(request, prospecto_id=None, cliente_i
             draft.documento_pdf = pdf_file
             draft.save(update_fields=["documento_pdf"])
     else:
-        payload = _load_payload(request)
+        payload = load_payload(request)
         if payload is None:
-            return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+            return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     if not draft.paso_operacion_completado:
-        return _json({"detail": "Debes completar primero los datos de la operacion."}, status=400)
+        return json_response({"detail": "Debes completar primero los datos de la operacion."}, status=400)
 
     service_config_id = (draft.datos_operacion or {}).get("serviceConfigId")
     service_config = (
@@ -1269,7 +1252,7 @@ def admin_prospect_conversion_medical_step(request, prospecto_id=None, cliente_i
 
     medical_data, errors = _validate_medical_step(payload, service_config)
     if errors:
-        return _json({"detail": "Corrige los errores del paso 3.", "errors": errors}, status=400)
+        return json_response({"detail": "Corrige los errores del paso 3.", "errors": errors}, status=400)
 
     draft.datos_ficha = medical_data
     draft.paso_ficha_completado = True
@@ -1282,26 +1265,26 @@ def admin_prospect_conversion_medical_step(request, prospecto_id=None, cliente_i
             "updated_at",
         ]
     )
-    return _json(_admin_conversion_detail(draft))
+    return json_response(_admin_conversion_detail(draft))
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_prospect_conversion_biometric_step(request, prospecto_id=None, cliente_id=None):
     draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
     if error:
-        return _json({"detail": error}, status=400)
+        return json_response({"detail": error}, status=400)
 
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     if not draft.paso_ficha_completado:
-        return _json({"detail": "Debes completar primero la ficha medica."}, status=400)
+        return json_response({"detail": "Debes completar primero la ficha medica."}, status=400)
 
     biometric_data, errors = _validate_biometric_step(payload)
     if errors:
-        return _json({"detail": "Corrige los errores del paso 4.", "errors": errors}, status=400)
+        return json_response({"detail": "Corrige los errores del paso 4.", "errors": errors}, status=400)
 
     draft.datos_biometria = biometric_data
     draft.paso_biometria_completado = True
@@ -1314,16 +1297,16 @@ def admin_prospect_conversion_biometric_step(request, prospecto_id=None, cliente
             "updated_at",
         ]
     )
-    return _json(_admin_conversion_detail(draft))
+    return json_response(_admin_conversion_detail(draft))
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=None):
     draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
     if error:
-        return _json({"detail": error}, status=400)
+        return json_response({"detail": error}, status=400)
 
     document_file, document_error = _get_required_pdf_file(request, draft=draft)
     if document_error:
@@ -1335,7 +1318,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         and draft.paso_ficha_completado
         and draft.paso_biometria_completado
     ):
-        return _json({"detail": "Debes completar los cuatro pasos antes de finalizar."}, status=400)
+        return json_response({"detail": "Debes completar los cuatro pasos antes de finalizar."}, status=400)
 
     user_data = draft.datos_usuario or {}
     operation_data = draft.datos_operacion or {}
@@ -1349,20 +1332,20 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         .first()
     )
     if not service_config:
-        return _json({"detail": "El servicio seleccionado ya no esta disponible."}, status=400)
+        return json_response({"detail": "El servicio seleccionado ya no esta disponible."}, status=400)
 
     client_role = Rol.objects.filter(rol="CLIENTE").first()
     if not client_role:
-        return _json({"detail": "No existe el rol CLIENTE configurado en el sistema."}, status=500)
+        return json_response({"detail": "No existe el rol CLIENTE configurado en el sistema."}, status=500)
 
     if draft.prospecto:
         # Nueva cuenta para prospecto
         if not user_data.get("passwordHash"):
-            return _json({"detail": "El borrador no tiene una contraseña valida para crear la cuenta."}, status=400)
+            return json_response({"detail": "El borrador no tiene una contraseña valida para crear la cuenta."}, status=400)
         
         username = user_data.get("username", "")
         if Usuario.objects.filter(username=username).exists():
-            return _json({"detail": "Ya existe una cuenta con el usuario seleccionado. Actualiza el paso 1 antes de continuar."}, status=400)
+            return json_response({"detail": "Ya existe una cuenta con el usuario seleccionado. Actualiza el paso 1 antes de continuar."}, status=400)
 
         user = Usuario.objects.create(
             username=username,
@@ -1380,7 +1363,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
 
         target_branch = draft.prospecto.sucursal_registro or _get_branch_for_scope_check(request)
         if not target_branch:
-            return _json({"detail": "No encontramos una sucursal activa para completar la conversión."}, status=400)
+            return json_response({"detail": "No encontramos una sucursal activa para completar la conversión."}, status=400)
 
         cliente = Cliente.objects.create(
             usuario=user,
@@ -1459,7 +1442,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         recomendaciones=operation_data.get("recomendaciones", ""),
     )
 
-    quota_amounts = _split_amount(Decimal(operation_data["precioTotal"]), int(operation_data["cuotasTotales"]))
+    quota_amounts = split_amount(Decimal(operation_data["precioTotal"]), int(operation_data["cuotasTotales"]))
     for cuota_index, fecha_vencimiento in enumerate(operation_data.get("fechasVencimientoCuotas") or []):
         CuotaPlanPago.objects.create(
             operacion=operacion,
@@ -1471,7 +1454,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
     primer_pago_monto = (request.POST.get("primerPagoMonto") or "").strip()
     primer_pago_detalle = (request.POST.get("primerPagoDetalle") or "").strip()
     if (primer_pago_monto or primer_pago_detalle) and not primer_pago_comprobante:
-        return _json(
+        return json_response(
             {"detail": "Debes adjuntar el comprobante para registrar el primer pago en este paso."},
             status=400,
         )
@@ -1481,7 +1464,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             try:
                 monto_primer_pago = Decimal(primer_pago_monto) if primer_pago_monto else primera_cuota.monto_programado
             except Exception:
-                return _json({"detail": "El monto del primer pago no es válido."}, status=400)
+                return json_response({"detail": "El monto del primer pago no es válido."}, status=400)
             PagoRealizado.objects.create(
                 cuota=primera_cuota,
                 monto_pagado=monto_primer_pago,
@@ -1551,7 +1534,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
 
     draft.delete()
 
-    return _json(
+    return json_response(
         {
             "detail": "El proceso finalizo correctamente." if is_reactivation else "El prospecto fue convertido correctamente a cliente.",
             "client": {

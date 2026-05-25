@@ -10,7 +10,6 @@ from django.db import IntegrityError, transaction
 from django.db import models
 from django.db.models import Prefetch, Q
 from django.contrib.sessions.models import Session
-from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.core.cache import cache
@@ -43,6 +42,18 @@ from operations.models import (
     TabletKiosko,
 )
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
+from config.api_helpers import (
+    admin_required,
+    currency,
+    date_label,
+    full_name,
+    get_user_branch,
+    json_response,
+    load_payload,
+    metric,
+    procedure_name,
+    split_amount,
+)
 from config.client_api_views import (
     _appointment_item as _client_appointment_item,
     _build_operation_slot_map as _client_operation_slot_map,
@@ -60,15 +71,7 @@ IDEMPOTENCY_TTL_SECONDS = 60 * 60 * 24
 BRANCH_CREATE_WIZARD_SESSION_KEY = "admin_branch_create_wizard_draft"
 
 
-def _json(data, status=200):
-    return JsonResponse(data, status=status, json_dumps_params={"ensure_ascii": False})
 
-
-def _load_payload(request):
-    try:
-        return json.loads(request.body.decode("utf-8") or "{}")
-    except json.JSONDecodeError:
-        return None
 
 
 def _request_ip(request):
@@ -94,33 +97,14 @@ def _client_has_pending_reservations(cliente):
     )
 
 
-def _admin_required(view_func):
-    @wraps(view_func)
-    def wrapped(request, *args, **kwargs):
-        user = request.user
-        if not user.is_authenticated:
-            return _json({"detail": "Autenticacion requerida."}, status=401)
-        if not (user.is_superuser or user.es_administrador):
-            return _json({"detail": "No tienes permisos para acceder a esta vista."}, status=403)
-        if not (user.is_superuser or user.es_admin_principal):
-            if not user.sucursal or not user.sucursal.activa:
-                return _json(
-                    {"detail": "Tu sucursal esta inactiva. Contacta al administrador principal."},
-                    status=403,
-                )
-        return view_func(request, *args, **kwargs)
-
-    return wrapped
-
-
 def _admin_principal_required(view_func):
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
         user = request.user
         if not user.is_authenticated:
-            return _json({"detail": "Autenticacion requerida."}, status=401)
+            return json_response({"detail": "Autenticacion requerida."}, status=401)
         if not (user.is_superuser or user.es_admin_principal):
-            return _json({"detail": "Esta accion requiere permisos de administrador principal."}, status=403)
+            return json_response({"detail": "Esta accion requiere permisos de administrador principal."}, status=403)
         return view_func(request, *args, **kwargs)
 
     return wrapped
@@ -152,7 +136,7 @@ def _branch_payload(payload, *, partial=False):
 def _idempotency_cache_key(request, scope):
     idem_key = request.headers.get("Idempotency-Key")
     if not idem_key:
-        return None, _json({"detail": "Idempotency-Key es obligatorio."}, status=400)
+        return None, json_response({"detail": "Idempotency-Key es obligatorio."}, status=400)
     user_id = request.user.id if request.user.is_authenticated else "anon"
     return f"idempotency:{scope}:{user_id}:{idem_key}", None
 
@@ -160,7 +144,7 @@ def _idempotency_cache_key(request, scope):
 def _idempotency_replay_or_store(cache_key, fn):
     cached = cache.get(cache_key)
     if cached:
-        return _json(cached["data"], status=cached["status"])
+        return json_response(cached["data"], status=cached["status"])
     response = fn()
     if 200 <= response.status_code < 300:
         payload = json.loads(response.content.decode("utf-8"))
@@ -244,83 +228,23 @@ def _active_branch_has_any_admin(branch):
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_set_session_branch(request):
     try:
         payload = json.loads(request.body.decode("utf-8"))
         branch_id = payload.get("branchId")
         if not branch_id:
-            return _json({"detail": "branchId es obligatorio."}, status=400)
+            return json_response({"detail": "branchId es obligatorio."}, status=400)
         
         from catalogs.models import Sucursal
         branch = Sucursal.objects.filter(pk=int(branch_id), activa=True).first()
         if not branch:
-            return _json({"detail": "Sucursal no encontrada o inactiva."}, status=404)
+            return json_response({"detail": "Sucursal no encontrada o inactiva."}, status=404)
         
         request.session["selected_branch_id"] = branch.pk
-        return _json({"detail": f"Sucursal activa cambiada a {branch.nombre}.", "branchId": branch.pk})
+        return json_response({"detail": f"Sucursal activa cambiada a {branch.nombre}.", "branchId": branch.pk})
     except (ValueError, TypeError, json.JSONDecodeError):
-        return _json({"detail": "Datos invalidos."}, status=400)
-
-
-def _get_user_branch(request):
-    """Retorna la sucursal efectiva para filtrar datos.
-
-    - Admin de sucursal: siempre su sucursal asignada (obligatorio).
-    - Admin principal: la sucursal del query param 'branchId' si fue enviado,
-      o None si no se envio (ve todo).
-    """
-    user = request.user
-    if not (user.is_superuser or user.es_admin_principal):
-        # Admin de sucursal: su sucursal esta fija
-        return user.sucursal
-
-    # Admin principal: filtro por sucursal persistente en sesion
-    # 1. Si viene por header/GET/POST (cambio explicito), actualizamos sesion
-    branch_id = (
-        request.headers.get("X-Selected-Branch-Id") or 
-        request.GET.get("branchId") or 
-        request.POST.get("branchId")
-    )
-    
-    if branch_id:
-        try:
-            from catalogs.models import Sucursal
-            branch = Sucursal.objects.filter(pk=int(branch_id), activa=True).first()
-            if branch:
-                request.session["selected_branch_id"] = branch.pk
-                return branch
-        except (ValueError, TypeError):
-            pass
-
-    # 2. Si no viene en la peticion, buscamos en la sesion
-    session_branch_id = request.session.get("selected_branch_id")
-    from catalogs.models import Sucursal
-    if session_branch_id:
-        branch = Sucursal.objects.filter(pk=session_branch_id, activa=True).first()
-        if branch:
-            return branch
-
-    # 3. Por defecto, si es admin general, devolver la principal
-    main_branch = Sucursal.objects.filter(es_principal=True, activa=True).first()
-    if main_branch:
-        request.session["selected_branch_id"] = main_branch.pk
-        return main_branch
-
-    return None
-
-
-def _currency(amount):
-    return f"Bs {amount:.2f}"
-
-
-def _split_amount(total, count):
-    if count <= 0:
-        return []
-    base = (total / Decimal(count)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    amounts = [base for _ in range(count)]
-    amounts[-1] = (total - sum(amounts[:-1])).quantize(Decimal("0.01"))
-    return amounts
+        return json_response({"detail": "Datos invalidos."}, status=400)
 
 
 def _parse_payload_decimal(payload, field_name, errors, *, min_value=Decimal("0")):
@@ -353,12 +277,6 @@ def _parse_payload_int(payload, field_name, errors, *, min_value=0):
         errors[field_name] = f"El valor minimo permitido es {min_value}."
         return None
     return value
-
-
-def _date_label(value):
-    if not value:
-        return "Sin fecha"
-    return value.strftime("%d/%m/%Y")
 
 
 def _datetime_label(value):
@@ -395,17 +313,7 @@ def _notify_client_appointment_scheduled(*, cliente, fecha_hora, sucursal_id, ap
     )
 
 
-def _full_name(user):
-    if not user:
-        return "Sin asignar"
-    return user.nombre_completo or user.username
 
-
-def _procedure_name(operacion):
-    procedimiento = operacion.servicio_config.proc_estetico
-    if procedimiento:
-        return procedimiento.proceso
-    return operacion.servicio_config.tipo_servicio.tipo
 
 
 def _payment_status(payment):
@@ -573,8 +481,8 @@ def _operation_card(operacion):
     return {
         "id": f"OP-{operacion.pk:04d}",
         "rawId": operacion.pk,
-        "patient": _full_name(operacion.paciente.usuario),
-        "procedure": _procedure_name(operacion),
+        "patient": full_name(operacion.paciente.usuario),
+        "procedure": procedure_name(operacion),
         "branch": _operation_branch(operacion),
         "branchId": _operation_branch_id(operacion),
         "sessions": (
@@ -586,7 +494,7 @@ def _operation_card(operacion):
         "nextAppointment": _operation_next_appointment(operacion),
         "quotaStatus": _quota_status(operacion),
         "status": operacion.get_estado_display(),
-        "price": _currency(operacion.precio_total),
+        "price": currency(operacion.precio_total),
     }
 
 
@@ -637,9 +545,9 @@ def _operation_detail(operacion):
             "id": f"CUO-{cuota.pk:04d}",
             "number": cuota.nro_cuota,
             "rawId": cuota.pk,
-            "amount": _currency(_quota_programmed_amount(cuota)),
+            "amount": currency(_quota_programmed_amount(cuota)),
             "amountValue": f"{_quota_programmed_amount(cuota):.2f}",
-            "dueDate": _date_label(cuota.fecha_vencimiento),
+            "dueDate": date_label(cuota.fecha_vencimiento),
             "status": _quota_display_status(cuota),
             "paymentsCount": cuota.pagos_realizados.count(),
         }
@@ -662,8 +570,8 @@ def _operation_detail(operacion):
     return {
         "id": f"OP-{operacion.pk:04d}",
         "rawId": operacion.pk,
-        "patient": _full_name(operacion.paciente.usuario),
-        "procedure": _procedure_name(operacion),
+        "patient": full_name(operacion.paciente.usuario),
+        "procedure": procedure_name(operacion),
         "serviceType": operacion.servicio_config.tipo_servicio.tipo,
         "procedureType": procedure.tipo_p_estetico.tipo if procedure else "Sin tipo",
         "branch": _operation_branch(operacion),
@@ -677,14 +585,14 @@ def _operation_detail(operacion):
         "nextAppointment": _operation_next_appointment(operacion),
         "quotaStatus": _quota_status(operacion),
         "status": operacion.get_estado_display(),
-        "price": _currency(operacion.precio_total),
-        "startDate": _date_label(operacion.fecha_inicio),
-        "endDate": _date_label(operacion.fecha_final),
+        "price": currency(operacion.precio_total),
+        "startDate": date_label(operacion.fecha_inicio),
+        "endDate": date_label(operacion.fecha_final),
         "zonaGeneral": operacion.zona_general or "Sin especificar",
         "zonaEspecifica": operacion.zona_especifica or "Sin especificar",
         "detallesOperacion": operacion.detalles_op or "Sin detalles registrados.",
         "recomendaciones": operacion.recomendaciones or "Sin recomendaciones registradas.",
-        "medicalRecordDate": _date_label(ficha.fecha_ficha) if ficha else "Sin ficha registrada",
+        "medicalRecordDate": date_label(ficha.fecha_ficha) if ficha else "Sin ficha registrada",
         "medicalRecordReason": ficha.motivo_consulta if ficha and ficha.motivo_consulta else "Sin motivo registrado.",
         "medicalRecordNotes": ficha.observaciones if ficha and ficha.observaciones else "Sin observaciones registradas.",
         "documentPdfUrl": document_url,
@@ -734,7 +642,7 @@ def _prospect_item(prospecto):
         "apellidoMaterno": prospecto.apellido_materno,
         "phone": prospecto.telefono or "Sin telefono",
         "interest": _prospect_interest(prospecto),
-        "registeredBy": _full_name(prospecto.registrado_por),
+        "registeredBy": full_name(prospecto.registrado_por),
         "stage": _prospect_stage(prospecto),
         "state": prospecto.get_estado_display(),
         "stateValue": prospecto.estado,
@@ -855,7 +763,7 @@ def _client_item(cliente):
                     "rawId": cita.pk,
                     "_sortDate": cita.fecha_hora,
                     "dateTime": _datetime_label(cita.fecha_hora),
-                    "operation": _procedure_name(operacion),
+                    "operation": procedure_name(operacion),
                     "specialist": "Sin asignar",
                     "status": cita.get_estado_display(),
                 }
@@ -867,13 +775,13 @@ def _client_item(cliente):
     return {
         "id": f"CLI-{cliente.pk:04d}",
         "rawId": cliente.pk,
-        "name": _full_name(cliente.usuario),
+        "name": full_name(cliente.usuario),
         "phone": cliente.telefono or "Sin telefono",
         "ci": cliente.ci or "Sin CI",
         "status": cliente.get_estado_cliente_display(),
         "activeOperations": cliente.operaciones.filter(estado=Operacion.Estado.EN_PROCESO).count(),
         "totalOperations": cliente.operaciones.count(),
-        "lastAnalysis": _date_label(analisis.fecha_analisis) if analisis else "Sin analisis",
+        "lastAnalysis": date_label(analisis.fecha_analisis) if analisis else "Sin analisis",
         "scheduledAppointments": scheduled_appointments[:1],
     }
 
@@ -952,28 +860,28 @@ def _admin_client_detail(cliente):
     return {
         "client": _client_item(cliente),
         "metrics": [
-            _metric(
+            metric(
                 "admin-client-appointments",
                 "Citas reservadas",
                 len(appointments),
                 f"{len(upcoming_appointments)} proxima(s)",
                 "primary",
             ),
-            _metric(
+            metric(
                 "admin-client-sessions",
                 "Sesiones realizadas",
                 len(completed_sessions),
                 "Confirmadas con biometria",
                 "success",
             ),
-            _metric(
+            metric(
                 "admin-client-payments",
                 "Pagos realizados",
                 len(payments),
                 f"{len([p for p in payments if p.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE])} en revision",
                 "warning",
             ),
-            _metric(
+            metric(
                 "admin-client-pending-quotas",
                 "Pagos pendientes",
                 len(pending_quotas),
@@ -997,15 +905,15 @@ def _payment_item(payment):
     return {
         "id": f"PAY-{payment.pk:04d}",
         "rawId": payment.pk,
-        "patient": _full_name(operacion.paciente.usuario),
-        "operation": _procedure_name(operacion),
-        "amount": _currency(payment.monto_pagado),
+        "patient": full_name(operacion.paciente.usuario),
+        "operation": procedure_name(operacion),
+        "amount": currency(payment.monto_pagado),
         "submittedAt": _datetime_label(payment.created_at),
         "bank": "Transferencia",
         "status": _payment_status(payment),
         "quota": f"Cuota {payment.cuota.nro_cuota}",
-        "dueDate": _date_label(payment.cuota.fecha_vencimiento),
-        "verifier": _full_name(payment.verificado_por) if payment.verificado_por else "Sin revisar",
+        "dueDate": date_label(payment.cuota.fecha_vencimiento),
+        "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Sin revisar",
         "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
         "note": payment.observacion_verificacion or payment.detalles_pago or "",
     }
@@ -1028,11 +936,11 @@ def _admin_quota_item(cuota):
     return {
         "id": f"CUO-{cuota.pk:04d}",
         "rawId": cuota.pk,
-        "patient": _full_name(operacion.paciente.usuario),
-        "operation": _procedure_name(operacion),
+        "patient": full_name(operacion.paciente.usuario),
+        "operation": procedure_name(operacion),
         "quotaNumber": cuota.nro_cuota,
-        "amount": _currency(_quota_programmed_amount(cuota)),
-        "dueDate": _date_label(cuota.fecha_vencimiento),
+        "amount": currency(_quota_programmed_amount(cuota)),
+        "dueDate": date_label(cuota.fecha_vencimiento),
         "status": _quota_display_status(cuota),
         "paymentsCount": cuota.pagos_realizados.count(),
     }
@@ -1065,21 +973,21 @@ def _expense_item(expense):
         "id": f"GAS-{expense.pk:04d}",
         "rawId": expense.pk,
         "date": expense.fecha.isoformat(),
-        "dateLabel": _date_label(expense.fecha),
+        "dateLabel": date_label(expense.fecha),
         "categoryId": expense.categoria_id,
         "category": expense.categoria.nombre,
         "concept": expense.concepto,
         "units": str(expense.unidades),
         "unitCost": str(expense.costo_unidad),
         "total": str(expense.gasto_total),
-        "totalLabel": _currency(expense.gasto_total),
+        "totalLabel": currency(expense.gasto_total),
         "provider": expense.proveedor,
         "invoiceUrl": expense.factura.url if expense.factura else "",
         "invoiceName": PurePosixPath(expense.factura.name).name if expense.factura else "",
         "details": expense.detalles,
         "branchId": expense.sucursal_id,
         "branchName": expense.sucursal.nombre,
-        "registeredBy": _full_name(expense.registrado_por) if expense.registrado_por else "Sin registrar",
+        "registeredBy": full_name(expense.registrado_por) if expense.registrado_por else "Sin registrar",
     }
 
 
@@ -1215,9 +1123,9 @@ def _catalog_entry(item_id, title, subtitle, active, metadata, values):
 
 def _catalog_metric_set(active_count, inactive_count, total_count, relation_label):
     return [
-        _metric("catalog-active", "Activos", active_count, "Visibles para nuevas operaciones", "success"),
-        _metric("catalog-inactive", "Inactivos", inactive_count, "Preservados para historico y reactivacion", "warning"),
-        _metric("catalog-total", "Total", total_count, relation_label, "primary"),
+        metric("catalog-active", "Activos", active_count, "Visibles para nuevas operaciones", "success"),
+        metric("catalog-inactive", "Inactivos", inactive_count, "Preservados para historico y reactivacion", "warning"),
+        metric("catalog-total", "Total", total_count, relation_label, "primary"),
     ]
 
 
@@ -1296,7 +1204,7 @@ def _catalog_page_data(catalog_key):
             _catalog_entry(
                 item.pk,
                 str(item),
-                f"Precio base: {_currency(item.precio_base)}",
+                f"Precio base: {currency(item.precio_base)}",
                 item.activo,
                 [
                     {"label": "Tipo de servicio", "value": item.tipo_servicio.tipo},
@@ -1991,7 +1899,7 @@ def _staff_item(especialista):
     return {
         "id": f"STF-{especialista.pk:04d}",
         "rawId": especialista.pk,
-        "specialist": _full_name(especialista.usuario),
+        "specialist": full_name(especialista.usuario),
         "specialty": ", ".join(specialties) if specialties else "Sin especialidad",
         "specialtyIds": [rel.especialidad_id for rel in especialista.especialidades_rel.all()],
         "load": load,
@@ -2009,16 +1917,6 @@ def _staff_item(especialista):
         "activeOperations": len(active_operations),
         "upcomingAppointments": len(upcoming),
         "observations": especialista.observaciones or "",
-    }
-
-
-def _metric(identifier, label, value, delta, tone):
-    return {
-        "id": identifier,
-        "label": label,
-        "value": str(value),
-        "delta": delta,
-        "tone": tone,
     }
 
 
@@ -2081,7 +1979,7 @@ def _parse_staff_payload(request, payload, errors, *, instance=None):
             errors["branchId"] = "La sucursal seleccionada no es valida."
     else:
         # Admin principal/superuser sin branchId explicito: usar sucursal activa del contexto.
-        sucursal_base = _get_user_branch(request)
+        sucursal_base = get_user_branch(request)
 
     if not sucursal_base:
         errors["branchId"] = "No encontramos una sucursal activa para este especialista."
@@ -2191,7 +2089,7 @@ def _dashboard_alerts():
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_offline_confirmation_conflicts(request):
     branch_id = request.GET.get("branchId")
     qs = EventoConfirmacionCita.objects.select_related("cita", "paciente", "sucursal").filter(
@@ -2202,7 +2100,7 @@ def admin_offline_confirmation_conflicts(request):
         try:
             qs = qs.filter(sucursal_id=int(branch_id))
         except ValueError:
-            return _json({"detail": "branchId inválido."}, status=400)
+            return json_response({"detail": "branchId inválido."}, status=400)
 
     items = []
     for event in qs.order_by("-confirmado_en")[:200]:
@@ -2219,29 +2117,29 @@ def admin_offline_confirmation_conflicts(request):
             "conflictReason": event.conflict_reason,
             "syncStatus": event.sync_status,
         })
-    return _json({"items": items})
+    return json_response({"items": items})
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_resolve_offline_confirmation_conflict(request, event_id):
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     resolution = (payload.get("resolution") or "").strip().upper()
     reason = (payload.get("reason") or "").strip()
     if resolution not in {"ACCEPT", "REJECT"}:
-        return _json({"detail": "resolution debe ser ACCEPT o REJECT."}, status=400)
+        return json_response({"detail": "resolution debe ser ACCEPT o REJECT."}, status=400)
     if not reason:
-        return _json({"detail": "reason es obligatorio para resolver conflictos."}, status=400)
+        return json_response({"detail": "reason es obligatorio para resolver conflictos."}, status=400)
 
     event = EventoConfirmacionCita.objects.select_for_update(of=("self",)).select_related("cita").filter(event_id=event_id).first()
     if not event:
-        return _json({"detail": "No encontramos el evento solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el evento solicitado."}, status=404)
     if event.sync_status != EventoConfirmacionCita.EstadoSync.CONFLICT:
-        return _json({"detail": "El evento no está en estado de conflicto."}, status=400)
+        return json_response({"detail": "El evento no está en estado de conflicto."}, status=400)
 
     if resolution == "ACCEPT":
         event.sync_status = EventoConfirmacionCita.EstadoSync.ACCEPTED
@@ -2258,20 +2156,20 @@ def admin_resolve_offline_confirmation_conflict(request, event_id):
     event.confirmed_at_server = timezone.now()
     event.save(update_fields=["sync_status", "conflict_reason", "confirmed_at_server", "updated_at"])
 
-    return _json({"detail": "Conflicto resuelto.", "eventId": event.event_id, "syncStatus": event.sync_status})
+    return json_response({"detail": "Conflicto resuelto.", "eventId": event.event_id, "syncStatus": event.sync_status})
 
 
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_offline_confirmation_metrics(request):
     branch_id = request.GET.get("branchId")
     days = request.GET.get("days")
     try:
         days_int = int(days) if days else 7
     except ValueError:
-        return _json({"detail": "days inválido."}, status=400)
+        return json_response({"detail": "days inválido."}, status=400)
     days_int = max(1, min(days_int, 60))
 
     start_at = timezone.now() - timedelta(days=days_int)
@@ -2280,7 +2178,7 @@ def admin_offline_confirmation_metrics(request):
         try:
             qs = qs.filter(sucursal_id=int(branch_id))
         except ValueError:
-            return _json({"detail": "branchId inválido."}, status=400)
+            return json_response({"detail": "branchId inválido."}, status=400)
 
     total = qs.count()
     accepted = qs.filter(sync_status=EventoConfirmacionCita.EstadoSync.ACCEPTED).count()
@@ -2288,7 +2186,7 @@ def admin_offline_confirmation_metrics(request):
     rejected = qs.filter(sync_status=EventoConfirmacionCita.EstadoSync.REJECTED).count()
     duplicates = qs.filter(sync_status=EventoConfirmacionCita.EstadoSync.DUPLICATE).count()
 
-    return _json({
+    return json_response({
         "windowDays": days_int,
         "totals": {
             "total": total,
@@ -2304,12 +2202,12 @@ def admin_offline_confirmation_metrics(request):
     })
 
 
-@_admin_required
+@admin_required
 def admin_dashboard(request):
     """Retorna solo las metricas basicas y alertas del dashboard"""
     mark_expired_programmed_appointments_as_no_show()
     today = timezone.localdate()
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
 
     operations_qs = Operacion.objects.filter(estado=Operacion.Estado.EN_PROCESO)
     prospectos_qs = Prospecto.objects.all()
@@ -2353,18 +2251,18 @@ def admin_dashboard(request):
 
     data = {
         "metrics": [
-            _metric("payments", "Pagos por verificar", pending_payments_count, f"{payments_today} subidos hoy", "warning"),
-            _metric("operations", "Tratamientos activos", operations_qs.count(), f"{operations_started_this_month} iniciadas este mes", "primary"),
-            _metric("prospects", "Prospectos en seguimiento", prospectos_qs.filter(estado=Prospecto.Estado.PASAJERO).count(), prospect_delta, "success"),
-            _metric("appointments", "Citas del dia", appointments_today, f"{pending_biometric} pendientes de biometria", "danger" if pending_biometric else "success"),
+            metric("payments", "Pagos por verificar", pending_payments_count, f"{payments_today} subidos hoy", "warning"),
+            metric("operations", "Tratamientos activos", operations_qs.count(), f"{operations_started_this_month} iniciadas este mes", "primary"),
+            metric("prospects", "Prospectos en seguimiento", prospectos_qs.filter(estado=Prospecto.Estado.PASAJERO).count(), prospect_delta, "success"),
+            metric("appointments", "Citas del dia", appointments_today, f"{pending_biometric} pendientes de biometria", "danger" if pending_biometric else "success"),
         ],
         "alerts": _dashboard_alerts(),
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_dashboard_payments(request):
     """Retorna los pagos proximos filtrados por mes/año"""
     today = timezone.localdate()
@@ -2384,7 +2282,7 @@ def admin_dashboard_payments(request):
     if month == today.month and year == today.year:
         range_start = today
 
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
 
     upcoming_quotas = CuotaPlanPago.objects.select_related(
         "operacion__paciente__usuario",
@@ -2404,18 +2302,18 @@ def admin_dashboard_payments(request):
         upcoming_payments.append({
             "id": q.pk,
             "dueDate": q.fecha_vencimiento.isoformat(),
-            "dueDateLabel": _date_label(q.fecha_vencimiento),
-            "amount": _currency(_quota_programmed_amount(q)),
-            "client": _full_name(q.operacion.paciente.usuario),
+            "dueDateLabel": date_label(q.fecha_vencimiento),
+            "amount": currency(_quota_programmed_amount(q)),
+            "client": full_name(q.operacion.paciente.usuario),
             "clientId": q.operacion.paciente_id,
-            "operation": _procedure_name(q.operacion),
+            "operation": procedure_name(q.operacion),
             "operationId": q.operacion_id,
             "quotaNumber": q.nro_cuota,
             "isToday": q.fecha_vencimiento == today,
             "isThisWeek": start_of_week <= q.fecha_vencimiento <= end_of_week,
         })
 
-    return _json({
+    return json_response({
         "month": month,
         "year": year,
         "payments": upcoming_payments
@@ -2423,7 +2321,7 @@ def admin_dashboard_payments(request):
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_dashboard_agenda(request):
     """Retorna la agenda filtrada por mes/año"""
     today = timezone.localdate()
@@ -2443,7 +2341,7 @@ def admin_dashboard_agenda(request):
     if month == today.month and year == today.year:
         range_start = today
 
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
 
     agenda_qs = (
         CitaMedica.objects.select_related(
@@ -2469,9 +2367,9 @@ def admin_dashboard_agenda(request):
             "id": cita.pk,
             "time": cita_local.strftime("%H:%M"),
             "dateLabel": cita_local.strftime("%d/%m/%Y"),
-            "patient": _full_name(cita.operacion.paciente.usuario),
+            "patient": full_name(cita.operacion.paciente.usuario),
             "clientId": cita.operacion.paciente_id,
-            "procedure": _procedure_name(cita.operacion),
+            "procedure": procedure_name(cita.operacion),
             "operationId": cita.operacion_id,
             "specialist": "Asignado",
             "status": _agenda_status(cita),
@@ -2482,7 +2380,7 @@ def admin_dashboard_agenda(request):
             "isThisWeek": start_of_week <= cita.fecha_hora.date() <= end_of_week,
         })
 
-    return _json({
+    return json_response({
         "month": month,
         "year": year,
         "agenda": agenda_data
@@ -2490,11 +2388,11 @@ def admin_dashboard_agenda(request):
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_prospect_check_duplicates(request):
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if not payload:
-        return _json({"detail": "Datos invalidos."}, status=400)
+        return json_response({"detail": "Datos invalidos."}, status=400)
 
     primer_nombre = (payload.get("primerNombre") or payload.get("nombres") or "").strip()
     segundo_nombre = (payload.get("segundoNombre") or "").strip()
@@ -2503,7 +2401,7 @@ def admin_prospect_check_duplicates(request):
     telefono = (payload.get("telefono") or "").strip()
 
     if not primer_nombre or not apellido_paterno:
-        return _json({"detail": "Primer nombre y apellido paterno son requeridos."}, status=400)
+        return json_response({"detail": "Primer nombre y apellido paterno son requeridos."}, status=400)
 
     # Buscar coincidencias exactas o similares
     # Filtramos por nombre + apellido o por telefono
@@ -2529,7 +2427,7 @@ def admin_prospect_check_duplicates(request):
         branch = match.sucursal_registro
         branch_info = f"{branch.nombre} ({branch.ciudad})" if branch else "otra sucursal"
         
-        return _json({
+        return json_response({
             "exists": True,
             "message": f"Atencion: Ya existe un prospecto con datos similares ({match}) registrado en {branch_info}.",
             "match": {
@@ -2539,15 +2437,15 @@ def admin_prospect_check_duplicates(request):
             }
         })
 
-    return _json({"exists": False})
+    return json_response({"exists": False})
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_clientes_global_search(request):
     query = request.GET.get("q", "").strip()
     if len(query) < 3:
-        return _json({"clients": []})
+        return json_response({"clients": []})
 
     # Buscamos en todos los clientes (global)
     clients_qs = Cliente.objects.select_related("usuario", "sucursal_registro").filter(
@@ -2563,7 +2461,7 @@ def admin_clientes_global_search(request):
         citas_medicas_libres__fecha_hora__gte=timezone.now(),
     ).distinct()[:10]
 
-    return _json({
+    return json_response({
         "clients": [
             {
                 "id": c.pk,
@@ -2580,10 +2478,10 @@ def admin_clientes_global_search(request):
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_prospectos(request):
     mark_expired_programmed_appointments_as_no_show()
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
     prospectos_qs = (
         Prospecto.objects.select_related("registrado_por")
         .prefetch_related(
@@ -2624,28 +2522,28 @@ def admin_prospectos(request):
 
     data = {
         "metrics": [
-            _metric(
+            metric(
                 "prospects-open",
                 "Prospectos abiertos",
                 prospectos_qs.filter(estado=Prospecto.Estado.PASAJERO).count(),
                 "Registrados internamente por el equipo",
                 "primary",
             ),
-            _metric(
+            metric(
                 "prospects-converted",
                 "Prospectos convertidos",
                 prospectos_qs.filter(estado=Prospecto.Estado.CONVERTIDO).count(),
                 "Ya cuentan con tratamiento activo o historico",
                 "success",
             ),
-            _metric(
+            metric(
                 "clients-active",
                 "Clientes activos",
                 clientes_qs.filter(estado_cliente=Cliente.Estado.ACTIVO).count(),
                 "Con al menos una operacion vigente",
                 "warning",
             ),
-            _metric(
+            metric(
                 "clients-inactive",
                 "Clientes inactivos",
                 clientes_qs.filter(estado_cliente=Cliente.Estado.INACTIVO).count(),
@@ -2656,21 +2554,21 @@ def admin_prospectos(request):
         "prospects": [_prospect_item(prospecto) for prospecto in prospectos_qs],
         "clients": [_client_item(cliente) for cliente in clientes_qs],
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_prospect_medical_availability(request, prospecto_id):
     prospecto = Prospecto.objects.filter(pk=prospecto_id).first()
     if not prospecto:
-        return _json({"detail": "No encontramos el prospecto solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el prospecto solicitado."}, status=404)
     if prospecto.estado != Prospecto.Estado.PASAJERO:
-        return _json({"detail": "Solo se pueden agendar citas para prospectos no convertidos."}, status=400)
+        return json_response({"detail": "Solo se pueden agendar citas para prospectos no convertidos."}, status=400)
 
     service_config = _medical_appointment_service_config()
     if not service_config:
-        return _json(
+        return json_response(
             {"detail": "No existe un servicio activo de cita medica o consulta para agendar prospectos."},
             status=400,
         )
@@ -2684,7 +2582,7 @@ def admin_prospect_medical_availability(request, prospecto_id):
     else:
         branch_id = 1
 
-    return _json(
+    return json_response(
         {
             "prospect": _prospect_item(prospecto),
             "service": {
@@ -2697,7 +2595,7 @@ def admin_prospect_medical_availability(request, prospecto_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_create_prospect_medical_appointment(request, prospecto_id):
     prospecto = (
@@ -2707,27 +2605,27 @@ def admin_create_prospect_medical_appointment(request, prospecto_id):
         .first()
     )
     if not prospecto:
-        return _json({"detail": "No encontramos el prospecto solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el prospecto solicitado."}, status=404)
     if prospecto.estado != Prospecto.Estado.PASAJERO:
-        return _json({"detail": "Solo se pueden agendar citas para prospectos no convertidos."}, status=400)
+        return json_response({"detail": "Solo se pueden agendar citas para prospectos no convertidos."}, status=400)
     if prospecto.citas_medicas.filter(estado=CitaProspecto.Estado.PROGRAMADA).exists():
-        return _json({"detail": "Este prospecto ya tiene una cita medica programada."}, status=400)
+        return json_response({"detail": "Este prospecto ya tiene una cita medica programada."}, status=400)
 
     service_config = _medical_appointment_service_config()
     if not service_config:
-        return _json(
+        return json_response(
             {"detail": "No existe un servicio activo de cita medica o consulta para agendar prospectos."},
             status=400,
         )
 
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     sucursal_id = payload.get("branchId")
     fecha_hora_str = payload.get("dateTime")
     if not sucursal_id or not fecha_hora_str:
-        return _json({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
+        return json_response({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
         
     try:
         from django.utils import dateparse
@@ -2737,7 +2635,7 @@ def admin_create_prospect_medical_appointment(request, prospecto_id):
         if not fecha_hora:
             raise ValueError
     except Exception:
-        return _json({"detail": "Formato de fecha u hora invalido."}, status=400)
+        return json_response({"detail": "Formato de fecha u hora invalido."}, status=400)
 
     appointment = CitaProspecto.objects.create(
         prospecto=prospecto,
@@ -2747,7 +2645,7 @@ def admin_create_prospect_medical_appointment(request, prospecto_id):
         estado=CitaProspecto.Estado.PROGRAMADA,
         detalles_cita="Cita medica agendada libremente por administracion.",
     )
-    return _json(
+    return json_response(
         {
             "detail": "La cita medica fue agendada correctamente para el prospecto.",
             "appointment": _prospect_appointment_item(appointment),
@@ -2757,16 +2655,16 @@ def admin_create_prospect_medical_appointment(request, prospecto_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_update_prospect(request, prospecto_id):
     prospecto = Prospecto.objects.select_for_update().filter(pk=prospecto_id).first()
     if not prospecto:
-        return _json({"detail": "No encontramos el prospecto solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el prospecto solicitado."}, status=404)
 
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "Datos invalidos."}, status=400)
+        return json_response({"detail": "Datos invalidos."}, status=400)
 
     def _capitalize_first_letter(value):
         text = (value or "").strip()
@@ -2791,7 +2689,7 @@ def admin_update_prospect(request, prospecto_id):
         if requested_state in {Prospecto.Estado.PASAJERO, Prospecto.Estado.DESCARTADO}:
             prospecto.estado = requested_state
         elif requested_state:
-            return _json(
+            return json_response(
                 {"detail": "El estado seleccionado no es valido para este prospecto."},
                 status=400,
             )
@@ -2802,7 +2700,7 @@ def admin_update_prospect(request, prospecto_id):
     if not prospecto.apellido_paterno:
         errors["apellidoPaterno"] = "El apellido paterno es obligatorio."
     if errors:
-        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
 
     prospecto.save()
 
@@ -2820,7 +2718,7 @@ def admin_update_prospect(request, prospecto_id):
             except (ValueError, TypeError):
                 continue
 
-    return _json(
+    return json_response(
         {
             "detail": "Datos del prospecto y estados de citas actualizados correctamente.",
             "prospect": _prospect_item(prospecto),
@@ -2829,7 +2727,7 @@ def admin_update_prospect(request, prospecto_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_cancel_prospect_medical_appointment(request, appointment_id):
     appointment = (
@@ -2839,15 +2737,15 @@ def admin_cancel_prospect_medical_appointment(request, appointment_id):
         .first()
     )
     if not appointment:
-        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
     if appointment.estado != CitaProspecto.Estado.PROGRAMADA:
-        return _json({"detail": "Solo se pueden cancelar citas programadas."}, status=400)
+        return json_response({"detail": "Solo se pueden cancelar citas programadas."}, status=400)
 
     appointment.estado = CitaProspecto.Estado.CANCELADA
     appointment.detalles_cita = "Cita medica de prospecto cancelada desde administracion."
     appointment.save(update_fields=["estado", "detalles_cita", "updated_at"])
 
-    return _json(
+    return json_response(
         {
             "detail": "La cita medica del prospecto fue cancelada correctamente.",
             "appointment": _prospect_appointment_item(appointment),
@@ -2856,7 +2754,7 @@ def admin_cancel_prospect_medical_appointment(request, appointment_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_update_prospect_medical_appointment(request, appointment_id):
     appointment = (
@@ -2866,20 +2764,20 @@ def admin_update_prospect_medical_appointment(request, appointment_id):
         .first()
     )
     if not appointment:
-        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
 
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if not payload or "status" not in payload:
-        return _json({"detail": "Datos insuficientes."}, status=400)
+        return json_response({"detail": "Datos insuficientes."}, status=400)
 
     new_status = payload["status"]
     if new_status not in CitaProspecto.Estado.values:
-        return _json({"detail": "Estado de cita invalido."}, status=400)
+        return json_response({"detail": "Estado de cita invalido."}, status=400)
 
     appointment.estado = new_status
     appointment.save()
 
-    return _json(
+    return json_response(
         {
             "detail": "Cita medica actualizada correctamente.",
             "prospect": _prospect_item(appointment.prospecto),
@@ -2888,22 +2786,22 @@ def admin_update_prospect_medical_appointment(request, appointment_id):
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_cliente_detalle(request, client_id):
     mark_expired_programmed_appointments_as_no_show()
     cliente = _admin_client_queryset().filter(pk=client_id).first()
     if not cliente:
-        return _json({"detail": "No encontramos el cliente solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el cliente solicitado."}, status=404)
 
-    return _json(_admin_client_detail(cliente))
+    return json_response(_admin_client_detail(cliente))
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_cliente_reservation_availability(request, client_id, operation_id):
     cliente = Cliente.objects.filter(pk=client_id).first()
     if not cliente:
-        return _json({"detail": "No encontramos el cliente solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el cliente solicitado."}, status=404)
 
     operacion = (
         Operacion.objects.filter(paciente=cliente, pk=operation_id)
@@ -2918,28 +2816,28 @@ def admin_cliente_reservation_availability(request, client_id, operation_id):
         .first()
     )
     if not operacion:
-        return _json({"detail": "No encontramos la operacion solicitada para este cliente."}, status=404)
+        return json_response({"detail": "No encontramos la operacion solicitada para este cliente."}, status=404)
     if operacion.estado != Operacion.Estado.EN_PROCESO:
-        return _json({"detail": "Solo se pueden reservar citas para tratamientos en proceso."}, status=400)
+        return json_response({"detail": "Solo se pueden reservar citas para tratamientos en proceso."}, status=400)
 
-    return _json({"operation": _client_operation_item(operacion)})
+    return json_response({"operation": _client_operation_item(operacion)})
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_cliente_free_medical_availability(request, client_id):
     cliente = Cliente.objects.filter(pk=client_id).first()
     if not cliente:
-        return _json({"detail": "No encontramos el cliente solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el cliente solicitado."}, status=404)
 
     service_config = _medical_appointment_service_config()
     if not service_config:
-        return _json(
+        return json_response(
             {"detail": "No existe un servicio activo de cita medica o consulta para agendar clientes."},
             status=400,
         )
 
-    return _json(
+    return json_response(
         {
             "client": _client_item(cliente),
             "service": {
@@ -2951,28 +2849,28 @@ def admin_cliente_free_medical_availability(request, client_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_cliente_create_free_medical_appointment(request, client_id):
     cliente = Cliente.objects.select_for_update(of=("self",)).filter(pk=client_id).first()
     if not cliente:
-        return _json({"detail": "No encontramos el cliente solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el cliente solicitado."}, status=404)
 
     service_config = _medical_appointment_service_config()
     if not service_config:
-        return _json(
+        return json_response(
             {"detail": "No existe un servicio activo de cita medica o consulta para agendar clientes."},
             status=400,
         )
 
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
         
     sucursal_id = payload.get("branchId")
     fecha_hora_str = payload.get("dateTime")
     if not sucursal_id or not fecha_hora_str:
-        return _json({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
+        return json_response({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
         
     try:
         from django.utils import dateparse
@@ -2982,7 +2880,7 @@ def admin_cliente_create_free_medical_appointment(request, client_id):
         if not fecha_hora:
             raise ValueError
     except Exception:
-        return _json({"detail": "Formato de fecha u hora invalido."}, status=400)
+        return json_response({"detail": "Formato de fecha u hora invalido."}, status=400)
 
     appointment = CitaClienteLibre.objects.create(
         cliente=cliente,
@@ -3000,7 +2898,7 @@ def admin_cliente_create_free_medical_appointment(request, client_id):
         appointment_type="cita_cliente_libre",
     )
 
-    return _json(
+    return json_response(
         {
             "detail": "La cita medica libre fue agendada correctamente para el cliente.",
             "appointment": _free_client_appointment_item(appointment),
@@ -3010,12 +2908,12 @@ def admin_cliente_create_free_medical_appointment(request, client_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_cliente_create_reservation(request, client_id, operation_id):
     cliente = Cliente.objects.filter(pk=client_id).first()
     if not cliente:
-        return _json({"detail": "No encontramos el cliente solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el cliente solicitado."}, status=404)
 
     operacion = (
         Operacion.objects.select_for_update(of=("self",))
@@ -3031,22 +2929,22 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
         .first()
     )
     if not operacion:
-        return _json({"detail": "No encontramos la operacion solicitada para este cliente."}, status=404)
+        return json_response({"detail": "No encontramos la operacion solicitada para este cliente."}, status=404)
     if not operacion.puede_reservar:
-        return _json(
+        return json_response(
             {"detail": operacion.motivo_bloqueo_reserva or "Esta operacion no permite nuevas reservas."},
             status=400,
         )
 
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     sucursal_id = payload.get("branchId")
     fecha_hora_str = payload.get("dateTime")
     
     if not sucursal_id or not fecha_hora_str:
-        return _json({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
+        return json_response({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
         
     try:
         from django.utils import dateparse
@@ -3056,7 +2954,7 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
         if not fecha_hora:
             raise ValueError
     except Exception:
-        return _json({"detail": "Formato de fecha u hora invalido."}, status=400)
+        return json_response({"detail": "Formato de fecha u hora invalido."}, status=400)
 
     cita = CitaMedica.objects.create(
         operacion=operacion,
@@ -3073,7 +2971,7 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
         appointment_type="cita_medica",
     )
 
-    return _json(
+    return json_response(
         {
             "detail": "La cita fue reservada correctamente para el cliente.",
             "appointment": _client_appointment_item(cita),
@@ -3084,7 +2982,7 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_cliente_inactivate(request, client_id):
     cliente = (
@@ -3106,14 +3004,14 @@ def admin_cliente_inactivate(request, client_id):
         .first()
     )
     if not cliente:
-        return _json({"detail": "No encontramos el cliente solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el cliente solicitado."}, status=404)
 
     pending_review_payment = PagoRealizado.objects.filter(
         cuota__operacion__paciente=cliente,
         estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
     ).select_related("cuota__operacion").order_by("created_at").first()
     if pending_review_payment:
-        return _json(
+        return json_response(
             {
                 "detail": (
                     "No se puede inactivar al cliente porque tiene un pago realizado pendiente de revision. "
@@ -3155,7 +3053,7 @@ def admin_cliente_inactivate(request, client_id):
 
     cliente.cambiar_estado(Cliente.Estado.INACTIVO, save=True, manual=True)
 
-    return _json(
+    return json_response(
         {
             "detail": (
                 "El cliente fue convertido a inactivo. "
@@ -3172,7 +3070,7 @@ def admin_cliente_inactivate(request, client_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_cancel_appointment(request, appointment_id):
     appointment = (
@@ -3186,10 +3084,10 @@ def admin_cancel_appointment(request, appointment_id):
         .first()
     )
     if not appointment:
-        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
 
     if appointment.estado != CitaMedica.Estado.PROGRAMADA:
-        return _json(
+        return json_response(
             {
                 "detail": "Solo se pueden cancelar citas que todavia esten programadas."
             },
@@ -3203,14 +3101,14 @@ def admin_cancel_appointment(request, appointment_id):
     client_user = appointment.operacion.paciente.usuario
     create_notification(recipient=client_user, branch=appointment.sucursal, type=Notification.Type.CLIENT_APPOINTMENT_CANCELLED, title="Cita cancelada", message="Tu cita fue cancelada por administracion.", action_url="/cliente/reservas", source_event="appointment.cancelled", source_entity_type="appointment", source_entity_id=appointment.id, created_by_type="admin", created_by_id=request.user.id)
 
-    return _json(
+    return json_response(
         {
             "detail": "La cita programada fue cancelada correctamente.",
             "appointment": {
                 "id": f"CIT-{appointment.pk:04d}",
                 "rawId": appointment.pk,
                 "dateTime": _datetime_label(appointment.fecha_hora),
-                "operation": _procedure_name(appointment.operacion),
+                "operation": procedure_name(appointment.operacion),
                 "specialist": "Sin asignar",
                 "status": appointment.get_estado_display(),
             },
@@ -3219,7 +3117,7 @@ def admin_cancel_appointment(request, appointment_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_mark_appointment_pending_biometric(request, appointment_id):
     appointment = (
@@ -3233,17 +3131,17 @@ def admin_mark_appointment_pending_biometric(request, appointment_id):
         .first()
     )
     if not appointment:
-        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
 
     if appointment.estado != CitaMedica.Estado.PROGRAMADA:
-        return _json({"detail": "Solo se pueden cerrar citas que aun esten programadas."}, status=400)
+        return json_response({"detail": "Solo se pueden cerrar citas que aun esten programadas."}, status=400)
 
     appointment.estado = CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
     appointment.verif_biometria = False
     appointment.detalles_cita = appointment.detalles_cita or "Cita marcada como realizada desde administracion."
     appointment.save()
 
-    return _json(
+    return json_response(
         {
             "detail": "La cita quedo realizada y pendiente de confirmacion biometrica.",
             "appointment": _client_appointment_item(appointment),
@@ -3253,17 +3151,17 @@ def admin_mark_appointment_pending_biometric(request, appointment_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_update_appointment_status(request, appointment_id):
     appointment = CitaMedica.objects.filter(pk=appointment_id).first()
     if not appointment:
-        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
 
-    payload = _load_payload(request)
+    payload = load_payload(request)
     nuevo_estado = payload.get("status")
     if nuevo_estado not in [choice[0] for choice in CitaMedica.Estado.choices]:
-        return _json({"detail": "El estado proporcionado no es valido."}, status=400)
+        return json_response({"detail": "El estado proporcionado no es valido."}, status=400)
 
     previous_status = appointment.estado
     appointment.estado = nuevo_estado
@@ -3292,7 +3190,7 @@ def admin_update_appointment_status(request, appointment_id):
             ip_origen=_request_ip(request),
         )
 
-    return _json(
+    return json_response(
         {
             "detail": f"El estado de la cita fue actualizado a {appointment.get_estado_display()}.",
             "appointment_id": appointment.id,
@@ -3302,7 +3200,7 @@ def admin_update_appointment_status(request, appointment_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_reschedule_appointment(request, appointment_id):
     appointment = (
@@ -3311,17 +3209,17 @@ def admin_reschedule_appointment(request, appointment_id):
         .first()
     )
     if not appointment:
-        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
 
     if appointment.estado not in {CitaMedica.Estado.PROGRAMADA, CitaMedica.Estado.NO_ASISTIO}:
-        return _json({"detail": "Solo se pueden reprogramar citas programadas o no asistidas."}, status=400)
+        return json_response({"detail": "Solo se pueden reprogramar citas programadas o no asistidas."}, status=400)
 
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "Datos invalidos."}, status=400)
+        return json_response({"detail": "Datos invalidos."}, status=400)
     date_time_str = payload.get("dateTime")
     if not date_time_str:
-        return _json({"detail": "Debes enviar la nueva fecha y hora."}, status=400)
+        return json_response({"detail": "Debes enviar la nueva fecha y hora."}, status=400)
     try:
         from django.utils import dateparse
         new_date_time = dateparse.parse_datetime(date_time_str)
@@ -3330,9 +3228,9 @@ def admin_reschedule_appointment(request, appointment_id):
         if not new_date_time:
             raise ValueError
     except Exception:
-        return _json({"detail": "Formato de fecha u hora invalido."}, status=400)
+        return json_response({"detail": "Formato de fecha u hora invalido."}, status=400)
     if new_date_time <= timezone.now():
-        return _json({"detail": "La nueva fecha y hora debe ser futura."}, status=400)
+        return json_response({"detail": "La nueva fecha y hora debe ser futura."}, status=400)
 
     appointment.fecha_hora = new_date_time
     appointment.estado = CitaMedica.Estado.PROGRAMADA
@@ -3342,13 +3240,13 @@ def admin_reschedule_appointment(request, appointment_id):
     appointment.save(update_fields=["fecha_hora", "estado", "verif_biometria", "metodo_confirmacion", "detalles_cita", "updated_at"])
     client_user = appointment.operacion.paciente.usuario
     create_notification(recipient=client_user, branch=appointment.sucursal, type=Notification.Type.CLIENT_APPOINTMENT_RESCHEDULED, title="Cita reprogramada", message=f"Tu cita fue reprogramada para {_datetime_label(appointment.fecha_hora)}.", action_url="/cliente/reservas", source_event="appointment.rescheduled", source_entity_type="appointment", source_entity_id=appointment.id, created_by_type="admin", created_by_id=request.user.id)
-    return _json({"detail": "La reserva fue reprogramada correctamente.", "appointment": _client_appointment_item(appointment)})
+    return json_response({"detail": "La reserva fue reprogramada correctamente.", "appointment": _client_appointment_item(appointment)})
 
 
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_confirm_appointment_biometric(request, appointment_id):
     appointment = (
@@ -3362,14 +3260,14 @@ def admin_confirm_appointment_biometric(request, appointment_id):
         .first()
     )
     if not appointment:
-        return _json({"detail": "No encontramos la cita solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
 
     if appointment.estado != CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
-        return _json({"detail": "Solo se pueden confirmar citas pendientes de biometria."}, status=400)
+        return json_response({"detail": "Solo se pueden confirmar citas pendientes de biometria."}, status=400)
 
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     captured_template = (payload.get("template") or "").strip()
     try:
@@ -3382,13 +3280,13 @@ def admin_confirm_appointment_biometric(request, appointment_id):
     ).first()
 
     if not enrollment:
-        return _json({"detail": "El cliente no tiene una huella biometrica registrada."}, status=400)
+        return json_response({"detail": "El cliente no tiene una huella biometrica registrada."}, status=400)
     if not captured_template:
-        return _json({"detail": "Debes capturar la huella antes de confirmar la cita."}, status=400)
+        return json_response({"detail": "Debes capturar la huella antes de confirmar la cita."}, status=400)
     if quality < 60:
-        return _json({"detail": "La calidad de captura simulada es insuficiente."}, status=400)
+        return json_response({"detail": "La calidad de captura simulada es insuficiente."}, status=400)
     if captured_template != enrollment.template_biometrico:
-        return _json({"detail": "La huella capturada no coincide con la huella registrada del cliente."}, status=400)
+        return json_response({"detail": "La huella capturada no coincide con la huella registrada del cliente."}, status=400)
 
     appointment.estado = CitaMedica.Estado.CONFIRMADA
     appointment.verif_biometria = True
@@ -3403,14 +3301,14 @@ def admin_confirm_appointment_biometric(request, appointment_id):
         ip_origen=_request_ip(request),
     )
 
-    return _json(
+    return json_response(
         {
             "detail": "La cita fue confirmada con huella biometrica simulada.",
             "appointment": {
                 "id": f"CIT-{appointment.pk:04d}",
                 "rawId": appointment.pk,
                 "dateTime": _datetime_label(appointment.fecha_hora),
-                "operation": _procedure_name(appointment.operacion),
+                "operation": procedure_name(appointment.operacion),
                 "specialist": "Sin asignar",
                 "status": appointment.get_estado_display(),
                 "biometricStatus": "Validada",
@@ -3422,7 +3320,7 @@ def admin_confirm_appointment_biometric(request, appointment_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_crear_prospecto(request):
     def _capitalize_first_letter(value):
         text = (value or "").strip()
@@ -3433,7 +3331,7 @@ def admin_crear_prospecto(request):
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     primer_nombre = _capitalize_first_letter(payload.get("primerNombre") or payload.get("nombres"))
     segundo_nombre = _capitalize_first_letter(payload.get("segundoNombre"))
@@ -3452,11 +3350,11 @@ def admin_crear_prospecto(request):
         errors["estado"] = "Solo puedes crear prospectos en estado pasajero o descartado."
 
     if errors:
-        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
 
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
     if not branch:
-        return _json(
+        return json_response(
             {"detail": "No encontramos una sucursal activa para registrar el prospecto."},
             status=400,
         )
@@ -3473,7 +3371,7 @@ def admin_crear_prospecto(request):
         sucursal_registro=branch,
     )
 
-    return _json(
+    return json_response(
         {
             "detail": "Prospecto registrado correctamente.",
             "prospect": _prospect_item(prospecto),
@@ -3483,10 +3381,10 @@ def admin_crear_prospecto(request):
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_operaciones(request):
     mark_expired_programmed_appointments_as_no_show()
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
     operaciones_qs = (
         Operacion.objects.select_related(
             "paciente__usuario",
@@ -3518,21 +3416,21 @@ def admin_operaciones(request):
 
     data = {
         "metrics": [
-            _metric(
+            metric(
                 "operations-active",
                 "Operaciones en proceso",
                 operaciones_qs.filter(estado=Operacion.Estado.EN_PROCESO).count(),
                 "Tratamientos actualmente vigentes",
                 "primary",
             ),
-            _metric(
+            metric(
                 "operations-finished",
                 "Operaciones finalizadas",
                 operaciones_qs.filter(estado=Operacion.Estado.FINALIZADA).count(),
                 "Historial clinico",
                 "success",
             ),
-            _metric(
+            metric(
                 "operations-blocked",
                 "Reservas bloqueadas",
                 blocked_reservations,
@@ -3545,11 +3443,11 @@ def admin_operaciones(request):
             *[_prospect_appointment_operation_card(cita) for cita in prospect_appointments_qs],
         ],
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_operacion_detalle(request, operacion_id):
     mark_expired_programmed_appointments_as_no_show()
     operacion = (
@@ -3574,22 +3472,22 @@ def admin_operacion_detalle(request, operacion_id):
     )
 
     if not operacion:
-        return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la operacion solicitada."}, status=404)
 
-    return _json({"operation": _operation_detail(operacion)})
+    return json_response({"operation": _operation_detail(operacion)})
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_update_operation_details(request, operacion_id):
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     operacion = Operacion.objects.select_for_update(of=("self",)).filter(pk=operacion_id).first()
     if not operacion:
-        return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la operacion solicitada."}, status=404)
 
     errors = {}
     sesiones_totales = _parse_payload_int(payload, "sessionsTotal", errors, min_value=1)
@@ -3604,7 +3502,7 @@ def admin_update_operation_details(request, operacion_id):
             "reservadas o pendientes de biometria."
         )
     if errors:
-        return _json({"detail": "Corrige los datos de la operacion.", "errors": errors}, status=400)
+        return json_response({"detail": "Corrige los datos de la operacion.", "errors": errors}, status=400)
 
     operacion.detalles_op = (payload.get("details") or "").strip()
     operacion.recomendaciones = (payload.get("recommendations") or "").strip()
@@ -3631,16 +3529,16 @@ def admin_update_operation_details(request, operacion_id):
         )
         .get(pk=operacion.pk)
     )
-    return _json({"detail": "La operacion fue actualizada correctamente.", "operation": _operation_detail(operacion)})
+    return json_response({"detail": "La operacion fue actualizada correctamente.", "operation": _operation_detail(operacion)})
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_update_operation_price_plan(request, operacion_id):
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     operacion = (
         Operacion.objects.select_for_update(of=("self",))
@@ -3649,13 +3547,13 @@ def admin_update_operation_price_plan(request, operacion_id):
         .first()
     )
     if not operacion:
-        return _json({"detail": "No encontramos la operacion solicitada."}, status=404)
+        return json_response({"detail": "No encontramos la operacion solicitada."}, status=404)
 
     errors = {}
     new_price = _parse_payload_decimal(payload, "priceTotal", errors, min_value=Decimal("0.01"))
     new_quota_count = _parse_payload_int(payload, "quotaCount", errors, min_value=1)
     if errors:
-        return _json({"detail": "Corrige los datos del plan de pagos.", "errors": errors}, status=400)
+        return json_response({"detail": "Corrige los datos del plan de pagos.", "errors": errors}, status=400)
 
     cuotas = list(operacion.cuotas_plan_pagos.all())
     paid_total = sum(
@@ -3685,12 +3583,12 @@ def admin_update_operation_price_plan(request, operacion_id):
             "Resuelve o retira esos comprobantes antes de redistribuir el plan."
         )
     if errors:
-        return _json({"detail": "No se pudo redistribuir el plan de pagos.", "errors": errors}, status=400)
+        return json_response({"detail": "No se pudo redistribuir el plan de pagos.", "errors": errors}, status=400)
 
     remaining_amount = (new_price - paid_total).quantize(Decimal("0.01"))
     remaining_quota_count = new_quota_count - len(paid_quotas)
     if remaining_quota_count == 0 and remaining_amount > 0:
-        return _json(
+        return json_response(
             {
                 "detail": "No se pudo redistribuir el plan de pagos.",
                 "errors": {"quotaCount": "Necesitas al menos una cuota pendiente para el saldo restante."},
@@ -3708,7 +3606,7 @@ def admin_update_operation_price_plan(request, operacion_id):
         cuota.delete()
 
     next_quota_number = max([cuota.nro_cuota for cuota in paid_quotas], default=0) + 1
-    for index, amount in enumerate(_split_amount(remaining_amount, remaining_quota_count)):
+    for index, amount in enumerate(split_amount(remaining_amount, remaining_quota_count)):
         CuotaPlanPago.objects.create(
             operacion=operacion,
             nro_cuota=next_quota_number + index,
@@ -3740,13 +3638,13 @@ def admin_update_operation_price_plan(request, operacion_id):
         )
         .get(pk=operacion.pk)
     )
-    return _json({"detail": "El precio y las cuotas fueron redistribuidos correctamente.", "operation": _operation_detail(operacion)})
+    return json_response({"detail": "El precio y las cuotas fueron redistribuidos correctamente.", "operation": _operation_detail(operacion)})
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_pagos(request):
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
     status_filter = (request.GET.get("status") or "").strip().upper()
     date_from = (request.GET.get("dateFrom") or "").strip()
     date_to = (request.GET.get("dateTo") or "").strip()
@@ -3793,28 +3691,28 @@ def admin_pagos(request):
 
     data = {
         "metrics": [
-            _metric(
+            metric(
                 "payments-pending",
                 "Pendientes de revision",
                 pagos_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE).count(),
-                _currency(pending_amount),
+                currency(pending_amount),
                 "warning",
             ),
-            _metric(
+            metric(
                 "payments-approved",
                 "Pagos aprobados",
                 pagos_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO).count(),
                 "Impactan el estado de cuotas",
                 "success",
             ),
-            _metric(
+            metric(
                 "payments-observed",
                 "Pagos observados",
                 pagos_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.RECHAZADO).count(),
                 "Requieren seguimiento administrativo",
                 "danger",
             ),
-            _metric(
+            metric(
                 "payments-total",
                 "Pagos registrados",
                 pagos_qs.count(),
@@ -3826,11 +3724,11 @@ def admin_pagos(request):
         "payments": [_payment_item(payment) for payment in pagos_qs],
         "quotas": [_admin_quota_item(cuota) for cuota in cuotas_qs],
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_update_payment_qr_config(request):
     qr_file = request.FILES.get("qrImage")
     instructions = (request.POST.get("instructions") or "").strip()
@@ -3842,7 +3740,7 @@ def admin_update_payment_qr_config(request):
     if qr_file:
         config.imagen_qr = qr_file
     elif not config.imagen_qr:
-        return _json({"detail": "Debes adjuntar una imagen QR para guardar la configuracion."}, status=400)
+        return json_response({"detail": "Debes adjuntar una imagen QR para guardar la configuracion."}, status=400)
 
     if instructions:
         config.instrucciones = instructions
@@ -3850,7 +3748,7 @@ def admin_update_payment_qr_config(request):
     config.full_clean()
     config.save()
 
-    return _json(
+    return json_response(
         {
             "detail": "El QR de pago fue actualizado correctamente.",
             "paymentQrConfig": _payment_qr_config_item(config),
@@ -3859,12 +3757,12 @@ def admin_update_payment_qr_config(request):
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_update_payment_status(request, payment_id):
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     payment = (
         PagoRealizado.objects.select_related(
@@ -3876,7 +3774,7 @@ def admin_update_payment_status(request, payment_id):
         .first()
     )
     if not payment:
-        return _json({"detail": "No encontramos el pago solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el pago solicitado."}, status=404)
 
     status_value = (payload.get("status") or "").strip().upper()
     note = (payload.get("note") or "").strip()
@@ -3887,7 +3785,7 @@ def admin_update_payment_status(request, payment_id):
         PagoRealizado.EstadoVerificacion.CANCELADO,
     }
     if status_value not in valid_statuses:
-        return _json({"detail": "El estado solicitado no es valido."}, status=400)
+        return json_response({"detail": "El estado solicitado no es valido."}, status=400)
 
     payment.estado_verificacion = status_value
     if status_value == PagoRealizado.EstadoVerificacion.PENDIENTE:
@@ -3919,7 +3817,7 @@ def admin_update_payment_status(request, payment_id):
         PagoRealizado.EstadoVerificacion.CANCELADO: "El pago fue cancelado correctamente.",
     }
 
-    return _json(
+    return json_response(
         {
             "detail": detail_map[status_value],
             "payment": _payment_item(payment),
@@ -3928,11 +3826,11 @@ def admin_update_payment_status(request, payment_id):
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_gastos(request):
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
     if not branch:
-        return _json({"detail": "Selecciona una sucursal para consultar gastos."}, status=400)
+        return json_response({"detail": "Selecciona una sucursal para consultar gastos."}, status=400)
 
     today = timezone.localdate()
     try:
@@ -3940,7 +3838,7 @@ def admin_gastos(request):
         year = int(request.GET.get("year") or today.year)
         start = date(year, month, 1)
     except (TypeError, ValueError):
-        return _json({"detail": "Mes o anio invalido."}, status=400)
+        return json_response({"detail": "Mes o anio invalido."}, status=400)
 
     if month == 12:
         end = date(year + 1, 1, 1) - timedelta(days=1)
@@ -3957,15 +3855,15 @@ def admin_gastos(request):
     average_amount = total_amount / len(expenses) if expenses else Decimal("0")
     categories_count = len({expense.categoria_id for expense in expenses})
 
-    return _json(
+    return json_response(
         {
             "month": month,
             "year": year,
             "branch": {"id": branch.pk, "name": branch.nombre},
             "metrics": [
-                _metric("expenses-total", "Gasto del mes", _currency(total_amount), f"{len(expenses)} registro(s)", "danger"),
-                _metric("expenses-count", "Gastos registrados", len(expenses), f"{categories_count} categoria(s)", "primary"),
-                _metric("expenses-average", "Promedio por gasto", _currency(average_amount), "Calculado sobre el mes", "warning"),
+                metric("expenses-total", "Gasto del mes", currency(total_amount), f"{len(expenses)} registro(s)", "danger"),
+                metric("expenses-count", "Gastos registrados", len(expenses), f"{categories_count} categoria(s)", "primary"),
+                metric("expenses-average", "Promedio por gasto", currency(average_amount), "Calculado sobre el mes", "warning"),
             ],
             "categories": [
                 _expense_category_item(category)
@@ -3977,9 +3875,9 @@ def admin_gastos(request):
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_gastos_categorias(request):
-    return _json(
+    return json_response(
         {
             "categories": [
                 _expense_category_item(category)
@@ -3990,11 +3888,11 @@ def admin_gastos_categorias(request):
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_gasto_crear(request):
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
     if not branch:
-        return _json({"detail": "Selecciona una sucursal para registrar gastos."}, status=400)
+        return json_response({"detail": "Selecciona una sucursal para registrar gastos."}, status=400)
 
     try:
         expense = _parse_expense_payload(request)
@@ -4002,10 +3900,10 @@ def admin_gasto_crear(request):
         expense.registrado_por = request.user
         expense.save()
     except ValidationError as exc:
-        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
 
     expense = GastoSucursal.objects.select_related("categoria", "sucursal", "registrado_por").get(pk=expense.pk)
-    return _json(
+    return json_response(
         {
             "detail": "Gasto registrado correctamente.",
             "expense": _expense_item(expense),
@@ -4015,24 +3913,24 @@ def admin_gasto_crear(request):
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_gasto_actualizar(request, expense_id):
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
     if not branch:
-        return _json({"detail": "Selecciona una sucursal para actualizar gastos."}, status=400)
+        return json_response({"detail": "Selecciona una sucursal para actualizar gastos."}, status=400)
 
     expense = GastoSucursal.objects.filter(pk=expense_id, sucursal=branch).first()
     if not expense:
-        return _json({"detail": "No encontramos el gasto solicitado en esta sucursal."}, status=404)
+        return json_response({"detail": "No encontramos el gasto solicitado en esta sucursal."}, status=404)
 
     try:
         expense = _parse_expense_payload(request, instance=expense)
         expense.save()
     except ValidationError as exc:
-        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
 
     expense = GastoSucursal.objects.select_related("categoria", "sucursal", "registrado_por").get(pk=expense.pk)
-    return _json(
+    return json_response(
         {
             "detail": "Gasto actualizado correctamente.",
             "expense": _expense_item(expense),
@@ -4041,22 +3939,22 @@ def admin_gasto_actualizar(request, expense_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 def admin_gasto_eliminar(request, expense_id):
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
     if not branch:
-        return _json({"detail": "Selecciona una sucursal para eliminar gastos."}, status=400)
+        return json_response({"detail": "Selecciona una sucursal para eliminar gastos."}, status=400)
 
     expense = GastoSucursal.objects.filter(pk=expense_id, sucursal=branch).first()
     if not expense:
-        return _json({"detail": "No encontramos el gasto solicitado en esta sucursal."}, status=404)
+        return json_response({"detail": "No encontramos el gasto solicitado en esta sucursal."}, status=404)
 
     expense.delete()
-    return _json({"detail": "Gasto eliminado correctamente."})
+    return json_response({"detail": "Gasto eliminado correctamente."})
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_catalogos(request):
     active_services = ServicioConfig.objects.filter(activo=True).count()
     active_service_types = TipoServicio.objects.filter(activo=True).count()
@@ -4115,17 +4013,17 @@ def admin_catalogos(request):
             ),
         ],
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_catalogo_detalle(request, catalog_key):
     try:
         data = _catalog_page_data(catalog_key)
     except KeyError:
-        return _json({"detail": "El catalogo solicitado no existe."}, status=404)
-    return _json(data)
+        return json_response({"detail": "El catalogo solicitado no existe."}, status=404)
+    return json_response(data)
 
 
 @require_POST
@@ -4134,20 +4032,20 @@ def admin_catalogo_crear(request, catalog_key):
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     try:
         obj = _catalog_parse_payload(catalog_key, payload)
         obj.full_clean()
         obj.save()
     except KeyError:
-        return _json({"detail": "El catalogo solicitado no existe."}, status=404)
+        return json_response({"detail": "El catalogo solicitado no existe."}, status=404)
     except ValidationError as exc:
-        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
     except IntegrityError:
-        return _json({"detail": "Ya existe un registro con esos datos clave."}, status=400)
+        return json_response({"detail": "Ya existe un registro con esos datos clave."}, status=400)
 
-    return _json(
+    return json_response(
         {
             "detail": "Registro creado correctamente.",
             "item": next(item for item in _catalog_page_data(catalog_key)["items"] if item["id"] == obj.pk),
@@ -4161,25 +4059,25 @@ def admin_catalogo_crear(request, catalog_key):
 def admin_catalogo_actualizar(request, catalog_key, item_id):
     instance = _catalog_get_instance(catalog_key, item_id)
     if not instance:
-        return _json({"detail": "No encontramos el registro solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el registro solicitado."}, status=404)
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     try:
         obj = _catalog_parse_payload(catalog_key, payload, instance=instance)
         obj.full_clean()
         obj.save()
     except KeyError:
-        return _json({"detail": "El catalogo solicitado no existe."}, status=404)
+        return json_response({"detail": "El catalogo solicitado no existe."}, status=404)
     except ValidationError as exc:
-        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
     except IntegrityError:
-        return _json({"detail": "Ya existe un registro con esos datos clave."}, status=400)
+        return json_response({"detail": "Ya existe un registro con esos datos clave."}, status=400)
 
-    return _json(
+    return json_response(
         {
             "detail": "Registro actualizado correctamente.",
             "item": next(item for item in _catalog_page_data(catalog_key)["items"] if item["id"] == obj.pk),
@@ -4192,21 +4090,21 @@ def admin_catalogo_actualizar(request, catalog_key, item_id):
 def admin_catalogo_estado(request, catalog_key, item_id):
     instance = _catalog_get_instance(catalog_key, item_id)
     if not instance:
-        return _json({"detail": "No encontramos el registro solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el registro solicitado."}, status=404)
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     active = payload.get("active")
     if not isinstance(active, bool):
-        return _json({"detail": "Debes indicar si el registro queda activo o inactivo."}, status=400)
+        return json_response({"detail": "Debes indicar si el registro queda activo o inactivo."}, status=400)
 
     instance.activo = active
     instance.save(update_fields=["activo", "updated_at"])
 
-    return _json(
+    return json_response(
         {
             "detail": "Estado actualizado correctamente.",
             "item": next(item for item in _catalog_page_data(catalog_key)["items"] if item["id"] == instance.pk),
@@ -4215,9 +4113,9 @@ def admin_catalogo_estado(request, catalog_key, item_id):
 
 
 @require_GET
-@_admin_required
+@admin_required
 def admin_equipo(request):
-    branch = _get_user_branch(request)
+    branch = get_user_branch(request)
     staff_qs = (
         Especialista.objects.select_related("usuario")
         .prefetch_related(
@@ -4243,35 +4141,35 @@ def admin_equipo(request):
 
     data = {
         "metrics": [
-            _metric(
+            metric(
                 "team-specialists",
                 "Especialistas activos",
                 active_staff,
                 "Usuarios con perfil operativo asignado",
                 "primary",
             ),
-            _metric(
+            metric(
                 "team-specialties",
                 "Especialidades",
                 Especialidad.objects.filter(activo=True).count(),
                 "Catalogo editable desde administracion",
                 "success",
             ),
-            _metric(
+            metric(
                 "team-agenda",
                 "Citas futuras",
                 upcoming_appointments_qs.count(),
                 "Carga agendada a partir de hoy",
                 "warning",
             ),
-            _metric(
+            metric(
                 "team-biometric",
                 "Pendientes de biometria",
                 pending_biometric_qs.count(),
                 "Citas realizadas sin cierre final",
                 "danger",
             ),
-            _metric(
+            metric(
                 "team-inactive",
                 "Especialistas inactivos",
                 inactive_staff,
@@ -4285,23 +4183,23 @@ def admin_equipo(request):
             for item in Especialidad.objects.filter(activo=True).order_by("orden", "nombre")
         ],
     }
-    return _json(data)
+    return json_response(data)
 
 
 @require_GET
 @_admin_principal_required
 def admin_branch_admins_list(request):
     admins = Usuario.objects.select_related("sucursal").filter(rol__rol="ADMIN_SUCURSAL").order_by("-is_active", "username")
-    return _json({"admins": [_branch_admin_item(admin) for admin in admins]})
+    return json_response({"admins": [_branch_admin_item(admin) for admin in admins]})
 
 
 @require_POST
 @_admin_principal_required
 @transaction.atomic
 def admin_branch_admins_create(request):
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     username = (payload.get("username") or "").strip()
     primer_nombre = _capitalize_first_letter(payload.get("primerNombre"))
@@ -4309,13 +4207,13 @@ def admin_branch_admins_create(request):
     password = payload.get("password") or ""
     fecha_nacimiento_raw = (payload.get("fechaNacimiento") or "").strip()
     if not username or not primer_nombre or not apellido_paterno or not password or not fecha_nacimiento_raw:
-        return _json({"detail": "username, primerNombre, apellidoPaterno, password y fechaNacimiento son obligatorios."}, status=400)
+        return json_response({"detail": "username, primerNombre, apellidoPaterno, password y fechaNacimiento son obligatorios."}, status=400)
     try:
         fecha_nacimiento = date.fromisoformat(fecha_nacimiento_raw)
     except ValueError:
-        return _json({"detail": "fechaNacimiento debe tener formato YYYY-MM-DD."}, status=400)
+        return json_response({"detail": "fechaNacimiento debe tener formato YYYY-MM-DD."}, status=400)
     if Usuario.objects.filter(username=username).exists():
-        return _json({"detail": "Este nombre de usuario ya existe."}, status=409)
+        return json_response({"detail": "Este nombre de usuario ya existe."}, status=409)
 
     user = Usuario(
         username=username,
@@ -4332,14 +4230,14 @@ def admin_branch_admins_create(request):
     )
     user.set_password(password)
     user.save()
-    return _json({"detail": "Administrador de sucursal creado como inactivo.", "admin": _branch_admin_item(user)}, status=201)
+    return json_response({"detail": "Administrador de sucursal creado como inactivo.", "admin": _branch_admin_item(user)}, status=201)
 
 
 @require_GET
 @_admin_principal_required
 def admin_branch_admins_detail(request, user_id):
     user = get_object_or_404(Usuario.objects.select_related("sucursal"), pk=user_id, rol__rol="ADMIN_SUCURSAL")
-    return _json({"admin": _branch_admin_item(user)})
+    return json_response({"admin": _branch_admin_item(user)})
 
 
 @require_POST
@@ -4347,9 +4245,9 @@ def admin_branch_admins_detail(request, user_id):
 @transaction.atomic
 def admin_branch_admins_update(request, user_id):
     user = get_object_or_404(Usuario.objects.select_related("sucursal"), pk=user_id, rol__rol="ADMIN_SUCURSAL")
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     for field, key in (
         ("username", "username"),
@@ -4364,7 +4262,7 @@ def admin_branch_admins_update(request, user_id):
             try:
                 user.fecha_nacimiento = date.fromisoformat(fecha_nacimiento_raw)
             except ValueError:
-                return _json({"detail": "fechaNacimiento debe tener formato YYYY-MM-DD."}, status=400)
+                return json_response({"detail": "fechaNacimiento debe tener formato YYYY-MM-DD."}, status=400)
         else:
             user.fecha_nacimiento = None
     new_password = (payload.get("password") or "").strip()
@@ -4374,7 +4272,7 @@ def admin_branch_admins_update(request, user_id):
     if new_password:
         update_fields.append("password")
     user.save(update_fields=update_fields)
-    return _json({"detail": "Administrador de sucursal actualizado.", "admin": _branch_admin_item(user)})
+    return json_response({"detail": "Administrador de sucursal actualizado.", "admin": _branch_admin_item(user)})
 
 
 @require_POST
@@ -4382,10 +4280,10 @@ def admin_branch_admins_update(request, user_id):
 @transaction.atomic
 def admin_branch_admins_toggle(request, user_id):
     user = get_object_or_404(Usuario.objects.select_related("sucursal"), pk=user_id, rol__rol="ADMIN_SUCURSAL")
-    payload = _load_payload(request) or {}
+    payload = load_payload(request) or {}
     active = payload.get("active")
     if not isinstance(active, bool):
-        return _json({"detail": "Debes indicar active true/false."}, status=400)
+        return json_response({"detail": "Debes indicar active true/false."}, status=400)
     old_branch = user.sucursal
     user.is_active = active
     if not active:
@@ -4400,7 +4298,7 @@ def admin_branch_admins_toggle(request, user_id):
                 sucursal=old_branch,
             ).exists()
             if not has_other_admin:
-                return _json({"detail": "No puedes inactivar este administrador porque la sucursal activa quedaría sin admin."}, status=409)
+                return json_response({"detail": "No puedes inactivar este administrador porque la sucursal activa quedaría sin admin."}, status=409)
         user.sucursal = None
         user.save(update_fields=["is_active", "sucursal", "updated_at"])
     else:
@@ -4413,22 +4311,22 @@ def admin_branch_admins_toggle(request, user_id):
             detail=f"Estado de admin sucursal {user.username} actualizado a {'activo' if active else 'inactivo'}.",
             metadata={"adminUserId": user.id, "active": active},
         )
-    return _json({"detail": "Estado actualizado.", "admin": _branch_admin_item(user)})
+    return json_response({"detail": "Estado actualizado.", "admin": _branch_admin_item(user)})
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_crear_especialista(request):
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     errors = {}
     parsed = _parse_staff_payload(request, payload, errors)
     if errors:
-        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
 
     usuario = parsed["usuario"]
     especialista = parsed["especialista"]
@@ -4441,9 +4339,9 @@ def admin_crear_especialista(request):
         especialista.full_clean()
         especialista.save()
     except ValidationError as exc:
-        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
     except IntegrityError:
-        return _json({"detail": "Ya existe un especialista o usuario con esos datos."}, status=400)
+        return json_response({"detail": "Ya existe un especialista o usuario con esos datos."}, status=400)
 
     EspecialistaEspecialidad.objects.bulk_create(
         [
@@ -4458,7 +4356,7 @@ def admin_crear_especialista(request):
         .get(pk=especialista.pk)
     )
 
-    return _json(
+    return json_response(
         {
             "detail": "Especialista creado correctamente.",
             "staffMember": _staff_item(especialista),
@@ -4468,7 +4366,7 @@ def admin_crear_especialista(request):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_actualizar_especialista(request, specialist_id):
     especialista = (
@@ -4478,18 +4376,18 @@ def admin_actualizar_especialista(request, specialist_id):
         .first()
     )
     if not especialista:
-        return _json({"detail": "No encontramos el especialista solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el especialista solicitado."}, status=404)
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     errors = {}
     old_branch_id = especialista.sucursal_base_id
     parsed = _parse_staff_payload(request, payload, errors, instance=especialista)
     if errors:
-        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
 
     usuario = parsed["usuario"]
     especialista = parsed["especialista"]
@@ -4506,9 +4404,9 @@ def admin_actualizar_especialista(request, specialist_id):
             _clear_specialist_availability(especialista)
             
     except ValidationError as exc:
-        return _json({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
     except IntegrityError:
-        return _json({"detail": "Ya existe un especialista o usuario con esos datos."}, status=400)
+        return json_response({"detail": "Ya existe un especialista o usuario con esos datos."}, status=400)
 
     especialista.especialidades_rel.all().delete()
     EspecialistaEspecialidad.objects.bulk_create(
@@ -4524,7 +4422,7 @@ def admin_actualizar_especialista(request, specialist_id):
         .get(pk=especialista.pk)
     )
 
-    return _json(
+    return json_response(
         {
             "detail": "Especialista actualizado correctamente.",
             "staffMember": _staff_item(especialista),
@@ -4533,21 +4431,21 @@ def admin_actualizar_especialista(request, specialist_id):
 
 
 @require_POST
-@_admin_required
+@admin_required
 @transaction.atomic
 def admin_estado_especialista(request, specialist_id):
     especialista = Especialista.objects.select_related("usuario").filter(pk=specialist_id).first()
     if not especialista:
-        return _json({"detail": "No encontramos el especialista solicitado."}, status=404)
+        return json_response({"detail": "No encontramos el especialista solicitado."}, status=404)
 
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
     active = payload.get("active")
     if not isinstance(active, bool):
-        return _json({"detail": "Debes indicar si el especialista quedará activo o inactivo."}, status=400)
+        return json_response({"detail": "Debes indicar si el especialista quedará activo o inactivo."}, status=400)
 
     especialista.usuario.is_active = active
     especialista.usuario.save(update_fields=["is_active"])
@@ -4560,7 +4458,7 @@ def admin_estado_especialista(request, specialist_id):
         .get(pk=especialista.pk)
     )
 
-    return _json(
+    return json_response(
         {
             "detail": "Especialista activado correctamente."
             if active
@@ -4581,13 +4479,13 @@ def admin_prospecto_migrar(request, prospecto_id):
         payload = json.loads(request.body.decode("utf-8"))
         branch_id = payload.get("branchId")
     except:
-        return _json({"detail": "Payload invalido."}, status=400)
+        return json_response({"detail": "Payload invalido."}, status=400)
         
     branch = get_object_or_404(Sucursal, pk=branch_id)
     prospecto.sucursal_registro = branch
     prospecto.save(update_fields=["sucursal_registro", "updated_at"])
     
-    return _json({
+    return json_response({
         "detail": f"Prospecto migrado exitosamente a {branch.nombre}.",
         "branch": {"id": branch.id, "name": branch.nombre}
     })
@@ -4604,11 +4502,11 @@ def admin_cliente_migrar(request, client_id):
         payload = json.loads(request.body.decode("utf-8"))
         branch_id = payload.get("branchId")
     except:
-        return _json({"detail": "Payload invalido."}, status=400)
+        return json_response({"detail": "Payload invalido."}, status=400)
         
     branch = get_object_or_404(Sucursal, pk=branch_id)
     if _client_has_pending_reservations(cliente):
-        return _json(
+        return json_response(
             {
                 "detail": (
                     "No se puede importar este cliente porque tiene reservas pendientes. "
@@ -4621,7 +4519,7 @@ def admin_cliente_migrar(request, client_id):
     cliente.sucursal_registro = branch
     cliente.save(update_fields=["sucursal_registro", "updated_at"])
     
-    return _json({
+    return json_response({
         "detail": f"Cliente migrado exitosamente a {branch.nombre}.",
         "branch": {"id": branch.id, "name": branch.nombre}
     })
@@ -4643,7 +4541,7 @@ def admin_equipo_cambiar_sucursal(request, user_id):
         payload = json.loads(request.body.decode("utf-8"))
         branch_id = payload.get("branchId")
     except:
-        return _json({"detail": "Payload invalido."}, status=400)
+        return json_response({"detail": "Payload invalido."}, status=400)
         
     branch = get_object_or_404(Sucursal, pk=branch_id)
     
@@ -4666,7 +4564,7 @@ def admin_equipo_cambiar_sucursal(request, user_id):
                 sucursal_id=old_branch_id,
             ).delete()
         
-    return _json({
+    return json_response({
         "detail": f"Usuario movido exitosamente a {branch.nombre}.",
         "branch": {"id": branch.id, "name": branch.nombre}
     })
@@ -4723,7 +4621,7 @@ def admin_branch_management_list(request):
                 else None,
             }
         )
-    return _json({"branches": items, "total": len(items)})
+    return json_response({"branches": items, "total": len(items)})
 
 
 @require_POST
@@ -4731,48 +4629,48 @@ def admin_branch_management_list(request):
 def admin_branch_wizard_initialize(request):
     request.session[BRANCH_CREATE_WIZARD_SESSION_KEY] = {}
     request.session.modified = True
-    return _json({"detail": "Wizard de sucursal inicializado.", "draft": {}})
+    return json_response({"detail": "Wizard de sucursal inicializado.", "draft": {}})
 
 
 @require_POST
 @_admin_principal_required
 def admin_branch_wizard_step1(request):
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
     data, errors = _branch_payload(payload, partial=False)
     if errors:
-        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
     draft = request.session.get(BRANCH_CREATE_WIZARD_SESSION_KEY) or {}
     draft["branch"] = data
     request.session[BRANCH_CREATE_WIZARD_SESSION_KEY] = draft
     request.session.modified = True
-    return _json({"detail": "Paso 1 guardado.", "draft": draft})
+    return json_response({"detail": "Paso 1 guardado.", "draft": draft})
 
 
 @require_POST
 @_admin_principal_required
 def admin_branch_wizard_step2(request):
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
     draft = request.session.get(BRANCH_CREATE_WIZARD_SESSION_KEY) or {}
     if not draft.get("branch"):
-        return _json({"detail": "Debes completar el paso 1 primero."}, status=409)
+        return json_response({"detail": "Debes completar el paso 1 primero."}, status=409)
 
     mode = (payload.get("mode") or "").strip()
     if mode not in {"existing_inactive", "create_new"}:
-        return _json({"detail": "mode debe ser existing_inactive o create_new."}, status=400)
+        return json_response({"detail": "mode debe ser existing_inactive o create_new."}, status=400)
 
     if mode == "existing_inactive":
         admin_id = payload.get("adminUserId")
         if not admin_id:
-            return _json({"detail": "adminUserId es obligatorio para existing_inactive."}, status=400)
+            return json_response({"detail": "adminUserId es obligatorio para existing_inactive."}, status=400)
         admin_user = get_object_or_404(Usuario, pk=admin_id)
         if not (admin_user.rol and admin_user.rol.rol == "ADMIN_SUCURSAL"):
-            return _json({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
+            return json_response({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
         if admin_user.is_active or admin_user.sucursal_id is not None:
-            return _json({"detail": "El admin seleccionado debe estar inactivo y sin sucursal."}, status=409)
+            return json_response({"detail": "El admin seleccionado debe estar inactivo y sin sucursal."}, status=409)
         draft["admin"] = {"mode": "existing_inactive", "adminUserId": admin_user.id}
     else:
         username = (payload.get("username") or "").strip()
@@ -4794,7 +4692,7 @@ def admin_branch_wizard_step2(request):
         if not password:
             errors["password"] = "La contraseña inicial es obligatoria."
         if errors:
-            return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+            return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
         draft["admin"] = {
             "mode": "create_new",
             "username": username,
@@ -4810,32 +4708,32 @@ def admin_branch_wizard_step2(request):
 
     request.session[BRANCH_CREATE_WIZARD_SESSION_KEY] = draft
     request.session.modified = True
-    return _json({"detail": "Paso 2 guardado.", "draft": draft})
+    return json_response({"detail": "Paso 2 guardado.", "draft": draft})
 
 
 @require_POST
 @_admin_principal_required
 @transaction.atomic
 def admin_branch_wizard_finalize(request):
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
     draft = request.session.get(BRANCH_CREATE_WIZARD_SESSION_KEY) or {}
     branch_data = draft.get("branch")
     admin_data = draft.get("admin")
     if not branch_data or not admin_data:
-        return _json({"detail": "Debes completar los pasos 1 y 2 antes de finalizar."}, status=409)
+        return json_response({"detail": "Debes completar los pasos 1 y 2 antes de finalizar."}, status=409)
 
     nombre = (payload.get("nombre") or "").strip()
     clave = (payload.get("clave") or "").strip()
     if not nombre or not clave:
-        return _json({"detail": "nombre y clave de tablet son obligatorios."}, status=400)
+        return json_response({"detail": "nombre y clave de tablet son obligatorios."}, status=400)
 
     branch = Sucursal.objects.create(**branch_data, activa=True)
 
     codigo = f"KIOSKO-{branch.id}"
     if TabletKiosko.objects.filter(codigo=codigo).exists():
-        return _json({"detail": "No se pudo autogenerar un código único de tablet."}, status=409)
+        return json_response({"detail": "No se pudo autogenerar un código único de tablet."}, status=409)
     if admin_data["mode"] == "existing_inactive":
         admin_user = get_object_or_404(Usuario, pk=admin_data["adminUserId"])
         admin_user.is_active = True
@@ -4874,7 +4772,7 @@ def admin_branch_wizard_finalize(request):
 
     request.session.pop(BRANCH_CREATE_WIZARD_SESSION_KEY, None)
     request.session.modified = True
-    return _json(
+    return json_response(
         {
             "detail": "Sucursal creada correctamente con administrador y tablet.",
             "branchId": branch.id,
@@ -4894,14 +4792,14 @@ def admin_branch_management_create(request):
         return error_response
 
     def _create():
-        payload = _load_payload(request)
+        payload = load_payload(request)
         if payload is None:
-            return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+            return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
         data, errors = _branch_payload(payload, partial=False)
         if errors:
-            return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+            return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
         branch = Sucursal.objects.create(**data, activa=True)
-        return _json({"detail": "Sucursal creada correctamente.", "branchId": branch.id}, status=201)
+        return json_response({"detail": "Sucursal creada correctamente.", "branchId": branch.id}, status=201)
     return _idempotency_replay_or_store(cache_key, _create)
 
 
@@ -4910,18 +4808,18 @@ def admin_branch_management_create(request):
 @transaction.atomic
 def admin_branch_management_update(request, branch_id):
     branch = get_object_or_404(Sucursal, pk=branch_id)
-    payload = _load_payload(request)
+    payload = load_payload(request)
     if payload is None:
-        return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
     data, errors = _branch_payload(payload, partial=True)
     if errors:
-        return _json({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+        return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
     if not data:
-        return _json({"detail": "No hay campos para actualizar."}, status=400)
+        return json_response({"detail": "No hay campos para actualizar."}, status=400)
     for field, value in data.items():
         setattr(branch, field, value)
     branch.save(update_fields=[*data.keys(), "updated_at"])
-    return _json({"detail": "Sucursal actualizada correctamente."})
+    return json_response({"detail": "Sucursal actualizada correctamente."})
 
 
 @require_POST
@@ -4934,20 +4832,20 @@ def admin_branch_management_toggle(request, branch_id):
 
     def _toggle():
         branch = get_object_or_404(Sucursal, pk=branch_id)
-        payload = _load_payload(request) or {}
+        payload = load_payload(request) or {}
         active = payload.get("active")
         force = bool(payload.get("force"))
         if not isinstance(active, bool):
-            return _json({"detail": "Debes indicar si la sucursal quedará activa o inactiva."}, status=400)
+            return json_response({"detail": "Debes indicar si la sucursal quedará activa o inactiva."}, status=400)
         impact = _branch_deactivation_impact(branch)
         has_pending = any(impact.values())
         if active is False and has_pending and not force:
-            return _json(
+            return json_response(
                 {"detail": "La sucursal tiene pendientes operativos.", "impact": impact, "requiresConfirmation": True},
                 status=409,
             )
         if active is True and not _active_branch_has_any_admin(branch):
-            return _json({"detail": "No puedes activar una sucursal sin un administrador asignado."}, status=409)
+            return json_response({"detail": "No puedes activar una sucursal sin un administrador asignado."}, status=409)
         branch.activa = active
         branch.save(update_fields=["activa", "updated_at"])
         _log_branch_admin_audit(
@@ -4957,7 +4855,7 @@ def admin_branch_management_toggle(request, branch_id):
             detail=f"Sucursal {'activada' if active else 'desactivada'}.",
             metadata={"active": active, "force": force, "impact": impact},
         )
-        return _json(
+        return json_response(
             {
                 "detail": "Sucursal activada correctamente." if active else "Sucursal desactivada correctamente.",
                 "impact": impact,
@@ -4976,15 +4874,15 @@ def admin_branch_management_change_admin(request, branch_id):
 
     def _change_admin():
         branch = get_object_or_404(Sucursal, pk=branch_id)
-        payload = _load_payload(request)
+        payload = load_payload(request)
         if payload is None:
-            return _json({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+            return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
         new_admin_id = payload.get("newAdminUserId")
         if not new_admin_id:
-            return _json({"detail": "newAdminUserId es obligatorio."}, status=400)
+            return json_response({"detail": "newAdminUserId es obligatorio."}, status=400)
         new_admin = get_object_or_404(Usuario, pk=new_admin_id)
         if not (new_admin.rol and new_admin.rol.rol == "ADMIN_SUCURSAL"):
-            return _json({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
+            return json_response({"detail": "El usuario seleccionado no es admin de sucursal."}, status=400)
         current_main_admin = Usuario.objects.filter(
             rol__rol="ADMIN_PRINCIPAL",
             sucursal=branch,
@@ -5000,12 +4898,12 @@ def admin_branch_management_change_admin(request, branch_id):
 
         if current_main_admin:
             if selected_is_inactive:
-                return _json(
+                return json_response(
                     {"detail": "El administrador principal solo puede intercambiar con un admin de sucursal activo y con sucursal."},
                     status=409,
                 )
             if not previous_branch:
-                return _json(
+                return json_response(
                     {"detail": "El admin de sucursal seleccionado debe tener una sucursal activa para intercambiar con el admin principal."},
                     status=409,
                 )
@@ -5027,7 +4925,7 @@ def admin_branch_management_change_admin(request, branch_id):
                 },
             )
             transaction.on_commit(lambda user_ids=[current_main_admin.id, new_admin.id]: _invalidate_user_sessions(user_ids))
-            return _json({"detail": "Intercambio con administrador principal realizado correctamente.", "mode": "swap_with_main_admin"})
+            return json_response({"detail": "Intercambio con administrador principal realizado correctamente.", "mode": "swap_with_main_admin"})
 
         if selected_is_inactive:
             new_admin.is_active = True
@@ -5048,10 +4946,10 @@ def admin_branch_management_change_admin(request, branch_id):
             if current_admin:
                 affected_user_ids.append(current_admin.id)
             transaction.on_commit(lambda user_ids=affected_user_ids: _invalidate_user_sessions(user_ids))
-            return _json({"detail": "Administrador inactivo activado y asignado correctamente.", "mode": "replace_with_inactive"})
+            return json_response({"detail": "Administrador inactivo activado y asignado correctamente.", "mode": "replace_with_inactive"})
 
         if new_admin.sucursal_id == branch.id:
-            return _json({"detail": "El administrador ya está asignado a esta sucursal.", "mode": "assign"})
+            return json_response({"detail": "El administrador ya está asignado a esta sucursal.", "mode": "assign"})
 
         new_admin.sucursal = branch
         new_admin.save(update_fields=["sucursal", "updated_at"])
@@ -5066,7 +4964,7 @@ def admin_branch_management_change_admin(request, branch_id):
                 metadata={"newAdminUserId": new_admin.id, "previousAdminUserId": current_admin.id, "fromBranchId": previous_branch.id, "mode": "swap"},
             )
             transaction.on_commit(lambda user_ids=[new_admin.id, current_admin.id]: _invalidate_user_sessions(user_ids))
-            return _json({"detail": "Administradores intercambiados correctamente.", "mode": "swap"})
+            return json_response({"detail": "Administradores intercambiados correctamente.", "mode": "swap"})
         _log_branch_admin_audit(
             request=request,
             branch=branch,
@@ -5075,7 +4973,7 @@ def admin_branch_management_change_admin(request, branch_id):
             metadata={"newAdminUserId": new_admin.id, "mode": "assign"},
         )
         transaction.on_commit(lambda user_ids=[new_admin.id]: _invalidate_user_sessions(user_ids))
-        return _json({"detail": "Administrador de sucursal actualizado correctamente.", "mode": "assign"})
+        return json_response({"detail": "Administrador de sucursal actualizado correctamente.", "mode": "assign"})
     return _idempotency_replay_or_store(cache_key, _change_admin)
 
 
@@ -5083,7 +4981,7 @@ def admin_branch_management_change_admin(request, branch_id):
 @_admin_principal_required
 def admin_branch_management_deactivation_impact(request, branch_id):
     branch = get_object_or_404(Sucursal, pk=branch_id)
-    return _json({"branchId": branch.id, "impact": _branch_deactivation_impact(branch)})
+    return json_response({"branchId": branch.id, "impact": _branch_deactivation_impact(branch)})
 
 
 @require_GET
@@ -5106,4 +5004,4 @@ def admin_branch_admin_audit_logs(request):
         }
         for log in logs[:200]
     ]
-    return _json({"items": items, "total": len(items)})
+    return json_response({"items": items, "total": len(items)})

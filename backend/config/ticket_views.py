@@ -1,20 +1,16 @@
 import json
 
 from django.db import transaction
-from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
+from config.api_helpers import json_response
 from operations.models import Ticket, TicketMessage
 from staff.models import Especialista
 from accounts.models import Rol, Usuario
 from notifications.models import Notification
 from notifications.services import create_notification
-
-
-def _json(data, status=200):
-    return JsonResponse(data, status=status, json_dumps_params={"ensure_ascii": False})
 
 
 def _load_payload(request):
@@ -31,9 +27,9 @@ def _comms_required(view_func):
     def wrapped(request, *args, **kwargs):
         user = request.user
         if not user.is_authenticated:
-            return _json({"detail": "Autenticacion requerida."}, status=401)
+            return json_response({"detail": "Autenticacion requerida."}, status=401)
         if not (user.es_administrador or user.es_trabajador or user.is_superuser):
-            return _json({"detail": "No tienes permisos."}, status=403)
+            return json_response({"detail": "No tienes permisos."}, status=403)
         return view_func(request, *args, **kwargs)
 
     return wrapped
@@ -204,7 +200,7 @@ def tickets_list(request):
     if status_filter in {Ticket.Estado.ABIERTO, Ticket.Estado.CERRADO}:
         qs = qs.filter(estado=status_filter)
 
-    return _json({"tickets": [_ticket_item(t) for t in qs]})
+    return json_response({"tickets": [_ticket_item(t) for t in qs]})
 
 
 @require_POST
@@ -212,24 +208,24 @@ def tickets_list(request):
 def tickets_create(request):
     payload = _load_payload(request)
     if payload is None:
-        return _json({"detail": "JSON invalido."}, status=400)
+        return json_response({"detail": "JSON invalido."}, status=400)
 
     subject = (payload.get("subject") or "").strip()
     message = (payload.get("message") or "").strip()
     specialist_id = payload.get("specialistId")
     admin_recipient_id = payload.get("adminRecipientId")
     if not subject or not message:
-        return _json({"detail": "Asunto y mensaje son obligatorios."}, status=400)
+        return json_response({"detail": "Asunto y mensaje son obligatorios."}, status=400)
 
     user = request.user
     if user.es_trabajador:
         specialist = getattr(user, "especialista", None)
         if not specialist:
-            return _json({"detail": "Perfil de especialista no encontrado."}, status=400)
+            return json_response({"detail": "Perfil de especialista no encontrado."}, status=400)
         if specialist.sucursal_base and (
             not specialist.sucursal_base.especialistas_pueden_abrir_fichas or not specialist.puede_abrir_fichas
         ):
-            return _json({"detail": "No tienes permiso para abrir nuevas fichas."}, status=403)
+            return json_response({"detail": "No tienes permiso para abrir nuevas fichas."}, status=403)
         branch = specialist.sucursal_base or user.sucursal
     else:
         specialist = None
@@ -242,13 +238,13 @@ def tickets_create(request):
             is_branch_to_main = user.es_admin_sucursal and admin_recipient.es_admin_principal
             is_main_to_branch = user.es_admin_principal and admin_recipient.es_admin_sucursal
             if not (is_branch_to_main or is_main_to_branch):
-                return _json({"detail": "No tienes permiso para crear fichas con este administrador."}, status=403)
+                return json_response({"detail": "No tienes permiso para crear fichas con este administrador."}, status=403)
             branch = user.sucursal or admin_recipient.sucursal or _admin_branch(request)
         else:
-            return _json({"detail": "specialistId o adminRecipientId es obligatorio para admin."}, status=400)
+            return json_response({"detail": "specialistId o adminRecipientId es obligatorio para admin."}, status=400)
 
     if not branch:
-        return _json({"detail": "No se pudo determinar la sucursal de la ficha."}, status=400)
+        return json_response({"detail": "No se pudo determinar la sucursal de la ficha."}, status=400)
 
     with transaction.atomic():
         ticket = Ticket.objects.create(
@@ -263,7 +259,7 @@ def tickets_create(request):
         TicketMessage.objects.create(ticket=ticket, autor=user, contenido=message, adjunto=attachment, estado=TicketMessage.Estado.ENVIADO)
         _notify_ticket_message(ticket, user, message)
 
-    return _json({"detail": "Ficha creada.", "ticket": _ticket_item(ticket)}, status=201)
+    return json_response({"detail": "Ficha creada.", "ticket": _ticket_item(ticket)}, status=201)
 
 
 @require_GET
@@ -271,9 +267,9 @@ def tickets_create(request):
 def tickets_detail(request, ticket_id):
     ticket = get_object_or_404(Ticket.objects.select_related("sucursal", "especialista__usuario", "creado_por", "destinatario_admin"), pk=ticket_id)
     if not _ticket_visible_to_user(ticket, request):
-        return _json({"detail": "No autorizado."}, status=403)
+        return json_response({"detail": "No autorizado."}, status=403)
     messages = TicketMessage.objects.filter(ticket=ticket).select_related("autor", "autor__rol").order_by("created_at")
-    return _json({"ticket": _ticket_item(ticket), "messages": [_message_item(m) for m in messages]})
+    return json_response({"ticket": _ticket_item(ticket), "messages": [_message_item(m) for m in messages]})
 
 
 @require_POST
@@ -281,23 +277,23 @@ def tickets_detail(request, ticket_id):
 def tickets_reply(request, ticket_id):
     ticket = get_object_or_404(Ticket, pk=ticket_id)
     if not _ticket_visible_to_user(ticket, request):
-        return _json({"detail": "No autorizado."}, status=403)
+        return json_response({"detail": "No autorizado."}, status=403)
     if ticket.estado == Ticket.Estado.CERRADO:
-        return _json({"detail": "La ficha esta cerrada."}, status=400)
+        return json_response({"detail": "La ficha esta cerrada."}, status=400)
 
     payload = _load_payload(request)
     if payload is None:
-        return _json({"detail": "JSON invalido."}, status=400)
+        return json_response({"detail": "JSON invalido."}, status=400)
     body = (payload.get("message") or "").strip()
     if not body:
-        return _json({"detail": "El mensaje es obligatorio."}, status=400)
+        return json_response({"detail": "El mensaje es obligatorio."}, status=400)
 
     with transaction.atomic():
         attachment = request.FILES.get('attachment')
         msg = TicketMessage.objects.create(ticket=ticket, autor=request.user, contenido=body, adjunto=attachment, estado=TicketMessage.Estado.ENVIADO)
         _notify_ticket_message(ticket, request.user, body)
 
-    return _json({"detail": "Respuesta enviada.", "message": _message_item(msg)})
+    return json_response({"detail": "Respuesta enviada.", "message": _message_item(msg)})
 
 
 @require_POST
@@ -305,13 +301,13 @@ def tickets_reply(request, ticket_id):
 def tickets_close(request, ticket_id):
     ticket = get_object_or_404(Ticket, pk=ticket_id)
     if not _can_manage_ticket_status(request.user, ticket):
-        return _json({"detail": "No tienes permiso para cerrar esta ficha."}, status=403)
+        return json_response({"detail": "No tienes permiso para cerrar esta ficha."}, status=403)
     if not _ticket_visible_to_user(ticket, request):
-        return _json({"detail": "No autorizado."}, status=403)
+        return json_response({"detail": "No autorizado."}, status=403)
     ticket.estado = Ticket.Estado.CERRADO
     ticket.closed_at = timezone.now()
     ticket.save(update_fields=["estado", "closed_at", "updated_at"])
-    return _json({"detail": "Ficha cerrada.", "ticket": _ticket_item(ticket)})
+    return json_response({"detail": "Ficha cerrada.", "ticket": _ticket_item(ticket)})
 
 
 @require_POST
@@ -319,23 +315,23 @@ def tickets_close(request, ticket_id):
 def tickets_reopen(request, ticket_id):
     ticket = get_object_or_404(Ticket, pk=ticket_id)
     if not _can_manage_ticket_status(request.user, ticket):
-        return _json({"detail": "No tienes permiso para reabrir esta ficha."}, status=403)
+        return json_response({"detail": "No tienes permiso para reabrir esta ficha."}, status=403)
     if not _ticket_visible_to_user(ticket, request):
-        return _json({"detail": "No autorizado."}, status=403)
+        return json_response({"detail": "No autorizado."}, status=403)
     ticket.estado = Ticket.Estado.ABIERTO
     ticket.closed_at = None
     ticket.save(update_fields=["estado", "closed_at", "updated_at"])
-    return _json({"detail": "Ficha reabierta.", "ticket": _ticket_item(ticket)})
+    return json_response({"detail": "Ficha reabierta.", "ticket": _ticket_item(ticket)})
 
 
 @require_GET
 @_comms_required
 def admin_ticket_open_permission_status(request):
     if not _is_admin(request.user):
-        return _json({"detail": "Solo admin."}, status=403)
+        return json_response({"detail": "Solo admin."}, status=403)
     branch = _admin_branch(request)
     if not branch:
-        return _json({"detail": "No se pudo determinar sucursal."}, status=400)
+        return json_response({"detail": "No se pudo determinar sucursal."}, status=400)
     specialists = list(
         Especialista.objects.select_related("usuario").filter(sucursal_base=branch, usuario__is_active=True)
     )
@@ -354,7 +350,7 @@ def admin_ticket_open_permission_status(request):
         summary = "ALL_BLOCKED"
     else:
         summary = "MIXED"
-    return _json({
+    return json_response({
         "branchId": branch.id,
         "branchName": branch.nombre,
         "branchDefaultEnabled": bool(branch.especialistas_pueden_abrir_fichas),
@@ -369,25 +365,25 @@ def admin_ticket_open_permission_status(request):
 @_comms_required
 def admin_ticket_open_permission(request):
     if not _is_admin(request.user):
-        return _json({"detail": "Solo admin."}, status=403)
+        return json_response({"detail": "Solo admin."}, status=403)
     payload = _load_payload(request)
     if payload is None or "enabled" not in payload:
-        return _json({"detail": "enabled es obligatorio."}, status=400)
+        return json_response({"detail": "enabled es obligatorio."}, status=400)
     enabled = bool(payload["enabled"])
     branch = _admin_branch(request)
     if not branch:
-        return _json({"detail": "No se pudo determinar sucursal."}, status=400)
+        return json_response({"detail": "No se pudo determinar sucursal."}, status=400)
 
     admin_user_id = payload.get("adminUserId")
     if request.user.es_admin_principal and admin_user_id:
         admin_user = get_object_or_404(Usuario, pk=int(admin_user_id), rol__rol="ADMIN_SUCURSAL")
         admin_user.is_active = enabled
         admin_user.save(update_fields=["is_active", "updated_at"])
-        return _json({"detail": "Permiso actualizado.", "enabled": enabled, "adminUserId": admin_user.id})
+        return json_response({"detail": "Permiso actualizado.", "enabled": enabled, "adminUserId": admin_user.id})
 
     if request.user.es_admin_principal and payload.get("target") == "branch_admins":
         Usuario.objects.filter(rol__rol="ADMIN_SUCURSAL").update(is_active=enabled)
-        return _json({"detail": "Permisos actualizados para administradores de sucursal.", "enabled": enabled})
+        return json_response({"detail": "Permisos actualizados para administradores de sucursal.", "enabled": enabled})
 
     specialist_id = payload.get("specialistId")
     admin_recipient_id = payload.get("adminRecipientId")
@@ -395,9 +391,9 @@ def admin_ticket_open_permission(request):
         specialist = get_object_or_404(Especialista, pk=int(specialist_id), sucursal_base=branch)
         specialist.puede_abrir_fichas = enabled
         specialist.save(update_fields=["puede_abrir_fichas", "updated_at"])
-        return _json({"detail": "Permiso actualizado.", "enabled": enabled, "specialistId": specialist.id})
+        return json_response({"detail": "Permiso actualizado.", "enabled": enabled, "specialistId": specialist.id})
 
     branch.especialistas_pueden_abrir_fichas = enabled
     branch.save(update_fields=["especialistas_pueden_abrir_fichas", "updated_at"])
     Especialista.objects.filter(sucursal_base=branch).update(puede_abrir_fichas=enabled)
-    return _json({"detail": "Permisos actualizados para toda la sucursal.", "enabled": enabled, "branchId": branch.id})
+    return json_response({"detail": "Permisos actualizados para toda la sucursal.", "enabled": enabled, "branchId": branch.id})
