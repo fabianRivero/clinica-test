@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { AdminBranchTabs } from '../../components/admin/AdminBranchTabs'
 import { PageHeader } from '../../components/admin/PageHeader'
@@ -7,6 +7,7 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { changeAdminBranchManager, finalizeAdminBranchWizard, getAdminBranchAdmins, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, initializeAdminBranchWizard, saveAdminBranchWizardStep1, saveAdminBranchWizardStep2CreateNew, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
 import { useAuth } from '../../providers/AuthProvider'
 import { useConfirmDialog } from '../../hooks/useConfirmDialog'
+import { useNotifications } from '../../providers/NotificationProvider'
 
 type BranchRow = {
   id: number
@@ -18,8 +19,10 @@ type BranchRow = {
 }
 
 export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' }) {
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
   const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
+  const navigate = useNavigate()
+  const { showNotification } = useNotifications()
   const [rows, setRows] = useState<BranchRow[]>([])
   const [status, setStatus] = useState<'all' | 'active' | 'inactive'>('all')
   const [city, setCity] = useState('')
@@ -92,6 +95,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   async function handleWizardStep1(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
+    setError(null)
     try {
       await saveAdminBranchWizardStep1(newBranch)
       setWizardStep1Completed(true)
@@ -106,6 +110,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   async function handleWizardStep2(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
+    setError(null)
     try {
       await saveAdminBranchWizardStep2CreateNew(wizardNewAdmin)
       setWizardStep2Completed(true)
@@ -120,21 +125,33 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   async function handleWizardStep3(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
+    setError(null)
     try {
       await finalizeAdminBranchWizard(wizardTablet)
+      showNotification({
+        title: 'Sucursal creada',
+        message: 'La sucursal se creó correctamente.',
+        tone: 'success',
+      })
       setWizardStep(1)
       setWizardStep1Completed(false)
       setWizardStep2Completed(false)
       setNewBranch({ nombre: '', ciudad: '', direccion: '' })
       setWizardTablet({ nombre: '', clave: '' })
+      navigate('/admin/sucursales/editar')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo finalizar creación')
+      showNotification({
+        title: 'Error al crear sucursal',
+        message: err instanceof Error ? err.message : 'No se pudo finalizar la creación de la sucursal.',
+        tone: 'danger',
+      })
     } finally {
       setSaving(false)
     }
   }
 
-  function handleCancelWizard() {
+  async function handleCancelWizard() {
     const ok = await confirm({
       title: 'Cancelar creacion',
       message: '¿Seguro que deseas cancelar la creación de sucursal? Se perderán los cambios no finalizados.',
@@ -353,7 +370,9 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                 <td style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <button className="button button--ghost" type="button" onClick={() => openEditModal(row)}>Editar informacion</button>
                   <button className="button button--ghost" type="button" onClick={() => openChangeAdminModal(row)}>Cambiar administrador</button>
-                  <button className="button button--ghost" type="button" onClick={() => void handleToggle(row)}>{row.activa ? 'Desactivar' : 'Activar'}</button>
+                  {(!user?.branchId || row.id !== user.branchId) && (
+                    <button className="button button--ghost" type="button" onClick={() => void handleToggle(row)}>{row.activa ? 'Desactivar' : 'Activar'}</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -423,8 +442,8 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                   // Si la sucursal está bajo admin principal (no hay admin de sucursal activo en la fila),
                   // el backend solo permite intercambio con admin de sucursal activo y con sucursal.
                   if (!changingAdminBranch?.admin) return a.isActive && a.branchId !== null
-                  // Si ya existe admin de sucursal en la fila, también se permite elegir admins inactivos/sin sucursal.
-                  return true
+                  // Si ya existe admin de sucursal, se excluye al actual para que no aparezca como opción.
+                  return a.id !== changingAdminBranch.admin!.id
                 })
                 .map((a) => (
                   <option key={a.id} value={a.id}>

@@ -35,17 +35,17 @@ from operations.models import (
     CitaMedica,
     CitaProspecto,
     EventoConfirmacionCita,
-    FichaCampo,
-    FichaSeccion,
     Operacion,
     BranchAdminAuditLog,
     TabletKiosko,
 )
+from clinical.models import FichaCampo, FichaSeccion
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 from config.api_helpers import (
     admin_required,
     currency,
     date_label,
+    datetime_label,
     full_name,
     get_user_branch,
     json_response,
@@ -279,10 +279,8 @@ def _parse_payload_int(payload, field_name, errors, *, min_value=0):
     return value
 
 
-def _datetime_label(value):
-    if not value:
-        return "Sin fecha"
-    return timezone.localtime(value).strftime("%d/%m %H:%M")
+# Backward-compatible alias for internal usages within this module
+_datetime_label = datetime_label
 
 
 def _notify_client_appointment_scheduled(*, cliente, fecha_hora, sucursal_id, appointment_id, appointment_type):

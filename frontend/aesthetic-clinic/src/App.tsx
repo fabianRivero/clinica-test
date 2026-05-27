@@ -14,17 +14,17 @@ import {
   AdminAvailabilityBlocksPage,
   AdminAvailabilitySchedulesPage,
   AdminAvailabilityVisiblePage,
-} from './pages/admin/AdminAvailabilityPage'
-import { AdminClientDetailPage } from './pages/admin/AdminClientDetailPage'
+} from './pages/admin/availability'
+import { AdminClientDetailPage } from './pages/admin/client-detail'
 import { AdminClientsPage } from './pages/admin/AdminClientsPage'
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage'
-import { AdminExpenseCreatePage, AdminExpenseListPage } from './pages/admin/AdminExpensesPage'
+import { AdminExpenseCreatePage, AdminExpenseListPage } from './pages/admin/expenses'
 import { AdminOperationDetailPage } from './pages/admin/AdminOperationDetailPage'
 import { AdminOperationsPage } from './pages/admin/AdminOperationsPage'
 import { AdminPaymentsPage } from './pages/admin/AdminPaymentsPage'
 import { AdminMessagingPermissionsPage, AdminMessagingTicketsPage } from './pages/admin/AdminTicketsPage'
 import { AdminTicketDetailPage } from './pages/admin/AdminTicketDetailPage'
-import { AdminProspectConvertPage } from './pages/admin/AdminProspectConvertPage'
+import { AdminProspectConvertPage } from './pages/admin/prospect-convert'
 import { AdminProspectCreatePage } from './pages/admin/AdminProspectCreatePage'
 import { AdminProspectsPage } from './pages/admin/AdminProspectsPage'
 import { AdminStaffCreatePage, AdminStaffManagePage } from './pages/admin/AdminStaffPage'

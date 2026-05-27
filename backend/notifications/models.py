@@ -1,5 +1,8 @@
 from django.conf import settings
+from django.core.validators import FileExtensionValidator
 from django.db import models
+
+from common.models import TimeStampedModel
 
 
 class Notification(models.Model):
@@ -51,3 +54,42 @@ class NotificationReadAudit(models.Model):
 
     class Meta:
         db_table = "notification_read_audits"
+
+
+class Ticket(TimeStampedModel):
+    class Estado(models.TextChoices):
+        ABIERTO = "ABIERTO", "Abierto"
+        CERRADO = "CERRADO", "Cerrado"
+
+    sucursal = models.ForeignKey("catalogs.Sucursal", on_delete=models.CASCADE, related_name="tickets")
+    especialista = models.ForeignKey("staff.Especialista", on_delete=models.CASCADE, related_name="tickets", null=True, blank=True)
+    destinatario_admin = models.ForeignKey("accounts.Usuario", on_delete=models.CASCADE, related_name="tickets_recibidos", null=True, blank=True)
+    creado_por = models.ForeignKey("accounts.Usuario", on_delete=models.CASCADE, related_name="tickets_creados")
+    asunto = models.CharField(max_length=180)
+    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.ABIERTO)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "tickets"
+        ordering = ("-updated_at",)
+
+
+class TicketMessage(TimeStampedModel):
+    class Estado(models.TextChoices):
+        ENVIADO = "ENVIADO", "Enviado"
+        RESPONDIDO = "RESPONDIDO", "Respondido"
+
+    ticket = models.ForeignKey("notifications.Ticket", on_delete=models.CASCADE, related_name="mensajes")
+    autor = models.ForeignKey("accounts.Usuario", on_delete=models.CASCADE, related_name="mensajes_ticket")
+    contenido = models.TextField()
+    adjunto = models.FileField(
+        upload_to='tickets_adjuntos/%Y/%m/',
+        blank=True,
+        null=True,
+        validators=[FileExtensionValidator(['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'svg', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'csv', 'zip', 'rar', '7z'])],
+    )
+    estado = models.CharField(max_length=12, choices=Estado.choices, default=Estado.ENVIADO)
+
+    class Meta:
+        db_table = "ticket_messages"
+        ordering = ("created_at",)

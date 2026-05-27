@@ -217,7 +217,7 @@ export function AdminProspectsPage() {
 
       <AdminRelationshipTabs />
 
-      {flashMessage ? <DataState title="Registro actualizado" message={flashMessage} /> : null}
+      {flashMessage ? <DataState title={flashMessage.includes('convertido') || flashMessage.includes('finalizo') ? 'Conversion exitosa' : 'Registro actualizado'} message={flashMessage} /> : null}
 
       {isLoading && !data ? (
         <SectionCard title="Cargando relacion comercial">

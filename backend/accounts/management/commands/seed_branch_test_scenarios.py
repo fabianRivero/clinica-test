@@ -15,9 +15,8 @@ from operations.models import (
     AgendaHabitualEspecialista,
     CitaMedica,
     Operacion,
-    Ticket,
-    TicketMessage,
 )
+from notifications.models import Ticket, TicketMessage
 from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
 
 

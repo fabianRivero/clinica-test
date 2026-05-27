@@ -6,6 +6,7 @@ import { FieldError } from '../../components/admin/FieldError'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { createAdminProspect, checkAdminProspectDuplicates } from '../../services/api/admin'
+import { useNotifications } from '../../providers/NotificationProvider'
 import type { CreateAdminProspectPayload, CheckAdminProspectDuplicatesResponse } from '../../types/admin'
 
 const initialForm: CreateAdminProspectPayload = {
@@ -22,6 +23,7 @@ type FieldErrors = Partial<Record<keyof CreateAdminProspectPayload, string>>
 
 export function AdminProspectCreatePage() {
   const navigate = useNavigate()
+  const { showNotification } = useNotifications()
   const [form, setForm] = useState<CreateAdminProspectPayload>(initialForm)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -101,9 +103,13 @@ export function AdminProspectCreatePage() {
         observaciones: form.observaciones.trim(),
       })
 
+      showNotification({
+        title: 'Prospecto registrado',
+        message: response.detail,
+        tone: 'success',
+      })
       navigate('/admin/prospectos', {
         replace: true,
-        state: { flashMessage: response.detail },
       })
     } catch (error) {
       if (error instanceof Error && 'fieldErrors' in error) {

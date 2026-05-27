@@ -179,13 +179,13 @@ export function AdminTicketDetailPage() {
             <button className="booking-modal-close" type="button" onClick={() => setIsReplyModalOpen(false)}>×</button>
           </header>
           <div className="booking-modal-body" style={{ padding: '1.5rem' }}>
-            <form className="form-stack" onSubmit={(event: FormEvent<HTMLFormElement>) => {
+            <form className="form-stack" onSubmit={async (event: FormEvent<HTMLFormElement>) => {
               event.preventDefault()
               if (!reply.trim()) {
                 showNotification({ title: 'Mensaje requerido', message: 'Debes escribir un mensaje para responder.', tone: 'warning' })
                 return
               }
-const confirmSend = await confirm({
+              const confirmSend = await confirm({
                     title: 'Enviar respuesta',
                     message: '¿Deseas enviar esta respuesta ahora?',
                   })

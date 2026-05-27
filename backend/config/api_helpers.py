@@ -127,6 +127,13 @@ def date_label(value):
     return value.strftime("%d/%m/%Y")
 
 
+def datetime_label(value):
+    """Format a datetime as ``dd/mm HH:MM`` or return *Sin fecha* for falsy values."""
+    if not value:
+        return "Sin fecha"
+    return timezone.localtime(value).strftime("%d/%m %H:%M")
+
+
 def full_name(user):
     """Return the user's ``nombre_completo``, falling back to ``username``.
 

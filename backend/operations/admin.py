@@ -7,14 +7,6 @@ from operations.models import (
     CitaMedica,
     CitaClienteLibre,
     DiaBloqueadoAgendaGlobal,
-    FichaAntecedenteMedico,
-    FichaCampo,
-    FichaCirugiaEstetica,
-    FichaClinica,
-    FichaImplanteInjerto,
-    FichaRespuestaCampo,
-    FichaRespuestaOpcion,
-    FichaSeccion,
     Operacion,
 )
 
@@ -76,22 +68,7 @@ class DiaBloqueadoAgendaGlobalAdmin(admin.ModelAdmin):
     list_filter = ("activo",)
 
 
-@admin.register(FichaClinica)
-class FichaClinicaAdmin(admin.ModelAdmin):
-    list_display = ("id", "operacion", "fecha_ficha", "consentimiento_aceptado")
-    list_filter = ("consentimiento_aceptado",)
-
-
 for model in (
-    FichaAntecedenteMedico,
-    FichaImplanteInjerto,
-    FichaCirugiaEstetica,
-    FichaSeccion,
-    FichaCampo,
-    FichaRespuestaCampo,
-    FichaRespuestaOpcion,
     AgendaHabitualDia,
 ):
     admin.site.register(model)
-
-# Register your models here.

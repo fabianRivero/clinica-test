@@ -26,11 +26,13 @@ from config.api_helpers import (
     admin_required,
     get_user_branch,
     json_response,
+    load_payload,
     split_amount,
 )
 from config.api_views import _prospect_item
 from customers.models import Cliente, HuellaBiometricaCliente, Prospecto, ProspectoConversionBorrador
-from operations.models import (
+from operations.models import Operacion
+from clinical.models import (
     FichaAntecedenteMedico,
     FichaCampo,
     FichaCirugiaEstetica,
@@ -39,7 +41,6 @@ from operations.models import (
     FichaRespuestaCampo,
     FichaRespuestaOpcion,
     FichaSeccion,
-    Operacion,
 )
 
 

@@ -18,12 +18,12 @@ from config.prospect_conversion_views import (
     _serialize_draft,
 )
 from customers.models import Cliente, ProspectoConversionBorrador
-from operations.models import (
+from operations.models import Operacion
+from clinical.models import (
     FichaAntecedenteMedico,
     FichaCirugiaEstetica,
     FichaClinica,
     FichaImplanteInjerto,
-    Operacion,
 )
 
 

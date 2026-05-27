@@ -27,12 +27,11 @@ from operations.models import (
     AgendaHabitualDia,
     AgendaHabitualEspecialista,
     DiaBloqueadoAgendaGlobal,
-    FichaCampo,
-    FichaSeccion,
     Operacion,
     CitaMedica,
     TabletKiosko,
 )
+from clinical.models import FichaCampo, FichaSeccion
 from billing.models import CategoriaGasto, CuotaPlanPago, PagoRealizado
 from staff.models import Especialidad, Especialista, EspecialistaEspecialidad
 

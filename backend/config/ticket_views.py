@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from config.api_helpers import json_response
-from operations.models import Ticket, TicketMessage
+from notifications.models import Ticket, TicketMessage
 from staff.models import Especialista
 from accounts.models import Rol, Usuario
 from notifications.models import Notification
