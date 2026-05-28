@@ -77,8 +77,7 @@ export async function getAdminDashboardAgenda(month: number, year: number) {
 }
 
 export function getAdminProspects(_branchId?: number) {
-  // El branchId ahora viaja por el encabezado X-Selected-Branch-Id inyectado en requestJson
-  return requestJson<ProspectsResponse>('/api/admin/prospectos/')
+  return requestJson<ProspectsResponse>('/api/admin/prospectos')
 }
 
 export function getAdminProspectMedicalAvailability(prospectId: number, branchId?: number) {
@@ -527,7 +526,7 @@ export function finalizeAdminProspectConversion(
 }
 
 export function getAdminBranches() {
-  return requestJson<{ branches: AdminBranch[] }>('/api/admin/disponibilidad/sucursales/')
+  return requestJson<{ branches: AdminBranch[] }>('/api/admin/disponibilidad/sucursales')
 }
 
 export function setAdminSessionBranch(branchId: number) {

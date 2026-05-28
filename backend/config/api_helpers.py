@@ -177,3 +177,15 @@ def split_amount(total, count):
     amounts = [base for _ in range(count)]
     amounts[-1] = (total - sum(amounts[:-1])).quantize(Decimal("0.01"))
     return amounts
+
+
+# ---------------------------------------------------------------------------
+# String helpers
+# ---------------------------------------------------------------------------
+
+def capitalize_first_letter(value):
+    """Capitalize the first letter of *value*, returning empty string for falsy input."""
+    text = (value or "").strip()
+    if not text:
+        return ""
+    return text[:1].upper() + text[1:]

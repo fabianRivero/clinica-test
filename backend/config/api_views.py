@@ -43,6 +43,7 @@ from clinical.models import FichaCampo, FichaSeccion
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 from config.api_helpers import (
     admin_required,
+    capitalize_first_letter,
     currency,
     date_label,
     datetime_label,
@@ -53,6 +54,22 @@ from config.api_helpers import (
     metric,
     procedure_name,
     split_amount,
+)
+from config.api.helpers_operations import (
+    agenda_status,
+    agenda_appointment_status,
+    agenda_verification_status,
+    agenda_verification_method,
+    operation_branch,
+    operation_branch_id,
+    operation_card,
+    operation_next_appointment,
+    operation_reference_appointment,
+    prospect_appointment_operation_card,
+    quota_display_status,
+    quota_programmed_amount,
+    quota_status,
+    appointment_biometric_status,
 )
 from config.client_api_views import (
     _appointment_item as _client_appointment_item,
@@ -69,6 +86,35 @@ from notifications.services import create_notification
 logger = logging.getLogger(__name__)
 IDEMPOTENCY_TTL_SECONDS = 60 * 60 * 24
 BRANCH_CREATE_WIZARD_SESSION_KEY = "admin_branch_create_wizard_draft"
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible aliases for helpers moved to config/api/helpers_operations.py
+# ---------------------------------------------------------------------------
+_agenda_status = agenda_status
+_agenda_appointment_status = agenda_appointment_status
+_agenda_verification_status = agenda_verification_status
+_agenda_verification_method = agenda_verification_method
+_quota_status = quota_status
+_quota_programmed_amount = quota_programmed_amount
+_quota_display_status = quota_display_status
+_operation_reference_appointment = operation_reference_appointment
+_operation_branch = operation_branch
+_operation_branch_id = operation_branch_id
+_operation_next_appointment = operation_next_appointment
+_operation_card = operation_card
+_appointment_biometric_status = appointment_biometric_status
+_prospect_appointment_operation_card = prospect_appointment_operation_card
+
+_capitalize_first_letter = capitalize_first_letter
+
+
+def _request_ip(request):
+    """Return client IP address from request."""
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR")
 
 
 
