@@ -107,12 +107,28 @@ function StaffEditorForm({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Tracks the last CI value used to sync into username/password
+  const [lastSyncedCi, setLastSyncedCi] = useState('')
 
   function handleChange<K extends keyof StaffFormState>(fieldName: K, value: StaffFormState[K]) {
-    setFormState((current) => ({
-      ...current,
-      [fieldName]: value,
-    }))
+    setFormState((current) => {
+      const next = { ...current, [fieldName]: value }
+
+      // When CI changes in create mode, sync username and password with CI
+      // only if they still match the last synced CI (i.e., user hasn't manually changed them)
+      if (fieldName === 'ci' && !editingStaffMember) {
+        const newCi = value as string
+        if (formState.username === lastSyncedCi || formState.username === '') {
+          next.username = newCi
+        }
+        if (formState.password === lastSyncedCi || formState.password === '') {
+          next.password = newCi
+        }
+        setLastSyncedCi(newCi)
+      }
+
+      return next
+    })
     setFieldErrors((current) => {
       if (!current[fieldName]) {
         return current
@@ -127,6 +143,7 @@ function StaffEditorForm({
     setFormState(buildEmptyForm())
     setFieldErrors({})
     setSubmitError(null)
+    setLastSyncedCi('')
   }
 
   function handleCancel() {
@@ -151,6 +168,12 @@ function StaffEditorForm({
     setIsSubmitting(true)
     setFieldErrors({})
     setSubmitError(null)
+
+    if (formState.specialtyIds.length === 0) {
+      setFieldErrors({ specialtyIds: 'Selecciona al menos una especialidad.' })
+      setIsSubmitting(false)
+      return
+    }
 
     const payload: UpdateAdminStaffPayload = {
       username: formState.username.trim(),
@@ -207,27 +230,41 @@ function StaffEditorForm({
       description="Completa los datos de acceso, contacto y especialidades del trabajador."
     >
       <form className="form-grid" onSubmit={(event) => void handleSubmit(event)}>
-        <label className="field" htmlFor="staff-username">
-          <span>Nombre de usuario</span>
+        <label className="field" htmlFor="staff-ci">
+          <span>CI <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
           <input
-            id="staff-username"
+            id="staff-ci"
             className="input"
-            value={formState.username}
-            onChange={(event) => handleChange('username', event.target.value)}
+            value={formState.ci}
+            onChange={(event) => handleChange('ci', event.target.value)}
+            required
           />
-          <FieldError message={fieldErrors.username} />
+          <FieldError message={fieldErrors.ci} />
         </label>
 
         <label className="field" htmlFor="staff-password">
-          <span>{editingStaffMember ? 'Nueva contrasena (opcional)' : 'Contrasena inicial'}</span>
+          <span>{editingStaffMember ? 'Nueva contrasena (opcional)' : 'Contrasena inicial'} <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
           <input
             id="staff-password"
             className="input"
             type="password"
             value={formState.password}
             onChange={(event) => handleChange('password', event.target.value)}
+            required={!editingStaffMember}
           />
           <FieldError message={fieldErrors.password} />
+        </label>
+
+        <label className="field" htmlFor="staff-username">
+          <span>Nombre de usuario <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+          <input
+            id="staff-username"
+            className="input"
+            value={formState.username}
+            onChange={(event) => handleChange('username', event.target.value)}
+            required
+          />
+          <FieldError message={fieldErrors.username} />
         </label>
 
         <label className="field" htmlFor="staff-email">
@@ -242,25 +279,14 @@ function StaffEditorForm({
           <FieldError message={fieldErrors.email} />
         </label>
 
-        <label className="field" htmlFor="staff-ci">
-          <span>CI</span>
-          <input
-            id="staff-ci"
-            className="input"
-            value={formState.ci}
-            onChange={(event) => handleChange('ci', event.target.value)}
-            required
-          />
-          <FieldError message={fieldErrors.ci} />
-        </label>
-
         <label className="field" htmlFor="staff-primer-nombre">
-          <span>Primer nombre</span>
+          <span>Primer nombre <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
           <input
             id="staff-primer-nombre"
             className="input"
             value={formState.primerNombre}
             onChange={(event) => handleChange('primerNombre', event.target.value)}
+            required
           />
           <FieldError message={fieldErrors.primerNombre} />
         </label>
@@ -277,12 +303,13 @@ function StaffEditorForm({
         </label>
 
         <label className="field" htmlFor="staff-apellido-paterno">
-          <span>Apellido paterno</span>
+          <span>Apellido paterno <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
           <input
             id="staff-apellido-paterno"
             className="input"
             value={formState.apellidoPaterno}
             onChange={(event) => handleChange('apellidoPaterno', event.target.value)}
+            required
           />
           <FieldError message={fieldErrors.apellidoPaterno} />
         </label>
@@ -321,7 +348,7 @@ function StaffEditorForm({
         </label>
 
         <div className="field field--full">
-          <span>Especialidades</span>
+          <span>Especialidades <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
           <div className="checkbox-grid">
             {data.specialtyOptions.map((option) => (
               <label className="checkbox-pill" key={option.id}>

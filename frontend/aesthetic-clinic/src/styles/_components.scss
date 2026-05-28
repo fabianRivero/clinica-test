@@ -228,6 +228,10 @@
   }
 }
 
+.field-required {
+  color: var(--color-danger);
+}
+
 .field--password {
   position: relative;
 
