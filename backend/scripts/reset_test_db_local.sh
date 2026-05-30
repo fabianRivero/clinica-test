@@ -42,7 +42,7 @@ echo -e "${CYAN}[local_reset] Normalizando sede principal y categorías...${NC}"
 echo -e "${CYAN}[local_reset] Cargando escenarios de prueba multi-sucursal...${NC}"
 "$PYTHON" manage.py seed_branch_test_scenarios
 
-echo -e "${YELLOW}[local_reset] Usuarios demo: admin.general / admin123456, admin.sucursal / admin123456, admin.sucursal.norte / admin123456${NC}"
+echo -e "${YELLOW}[local_reset] Usuarios demo: admin.general / admin123456, admin.norte / admin123456, admin.sur / admin123456${NC}"
 echo -e "${YELLOW}[local_reset] Nota: el sistema ahora incluye wizard de creación de sucursales (3 pasos), gestión de admins de sucursal e historial/auditoría de cambios en sucursales.${NC}"
 echo -e "${YELLOW}[local_reset] Nota: las credenciales de TabletKiosko se almacenan hasheadas; revisa la salida de seed_pdf_baseline para credenciales de prueba en texto plano.${NC}"
 echo -e "${GREEN}[local_reset] Base de datos SQLite lista para pruebas locales.${NC}"

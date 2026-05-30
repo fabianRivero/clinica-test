@@ -144,13 +144,16 @@ class Command(BaseCommand):
         return {"principal": main_branch, "A": branch_a, "B": branch_b}
 
     def _seed_admins(self, roles, branches):
-        # Admin General (principal)
+        # Admin General (principal) — tiene nombre completo y username dedicados
         admin_gen, created = Usuario.objects.update_or_create(
             username="admin.general",
             defaults={
                 "primer_nombre": "Admin",
+                "segundo_nombre": "",
                 "apellido_paterno": "General",
+                "apellido_materno": "",
                 "email": "admin.general@clinic.local",
+                "telefono": "",
                 "rol": roles["ADMIN_PRINCIPAL"],
                 "sucursal": branches["principal"],
                 "is_active": True,
@@ -161,30 +164,16 @@ class Command(BaseCommand):
         admin_gen.set_password("admin123456")
         admin_gen.save()
 
-        # Admin Sucursal (solo ve datos de su sucursal)
-        admin_suc, created = Usuario.objects.update_or_create(
-            username="admin.sucursal",
-            defaults={
-                "primer_nombre": "Admin",
-                "apellido_paterno": "Sucursal Sur",
-                "email": "admin.sucursal@clinic.local",
-                "rol": roles["ADMIN_SUCURSAL"],
-                "sucursal": branches["B"],
-                "is_active": True,
-                "is_staff": True,
-                "is_superuser": False,
-            },
-        )
-        admin_suc.set_password("admin123456")
-        admin_suc.save()
-
         # Admin Sucursal Norte (garantiza cobertura de sucursales activas)
-        admin_suc_norte, created = Usuario.objects.update_or_create(
-            username="admin.sucursal.norte",
+        admin_norte, created = Usuario.objects.update_or_create(
+            username="admin.norte",
             defaults={
                 "primer_nombre": "Admin",
-                "apellido_paterno": "Sucursal Norte",
-                "email": "admin.sucursal.norte@clinic.local",
+                "segundo_nombre": "",
+                "apellido_paterno": "Norte",
+                "apellido_materno": "",
+                "email": "admin.norte@clinic.local",
+                "telefono": "",
                 "rol": roles["ADMIN_SUCURSAL"],
                 "sucursal": branches["A"],
                 "is_active": True,
@@ -192,8 +181,28 @@ class Command(BaseCommand):
                 "is_superuser": False,
             },
         )
-        admin_suc_norte.set_password("admin123456")
-        admin_suc_norte.save()
+        admin_norte.set_password("admin123456")
+        admin_norte.save()
+
+        # Admin Sucursal Sur (solo ve datos de su sucursal)
+        admin_sur, created = Usuario.objects.update_or_create(
+            username="admin.sur",
+            defaults={
+                "primer_nombre": "Admin",
+                "segundo_nombre": "",
+                "apellido_paterno": "Sur",
+                "apellido_materno": "",
+                "email": "admin.sur@clinic.local",
+                "telefono": "",
+                "rol": roles["ADMIN_SUCURSAL"],
+                "sucursal": branches["B"],
+                "is_active": True,
+                "is_staff": True,
+                "is_superuser": False,
+            },
+        )
+        admin_sur.set_password("admin123456")
+        admin_sur.save()
 
     def _seed_specialist_users(self, worker_role, branches):
         user_specs = {

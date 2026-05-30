@@ -507,7 +507,7 @@ class Command(BaseCommand):
         users = Usuario.objects.in_bulk(
             [
                 "admin.general",
-                "admin.sucursal",
+                "admin.norte",
                 "especialista.movible.norte",
                 "especialista.movible.sur",
             ],
@@ -515,7 +515,7 @@ class Command(BaseCommand):
         )
         missing = [
             username
-            for username in ["admin.general", "admin.sucursal", "especialista.movible.norte", "especialista.movible.sur"]
+            for username in ["admin.general", "admin.norte", "especialista.movible.norte", "especialista.movible.sur"]
             if username not in users
         ]
         if missing:
@@ -535,11 +535,11 @@ class Command(BaseCommand):
                 "asunto": f"{TICKET_SCENARIO_PREFIX} Ticket abierto Norte",
                 "sucursal": branches["norte"],
                 "especialista": specialists["especialista.movible.norte"],
-                "creado_por": users["admin.sucursal"],
+                "creado_por": users["admin.norte"],
                 "estado": Ticket.Estado.ABIERTO,
                 "closed_at": None,
                 "mensajes": [
-                    ("admin.sucursal", "Se registra incidente operativo en Norte.", TicketMessage.Estado.RESPONDIDO),
+                    ("admin.norte", "Se registra incidente operativo en Norte.", TicketMessage.Estado.RESPONDIDO),
                     ("admin.general", "Escalado y validado desde administracion principal.", TicketMessage.Estado.RESPONDIDO),
                     ("especialista.movible.norte", "Tomado; iniciando diagnostico en cabina Norte.", TicketMessage.Estado.ENVIADO),
                 ],
@@ -548,11 +548,11 @@ class Command(BaseCommand):
                 "asunto": f"{TICKET_SCENARIO_PREFIX} Ticket abierto Sur",
                 "sucursal": branches["sur"],
                 "especialista": specialists["especialista.movible.sur"],
-                "creado_por": users["admin.sucursal"],
+                "creado_por": users["admin.general"],
                 "estado": Ticket.Estado.ABIERTO,
                 "closed_at": None,
                 "mensajes": [
-                    ("admin.sucursal", "Paciente reporta demora de confirmacion en Sur.", TicketMessage.Estado.RESPONDIDO),
+                    ("admin.general", "Paciente reporta demora de confirmacion en Sur.", TicketMessage.Estado.RESPONDIDO),
                     ("especialista.movible.sur", "Se reviso agenda y se aplicaron ajustes.", TicketMessage.Estado.ENVIADO),
                     ("admin.general", "Monitoreo activo para validar SLA.", TicketMessage.Estado.RESPONDIDO),
                 ],
@@ -567,7 +567,7 @@ class Command(BaseCommand):
                 "mensajes": [
                     ("admin.general", "Caso resuelto inicialmente y marcado para cierre.", TicketMessage.Estado.RESPONDIDO),
                     ("especialista.movible.sur", "Se confirmo resolucion tecnica en sitio.", TicketMessage.Estado.RESPONDIDO),
-                    ("admin.sucursal", "Pendiente validacion final para posible reapertura.", TicketMessage.Estado.ENVIADO),
+                    ("admin.general", "Pendiente validacion final para posible reapertura.", TicketMessage.Estado.ENVIADO),
                 ],
             },
         ]
