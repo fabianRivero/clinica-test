@@ -59,7 +59,8 @@ export function ConversionStepPayment({
               <img
                 src={paymentQrImageUrl}
                 alt="QR de pago"
-                style={{ maxWidth: 280, width: '100%', borderRadius: 12, cursor: 'zoom-in' }}
+                className="_cursor-zoom-in"
+                style={{ maxWidth: 280, width: '100%', borderRadius: 12 }}
                 onClick={() => onQrModalToggle(true)}
               />
               <button

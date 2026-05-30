@@ -840,7 +840,8 @@ function EditProspectModal({
                         <div className="_mt-xs _flex-center _flex-gap-md">
                           {isBeingEdited ? (
                             <select
-                              style={{ padding: '0.25rem 0.5rem', height: 'auto', fontSize: '0.85rem', width: 'auto', minWidth: '140px' }}
+                              className="_p-xs _text-sm"
+                              style={{ height: 'auto', width: 'auto', minWidth: '140px' }}
                               value={currentStatusValue}
                               onChange={(e) => {
                                 setTempStatuses(prev => ({ ...prev, [cita.rawId]: e.target.value }));

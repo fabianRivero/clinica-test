@@ -117,7 +117,7 @@ export function AdminTicketDetailPage() {
       </div>
     </SectionCard>
     <SectionCard eyebrow='Mensajes' title='Hilo completo' description='Conversación completa de la ficha.'>
-      <div style={{ display: 'grid', gap: '0.85rem' }}>
+      <div className='_grid _gap-md'>
         {messageItems.map(({ message: m, attachments }) => (
           <article key={m.id} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '0.85rem 1rem', background: 'var(--bg-card)' }}>
             <div className="_flex-between _flex-wrap">
@@ -130,7 +130,7 @@ export function AdminTicketDetailPage() {
             <p className="_mt-sm">{m.body}</p>
 
             {attachments.length ? (
-              <div style={{ marginTop: '0.75rem', display: 'grid', gap: '0.6rem' }}>
+              <div className='_mt-sm _grid _gap-sm'>
                 {attachments.map((attachment) => (
                   <div key={`${m.id}-${attachment.url}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.55rem 0.65rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0 }}>
@@ -145,7 +145,7 @@ export function AdminTicketDetailPage() {
                       ) : (
                         <span style={{ fontSize: '1.3rem' }}>{getFileTypeIcon(attachment.name, attachment.isImage)}</span>
                       )}
-                      <div style={{ minWidth: 0 }}>
+                      <div className='_min-0'>
                         <div>
                           <strong style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', maxWidth: '320px' }}>{attachment.name}</strong>
                         </div>
@@ -239,7 +239,7 @@ export function AdminTicketDetailPage() {
             <button className="booking-modal-close" type="button" onClick={() => setPreviewImage(null)}>×</button>
           </header>
           <div className="booking-modal-body _p-6 _text-center">
-            <img src={previewImage.url} alt={previewImage.name} style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: '10px' }} />
+            <img src={previewImage.url} alt={previewImage.name} className='_max-w-full _max-h-screen _rounded-lg' />
             <div className="_mt-md">
               <a className="button button--ghost" href={previewImage.url} target="_blank" rel="noreferrer" download>
                 Descargar imagen

@@ -2488,12 +2488,20 @@
   font-size: 0.75rem;
 }
 
+._text-lg {
+  font-size: 1.3rem;
+}
+
 ._font-bold {
   font-weight: 700;
 }
 
 ._font-medium {
   font-weight: 500;
+}
+
+._font-normal {
+  font-weight: 400;
 }
 
 // Border utilities
@@ -2572,6 +2580,9 @@
 // Gap
 ._gap-sm { gap: 0.5rem; }
 
+// Min width
+._min-0 { min-width: 0; }
+
 // Flex
 ._flex-1 { flex: 1; }
 
@@ -2584,7 +2595,23 @@
 // Font sizes
 ._font-xs { font-size: 0.75rem; }
 
-// Padding compact
+// Width
+._w-full { width: 100%; }
+._max-w-full { max-width: 100%; }
+
+// Max heights (for image previews etc)
+._max-h-screen { max-height: 70vh; }
+
+// Border radius
+._rounded-lg { border-radius: 10px; }
+
+// Cursor
+._cursor-zoom-in { cursor: zoom-in; }
+
+// Layout containers
+._container-admin { max-width: 1400px; margin: 0 auto; width: 100%; }
+
+// Padding compact (already added before _leading-tight, check end of file)
 ._p-xs { padding: 0.25rem 0.5rem; }
 
 // Line height

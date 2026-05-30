@@ -55,18 +55,18 @@ export function AdminDashboardPage() {
         className="button button--ghost button--compact" 
         onClick={onPrev}
         disabled={isCurrent(month, year) || isLoading}
-        style={{ minWidth: '32px', height: '32px', padding: 0, borderRadius: '8px' }}
+        style={{ minWidth: '32px', height: '32px' }}
       >
         &larr;
       </button>
-      <span style={{ fontWeight: 700, minWidth: '110px', textAlign: 'center', fontSize: '0.95rem', color: isLoading ? 'var(--color-text-soft)' : 'var(--color-primary-dark)' }}>
+      <span className="_font-bold" style={{ minWidth: '110px', textAlign: 'center', fontSize: '0.95rem', color: isLoading ? 'var(--color-text-soft)' : 'var(--color-primary-dark)' }}>
         {monthNames[month - 1]} {year}
       </span>
       <button 
         className="button button--ghost button--compact" 
         onClick={onNext}
         disabled={isLoading}
-        style={{ minWidth: '32px', height: '32px', padding: 0, borderRadius: '8px' }}
+        style={{ minWidth: '32px', height: '32px' }}
       >
         &rarr;
       </button>
@@ -76,7 +76,7 @@ export function AdminDashboardPage() {
   return (
     <div className="admin-dashboard">
       <header className="page-header _mb-lg">
-        <div style={{ maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+        <div className="_container-admin">
           <h1 className="page-title">Resumen Administrativo</h1>
           <p className="page-description">
             Gestiona cobros y citas programadas con filtros de tiempo independientes.
@@ -84,7 +84,7 @@ export function AdminDashboardPage() {
         </div>
       </header>
 
-      <div className="page-stack" style={{ maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+      <div className="page-stack _container-admin">
         
         <SectionCard
           eyebrow="Cobros"
@@ -143,7 +143,7 @@ export function AdminDashboardPage() {
                           </Link>
                         </td>
                         <td>
-                          <Link to={`/admin/operaciones/${p.operationId}`} className="table-strong-link" style={{ fontWeight: 400 }}>
+                          <Link to={`/admin/operaciones/${p.operationId}`} className="table-strong-link _font-normal">
                             {p.operation}
                           </Link>
                         </td>
@@ -220,7 +220,7 @@ export function AdminDashboardPage() {
                           </Link>
                         </td>
                         <td>
-                          <Link to={`/admin/operaciones/${item.operationId}`} className="table-strong-link" style={{ fontWeight: 400 }}>
+                          <Link to={`/admin/operaciones/${item.operationId}`} className="table-strong-link _font-normal">
                             {item.procedure}
                           </Link>
                         </td>
