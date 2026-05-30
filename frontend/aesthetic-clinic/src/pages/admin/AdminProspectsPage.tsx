@@ -195,10 +195,11 @@ export function AdminProspectsPage() {
   }
 
   async function handleMarkAppointmentAsCompleted(appointmentId: number, prospectId?: number) {
+    console.log('DEBUG')
     const confirmed = await confirm({
       title: 'Marcar cita como realizada',
       message: '¿Deseas marcar esta cita como realizada?',
-      tone: 'success',
+      tone: 'info',
     })
     if (!confirmed) return
 
@@ -436,6 +437,7 @@ export function AdminProspectsPage() {
               onSave={handleUpdateProspect}
               isUpdating={isUpdating}
               handleCancelAppointment={(appointmentId) => handleCancelAppointment(appointmentId, editingProspect.rawId)}
+              handleMarkAppointmentAsCompleted={(appointmentId) => handleMarkAppointmentAsCompleted(appointmentId, editingProspect.rawId)}
             />
           )}
 
@@ -714,12 +716,14 @@ function EditProspectModal({
   onSave,
   isUpdating,
   handleCancelAppointment,
+  handleMarkAppointmentAsCompleted,
 }: {
   prospect: ProspectLead
   onClose: () => void
   onSave: (data: any) => Promise<void>
   isUpdating: boolean
   handleCancelAppointment: (id: number) => Promise<void>
+  handleMarkAppointmentAsCompleted: (appointmentId: number, prospectId?: number) => Promise<void>
 }) {
   const [primerNombre, setPrimerNombre] = useState(prospect.primerNombre || prospect.firstName || '')
   const [segundoNombre, setSegundoNombre] = useState(prospect.segundoNombre || '')
@@ -887,7 +891,7 @@ function EditProspectModal({
                             <button
                               className="button button--primary button--compact"
                               onClick={() => {
-                                void handleMarkAppointmentAsCompleted(cita.rawId, prospect.rawId)
+                                void handleMarkAppointmentAsCompleted(cita.rawId)
                                 onClose()
                               }}
                             >

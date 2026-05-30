@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react'
 import type { ApiError } from '../services/api/apiClient'
 
+type NotificationTone = 'success' | 'info' | 'warning' | 'danger'
+
 type UseFormSubmissionOptions = {
   onSuccess?: (response: unknown) => void | Promise<void>
   successTitle?: string
@@ -22,7 +24,7 @@ function isApiError(error: unknown): error is ApiError {
 }
 
 export function useFormSubmission(
-  showNotification: (input: { title: string; message: string; tone: string }) => void,
+  showNotification: (input: { title: string; message: string; tone?: NotificationTone }) => void,
 ): UseFormSubmissionReturn {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)

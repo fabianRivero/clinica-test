@@ -120,7 +120,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
               <span>Contraseña <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
               <input className="input" type="password" required               value={form.password}
               onChange={(e) => {
-                setUserEdited((v) => ({ username: true, password: true }))
+                setUserEdited(() => ({ username: true, password: true }))
                 setForm((prev) => ({ ...prev, password: e.target.value }))
               }} />
             </label>
@@ -169,7 +169,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
                     <div className="catalog-admin-card__header">
                       <h3>{row.fullName}</h3>
                       <div className="table-actions">
-                        <StatusBadge tone={row.isActive ? 'success' : 'default'}>
+                        <StatusBadge tone={row.isActive ? 'success' : 'neutral'}>
                           {row.isActive ? 'Activo' : 'Inactivo'}
                         </StatusBadge>
                       </div>

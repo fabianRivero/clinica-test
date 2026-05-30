@@ -3,9 +3,10 @@ import { StatusBadge } from '../../../components/admin/StatusBadge'
 import { DataState } from '../../../components/admin/DataState'
 import { SectionCard } from '../../../components/admin/SectionCard'
 import type { AdminConcurrencyCheckResponse } from '../../../types/admin'
+import type { ClientAppointment } from '../../../types/common'
 
 interface ClientAppointmentSectionProps {
-  appointments: any[]
+  appointments: ClientAppointment[]
   appointmentActionId: number | null
   rescheduleAppointmentId: number | null
   rescheduleDate: string

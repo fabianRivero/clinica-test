@@ -1,6 +1,21 @@
 import type { AdminMetric } from './admin'
 import type { PaymentQrConfig } from './admin'
-export type { ClientOperation, ClientAppointment, ClientPayment, ClientQuota, ClientReservationAvailabilityResponse, CreateClientReservationResponse } from './common'
+import type {
+  ClientOperation,
+  ClientAppointment,
+  ClientPayment,
+  ClientQuota,
+  ClientReservationAvailabilityResponse,
+  CreateClientReservationResponse,
+} from './common'
+export type {
+  ClientOperation,
+  ClientAppointment,
+  ClientPayment,
+  ClientQuota,
+  ClientReservationAvailabilityResponse,
+  CreateClientReservationResponse,
+}
 
 export type ClientAlert = {
   id: string

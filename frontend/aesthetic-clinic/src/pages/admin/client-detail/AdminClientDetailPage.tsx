@@ -24,7 +24,6 @@ export function AdminClientDetailPage() {
     ConfirmDialogModal,
 
     // Reservation state
-    selectedOperationId,
     setSelectedOperationId,
     selectedDate,
     setSelectedDate,
@@ -195,7 +194,6 @@ export function AdminClientDetailPage() {
           concurrencyInfo={concurrencyInfo}
           isChecking={isChecking}
           isBookingKey={isBookingKey}
-          data={data}
           onOperationChange={setSelectedOperationId}
           onDateChange={(v) => { setSelectedDate(v); setConcurrencyInfo(null) }}
           onTimeChange={(v) => { setSelectedTime(v); setConcurrencyInfo(null) }}

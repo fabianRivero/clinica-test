@@ -10,7 +10,6 @@ interface ClientReservationSectionProps {
   concurrencyInfo: AdminConcurrencyCheckResponse | null
   isChecking: boolean
   isBookingKey: string | null
-  data: any
   onOperationChange: (value: number) => void
   onDateChange: (value: string) => void
   onTimeChange: (value: string) => void
@@ -26,7 +25,6 @@ export function ClientReservationSection({
   concurrencyInfo,
   isChecking,
   isBookingKey,
-  data,
   onOperationChange,
   onDateChange,
   onTimeChange,

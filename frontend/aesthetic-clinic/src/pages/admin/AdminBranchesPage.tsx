@@ -44,7 +44,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   const [wizardTablet, setWizardTablet] = useState({ nombre: '', clave: '' })
   const [showWizardConfirmModal, setShowWizardConfirmModal] = useState(false)
   const [createdBranchInfo, setCreatedBranchInfo] = useState<{ branchName: string; tabletCode: string; tabletClave: string } | null>(null)
-  const [branchAdmins, setBranchAdmins] = useState<Array<{ id: number; username: string; fullName: string; isActive: boolean; branchId: number | null; branchName: string }>>([])
+  const [branchAdmins, setBranchAdmins] = useState<Array<{ id: number; username: string; email: string; fullName: string; isActive: boolean; branchId: number | null; branchName: string }>>([])
   const [editingBranch, setEditingBranch] = useState<BranchRow | null>(null)
   const [editForm, setEditForm] = useState({ nombre: '', ciudad: '', direccion: '' })
   const [changingAdminBranch, setChangingAdminBranch] = useState<BranchRow | null>(null)
@@ -153,11 +153,6 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     } finally {
       setSaving(false)
     }
-  }
-
-  async function handleWizardStep3(e: React.FormEvent) {
-    e.preventDefault()
-    setShowWizardConfirmModal(true)
   }
 
   async function handleWizardSubmit() {

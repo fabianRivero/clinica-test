@@ -70,7 +70,7 @@ export function AdminOperationDetailPage() {
     }
   }
   const handleCheck = async () => {
-    if (!rescheduleDate || !rescheduleTime || !data) return
+    if (!rescheduleDate || !rescheduleTime || !data?.operation?.branchId) return
     setIsChecking(true)
     setActionError(null)
     try {

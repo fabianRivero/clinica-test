@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 import { DataState } from '../../../components/admin/DataState'
 import { PageHeader } from '../../../components/admin/PageHeader'

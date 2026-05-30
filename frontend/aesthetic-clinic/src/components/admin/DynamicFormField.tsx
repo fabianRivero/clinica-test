@@ -8,9 +8,9 @@ type DynamicFormFieldProps = {
     allowsDetail?: boolean
     options: Array<{ id: number; name: string; value: string }>
   }
-  value: string | boolean | string[]
+  value: string | boolean | string[] | number[] | null
   detailValue?: string
-  onChange: (value: string | boolean | string[]) => void
+  onChange: (value: string | boolean | string[] | number[] | null) => void
   onDetailChange?: (detail: string) => void
   error?: string | null
 }
@@ -112,7 +112,7 @@ export function DynamicFormField({
   }
 
   if (field.type === 'SELECCION') {
-    const selectedIds = Array.isArray(value) ? value : []
+    const selectedIds = Array.isArray(value) ? value.map(v => typeof v === 'string' ? parseInt(v, 10) : v) : []
     return (
       <label className="field" key={field.id}>
         <span>
@@ -139,7 +139,7 @@ export function DynamicFormField({
   }
 
   // MULTISELECCION
-  const selectedIds = Array.isArray(value) ? value : []
+  const selectedIds = Array.isArray(value) ? value.map(v => typeof v === 'string' ? parseInt(v, 10) : v) : []
   return (
     <div className="field field--full" key={field.id}>
       <span>

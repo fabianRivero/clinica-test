@@ -63,7 +63,7 @@ export function useClientDetail(clientId: string) {
     () => data?.operations.filter((operation: any) => operation.status === 'En proceso') ?? [],
     [data],
   )
-  const effectiveOperationId = selectedOperationId || reservableOperations[0]?.rawId || ''
+  const effectiveOperationId = (selectedOperationId ?? reservableOperations[0]?.rawId) ?? ''
 
   async function handleCancelAppointment(appointmentId: number) {
     const shouldCancel = await confirm({
