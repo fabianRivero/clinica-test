@@ -167,13 +167,13 @@ export function TabletKioskPage() {
       <div className="auth-card tablet-shell__card">
         <h2>Interfaz Tablet · Confirmación de cita</h2>
         {isOfflineMode ? (
-          <div className="auth-highlight" style={{ marginBottom: 12 }}>
+          <div className="auth-highlight _mb-sm">
             <strong>Modo offline activo</strong>
             <p>Se usará snapshot local y las confirmaciones quedarán en cola para sincronización.</p>
           </div>
         ) : null}
         {pendingOfflineEvents > 0 ? (
-          <div className="auth-highlight" style={{ marginBottom: 12 }}>
+          <div className="auth-highlight _mb-sm">
             <strong>Pendientes de sincronizar: {pendingOfflineEvents}</strong>
           </div>
         ) : null}
@@ -224,7 +224,7 @@ export function TabletKioskPage() {
             </p>
             {procedures.length === 0 ? <p>No hay procedimientos confirmables hoy.</p> : null}
             {procedures.map((option) => (
-              <article key={option.operation.rawId} className="auth-highlight" style={{ marginBottom: 12 }}>
+              <article key={option.operation.rawId} className="auth-highlight _mb-sm">
                 <strong>{option.operation.procedure}</strong>
                 <p>{option.operation.reserveMessage}</p>
                 <p>Citas hoy: {option.appointments.map((a) => `${a.dateTime} (${a.status})`).join(' · ')}</p>

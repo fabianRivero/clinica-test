@@ -75,7 +75,7 @@ export function AdminDashboardPage() {
 
   return (
     <div className="admin-dashboard">
-      <header className="page-header" style={{ marginBottom: '2rem' }}>
+      <header className="page-header _mb-lg">
         <div style={{ maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
           <h1 className="page-title">Resumen Administrativo</h1>
           <p className="page-description">
@@ -133,10 +133,10 @@ export function AdminDashboardPage() {
                         <td>
                           <div className="table-cell-stack">
                             <strong>{p.dueDateLabel}</strong>
-                            {p.isToday && <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem', fontWeight: 800 }}>VENCE HOY</span>}
+                            {p.isToday && <span className="_text-danger _text-xs _font-bold">VENCE HOY</span>}
                           </div>
                         </td>
-                        <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{p.amount}</td>
+                        <td className="_font-bold">{p.amount}</td>
                         <td>
                           <Link to={`/admin/clientes/${p.clientId}`} className="table-strong-link">
                             {p.client}
@@ -147,7 +147,7 @@ export function AdminDashboardPage() {
                             {p.operation}
                           </Link>
                         </td>
-                        <td style={{ color: 'var(--color-text-soft)' }}>Nro {p.quotaNumber}</td>
+                        <td className="_text-muted">Nro {p.quotaNumber}</td>
                       </tr>
                     )
                   })}
@@ -210,10 +210,10 @@ export function AdminDashboardPage() {
                         <td>
                           <div className="table-cell-stack">
                             <strong>{item.dateLabel}</strong>
-                            {item.isToday && <span style={{ color: 'var(--color-danger)', fontSize: '0.75rem', fontWeight: 800 }}>HOY</span>}
+                            {item.isToday && <span className="_text-danger _text-xs _font-bold">HOY</span>}
                           </div>
                         </td>
-                        <td style={{ fontWeight: 600 }}>{item.time}</td>
+                        <td className="_font-bold">{item.time}</td>
                         <td>
                           <Link to={`/admin/clientes/${item.clientId}`} className="table-strong-link">
                             {item.patient}

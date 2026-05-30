@@ -50,22 +50,11 @@ export function HabitualScheduleForm({
               ))}
             </select>
           ) : (
-            <div
-              className="checkbox-group"
-              style={{
-                maxHeight: '150px',
-                overflowY: 'auto',
-                border: '1px solid var(--border)',
-                padding: '0.5rem',
-                borderRadius: '4px',
-                background: 'var(--bg-card)',
-              }}
-            >
+            <div className="checkbox-group _checkbox-scroll">
               {specialists.map((sp) => (
                 <label
                   key={sp.id}
-                  className="checkbox-label"
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', cursor: 'pointer' }}
+                  className="checkbox-label _flex-center _flex-gap-sm _mb-xs _cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -84,7 +73,7 @@ export function HabitualScheduleForm({
           )}
         </div>
 
-        <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div className="form-group _grid-2cols">
           <div>
             <label>Fecha de inicio</label>
             <input
@@ -106,7 +95,7 @@ export function HabitualScheduleForm({
           </div>
         </div>
 
-        <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div className="form-group _grid-2cols">
           <div>
             <label>Hora Inicio</label>
             <input
@@ -131,9 +120,9 @@ export function HabitualScheduleForm({
 
         <div className="form-group">
           <label>Dias de atencion</label>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+          <div className="_flex-gap-sm _flex-wrap _mt-sm">
             {weekdayOptions.map((w) => (
-              <label key={w.value} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'var(--c-neutral-100)', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
+              <label key={w.value} className="_weekday-pill">
                 <input
                   type="checkbox"
                   checked={habitualForm.weekdayCodes.includes(w.value)}
@@ -141,7 +130,7 @@ export function HabitualScheduleForm({
                     setHabitualForm({ ...habitualForm, weekdayCodes: toggleSelection(habitualForm.weekdayCodes, w.value) })
                   }
                 />
-                <span style={{ fontSize: '0.875rem' }}>{w.label}</span>
+                <span className="_text-sm">{w.label}</span>
               </label>
             ))}
           </div>
@@ -158,7 +147,7 @@ export function HabitualScheduleForm({
           />
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div className="_flex-gap-sm">
           <button type="submit" className="button button--primary" disabled={isSubmitting}>
             {isSubmitting ? 'Guardando...' : 'Guardar agenda'}
           </button>

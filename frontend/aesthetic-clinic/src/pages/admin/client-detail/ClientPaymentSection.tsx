@@ -32,7 +32,7 @@ export function ClientPaymentSection({
       <SectionCard eyebrow="Pagos" title="Pagos pendientes" description="Cuotas aun no pagadas o pendientes de completar.">
         {pendingQuotas.length ? (
           <>
-            <label className="field" style={{ marginBottom: 12 }}>
+            <label className="field _mb-sm">
               <span>Filtrar por procedimiento</span>
               <select className="input" value={pendingQuotaProcedureFilter} onChange={(event) => onPendingQuotaFilterChange(event.target.value)}>
                 <option value="">Todos los procedimientos</option>

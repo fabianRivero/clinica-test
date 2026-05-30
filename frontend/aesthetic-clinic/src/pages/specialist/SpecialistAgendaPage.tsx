@@ -43,7 +43,7 @@ export function SpecialistAgendaPage() {
         title="Selector de dias"
         description="Selecciona un dia de la semana; los botones se distribuyen uniformemente en el contenedor."
       >
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: '0.5rem' }}>
+        <div className="_grid-7col _gap-sm">
           {WEEK_AVAILABILITY.map((day) => {
             const isActive = day.date === selectedDate
             const hasShifts = day.shifts.length > 0
@@ -55,7 +55,7 @@ export function SpecialistAgendaPage() {
                 type="button"
                 onClick={() => setSelectedDate(day.date)}
               >
-                <span style={{ lineHeight: 1.1 }}>{day.weekdayLabel}</span>
+                <span className="_leading-tight">{day.weekdayLabel}</span>
                 <StatusBadge tone={hasShifts ? 'success' : 'warning'}>
                   {hasShifts ? 'Con turno' : 'Sin turno'}
                 </StatusBadge>

@@ -72,7 +72,7 @@ function DynamicFieldRenderer({
   if (field.type === 'TEXTO') {
     return (
       <label className="field field--full" key={field.id}>
-        <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+        <span>{field.label} <span className="_text-danger">*</span></span>
         <input
           className="input"
           value={response.valueText}
@@ -92,7 +92,7 @@ function DynamicFieldRenderer({
   if (field.type === 'NUMERO') {
     return (
       <label className="field" key={field.id}>
-        <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+        <span>{field.label} <span className="_text-danger">*</span></span>
         <input
           className="input"
           type="number"
@@ -113,7 +113,7 @@ function DynamicFieldRenderer({
   if (field.type === 'FECHA') {
     return (
       <label className="field" key={field.id}>
-        <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+        <span>{field.label} <span className="_text-danger">*</span></span>
         <input
           className="input"
           type="date"
@@ -134,7 +134,7 @@ function DynamicFieldRenderer({
   if (field.type === 'BOOLEANO') {
     return (
       <label className="field" key={field.id}>
-        <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+        <span>{field.label} <span className="_text-danger">*</span></span>
         <select
           className="input"
           value={
@@ -163,7 +163,7 @@ function DynamicFieldRenderer({
   if (field.type === 'SELECCION') {
     return (
       <label className="field" key={field.id}>
-        <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+        <span>{field.label} <span className="_text-danger">*</span></span>
         <select
           className="input"
           value={response.optionIds[0] ? String(response.optionIds[0]) : ''}
@@ -189,7 +189,7 @@ function DynamicFieldRenderer({
 
   return (
     <div className="field field--full" key={field.id}>
-      <span>{field.label} <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+      <span>{field.label} <span className="_text-danger">*</span></span>
       <div className="checkbox-grid">
         {field.options.map((option) => {
           const checked = response.optionIds.includes(option.id)
@@ -377,7 +377,7 @@ export function ConversionStepMedical({
           {medicalForm.antecedentes.map((item, index) => (
             <div className="wizard-list__item" key={`antecedente-${index}`}>
               <label className="field">
-                <span>Antecedente <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+                <span>Antecedente <span className="_text-danger">*</span></span>
                 <select className="input" value={item.antecedenteId} onChange={(event) => onUpdateAntecedente(index, 'antecedenteId', event.target.value)}>
                   <option value="">Seleccionar</option>
                   {data.medicalConfig.antecedentes.map((option) => (
@@ -389,7 +389,7 @@ export function ConversionStepMedical({
                 {fieldErrors[`antecedentes.${index}.antecedenteId`] ? <small className="field__error">{fieldErrors[`antecedentes.${index}.antecedenteId`]}</small> : null}
               </label>
               <label className="field">
-                <span>Tipo <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+                <span>Tipo <span className="_text-danger">*</span></span>
                 <select className="input" value={item.tipoAntecedente} onChange={(event) => onUpdateAntecedente(index, 'tipoAntecedente', event.target.value as 'FAMILIAR' | 'PERSONAL')}>
                   <option value="PERSONAL">Personal</option>
                   <option value="FAMILIAR">Familiar</option>
@@ -422,7 +422,7 @@ export function ConversionStepMedical({
           {medicalForm.implantes.map((item, index) => (
             <div className="wizard-list__item" key={`implante-${index}`}>
               <label className="field">
-                <span>Implante <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+                <span>Implante <span className="_text-danger">*</span></span>
                 <select className="input" value={item.implanteId} onChange={(event) => onUpdateImplante(index, 'implanteId', event.target.value)}>
                   <option value="">Seleccionar</option>
                   {data.medicalConfig.implantes.map((option) => (
@@ -459,7 +459,7 @@ export function ConversionStepMedical({
           {medicalForm.cirugias.map((item, index) => (
             <div className="wizard-list__item" key={`cirugia-${index}`}>
               <label className="field">
-                <span>Cirugia <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+                <span>Cirugia <span className="_text-danger">*</span></span>
                 <select className="input" value={item.cirugiaId} onChange={(event) => onUpdateCirugia(index, 'cirugiaId', event.target.value)}>
                   <option value="">Seleccionar</option>
                   {data.medicalConfig.cirugias.map((option) => (
@@ -471,7 +471,7 @@ export function ConversionStepMedical({
                 {fieldErrors[`cirugias.${index}.cirugiaId`] ? <small className="field__error">{fieldErrors[`cirugias.${index}.cirugiaId`]}</small> : null}
               </label>
               <label className="field">
-                <span>Hace cuanto tiempo <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+                <span>Hace cuanto tiempo <span className="_text-danger">*</span></span>
                 <input className="input" value={item.haceCuantoTiempo} onChange={(event) => onUpdateCirugia(index, 'haceCuantoTiempo', event.target.value)} />
                 {fieldErrors[`cirugias.${index}.haceCuantoTiempo`] ? <small className="field__error">{fieldErrors[`cirugias.${index}.haceCuantoTiempo`]}</small> : null}
               </label>

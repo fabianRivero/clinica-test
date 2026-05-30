@@ -111,7 +111,7 @@ export function AdminTicketDetailPage() {
   return <div className='page-stack'>
     <PageHeader eyebrow='Administracion' title={ticket.subject} description={`Ficha ${ticket.status}`} />
     <SectionCard eyebrow='Estado' title='Gestion de ficha' description='Cerrar o reabrir segun corresponda.'>
-      <div style={{display:'flex', gap:'0.5rem'}}>
+      <div className="_flex-gap-sm">
         <StatusBadge tone={ticket.status === 'ABIERTO' ? 'success':'warning'}>{ticket.status}</StatusBadge>
         {ticket.status === 'ABIERTO' ? <button className='button button--ghost' disabled={!canCloseOrReopen} onClick={()=>void closeTicket(ticket.id).then(load)}>Cerrar ficha</button> : <button className='button' disabled={!canCloseOrReopen} onClick={()=>void reopenTicket(ticket.id).then(load)}>Reabrir ficha</button>}
       </div>
@@ -120,14 +120,14 @@ export function AdminTicketDetailPage() {
       <div style={{ display: 'grid', gap: '0.85rem' }}>
         {messageItems.map(({ message: m, attachments }) => (
           <article key={m.id} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '0.85rem 1rem', background: 'var(--bg-card)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+            <div className="_flex-between _flex-wrap">
               <strong>{m.authorName}</strong>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <small style={{ color: 'var(--c-neutral-600)' }}>{formatDateTime(m.createdAt)}</small>
+              <div className="_flex-center _flex-gap-sm">
+                <small className="_text-muted">{formatDateTime(m.createdAt)}</small>
                 <StatusBadge tone='primary'>MENSAJE</StatusBadge>
               </div>
             </div>
-            <p style={{ margin: '0.75rem 0 0' }}>{m.body}</p>
+            <p className="_mt-sm">{m.body}</p>
 
             {attachments.length ? (
               <div style={{ marginTop: '0.75rem', display: 'grid', gap: '0.6rem' }}>
@@ -162,7 +162,7 @@ export function AdminTicketDetailPage() {
         ))}
       </div>
 
-      <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="_mt-md _flex-end">
         <button className='button' type='button' disabled={ticket.status !== 'ABIERTO'} onClick={() => setIsReplyModalOpen(true)}>Responder</button>
       </div>
     </SectionCard>
@@ -170,15 +170,15 @@ export function AdminTicketDetailPage() {
 
     {isReplyModalOpen ? (
       <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Responder ficha">
-        <div className="booking-modal-content" style={{ maxWidth: '760px' }}>
+        <div className="booking-modal-content _max-w-modal-lg">
           <header className="booking-modal-header">
             <div>
-              <h2 style={{ margin: 0 }}>Responder ficha</h2>
-              <p style={{ margin: '0.5rem 0 0', color: 'var(--c-neutral-600)' }}>Formato tipo correo interno.</p>
+            <h2 className="_m-0">Responder ficha</h2>
+            <p className="_m-0 _text-muted">Formato tipo correo interno.</p>
             </div>
             <button className="booking-modal-close" type="button" onClick={() => setIsReplyModalOpen(false)}>×</button>
           </header>
-          <div className="booking-modal-body" style={{ padding: '1.5rem' }}>
+          <div className="booking-modal-body _p-6">
             <form className="form-stack" onSubmit={async (event: FormEvent<HTMLFormElement>) => {
               event.preventDefault()
               if (!reply.trim()) {
@@ -216,9 +216,9 @@ export function AdminTicketDetailPage() {
               <label className="field">
                 <span>Adjuntar documentos o imagenes</span>
                 <input className="input" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" onChange={(event) => setReplyFiles(Array.from(event.target.files ?? []))} />
-                {replyFiles.length > 0 ? <small style={{ color: 'var(--c-neutral-600)' }}>{replyFiles.length} archivo(s) seleccionado(s).</small> : null}
+                {replyFiles.length > 0 ? <small className="_text-muted">{replyFiles.length} archivo(s) seleccionado(s).</small> : null}
               </label>
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <div className="_flex-end _flex-gap-md">
                 <button type="button" className="button button--ghost" onClick={() => setIsReplyModalOpen(false)}>Cancelar</button>
                 <button type="submit" className="button" disabled={isSendingReply}>{isSendingReply ? 'Enviando...' : 'Enviar respuesta'}</button>
               </div>
@@ -230,17 +230,17 @@ export function AdminTicketDetailPage() {
 
     {previewImage ? (
       <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Vista previa de imagen adjunta">
-        <div className="booking-modal-content" style={{ maxWidth: '920px' }}>
+        <div className="booking-modal-content _max-w-2xl">
           <header className="booking-modal-header">
             <div>
-              <h2 style={{ margin: 0 }}>Vista previa</h2>
-              <p style={{ margin: '0.5rem 0 0', color: 'var(--c-neutral-600)' }}>{previewImage.name}</p>
+              <h2 className="_m-0">Vista previa</h2>
+              <p className="_mt-sm _text-muted">{previewImage.name}</p>
             </div>
             <button className="booking-modal-close" type="button" onClick={() => setPreviewImage(null)}>×</button>
           </header>
-          <div className="booking-modal-body" style={{ padding: '1.5rem', textAlign: 'center' }}>
+          <div className="booking-modal-body _p-6 _text-center">
             <img src={previewImage.url} alt={previewImage.name} style={{ maxWidth: '100%', maxHeight: '70vh', borderRadius: '10px' }} />
-            <div style={{ marginTop: '1rem' }}>
+            <div className="_mt-md">
               <a className="button button--ghost" href={previewImage.url} target="_blank" rel="noreferrer" download>
                 Descargar imagen
               </a>

@@ -190,9 +190,9 @@ export function AdminAvailabilityBlocksPage() {
       {error && !data && activeBranch ? <DataState title="Error de conexion" message={error} tone="danger" /> : null}
 
       {data && activeBranch ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div className="_flex-col _flex-gap-lg">
           {/* Forms row - side by side */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+          <div className="_grid-2cols _grid-gap-lg">
             <SectionCard title="Excepciones de Especialistas" description="Añade disponibilidad o bloquea dias para multiples especialistas a la vez.">
               <ExceptionForm
                 exceptionForm={exceptionForm}
@@ -234,16 +234,15 @@ export function AdminAvailabilityBlocksPage() {
           </div>
 
           {/* Lists row - side by side */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+          <div className="_grid-2cols _grid-gap-lg">
             <SectionCard title="Excepciones Activas en Sucursal">
               {branchExceptions.length ? (
                 <>
-                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                  <div className="_flex-gap-md _mb-md _flex-wrap">
                     <select
-                      className="input"
+                      className="input _min-w-dropdown"
                       value={exceptionSpecialistFilter}
                       onChange={(e) => { setExceptionSpecialistFilter(e.target.value); setExceptionPage(1) }}
-                      style={{ minWidth: '150px' }}
                     >
                       <option value="">Todos los especialistas</option>
                       {data.filters.specialists.map((sp) => (
@@ -251,10 +250,9 @@ export function AdminAvailabilityBlocksPage() {
                       ))}
                     </select>
                     <select
-                      className="input"
+                      className="input _min-w-dropdown"
                       value={exceptionTypeFilter}
                       onChange={(e) => { setExceptionTypeFilter(e.target.value); setExceptionPage(1) }}
-                      style={{ minWidth: '150px' }}
                     >
                       <option value="">Todos los tipos</option>
                       <option value="BLOQUEAR">Bloquear</option>
@@ -287,8 +285,7 @@ export function AdminAvailabilityBlocksPage() {
                               </td>
                               <td>
                                 <button
-                                  className="button button--ghost button--compact"
-                                  style={{ color: 'var(--c-danger-600)' }}
+                                  className="button button--ghost button--compact _text-danger"
                                   onClick={() => void handleDeleteException(ex.id)}
                                 >
                                   Eliminar
@@ -301,7 +298,7 @@ export function AdminAvailabilityBlocksPage() {
                     </table>
                   </div>
                   {filteredExceptions.length > PAGE_SIZE && (
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', marginTop: '1rem' }}>
+                    <div className="_flex-center _flex-gap-md _mt-md">
                       {exceptionPage > 1 && (
                         <button className="button button--ghost" onClick={showLessExceptions}>
                           Mostrar menos
@@ -348,7 +345,7 @@ export function AdminAvailabilityBlocksPage() {
                     </table>
                   </div>
                   {filteredClosures.length > PAGE_SIZE && (
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', marginTop: '1rem' }}>
+                    <div className="_flex-center _flex-gap-md _mt-md">
                       {closurePage > 1 && (
                         <button className="button button--ghost" onClick={showLessClosures}>
                           Mostrar menos

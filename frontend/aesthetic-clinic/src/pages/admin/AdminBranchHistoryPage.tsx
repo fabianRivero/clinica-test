@@ -48,7 +48,7 @@ export function AdminBranchHistoryPage() {
         description="Registro completo de cambios administrativos, agrupado por mes."
       />
 
-      <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+      <div className="_flex-start">
         <Link className="button button--ghost" to="/admin/sucursales/editar">Volver a editar sucursales</Link>
       </div>
 
@@ -56,7 +56,7 @@ export function AdminBranchHistoryPage() {
 
       {groupedByMonth.map((group) => (
         <div className="section-card" key={group.key}>
-          <h3 style={{ textTransform: 'capitalize' }}>{group.label}</h3>
+          <h3 className="_text-capitalize">{group.label}</h3>
           <div className="table-card">
             <table>
               <thead><tr><th>Fecha</th><th>Sucursal</th><th>Accion</th><th>Detalle</th><th>Actor</th></tr></thead>

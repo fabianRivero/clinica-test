@@ -138,7 +138,7 @@ export function AdminClientsPage() {
             {isSearchingGlobal ? (
               <p className="table-muted">Buscando en la red global...</p>
             ) : globalResults.length > 0 ? (
-              <div className="table-card" style={{ marginTop: '1rem' }}>
+              <div className="table-card _mt-md">
                 <table>
                   <thead>
                     <tr>
@@ -170,7 +170,7 @@ export function AdminClientsPage() {
                 </table>
               </div>
             ) : globalSearch.length >= 3 ? (
-              <p className="table-muted" style={{ marginTop: '1rem' }}>No se encontraron clientes para importar con esos datos.</p>
+              <p className="table-muted _mt-md">No se encontraron clientes para importar con esos datos.</p>
             ) : null}
           </SectionCard>
 

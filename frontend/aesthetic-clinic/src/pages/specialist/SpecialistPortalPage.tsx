@@ -94,7 +94,7 @@ export function SpecialistPortalPage() {
             </div>
             {!selectedDay.shifts.length ? <DataState title="Sin bloques disponibles" message="No hay franjas activas para este dia." tone="warning" /> : null}
             {selectedDay.blocks.length ? (
-              <div className="alert-list" style={{ marginTop: '1rem' }}>
+              <div className="alert-list _mt-md">
                 {selectedDay.blocks.map((block) => (
                   <article className="alert-card alert-card--warning" key={block.reason}>
                     <div>

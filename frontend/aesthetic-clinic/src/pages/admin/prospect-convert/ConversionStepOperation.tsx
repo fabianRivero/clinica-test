@@ -37,7 +37,7 @@ export function ConversionStepOperation({
   return (
     <form className="form-grid" onSubmit={onSubmit}>
       <label className="field field--full">
-        <span>Servicio <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+        <span>Servicio <span className="_text-danger">*</span></span>
         <select className="input" name="serviceConfigId" value={operationForm.serviceConfigId} onChange={onChange}>
           <option value="">Seleccionar servicio</option>
           {data.serviceConfigs.map((item) => (
@@ -60,13 +60,13 @@ export function ConversionStepOperation({
       ) : null}
 
       <label className="field">
-        <span>Precio total <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+        <span>Precio total <span className="_text-danger">*</span></span>
         <input className="input" name="precioTotal" value={operationForm.precioTotal} onChange={onChange} />
         {fieldErrors.precioTotal ? <small className="field__error">{fieldErrors.precioTotal}</small> : null}
       </label>
 
       <label className="field">
-        <span>Sesiones totales <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+        <span>Sesiones totales <span className="_text-danger">*</span></span>
         <input className="input" min="1" name="sesionesTotales" type="number" value={operationForm.sesionesTotales} onChange={onChange} />
         {fieldErrors.sesionesTotales ? <small className="field__error">{fieldErrors.sesionesTotales}</small> : null}
       </label>
@@ -94,18 +94,18 @@ export function ConversionStepOperation({
       </label>
 
       <label className="field">
-        <span>Zona general <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+        <span>Zona general <span className="_text-danger">*</span></span>
         <input className="input" name="zonaGeneral" value={operationForm.zonaGeneral} onChange={onChange} />
         {fieldErrors.zonaGeneral ? <small className="field__error">{fieldErrors.zonaGeneral}</small> : null}
       </label>
       <label className="field">
-        <span>Zona especifica <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+        <span>Zona especifica <span className="_text-danger">*</span></span>
         <input className="input" name="zonaEspecifica" value={operationForm.zonaEspecifica} onChange={onChange} />
         {fieldErrors.zonaEspecifica ? <small className="field__error">{fieldErrors.zonaEspecifica}</small> : null}
       </label>
 
       <label className="field">
-        <span>Cuotas totales <span style={{ color: 'var(--color-danger)' }}>*</span></span>
+        <span>Cuotas totales <span className="_text-danger">*</span></span>
         <input className="input" min="1" name="cuotasTotales" type="number" value={operationForm.cuotasTotales} onChange={onChange} />
         {fieldErrors.cuotasTotales ? <small className="field__error">{fieldErrors.cuotasTotales}</small> : null}
       </label>

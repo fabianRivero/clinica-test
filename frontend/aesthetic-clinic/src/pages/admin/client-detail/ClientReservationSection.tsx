@@ -54,7 +54,7 @@ export function ClientReservationSection({
             </select>
           </label>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="_grid-2cols">
             <label className="field">
               <span>Fecha</span>
               <input type="date" className="input" value={selectedDate} onChange={e => onDateChange(e.target.value)} />
@@ -65,7 +65,7 @@ export function ClientReservationSection({
             </label>
           </div>
 
-          <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+          <div className="_mt-md _flex-gap-sm">
             <button type="button" className="button button--secondary" disabled={!selectedDate || !selectedTime || isChecking} onClick={() => void onCheckConcurrency()}>
               {isChecking ? 'Verificando...' : 'Verificar Disponibilidad'}
             </button>
@@ -75,24 +75,24 @@ export function ClientReservationSection({
 
       {concurrencyInfo && (
         <SectionCard title="Resultados de disponibilidad">
-          <div style={{ padding: '1rem', background: 'var(--c-neutral-100)', borderRadius: '8px' }}>
-            <p style={{ marginBottom: '0.5rem' }}>
+          <div className="_panel-card">
+            <p className="_mb-sm">
               <strong>Citas simultaneas de 1 hora antes a 1 hora despues ({concurrencyInfo.hora_inicio} a {concurrencyInfo.hora_fin}):</strong> {concurrencyInfo.concurrency}
             </p>
-            <p style={{ marginBottom: '0.5rem' }}>
+            <p className="_mb-sm">
               <strong>Especialistas en turno {concurrencyInfo.hora_seleccionada}:</strong> {concurrencyInfo.presentes.length > 0 ? concurrencyInfo.presentes.map(p => p.usuario__primer_nombre).join(', ') : 'Ninguno registrado'}
             </p>
             {concurrencyInfo.concurrency >= concurrencyInfo.presentes.length && concurrencyInfo.presentes.length > 0 && (
-              <p style={{ color: 'var(--c-danger-600)', marginTop: '0.5rem', fontWeight: 600 }}>
+              <p className="_text-danger _mt-sm _font-bold">
                 Aviso: Hay mas citas ({concurrencyInfo.concurrency}) que especialistas en turno ({concurrencyInfo.presentes.length}).
               </p>
             )}
             {concurrencyInfo.presentes.length === 0 && (
-              <p style={{ color: 'var(--c-warning-600)', marginTop: '0.5rem', fontWeight: 600 }}>
+              <p className="_text-warning _mt-sm _font-bold">
                 Aviso: No hay especialistas en turno configurados para esta sucursal a esa hora.
               </p>
             )}
-            <div style={{ marginTop: '1.5rem' }}>
+            <div className="_mt-lg">
               <button type="button" className="button button--primary" onClick={() => void onReserve()} disabled={Boolean(isBookingKey)}>
                 {isBookingKey ? 'Confirmando...' : 'Confirmar Reserva en esta Hora'}
               </button>

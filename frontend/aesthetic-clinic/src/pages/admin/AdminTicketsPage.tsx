@@ -179,7 +179,7 @@ export function AdminMessagingPermissionsPage() {
           title="Administradores de sucursal"
           description="Listado de administradores de sucursal con su usuario y sucursal asociada."
         >
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+<div className="_flex-gap-sm _mb-xs">
             <button className="button" onClick={() => void onBranchAdminMassUpdate(true)}>Habilitar a todos</button>
             <button className="button button--ghost" onClick={() => void onBranchAdminMassUpdate(false)}>Bloquear a todos</button>
           </div>
@@ -195,7 +195,7 @@ export function AdminMessagingPermissionsPage() {
                       <td>{admin.adminName}</td>
                       <td>{admin.branchName || 'Sin sucursal'}</td>
                       <td><StatusBadge tone={admin.enabled ? 'success' : 'warning'}>{admin.enabled ? 'Habilitado' : 'Bloqueado'}</StatusBadge></td>
-                      <td style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+<td className="_flex-gap-sm _flex-wrap">
                         <button className="button button--ghost button--compact" disabled={admin.enabled} onClick={() => void onBranchAdminUpdate(admin.adminId, true)}>Habilitar</button>
                         <button className="button button--ghost button--compact" disabled={!admin.enabled} onClick={() => void onBranchAdminUpdate(admin.adminId, false)}>Bloquear</button>
                         <button className="button button--compact" onClick={() => openComposeForAdmin(admin.adminId, admin.adminName)}>Crear ficha</button>
@@ -242,11 +242,11 @@ export function AdminMessagingPermissionsPage() {
         title="Apertura de fichas por especialistas"
         description="Control masivo e individual por especialista."
       >
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+        <div className="_flex-gap-sm _mb-xs">
           <button className="button" onClick={() => void onMassUpdate(true)}>Habilitar a todos</button>
           <button className="button button--ghost" onClick={() => void onMassUpdate(false)}>Bloquear a todos</button>
         </div>
-        {summaryLabel ? <p style={{ marginTop: 0, color: 'var(--c-neutral-700)' }}>{summaryLabel}</p> : null}
+        {summaryLabel ? <p className="_m-0 _text-muted">{summaryLabel}</p> : null}
 
         {!specialists.length ? (
           <DataState title="Sin especialistas" message="No hay especialistas activos en esta sucursal." />
@@ -259,7 +259,7 @@ export function AdminMessagingPermissionsPage() {
                   <tr key={s.specialistId}>
                     <td>{s.specialistName}</td>
                     <td><StatusBadge tone={s.enabled ? 'success' : 'warning'}>{s.enabled ? 'Habilitado' : 'Bloqueado'}</StatusBadge></td>
-                    <td style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <td className="_flex-gap-sm _flex-wrap">
                       <button className="button button--ghost button--compact" disabled={s.enabled} onClick={() => void onSingleUpdate(s.specialistId, true)}>Habilitar</button>
                       <button className="button button--ghost button--compact" disabled={!s.enabled} onClick={() => void onSingleUpdate(s.specialistId, false)}>Bloquear</button>
                       <button className="button button--compact" onClick={() => openComposeModal(s.specialistId, s.specialistName)}>Crear ficha</button>
@@ -274,15 +274,15 @@ export function AdminMessagingPermissionsPage() {
 
       {isComposeOpen ? (
         <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Crear ficha">
-          <div className="booking-modal-content" style={{ maxWidth: '760px' }}>
+          <div className="booking-modal-content _max-w-modal-lg">
             <header className="booking-modal-header">
               <div>
-                <h2 style={{ margin: 0 }}>Nueva ficha</h2>
-                <p style={{ margin: '0.5rem 0 0', color: 'var(--c-neutral-600)' }}>Formato tipo correo interno.</p>
+                <h2 className="_m-0">Nueva ficha</h2>
+                <p className="_m-0 _text-muted">Formato tipo correo interno.</p>
               </div>
               <button className="booking-modal-close" type="button" onClick={closeComposeModal}>×</button>
             </header>
-            <div className="booking-modal-body" style={{ padding: '1.5rem' }}>
+            <div className="booking-modal-body _p-modal">
               <form className="form-stack" onSubmit={(event) => void onComposeSubmit(event)}>
                 <label className="field">
                   <span>Para</span>
@@ -321,10 +321,10 @@ export function AdminMessagingPermissionsPage() {
                     onChange={(event) => setComposeState((current) => ({ ...current, files: Array.from(event.target.files ?? []) }))}
                   />
                   {composeState.files.length > 0 ? (
-                    <small style={{ color: 'var(--c-neutral-600)' }}>{composeState.files.length} archivo(s) seleccionado(s).</small>
+                    <small className="_text-muted">{composeState.files.length} archivo(s) seleccionado(s).</small>
                   ) : null}
                 </label>
-                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <div className="_flex-end _flex-gap-md">
                   <button type="button" className="button button--ghost" onClick={closeComposeModal}>Cancelar</button>
                   <button type="submit" className="button" disabled={isSending}>{isSending ? 'Enviando...' : 'Enviar ficha'}</button>
                 </div>

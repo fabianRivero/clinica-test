@@ -2229,3 +2229,363 @@
     width: 100%;
   }
 }
+
+// ============================================
+// UTILITY CLASSES — repeated inline patterns
+// ============================================
+
+// Branch selector select
+._branch-select {
+  padding: var(--spacing-1) var(--spacing-2);
+  height: auto;
+  min-height: 32px;
+  font-size: 0.875rem;
+}
+
+// Flex utilities
+._flex {
+  display: flex;
+}
+
+._flex-start {
+  display: flex;
+  justify-content: flex-start;
+}
+
+._flex-wrap {
+  flex-wrap: wrap;
+}
+
+._flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+._flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+._flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+._flex-end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+._flex-gap-xs {
+  display: flex;
+  gap: var(--spacing-1);
+}
+
+._flex-gap-sm {
+  display: flex;
+  gap: var(--spacing-2);
+}
+
+._flex-gap-md {
+  display: flex;
+  gap: var(--spacing-3);
+}
+
+._flex-gap-lg {
+  display: flex;
+  gap: var(--spacing-4);
+}
+
+// Grid utilities
+._grid-2cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-4);
+}
+
+._grid-gap-lg {
+  gap: var(--spacing-6) !important;
+}
+
+._grid-3cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-4);
+}
+
+// Spacing utilities
+._mt-xs { margin-top: var(--spacing-1); }
+._mt-sm { margin-top: var(--spacing-2); }
+._mt-md { margin-top: var(--spacing-4); }
+._mt-lg { margin-top: var(--spacing-6); }
+._mt-xl { margin-top: var(--spacing-8); }
+
+._mb-xs { margin-bottom: var(--spacing-1); }
+._mb-sm { margin-bottom: var(--spacing-2); }
+._mb-md { margin-bottom: var(--spacing-4); }
+._mb-lg { margin-bottom: var(--spacing-6); }
+
+._ml-sm { margin-left: var(--spacing-4); }
+
+._pt-xs { padding-top: var(--spacing-1); }
+._pt-sm { padding-top: var(--spacing-2); }
+._pt-md { padding-top: var(--spacing-4); }
+
+._pb-xs { padding-bottom: var(--spacing-1); }
+._pb-sm { padding-bottom: var(--spacing-2); }
+._pb-md { padding-bottom: var(--spacing-4); }
+
+// Padding utilities
+._p-sm { padding: var(--spacing-2); }
+._p-md { padding: var(--spacing-4); }
+._p-lg { padding: var(--spacing-8); }
+._p-modal { padding: var(--spacing-4) var(--spacing-6); }
+
+// Footer padding (booking modal footer)
+._footer-padding {
+  padding: var(--spacing-6) var(--spacing-8) var(--spacing-12);
+}
+
+// Width utilities
+._w-full { width: 100%; }
+
+// Display utilities
+._block { display: block; }
+._text-center { text-align: center; }
+
+// Table utilities
+._table-header-cell {
+  padding: var(--spacing-3);
+  text-align: left;
+  font-size: 0.75rem;
+  color: var(--color-text-soft);
+  font-weight: 500;
+}
+
+._table-cell {
+  padding: var(--spacing-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+._table-empty-cell {
+  padding: var(--spacing-6);
+  text-align: center;
+  color: var(--color-text-soft);
+}
+
+._row-selected {
+  background: var(--color-primary-soft);
+}
+
+// Wizard / confirmation modal patterns
+._confirm-section {
+  margin-bottom: var(--spacing-4);
+}
+
+._confirm-section-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: var(--spacing-2);
+  color: var(--color-text-soft);
+}
+
+._confirm-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-2);
+  background: var(--color-bg);
+  padding: var(--spacing-3);
+  border-radius: var(--radius-xs);
+}
+
+._credentials-box {
+  background: var(--color-bg);
+  padding: var(--spacing-4);
+  border-radius: var(--radius-xs);
+  margin-bottom: var(--spacing-4);
+}
+
+._code-display {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-family: monospace;
+  background: var(--color-surface);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  margin-bottom: var(--spacing-4);
+  word-break: break-all;
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+._label-muted {
+  font-size: 0.875rem;
+  color: var(--color-text-soft);
+  margin-bottom: var(--spacing-4);
+}
+
+// Panel / card patterns
+._panel-card {
+  padding: var(--spacing-4);
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-xs);
+}
+
+._panel-border {
+  padding: var(--spacing-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+}
+
+// Table utilities
+._table-wrapper {
+  width: 100%;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+}
+
+._table-full {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+._table-cell-pad {
+  padding: var(--spacing-3);
+}
+
+._table-cell-pad-sm {
+  padding: var(--spacing-2);
+}
+
+// Text utilities
+._text-muted {
+  color: var(--color-text-soft);
+}
+
+._text-danger {
+  color: var(--color-danger);
+}
+
+._text-warning {
+  color: var(--color-warning);
+}
+
+._text-capitalize {
+  text-transform: capitalize;
+}
+
+._text-sm {
+  font-size: 0.85rem;
+}
+
+._text-xs {
+  font-size: 0.75rem;
+}
+
+._font-bold {
+  font-weight: 700;
+}
+
+._font-medium {
+  font-weight: 500;
+}
+
+// Border utilities
+._border-left {
+  border-left: 2px solid var(--color-border);
+  padding-left: var(--spacing-2);
+}
+
+// List utilities
+._list-unstyled {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+// Confirm modal
+._confirm-modal {
+  max-width: 480px;
+}
+
+// Max-width utilities
+._max-w-md { max-width: 640px; }
+._max-w-lg { max-width: 720px; }
+._max-w-xl { max-width: 760px; }
+._max-w-2xl { max-width: 920px; }
+._max-w-modal-sm { max-width: 520px; }
+._max-w-modal-md { max-width: 640px; }
+._max-w-modal-lg { max-width: 760px; }
+
+// Padding utilities
+._p-6 { padding: var(--spacing-6); }
+
+// Margin/padding resets
+._m-0 { margin: 0; }
+._white-space-pre { white-space: pre-line; }
+
+// Checkbox/scroll group
+._checkbox-scroll {
+  max-height: 150px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-2);
+  border-radius: 4px;
+  background: var(--color-surface);
+}
+
+// Weekday pill in exception form
+._weekday-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  background: var(--color-surface-alt);
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: 4px;
+}
+
+// Remove button inside date chip
+._remove-date-btn {
+  background: none;
+  border: none;
+  margin-left: var(--spacing-2);
+  cursor: pointer;
+  color: inherit;
+}
+
+// Dropdown min-width for filter selects
+._min-w-dropdown {
+  min-width: 150px;
+}
+
+// Grid utilities
+._col-full {
+  grid-column: 1 / -1;
+}
+
+// Gap
+._gap-sm { gap: 0.5rem; }
+
+// Flex
+._flex-1 { flex: 1; }
+
+// Opacity
+._opacity-50 { opacity: 0.5; }
+
+// Cursor
+._cursor-not-allowed { cursor: not-allowed; }
+
+// Font sizes
+._font-xs { font-size: 0.75rem; }
+
+// Padding compact
+._p-xs { padding: 0.25rem 0.5rem; }
+
+// Line height
+._leading-tight { line-height: 1.1; }

@@ -384,14 +384,14 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
       {error ? <p className="error-text">{error}</p> : null}
 
       {changeNotice ? <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Aviso de cambio de administrador">
-        <div className="booking-modal-content" style={{ maxWidth: '640px' }}>
+        <div className="booking-modal-content _max-w-modal-md">
           <header className="booking-modal-header">
-            <h2 style={{ margin: 0 }}>Cambio realizado</h2>
+            <h2 className="_m-0">Cambio realizado</h2>
           </header>
-          <div className="booking-modal-body" style={{ padding: '1rem 1.5rem' }}>
-            <p style={{ marginTop: 0 }}>{changeNotice.message}</p>
-            {changeNotice.requiresLogout ? <p style={{ color: 'var(--c-neutral-600)' }}>Puedes cerrar sesión ahora o esperar unos segundos.</p> : null}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+          <div className="booking-modal-body _p-modal">
+            <p className="_m-0">{changeNotice.message}</p>
+            {changeNotice.requiresLogout ? <p className="_text-muted">Puedes cerrar sesión ahora o esperar unos segundos.</p> : null}
+            <div className="_flex-end _flex-gap-md">
               {changeNotice.requiresLogout ? <button className="button" type="button" onClick={() => void handleLogoutNow()}>Cerrar sesión ahora</button> : <button className="button" type="button" onClick={() => void handleCloseChangeNotice()}>Aceptar</button>}
             </div>
           </div>
@@ -416,12 +416,12 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
           </button>
         </div>
         {wizardStep === 1 ? <form onSubmit={handleWizardStep1}><div className="form-grid form-grid--three">
-          <label className="field"><span>Nombre de sucursal <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={newBranch.nombre} onChange={(e) => setNewBranch((v) => ({ ...v, nombre: e.target.value }))} />{step1Submitted && !newBranch.nombre.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
-          <label className="field"><span>Ciudad <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={newBranch.ciudad} onChange={(e) => setNewBranch((v) => ({ ...v, ciudad: e.target.value }))} />{step1Submitted && !newBranch.ciudad.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
-          <label className="field"><span>Dirección <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={newBranch.direccion} onChange={(e) => setNewBranch((v) => ({ ...v, direccion: e.target.value }))} />{step1Submitted && !newBranch.direccion.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
-        </div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><button className="button" disabled={saving} type="submit">Continuar</button></div></form> : null}
+          <label className="field"><span>Nombre de sucursal <span className="_text-danger">*</span></span><input className="input" value={newBranch.nombre} onChange={(e) => setNewBranch((v) => ({ ...v, nombre: e.target.value }))} />{step1Submitted && !newBranch.nombre.trim() && <span className="_text-danger _text-xs">Campo obligatorio</span>}</label>
+          <label className="field"><span>Ciudad <span className="_text-danger">*</span></span><input className="input" value={newBranch.ciudad} onChange={(e) => setNewBranch((v) => ({ ...v, ciudad: e.target.value }))} />{step1Submitted && !newBranch.ciudad.trim() && <span className="_text-danger _text-xs">Campo obligatorio</span>}</label>
+          <label className="field"><span>Dirección <span className="_text-danger">*</span></span><input className="input" value={newBranch.direccion} onChange={(e) => setNewBranch((v) => ({ ...v, direccion: e.target.value }))} />{step1Submitted && !newBranch.direccion.trim() && <span className="_text-danger _text-xs">Campo obligatorio</span>}</label>
+        </div><div className="_flex-between _mt-md"><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><button className="button" disabled={saving} type="submit">Continuar</button></div></form> : null}
         {wizardStep === 2 ? <div>
-          <p style={{ marginBottom: '0.75rem', color: 'var(--c-neutral-600)' }}>
+          <p className="_mb-sm _text-muted">
             En este paso puedes crear un nuevo administrador o seleccionar uno inactivo existente.
           </p>
           <WizardSubTabs
@@ -436,38 +436,38 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
           {step2SubTab === 'create' ? (
             <form onSubmit={handleWizardStep2}>
               <div className="form-grid form-grid--three">
-                <label className="field"><span>CI <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={wizardNewAdmin.ci} onChange={(e) => { const val = e.target.value; setWizardNewAdmin((v) => ({ ...v, ci: val, username: val, password: val })) }} />{step2Submitted && !wizardNewAdmin.ci.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
-                <label className="field"><span>Nombre de usuario <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={wizardNewAdmin.username} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, username: e.target.value }))} />{step2Submitted && !wizardNewAdmin.username.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
-                <label className="field"><span>Contraseña <span style={{ color: "#dc2626" }}>*</span></span><input className="input" type="password" value={wizardNewAdmin.password} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, password: e.target.value }))} />{step2Submitted && !wizardNewAdmin.password.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+                <label className="field"><span>CI <span className="_text-danger">*</span></span><input className="input" value={wizardNewAdmin.ci} onChange={(e) => { const val = e.target.value; setWizardNewAdmin((v) => ({ ...v, ci: val, username: val, password: val })) }} />{step2Submitted && !wizardNewAdmin.ci.trim() && <span className="_text-danger _text-xs">Campo obligatorio</span>}</label>
+                <label className="field"><span>Nombre de usuario <span className="_text-danger">*</span></span><input className="input" value={wizardNewAdmin.username} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, username: e.target.value }))} />{step2Submitted && !wizardNewAdmin.username.trim() && <span className="_text-danger _text-xs">Campo obligatorio</span>}</label>
+                <label className="field"><span>Contraseña <span className="_text-danger">*</span></span><input className="input" type="password" value={wizardNewAdmin.password} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, password: e.target.value }))} />{step2Submitted && !wizardNewAdmin.password.trim() && <span className="_text-danger _text-xs">Campo obligatorio</span>}</label>
                 <label className="field"><span>Email</span><input className="input" value={wizardNewAdmin.email} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, email: e.target.value }))} /></label>
-                <label className="field"><span>Primer nombre <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={wizardNewAdmin.primerNombre} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, primerNombre: e.target.value }))} />{step2Submitted && !wizardNewAdmin.primerNombre.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+                <label className="field"><span>Primer nombre <span className="_text-danger">*</span></span><input className="input" value={wizardNewAdmin.primerNombre} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, primerNombre: e.target.value }))} />{step2Submitted && !wizardNewAdmin.primerNombre.trim() && <span className="_text-danger _text-xs">Campo obligatorio</span>}</label>
                 <label className="field"><span>Segundo nombre</span><input className="input" value={wizardNewAdmin.segundoNombre} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, segundoNombre: e.target.value }))} /></label>
-                <label className="field"><span>Apellido paterno <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={wizardNewAdmin.apellidoPaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoPaterno: e.target.value }))} />{step2Submitted && !wizardNewAdmin.apellidoPaterno.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+                <label className="field"><span>Apellido paterno <span className="_text-danger">*</span></span><input className="input" value={wizardNewAdmin.apellidoPaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoPaterno: e.target.value }))} />{step2Submitted && !wizardNewAdmin.apellidoPaterno.trim() && <span className="_text-danger _text-xs">Campo obligatorio</span>}</label>
                 <label className="field"><span>Apellido materno</span><input className="input" value={wizardNewAdmin.apellidoMaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoMaterno: e.target.value }))} /></label>
                 <label className="field"><span>Telefono</span><input className="input" value={wizardNewAdmin.telefono} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, telefono: e.target.value }))} /></label>
-                <label className="field"><span>Fecha de nacimiento <span style={{ color: "#dc2626" }}>*</span></span><input className="input" type="date" value={wizardNewAdmin.fechaNacimiento} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, fechaNacimiento: e.target.value }))} />{step2Submitted && !wizardNewAdmin.fechaNacimiento.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+                <label className="field"><span>Fecha de nacimiento <span className="_text-danger">*</span></span><input className="input" type="date" value={wizardNewAdmin.fechaNacimiento} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, fechaNacimiento: e.target.value }))} />{step2Submitted && !wizardNewAdmin.fechaNacimiento.trim() && <span className="_text-danger _text-xs">Campo obligatorio</span>}</label>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="submit">Continuar</button></div></div>
+              <div className="_flex-between _mt-md"><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div className="_flex-gap-sm"><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="submit">Continuar</button></div></div>
             </form>
           ) : (
             <div>
-              <p style={{ color: 'var(--c-neutral-600)', marginBottom: '1rem' }}>
+              <p className="_text-muted _mb-md">
                 Selecciona un administrador inactivo que no tenga sucursal asignada.
               </p>
-              <div style={{ maxHeight: '320px', overflowY: 'auto', border: '1px solid var(--c-neutral-200)', borderRadius: '8px', marginBottom: '1rem' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ position: 'sticky', top: 0, background: 'var(--c-neutral-50)', zIndex: 1 }}>
+              <div className="_table-wrapper">
+                <table className="_table-full">
+                  <thead>
                     <tr>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Nombre</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Usuario</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Email</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'center', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500, width: '60px' }}>Seleccionar</th>
+                      <th className="_table-header-cell">Nombre</th>
+                      <th className="_table-header-cell">Usuario</th>
+                      <th className="_table-header-cell">Email</th>
+                      <th className="_table-header-cell _text-center">Seleccionar</th>
                     </tr>
                   </thead>
                   <tbody>
                     {branchAdmins.filter((a) => !a.isActive && a.branchId === null).length === 0 ? (
                       <tr>
-                        <td colSpan={4} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--c-neutral-500)' }}>
+                        <td colSpan={4} className="_table-empty-cell">
                           No hay admins inactivos disponibles
                         </td>
                       </tr>
@@ -475,37 +475,37 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                       branchAdmins
                         .filter((a) => !a.isActive && a.branchId === null)
                         .map((a) => (
-                          <tr key={a.id} style={{ background: selectedInactiveAdminId === a.id ? 'var(--c-primary-50)' : undefined }}>
-                            <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.fullName}</td>
-                            <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.username}</td>
-                            <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.email || '-'}</td>
-                            <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)', textAlign: 'center' }}>
+                          <tr key={a.id} className={selectedInactiveAdminId === a.id ? '_row-selected' : ''}>
+                            <td className="_table-cell">{a.fullName}</td>
+                            <td className="_table-cell">{a.username}</td>
+                            <td className="_table-cell">{a.email || '-'}</td>
+                            <td className="_table-cell _text-center">
                               <input
                                 type="radio"
                                 name="inactiveAdmin"
                                 value={a.id}
                                 checked={selectedInactiveAdminId === a.id}
                                 onChange={() => setSelectedInactiveAdminId(a.id)}
-                                style={{ cursor: 'pointer' }}
+                                className="_cursor-pointer"
                               />
                             </td>
                           </tr>
                         ))
                     )}
-                  </tbody>
+</tbody>
                 </table>
               </div>
               {step2Submitted && !selectedInactiveAdminId && (
-                <span style={{ color: "#dc2626", fontSize: "0.75rem", display: 'block', marginBottom: '0.75rem' }}>Debes seleccionar un administrador</span>
+                <span className="_text-danger _text-xs _mb-sm _block">Debes seleccionar un administrador</span>
               )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="button" onClick={() => void handleWizardStep2SelectExisting()}>Continuar</button></div></div>
+              <div className="_flex-between _mt-md"><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div className="_flex-gap-sm"><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="button" onClick={() => void handleWizardStep2SelectExisting()}>Continuar</button></div></div>
             </div>
           )}
         </div> : null}
         {wizardStep === 3 ? <form onSubmit={(e) => { e.preventDefault(); setShowWizardConfirmModal(true) }}><div className="form-grid form-grid--three">
-          <label className="field"><span>Nombre tablet <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={wizardTablet.nombre} onChange={(e) => setWizardTablet((v) => ({ ...v, nombre: e.target.value }))} /></label>
-          <label className="field"><span>Clave tablet <span style={{ color: "#dc2626" }}>*</span></span><input className="input" type="password" value={wizardTablet.clave} onChange={(e) => setWizardTablet((v) => ({ ...v, clave: e.target.value }))} /></label>
-        </div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(2)}>Volver</button><button className="button" disabled={saving} type="submit">Finalizar</button></div></div></form> : null}
+          <label className="field"><span>Nombre tablet <span className="_text-danger">*</span></span><input className="input" value={wizardTablet.nombre} onChange={(e) => setWizardTablet((v) => ({ ...v, nombre: e.target.value }))} /></label>
+          <label className="field"><span>Clave tablet <span className="_text-danger">*</span></span><input className="input" type="password" value={wizardTablet.clave} onChange={(e) => setWizardTablet((v) => ({ ...v, clave: e.target.value }))} /></label>
+        </div><div className="_flex-between _mt-md"><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div className="_flex-gap-sm"><button className="button button--ghost" type="button" onClick={() => setWizardStep(2)}>Volver</button><button className="button" disabled={saving} type="submit">Finalizar</button></div></div></form> : null}
       </SectionCard> : null}
 
       {view === 'edit' ? <><div className="card">
@@ -539,7 +539,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                 <td>{row.direccion}</td>
                 <td>{row.admin?.nombre || '-'}</td>
                 <td>{row.activa ? 'Activa' : 'Inactiva'}</td>
-                <td style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <td className="_flex-gap-sm">
                   <button className="button button--ghost" type="button" onClick={() => openEditModal(row)}>Editar informacion</button>
                   <button className="button button--ghost" type="button" onClick={() => openChangeAdminModal(row)}>Cambiar administrador</button>
                   {(!user?.branchId || row.id !== user.branchId) && (
@@ -570,7 +570,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
             ))}
           </tbody>
             </table>
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '0.75rem' }}>
+            <div className="_flex-center _mt-sm">
               <Link className="button button--ghost" to="/admin/sucursales/historial">
                 Ver todo el historial
               </Link>
@@ -580,18 +580,18 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
       </div>
 
       {editingBranch ? <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Editar sucursal">
-        <div className="booking-modal-content" style={{ maxWidth: '720px' }}>
+        <div className="booking-modal-content _max-w-modal-lg">
           <header className="booking-modal-header">
-            <h2 style={{ margin: 0 }}>Editar información de sucursal</h2>
+            <h2 className="_m-0">Editar información de sucursal</h2>
             <button className="booking-modal-close" type="button" onClick={() => setEditingBranch(null)}>×</button>
           </header>
-          <div className="booking-modal-body" style={{ padding: '1rem 1.5rem' }}>
+          <div className="booking-modal-body _p-modal">
             <div className="form-grid form-grid--three">
               <input className="input" placeholder="Nombre" value={editForm.nombre} onChange={(e) => setEditForm((v) => ({ ...v, nombre: e.target.value }))} />
               <input className="input" placeholder="Ciudad" value={editForm.ciudad} onChange={(e) => setEditForm((v) => ({ ...v, ciudad: e.target.value }))} />
               <input className="input" placeholder="Direccion" value={editForm.direccion} onChange={(e) => setEditForm((v) => ({ ...v, direccion: e.target.value }))} />
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1rem' }}>
+            <div className="_flex-end _flex-gap-md _mt-md">
               <button className="button button--ghost" type="button" onClick={() => setEditingBranch(null)}>Cancelar</button>
               <button className="button" type="button" onClick={() => void handleSaveEdit()} disabled={saving}>Guardar cambios</button>
             </div>
@@ -600,12 +600,12 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
       </div> : null}
 
       {changingAdminBranch ? <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Cambiar administrador">
-        <div className="booking-modal-content" style={{ maxWidth: '760px' }}>
+        <div className="booking-modal-content _max-w-modal-lg">
           <header className="booking-modal-header">
-            <h2 style={{ margin: 0 }}>Cambiar administrador de sucursal</h2>
+            <h2 className="_m-0">Cambiar administrador de sucursal</h2>
             <button className="booking-modal-close" type="button" onClick={() => { setChangingAdminBranch(null); setNewAdminUserId('') }}>×</button>
           </header>
-          <div className="booking-modal-body" style={{ padding: '1rem 1.5rem' }}>
+          <div className="booking-modal-body _p-modal">
             <p>Selecciona el administrador de sucursal para {changingAdminBranch.nombre}.</p>
             <select className="input" value={newAdminUserId} onChange={(e) => setNewAdminUserId(e.target.value)}>
               <option value="">Seleccionar admin</option>
@@ -623,10 +623,10 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                   </option>
                 ))}
             </select>
-            <p style={{ marginTop: '0.75rem', color: 'var(--c-neutral-600)' }}>
+            <p className="_mt-sm _text-muted">
               Aviso: si el admin elegido está activo en otra sucursal, se hará intercambio; si está inactivo y sin sucursal, se activará y el admin actual quedará inactivo.
             </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <div className="_flex-end _flex-gap-md">
               <button className="button button--ghost" type="button" onClick={() => { setChangingAdminBranch(null); setNewAdminUserId('') }}>Cancelar</button>
               <button className="button" type="button" onClick={() => void handleConfirmAdminChange()} disabled={saving}>Confirmar cambio</button>
             </div>
@@ -635,27 +635,27 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
       </div> : null}
 
       {activatingBranch ? <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Activar sucursal">
-        <div className="booking-modal-content" style={{ maxWidth: '720px' }}>
+        <div className="booking-modal-content _max-w-modal-lg">
           <header className="booking-modal-header">
-            <h2 style={{ margin: 0 }}>Activar sucursal</h2>
+            <h2 className="_m-0">Activar sucursal</h2>
             <button className="booking-modal-close" type="button" onClick={() => void handleCancelActivation()}>×</button>
           </header>
-          <div className="booking-modal-body" style={{ padding: '1rem 1.5rem' }}>
+          <div className="booking-modal-body _p-modal">
             <p>Para activar la sucursal <strong>{activatingBranch.nombre}</strong>, seleccioná un administrador de sucursal inactivo que no tenga sucursal asignada.</p>
-            <div style={{ maxHeight: '320px', overflowY: 'auto', border: '1px solid var(--c-neutral-200)', borderRadius: '8px', marginBottom: '1rem' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ position: 'sticky', top: 0, background: 'var(--c-neutral-50)', zIndex: 1 }}>
+            <div className="_table-wrapper">
+              <table className="_table-full">
+                <thead>
                   <tr>
-                    <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Nombre</th>
-                    <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Usuario</th>
-                    <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Email</th>
-                    <th style={{ padding: '0.75rem', textAlign: 'center', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500, width: '60px' }}>Seleccionar</th>
+                    <th className="_table-header-cell">Nombre</th>
+                    <th className="_table-header-cell">Usuario</th>
+                    <th className="_table-header-cell">Email</th>
+                    <th className="_table-header-cell _text-center">Seleccionar</th>
                   </tr>
                 </thead>
                 <tbody>
                   {branchAdmins.filter((a) => !a.isActive && a.branchId === null).length === 0 ? (
                     <tr>
-                      <td colSpan={4} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--c-neutral-500)' }}>
+                      <td colSpan={4} className="_table-empty-cell">
                         No hay admins inactivos disponibles
                       </td>
                     </tr>
@@ -663,18 +663,18 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                     branchAdmins
                       .filter((a) => !a.isActive && a.branchId === null)
                       .map((a) => (
-                        <tr key={a.id} style={{ background: selectedActivatingAdminId === a.id ? 'var(--c-primary-50)' : undefined }}>
-                          <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.fullName}</td>
-                          <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.username}</td>
-                          <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.email || '-'}</td>
-                          <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)', textAlign: 'center' }}>
+                        <tr key={a.id} className={selectedActivatingAdminId === a.id ? '_row-selected' : ''}>
+                          <td className="_table-cell">{a.fullName}</td>
+                          <td className="_table-cell">{a.username}</td>
+                          <td className="_table-cell">{a.email || '-'}</td>
+                          <td className="_table-cell _text-center">
                             <input
                               type="radio"
                               name="activatingAdmin"
                               value={a.id}
                               checked={selectedActivatingAdminId === a.id}
                               onChange={() => setSelectedActivatingAdminId(a.id)}
-                              style={{ cursor: 'pointer' }}
+                              className="_cursor-pointer"
                             />
                           </td>
                         </tr>
@@ -684,9 +684,9 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
               </table>
             </div>
             {selectedActivatingAdminId === null && (
-              <span style={{ color: "#dc2626", fontSize: "0.75rem", display: 'block', marginBottom: '0.75rem' }}>Debes seleccionar un administrador</span>
+              <span className="_text-danger _text-xs _mb-sm _block">Debes seleccionar un administrador</span>
             )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <div className="_flex-end _flex-gap-md">
               <button className="button button--ghost" type="button" onClick={() => void handleCancelActivation()}>Cancelar</button>
               <button className="button" type="button" onClick={() => void handleConfirmActivation()} disabled={saving || selectedActivatingAdminId === null}>Confirmar</button>
             </div>
@@ -702,9 +702,9 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
           aria-modal="true"
           aria-label="Confirmar creación de sucursal"
         >
-          <div className="booking-modal-content" style={{ maxWidth: '640px' }}>
+<div className="booking-modal-content _max-w-modal-md" >
             <header className="booking-modal-header">
-              <h2 style={{ margin: 0 }}>Confirmar creación de sucursal</h2>
+              <h2 className="_m-0">Confirmar creación de sucursal</h2>
               <button
                 className="booking-modal-close"
                 type="button"
@@ -713,65 +713,33 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                 ×
               </button>
             </header>
-            <div className="booking-modal-body" style={{ padding: '1rem 1.5rem' }}>
-              <p style={{ marginTop: 0, color: 'var(--c-neutral-600)' }}>
+            <div className="booking-modal-body _p-modal">
+              <p className="_text-muted">
                 Revisa los datos antes de confirmar.
               </p>
 
-              <div style={{ marginBottom: '1rem' }}>
-                <h3
-                  style={{
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    marginBottom: '0.5rem',
-                    color: 'var(--c-neutral-600)',
-                  }}
-                >
+              <div className="_confirm-section">
+                <h3 className="_confirm-section-title">
                   Sucursal
                 </h3>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '0.5rem',
-                    background: 'var(--c-neutral-50)',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                  }}
-                >
+                <div className="_confirm-grid">
                   <div>
                     <strong>Nombre:</strong> {newBranch.nombre}
                   </div>
                   <div>
                     <strong>Ciudad:</strong> {newBranch.ciudad}
                   </div>
-                  <div style={{ gridColumn: '1 / -1' }}>
+                  <div className="_col-full">
                     <strong>Dirección:</strong> {newBranch.direccion}
                   </div>
                 </div>
               </div>
 
-              <div style={{ marginBottom: '1rem' }}>
-                <h3
-                  style={{
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    marginBottom: '0.5rem',
-                    color: 'var(--c-neutral-600)',
-                  }}
-                >
+              <div className="_confirm-section">
+                <h3 className="_confirm-section-title">
                   Administrador
                 </h3>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '0.5rem',
-                    background: 'var(--c-neutral-50)',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                  }}
-                >
+                <div className="_confirm-grid">
                   <div>
                     <strong>Usuario:</strong> {wizardNewAdmin.username}
                   </div>
@@ -788,27 +756,11 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                 </div>
               </div>
 
-              <div style={{ marginBottom: '1rem' }}>
-                <h3
-                  style={{
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    marginBottom: '0.5rem',
-                    color: 'var(--c-neutral-600)',
-                  }}
-                >
+              <div className="_confirm-section">
+                <h3 className="_confirm-section-title">
                   Tablet
                 </h3>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
-                    gap: '0.5rem',
-                    background: 'var(--c-neutral-50)',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                  }}
-                >
+                <div className="_confirm-grid">
                   <div>
                     <strong>Nombre:</strong> {wizardTablet.nombre}
                   </div>
@@ -818,14 +770,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                 </div>
               </div>
 
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  gap: '0.75rem',
-                  marginTop: '1.5rem',
-                }}
-              >
+              <div className="_flex-end _flex-gap-md _mt-lg">
                 <button
                   className="button button--ghost"
                   type="button"
@@ -849,65 +794,35 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
 
       {createdBranchInfo ? (
         <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Sucursal creada">
-          <div className="booking-modal-content" style={{ maxWidth: '520px' }}>
+          <div className="booking-modal-content _max-w-modal-sm">
             <header className="booking-modal-header">
-              <h2 style={{ margin: 0 }}>Sucursal creada exitosamente</h2>
+              <h2 className="_m-0">Sucursal creada exitosamente</h2>
             </header>
-            <div className="booking-modal-body" style={{ padding: '1.5rem' }}>
-              <p style={{ marginTop: 0, color: 'var(--c-neutral-600)' }}>
+            <div className="booking-modal-body _p-modal">
+              <p className="_text-muted">
                 La sucursal <strong>{createdBranchInfo.branchName}</strong> fue creada. Anota las credenciales del tablet antes de continuar.
               </p>
 
-              <div
-                style={{
-                  background: 'var(--c-neutral-50)',
-                  padding: '1rem',
-                  borderRadius: '8px',
-                  marginBottom: '1rem',
-                }}
-              >
-                <div style={{ marginBottom: '0.5rem' }}>
+              <div className="_credentials-box">
+                <div className="_mb-xs">
                   <strong>Código tablet:</strong>
                 </div>
-                <div
-                  style={{
-                    fontSize: '1.25rem',
-                    fontWeight: 700,
-                    fontFamily: 'monospace',
-                    background: '#fff',
-                    padding: '0.5rem 0.75rem',
-                    borderRadius: '6px',
-                    border: '1px solid var(--c-neutral-200)',
-                    marginBottom: '1rem',
-                    wordBreak: 'break-all',
-                  }}
-                >
+                <div className="_code-display">
                   {createdBranchInfo.tabletCode}
                 </div>
-                <div style={{ marginBottom: '0.5rem' }}>
+                <div className="_mb-xs">
                   <strong>Clave tablet:</strong>
                 </div>
-                <div
-                  style={{
-                    fontSize: '1.25rem',
-                    fontWeight: 700,
-                    fontFamily: 'monospace',
-                    background: '#fff',
-                    padding: '0.5rem 0.75rem',
-                    borderRadius: '6px',
-                    border: '1px solid var(--c-neutral-200)',
-                    wordBreak: 'break-all',
-                  }}
-                >
+                <div className="_code-display">
                   {createdBranchInfo.tabletClave}
                 </div>
               </div>
 
-              <p style={{ fontSize: '0.875rem', color: 'var(--c-neutral-500)', marginBottom: '1rem' }}>
+              <p className="_label-muted">
                 Con estas credenciales el tablet podrá iniciar sesión. Se recomienda anotar estas credenciales.
               </p>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div className="_flex-end">
                 <button
                   className="button"
                   type="button"

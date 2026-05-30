@@ -37,7 +37,7 @@ export function DynamicFormField({
     return (
       <label className="field field--full" key={field.id}>
         <span>
-          {field.label} <span style={{ color: 'var(--color-danger)' }}>*</span>
+          {field.label} <span className="_text-danger">*</span>
         </span>
         <input
           className="input"
@@ -54,7 +54,7 @@ export function DynamicFormField({
     return (
       <label className="field" key={field.id}>
         <span>
-          {field.label} <span style={{ color: 'var(--color-danger)' }}>*</span>
+          {field.label} <span className="_text-danger">*</span>
         </span>
         <input
           className="input"
@@ -72,7 +72,7 @@ export function DynamicFormField({
     return (
       <label className="field" key={field.id}>
         <span>
-          {field.label} <span style={{ color: 'var(--color-danger)' }}>*</span>
+          {field.label} <span className="_text-danger">*</span>
         </span>
         <input
           className="input"
@@ -90,7 +90,7 @@ export function DynamicFormField({
     return (
       <label className="field" key={field.id}>
         <span>
-          {field.label} <span style={{ color: 'var(--color-danger)' }}>*</span>
+          {field.label} <span className="_text-danger">*</span>
         </span>
         <select
           className="input"
@@ -116,7 +116,7 @@ export function DynamicFormField({
     return (
       <label className="field" key={field.id}>
         <span>
-          {field.label} <span style={{ color: 'var(--color-danger)' }}>*</span>
+          {field.label} <span className="_text-danger">*</span>
         </span>
         <select
           className="input"
@@ -143,7 +143,7 @@ export function DynamicFormField({
   return (
     <div className="field field--full" key={field.id}>
       <span>
-        {field.label} <span style={{ color: 'var(--color-danger)' }}>*</span>
+        {field.label} <span className="_text-danger">*</span>
       </span>
       <div className="checkbox-grid">
         {field.options.map((option) => {

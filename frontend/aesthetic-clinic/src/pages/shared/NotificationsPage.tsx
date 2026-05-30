@@ -44,10 +44,10 @@ export function NotificationsPage() {
 
   return (
     <section className="page-section">
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header className="_flex-between">
         <div>
           <h1>Notificaciones</h1>
-          <p style={{ margin: 0, color: 'var(--c-neutral-600)' }}>No leídas: {unreadCount}</p>
+          <p className="_m-0 _text-muted">No leídas: {unreadCount}</p>
         </div>
         <button className="button button--ghost button--compact" onClick={() => void markAll()}>
           Marcar todas como leídas
@@ -68,7 +68,7 @@ export function NotificationsPage() {
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.id} style={{ cursor: 'pointer' }} onClick={() => void openNotification(item)}>
+                <tr key={item.id} className="_cursor-pointer" onClick={() => void openNotification(item)}>
                   <td>{item.isRead ? 'Leída' : 'No leída'}</td>
                   <td>
                     <strong>{item.title}</strong>
@@ -84,16 +84,16 @@ export function NotificationsPage() {
 
       {selected ? (
         <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Detalle de notificación">
-          <div className="booking-modal-content" style={{ maxWidth: '640px' }}>
+          <div className="booking-modal-content _max-w-md">
             <header className="booking-modal-header">
-              <h2 style={{ margin: 0 }}>{selected.title}</h2>
+              <h2 className="_m-0">{selected.title}</h2>
               <button className="booking-modal-close" type="button" onClick={() => setSelected(null)}>
                 ×
               </button>
             </header>
-            <div className="booking-modal-body" style={{ padding: '1.5rem' }}>
-              <p style={{ marginTop: 0 }}>{selected.message}</p>
-              <small style={{ color: 'var(--c-neutral-600)' }}>
+            <div className="booking-modal-body _p-6">
+              <p className="_m-0">{selected.message}</p>
+              <small className="_text-muted">
                 {new Date(selected.createdAt).toLocaleString()}
               </small>
             </div>

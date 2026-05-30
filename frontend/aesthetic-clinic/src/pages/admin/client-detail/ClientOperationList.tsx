@@ -22,7 +22,7 @@ export function ClientOperationList({
     <SectionCard eyebrow="Tratamientos" title="Procedimientos del cliente" description="Resumen operativo de tratamientos activos e historicos.">
       {operations.length ? (
         <>
-          <label className="field" style={{ marginBottom: 12 }}>
+          <label className="field _mb-sm">
             <span>Filtrar por estado</span>
             <select className="input" value={operationStatusFilter} onChange={(event) => onFilterChange(event.target.value)}>
               <option value="">Todos los estados</option>

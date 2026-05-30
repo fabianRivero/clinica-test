@@ -321,7 +321,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
             title="Cola de verificacion"
             description="Los estados replican el flujo real del negocio: pendiente, observado y aprobado."
           >
-            <div className="form-grid" style={{ marginBottom: 16 }}>
+            <div className="form-grid _mb-md">
               <label className="field">
                 <span>Estado</span>
                 <select className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as AdminPaymentsFilters['status'])}>
@@ -501,7 +501,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
               title="Cuotas de todos los estados"
               description="Vista consolidada de cuotas pagadas, pendientes, vencidas, observadas o canceladas."
             >
-              <div className="form-grid" style={{ marginBottom: 16 }}>
+              <div className="form-grid _mb-md">
                 <label className="field">
                   <span>Estado</span>
                   <select className="input" value={quotaStatusFilter} onChange={(event) => setQuotaStatusFilter(event.target.value)}>

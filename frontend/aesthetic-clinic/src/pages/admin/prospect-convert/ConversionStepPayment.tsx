@@ -37,7 +37,7 @@ export function ConversionStepPayment({
 }: Props) {
   return (
     <form className="form-grid" onSubmit={onSubmit}>
-      <label className="field field--full" style={{ cursor: 'pointer' }}>
+      <label className="field field--full _cursor-pointer">
         <span>Registrar primer pago en este paso</span>
         <input
           checked={shouldRegisterFirstPayment}

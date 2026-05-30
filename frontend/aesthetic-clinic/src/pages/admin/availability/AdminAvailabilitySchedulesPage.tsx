@@ -153,7 +153,7 @@ export function AdminAvailabilitySchedulesPage() {
                             {rule.startDate} al {rule.endDate || 'Siempre'}
                           </td>
                           <td>
-                            <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                            <div className="_flex-gap-sm _flex-wrap">
                               {rule.weekdayLabels.map((lbl) => (
                                 <StatusBadge key={lbl} tone="neutral">
                                   {lbl.slice(0, 3)}
@@ -187,8 +187,7 @@ export function AdminAvailabilitySchedulesPage() {
                             </button>
                             <button
                               type="button"
-                              className="button button--ghost button--compact"
-                              style={{ color: 'var(--c-danger-600)' }}
+                              className="button button--ghost button--compact _text-danger"
                               onClick={() => void handleDeleteHabitual(rule.id)}
                             >
                               Eliminar

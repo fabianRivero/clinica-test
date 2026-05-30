@@ -70,7 +70,7 @@ export function ClientProfileModal({ clientId, isOpen, onClose }: Props) {
           {isLoading ? (
             <p>Cargando...</p>
           ) : error && !form ? (
-            <p style={{ color: 'var(--color-danger)' }}>{error}</p>
+            <p className="_text-danger">{error}</p>
           ) : form ? (
             <form className="form-grid" onSubmit={handleSubmit}>
               <label className="field">
@@ -125,7 +125,7 @@ export function ClientProfileModal({ clientId, isOpen, onClose }: Props) {
                 <span>Observaciones del cliente</span>
                 <textarea className="input textarea" name="observacionesCliente" rows={3} value={form.observacionesCliente} onChange={handleChange} />
               </label>
-              {error && <p className="field__error" style={{ gridColumn: '1 / -1' }}>{error}</p>}
+              {error && <p className="field__error _col-full">{error}</p>}
               <div className="form-actions field--full">
                 <button className="button button--ghost" type="button" onClick={onClose}>Cancelar</button>
                 <button className="button" type="submit" disabled={isSaving}>{isSaving ? 'Guardando...' : 'Guardar cambios'}</button>

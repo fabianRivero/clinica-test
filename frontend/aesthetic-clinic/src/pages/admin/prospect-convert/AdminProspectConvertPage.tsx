@@ -128,7 +128,7 @@ export function AdminProspectConvertPage() {
       />
 
       {data.crossCityWarning ? (
-        <div style={{ marginBottom: '1.5rem' }}>
+        <div className="_mb-lg">
           <DataState
             title="Advertencia de Tratamiento Activo"
             message={data.crossCityWarning}

@@ -83,16 +83,15 @@ function BranchSelector() {
   if (isLoading || branches.length === 0) return null
 
   return (
-    <div style={{ marginLeft: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-      <label htmlFor="global-branch-selector" style={{ fontSize: '0.875rem', color: 'var(--c-neutral-600)' }}>
+    <div className="_ml-sm _flex-center _flex-gap-sm">
+      <label htmlFor="global-branch-selector" className="_text-sm _text-muted">
         Sucursal:
       </label>
       <select
         id="global-branch-selector"
         value={activeBranch?.id || ''}
         onChange={(e) => setActiveBranch(Number(e.target.value))}
-        className="input"
-        style={{ padding: '0.25rem 0.5rem', height: 'auto', minHeight: '32px', fontSize: '0.875rem' }}
+        className="input _branch-select"
       >
         {branches.map((b) => (
           <option key={b.id} value={b.id}>

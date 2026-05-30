@@ -22,11 +22,11 @@ export function ExceptionForm({
 }: ExceptionFormProps) {
   return (
     <form className="form-stack" onSubmit={(e) => void onSubmit(e)}>
-      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+      <div className="form-group _mb-md">
         <label>Especialistas afectados</label>
-        <div className="checkbox-group" style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid var(--border)', padding: '0.5rem', borderRadius: '4px', background: 'var(--bg-card)' }}>
+        <div className="checkbox-group _checkbox-scroll">
           {specialists.map((sp) => (
-            <label key={sp.id} className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', cursor: 'pointer' }}>
+            <label key={sp.id} className="checkbox-label _flex-center _flex-gap-sm _mb-xs _cursor-pointer">
               <input
                 type="checkbox"
                 checked={exceptionForm.specialistIds.includes(sp.id)}
@@ -38,7 +38,7 @@ export function ExceptionForm({
         </div>
       </div>
 
-      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+      <div className="form-group _mb-md">
         <label>Tipo de excepcion</label>
         <select
           className="input"
@@ -51,8 +51,8 @@ export function ExceptionForm({
         </select>
       </div>
 
-      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-        <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+      <div className="form-group _mb-md">
+        <label className="checkbox-label _flex-center _flex-gap-sm _cursor-pointer">
           <input
             type="checkbox"
             checked={exceptionForm.isWholeDay}
@@ -63,7 +63,7 @@ export function ExceptionForm({
       </div>
 
       {!exceptionForm.isWholeDay && (
-        <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
+        <div className="form-group _grid-2cols _mb-md">
           <div>
             <label>Hora Inicio</label>
             <input
@@ -87,8 +87,8 @@ export function ExceptionForm({
         </div>
       )}
 
-      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-        <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+      <div className="form-group _mb-md">
+        <label className="checkbox-label _flex-center _flex-gap-sm _cursor-pointer">
           <input
             type="checkbox"
             checked={exceptionForm.useDateRange}
@@ -100,7 +100,7 @@ export function ExceptionForm({
 
       {exceptionForm.useDateRange && (
         <>
-          <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
+          <div className="form-group _grid-2cols _mb-md">
             <div>
               <label>Desde</label>
               <input type="date" className="input" value={exceptionForm.rangeStartDate} onChange={(e) => setExceptionForm({ ...exceptionForm, rangeStartDate: e.target.value })} />
@@ -110,17 +110,17 @@ export function ExceptionForm({
               <input type="date" className="input" value={exceptionForm.rangeEndDate} onChange={(e) => setExceptionForm({ ...exceptionForm, rangeEndDate: e.target.value })} />
             </div>
           </div>
-          <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+          <div className="form-group _mb-md">
             <label>Dias de la semana a aplicar</label>
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+            <div className="_flex-gap-sm _flex-wrap _mt-sm">
               {weekdayOptions.map((w) => (
-                <label key={w.value} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'var(--c-neutral-100)', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
+                <label key={w.value} className="_weekday-pill">
                   <input
                     type="checkbox"
                     checked={exceptionForm.rangeWeekdayCodes.includes(w.value)}
                     onChange={() => setExceptionForm({ ...exceptionForm, rangeWeekdayCodes: toggleSelection(exceptionForm.rangeWeekdayCodes, w.value) })}
                   />
-                  <span style={{ fontSize: '0.875rem' }}>{w.label}</span>
+                  <span className="_text-sm">{w.label}</span>
                 </label>
               ))}
             </div>
@@ -128,9 +128,9 @@ export function ExceptionForm({
         </>
       )}
 
-      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+      <div className="form-group _mb-md">
         <label>Añadir Fecha(s)</label>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div className="_flex-gap-sm">
           <input
             type="date"
             className="input"
@@ -156,16 +156,16 @@ export function ExceptionForm({
       </div>
 
       {exceptionForm.dates.length > 0 && (
-        <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+        <div className="form-group _mb-md">
           <label>Fechas seleccionadas</label>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+          <div className="_flex-gap-sm _flex-wrap _mt-sm">
             {exceptionForm.dates.map((d) => (
               <div key={d} className="status-badge status-badge--primary">
                 {d}
                 <button
                   type="button"
+                  className="_remove-date-btn"
                   onClick={() => setExceptionForm({ ...exceptionForm, dates: exceptionForm.dates.filter((x) => x !== d) })}
-                  style={{ background: 'none', border: 'none', marginLeft: '0.5rem', cursor: 'pointer', color: 'inherit' }}
                 >
                   x
                 </button>
@@ -175,7 +175,7 @@ export function ExceptionForm({
         </div>
       )}
 
-      <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+      <div className="form-group _mb-lg">
         <label>Motivo / Detalle</label>
         <input
           type="text"

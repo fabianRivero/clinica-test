@@ -131,9 +131,9 @@ export function ClientAppointmentSection({
         </div>
       ) : <DataState title="Sin citas registradas" message="El cliente aun no tiene citas asociadas." />}
       {rescheduleAppointmentId ? (
-        <div style={{ marginTop: '1rem', padding: '1rem', background: 'var(--c-neutral-100)', borderRadius: '8px' }}>
-          <p style={{ marginBottom: '1rem' }}><strong>Reprogramar cita seleccionada</strong></p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div className="_mt-md _panel-card">
+          <p className="_mb-md"><strong>Reprogramar cita seleccionada</strong></p>
+          <div className="_grid-2cols">
             <label className="field">
               <span>Nueva fecha</span>
               <input type="date" className="input" value={rescheduleDate} onChange={(e) => { onRescheduleDateChange(e.target.value) }} />
@@ -143,7 +143,7 @@ export function ClientAppointmentSection({
               <input type="time" className="input" value={rescheduleTime} onChange={(e) => { onRescheduleTimeChange(e.target.value) }} />
             </label>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+          <div className="_flex-gap-sm _mt-md">
             <button type="button" className="button button--secondary" disabled={!rescheduleDate || !rescheduleTime || isCheckingReschedule} onClick={() => void onCheckRescheduleAvailability()}>
               {isCheckingReschedule ? 'Verificando...' : 'Verificar disponibilidad'}
             </button>
@@ -155,7 +155,7 @@ export function ClientAppointmentSection({
             </button>
           </div>
           {rescheduleCheck ? (
-            <p style={{ marginTop: '0.75rem' }}>
+            <p className="_mt-sm">
               Citas simultaneas de 1 hora antes a 1 hora despues ({rescheduleCheck.hora_inicio} a {rescheduleCheck.hora_fin}): {rescheduleCheck.concurrency}. Especialistas en turno {rescheduleCheck.hora_seleccionada}: {rescheduleCheck.presentes.length > 0 ? rescheduleCheck.presentes.map((p) => p.usuario__primer_nombre).join(', ') : 'Ninguno registrado'}.
             </p>
           ) : null}

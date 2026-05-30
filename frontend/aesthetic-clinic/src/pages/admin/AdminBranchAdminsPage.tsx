@@ -94,7 +94,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
         >
         <form className="form-grid" onSubmit={handleCreate}>
             <label className="field">
-              <span>CI <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+              <span>CI <span className="_text-danger">*</span></span>
               <input className="input" required value={form.ci} onChange={(e) => {
                 const ci = e.target.value
                 setForm((v) => ({
@@ -106,7 +106,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
               }} />
             </label>
             <label className="field">
-              <span>Nombre de usuario <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+              <span>Nombre de usuario <span className="_text-danger">*</span></span>
               <input className="input" required value={form.username} onChange={(e) => {
                 setUserEdited((v) => ({ ...v, username: true }))
                 setForm((v) => ({ ...v, username: e.target.value }))
@@ -117,7 +117,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
               <input className="input" type="email" value={form.email} onChange={(e) => setForm((v) => ({ ...v, email: e.target.value }))} />
             </label>
             <label className="field">
-              <span>Contraseña <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+              <span>Contraseña <span className="_text-danger">*</span></span>
               <input className="input" type="password" required               value={form.password}
               onChange={(e) => {
                 setUserEdited(() => ({ username: true, password: true }))
@@ -125,7 +125,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
               }} />
             </label>
             <label className="field">
-              <span>Primer nombre <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+              <span>Primer nombre <span className="_text-danger">*</span></span>
               <input className="input" required value={form.primerNombre} onChange={(e) => setForm((v) => ({ ...v, primerNombre: e.target.value }))} />
             </label>
             <label className="field">
@@ -133,7 +133,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
               <input className="input" value={form.segundoNombre} onChange={(e) => setForm((v) => ({ ...v, segundoNombre: e.target.value }))} />
             </label>
             <label className="field">
-              <span>Apellido paterno <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+              <span>Apellido paterno <span className="_text-danger">*</span></span>
               <input className="input" required value={form.apellidoPaterno} onChange={(e) => setForm((v) => ({ ...v, apellidoPaterno: e.target.value }))} />
             </label>
             <label className="field">
@@ -145,7 +145,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
               <input className="input" type="tel" inputMode="numeric" pattern="[0-9]+" value={form.telefono} onChange={(e) => setForm((v) => ({ ...v, telefono: e.target.value }))} />
             </label>
             <label className="field">
-              <span>Fecha de nacimiento <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+              <span>Fecha de nacimiento <span className="_text-danger">*</span></span>
               <input className="input" type="date" required value={form.fechaNacimiento} onChange={(e) => setForm((v) => ({ ...v, fechaNacimiento: e.target.value }))} />
             </label>
           <div className="form-actions field--full">

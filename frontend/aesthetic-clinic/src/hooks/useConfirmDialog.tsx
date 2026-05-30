@@ -29,15 +29,15 @@ function ConfirmDialogComponent({ isOpen, options, onConfirm, onCancel }: Confir
 
   return createPortal(
     <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label={options.title}>
-      <div className="booking-modal-content" style={{ maxWidth: '480px' }}>
+      <div className="booking-modal-content _confirm-modal">
         <header className="booking-modal-header">
           <div>
-            <h2 style={{ margin: 0 }}>{options.title}</h2>
+            <h2 className="_m-0">{options.title}</h2>
           </div>
         </header>
-        <div className="booking-modal-body" style={{ padding: '1rem 1.5rem' }}>
-          <p style={{ marginTop: 0, whiteSpace: 'pre-line' }}>{options.message}</p>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1rem' }}>
+        <div className="booking-modal-body _p-modal">
+          <p className="_m-0 _white-space-pre">{options.message}</p>
+          <div className="_flex-end _flex-gap-md _mt-md">
             <button className="button button--ghost" type="button" onClick={onCancel}>
               {options.cancelLabel ?? 'Cancelar'}
             </button>

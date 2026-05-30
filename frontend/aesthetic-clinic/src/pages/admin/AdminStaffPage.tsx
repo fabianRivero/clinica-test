@@ -234,7 +234,7 @@ function StaffEditorForm({
     >
       <form className="form-grid" onSubmit={(event) => void handleSubmit(event)}>
         <label className="field" htmlFor="staff-ci">
-          <span>CI <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+          <span>CI <span className="_text-danger">*</span></span>
           <input
             id="staff-ci"
             className="input"
@@ -246,7 +246,7 @@ function StaffEditorForm({
         </label>
 
         <label className="field" htmlFor="staff-password">
-          <span>{editingStaffMember ? 'Nueva contrasena (opcional)' : 'Contrasena inicial'} <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+          <span>{editingStaffMember ? 'Nueva contrasena (opcional)' : 'Contrasena inicial'} <span className="_text-danger">*</span></span>
           <input
             id="staff-password"
             className="input"
@@ -259,7 +259,7 @@ function StaffEditorForm({
         </label>
 
         <label className="field" htmlFor="staff-username">
-          <span>Nombre de usuario <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+          <span>Nombre de usuario <span className="_text-danger">*</span></span>
           <input
             id="staff-username"
             className="input"
@@ -283,7 +283,7 @@ function StaffEditorForm({
         </label>
 
         <label className="field" htmlFor="staff-primer-nombre">
-          <span>Primer nombre <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+          <span>Primer nombre <span className="_text-danger">*</span></span>
           <input
             id="staff-primer-nombre"
             className="input"
@@ -306,7 +306,7 @@ function StaffEditorForm({
         </label>
 
         <label className="field" htmlFor="staff-apellido-paterno">
-          <span>Apellido paterno <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+          <span>Apellido paterno <span className="_text-danger">*</span></span>
           <input
             id="staff-apellido-paterno"
             className="input"
@@ -340,7 +340,7 @@ function StaffEditorForm({
         </label>
 
         <label className="field" htmlFor="staff-fecha-nacimiento">
-          <span>Fecha de nacimiento <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+          <span>Fecha de nacimiento <span className="_text-danger">*</span></span>
           <input
             id="staff-fecha-nacimiento"
             className="input"
@@ -364,7 +364,7 @@ function StaffEditorForm({
         </label>
 
         <div className="field field--full">
-          <span>Especialidades <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+          <span>Especialidades <span className="_text-danger">*</span></span>
           <div className="checkbox-grid">
             {data.specialtyOptions.map((option) => (
               <label className="checkbox-pill" key={option.id}>
