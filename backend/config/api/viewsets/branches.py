@@ -210,6 +210,17 @@ class BranchesViewSet(viewsets.ViewSet):
                 status=409,
             )
 
+        if active is False:
+            branch_admin = Usuario.objects.filter(
+                rol__rol="ADMIN_SUCURSAL",
+                sucursal=branch,
+                is_active=True,
+            ).first()
+            if branch_admin:
+                branch_admin.is_active = False
+                branch_admin.sucursal = None
+                branch_admin.save(update_fields=["is_active", "sucursal", "updated_at"])
+
         branch.activa = active
         branch.save(update_fields=["activa", "updated_at"])
 
@@ -217,7 +228,7 @@ class BranchesViewSet(viewsets.ViewSet):
             request, branch,
             BranchAdminAuditLog.Action.TOGGLE_BRANCH,
             f"Sucursal {'activada' if active else 'desactivada'}.",
-            {"active": active, "force": force, "impact": impact},
+            {"active": active, "force": force, "impact": impact, "adminDeactivated": branch_admin.id if active is False and branch_admin else None},
         )
 
         return Response({
@@ -501,6 +512,7 @@ class BranchesViewSet(viewsets.ViewSet):
             "branchId": branch.id,
             "adminUserId": admin_user.id,
             "tabletKioskId": kiosko.id,
+            "tabletKioskCode": kiosko.codigo,
         }, status=status.HTTP_201_CREATED)
 
     # -------------------------------------------------------------------------

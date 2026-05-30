@@ -338,10 +338,9 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
                     item.tipo_p_estetico.tipo,
                     item.activo,
                     [
-                        {"label": "Orden", "value": str(item.orden)},
                         {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
                     ],
-                    {"name": item.proceso, "description": item.descripcion, "order": item.orden},
+                    {"name": item.proceso, "description": item.descripcion},
                 )
                 for item in queryset
             ]
@@ -358,7 +357,6 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
                     self.build_field_definition("procedureTypeId", "Tipo de procedimiento", "select", required=True, value_type="number",
                         options=[self.build_option(t.pk, t.tipo) for t in ProcEsteticosTipo.objects.filter(activo=True).order_by("orden", "tipo")]),
                     self.build_field_definition("description", "Descripcion", "textarea", placeholder="Notas internas"),
-                    self.build_field_definition("order", "Orden", "number", value_type="number", min_value=0),
                 ],
                 "items": items,
             }
@@ -370,10 +368,9 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
                     item.pk, item.tipo, "Tipo de servicio comercial",
                     item.activo,
                     [
-                        {"label": "Orden", "value": str(item.orden)},
                         {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
                     ],
-                    {"name": item.tipo, "description": item.descripcion, "order": item.orden},
+                    {"name": item.tipo, "description": item.descripcion},
                 )
                 for item in queryset
             ]
@@ -388,7 +385,6 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
                 "fields": [
                     self.build_field_definition("name", "Tipo de servicio", "text", required=True, placeholder="Ej. Estetica facial"),
                     self.build_field_definition("description", "Descripcion", "textarea", placeholder="Notas internas"),
-                    self.build_field_definition("order", "Orden", "number", value_type="number", min_value=0),
                 ],
                 "items": items,
             }
@@ -492,10 +488,9 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
                     item.pk, item.nombre, "Catalogo clinico",
                     item.activo,
                     [
-                        {"label": "Orden", "value": str(item.orden)},
                         {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
                     ],
-                    {"name": item.nombre, "description": item.descripcion, "order": item.orden},
+                    {"name": item.nombre, "description": item.descripcion},
                 )
                 for item in queryset
             ]
@@ -510,7 +505,6 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
                 "fields": [
                     self.build_field_definition("name", "Patologia cutanea", "text", required=True, placeholder="Ej. Rosacea"),
                     self.build_field_definition("description", "Descripcion", "textarea", placeholder="Notas internas o alcance"),
-                    self.build_field_definition("order", "Orden", "number", value_type="number", min_value=0),
                 ],
                 "items": items,
             }
@@ -630,11 +624,9 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
                 return TipoServicio(
                     tipo=text_value("name"),
                     descripcion=text_value("description"),
-                    orden=int_value("order", minimum=0),
                 )
             instance.tipo = text_value("name")
             instance.descripcion = text_value("description")
-            instance.orden = int_value("order", minimum=0)
             return instance
 
         if catalog_key == "especialidades":
@@ -677,11 +669,9 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
                 return PatologiaCutanea(
                     nombre=text_value("name"),
                     descripcion=text_value("description"),
-                    orden=int_value("order", minimum=0),
                 )
             instance.nombre = text_value("name")
             instance.descripcion = text_value("description")
-            instance.orden = int_value("order", minimum=0)
             return instance
 
         if catalog_key == "campos-ficha":

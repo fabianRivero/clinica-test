@@ -22,7 +22,7 @@ export function ExceptionForm({
 }: ExceptionFormProps) {
   return (
     <form className="form-stack" onSubmit={(e) => void onSubmit(e)}>
-      <div className="form-group">
+      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
         <label>Especialistas afectados</label>
         <div className="checkbox-group" style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid var(--border)', padding: '0.5rem', borderRadius: '4px', background: 'var(--bg-card)' }}>
           {specialists.map((sp) => (
@@ -38,7 +38,7 @@ export function ExceptionForm({
         </div>
       </div>
 
-      <div className="form-group">
+      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
         <label>Tipo de excepcion</label>
         <select
           className="input"
@@ -51,7 +51,7 @@ export function ExceptionForm({
         </select>
       </div>
 
-      <div className="form-group">
+      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
         <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
           <input
             type="checkbox"
@@ -63,7 +63,7 @@ export function ExceptionForm({
       </div>
 
       {!exceptionForm.isWholeDay && (
-        <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
           <div>
             <label>Hora Inicio</label>
             <input
@@ -87,7 +87,7 @@ export function ExceptionForm({
         </div>
       )}
 
-      <div className="form-group">
+      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
         <label className="checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
           <input
             type="checkbox"
@@ -100,7 +100,7 @@ export function ExceptionForm({
 
       {exceptionForm.useDateRange && (
         <>
-          <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
             <div>
               <label>Desde</label>
               <input type="date" className="input" value={exceptionForm.rangeStartDate} onChange={(e) => setExceptionForm({ ...exceptionForm, rangeStartDate: e.target.value })} />
@@ -110,7 +110,7 @@ export function ExceptionForm({
               <input type="date" className="input" value={exceptionForm.rangeEndDate} onChange={(e) => setExceptionForm({ ...exceptionForm, rangeEndDate: e.target.value })} />
             </div>
           </div>
-          <div className="form-group">
+          <div className="form-group" style={{ marginBottom: '1.25rem' }}>
             <label>Dias de la semana a aplicar</label>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
               {weekdayOptions.map((w) => (
@@ -128,7 +128,7 @@ export function ExceptionForm({
         </>
       )}
 
-      <div className="form-group">
+      <div className="form-group" style={{ marginBottom: '1.25rem' }}>
         <label>Añadir Fecha(s)</label>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <input
@@ -156,7 +156,7 @@ export function ExceptionForm({
       </div>
 
       {exceptionForm.dates.length > 0 && (
-        <div className="form-group">
+        <div className="form-group" style={{ marginBottom: '1.25rem' }}>
           <label>Fechas seleccionadas</label>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
             {exceptionForm.dates.map((d) => (
@@ -175,7 +175,7 @@ export function ExceptionForm({
         </div>
       )}
 
-      <div className="form-group">
+      <div className="form-group" style={{ marginBottom: '1.5rem' }}>
         <label>Motivo / Detalle</label>
         <input
           type="text"

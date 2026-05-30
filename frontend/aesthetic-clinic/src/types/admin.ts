@@ -224,6 +224,7 @@ export type StaffCapacityItem = {
   activeOperations?: number
   upcomingAppointments?: number
   observations?: string
+  fechaNacimiento?: string
 }
 
 export type ClientSnapshot = {
@@ -339,6 +340,7 @@ export type OperationDetailAppointment = {
   status: string
   biometricStatus: string
   canConfirmBiometric: boolean
+  canCancelFromVerification: boolean
   canManage: boolean
 }
 
@@ -527,6 +529,7 @@ export type CreateAdminStaffPayload = {
   telefono: string
   observaciones: string
   specialtyIds: number[]
+  fechaNacimiento: string
 }
 
 export type UpdateAdminStaffPayload = Omit<CreateAdminStaffPayload, 'password'> & {
@@ -642,8 +645,16 @@ export type AdminGlobalAvailabilityBlock = {
   detail: string
 }
 
+export type AppointmentDetail = {
+  cliente_nombre: string | null
+  tratamiento_nombre: string | null
+  hora: string
+  tipo: 'CitasMedicas' | 'CitasProspectos' | 'CitasClientesLibres'
+}
+
 export type AdminConcurrencyCheckResponse = {
   concurrency: number
+  appointments?: AppointmentDetail[]
   presentes: Array<{
     id: number
     usuario__primer_nombre: string

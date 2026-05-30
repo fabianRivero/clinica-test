@@ -9,7 +9,7 @@ export const appointmentStatusTone: Record<AppointmentStatus, 'neutral' | 'warni
 
 export const appointmentStatusLabel: Record<AppointmentStatus, string> = {
   programada: 'Programada',
-  pendiente_verificacion: 'Pendiente de verificacion',
+  pendiente_verificacion: 'Pendiente de verificación',
   confirmada: 'Confirmada',
 }
 

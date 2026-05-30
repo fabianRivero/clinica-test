@@ -196,6 +196,13 @@ export function markAdminAppointmentPendingBiometric(appointmentId: number) {
   )
 }
 
+export function cancelAdminAppointmentVerification(appointmentId: number) {
+  return requestJsonWithBody<{ detail: string }>(
+    `/api/admin/citas/${appointmentId}/cancelar-verificacion/`,
+    {},
+  )
+}
+
 export function getAdminOperations() {
   return requestJson<OperationsResponse>('/api/admin/operaciones/')
 }
@@ -568,10 +575,9 @@ export function updateAdminBranch(branchId: number, payload: Partial<{ nombre: s
 }
 
 export function toggleAdminBranch(branchId: number, active: boolean, force = false) {
-  return requestJsonWithBodyIdempotent<{ detail: string; impact?: Record<string, number> }>(
+  return requestJsonWithBody<{ detail: string; impact?: Record<string, number> }>(
     `/api/admin/sucursales/${branchId}/estado/`,
     { active, force },
-    crypto.randomUUID(),
   )
 }
 
@@ -654,7 +660,7 @@ export function saveAdminBranchWizardStep2CreateNew(payload: {
 }
 
 export function finalizeAdminBranchWizard(payload: { nombre: string; clave: string }) {
-  return requestJsonWithBody<{ detail: string; branchId: number; adminUserId: number; tabletKioskId: number }>(
+  return requestJsonWithBody<{ detail: string; branchId: number; adminUserId: number; tabletKioskId: number; tabletKioskCode: string }>(
     '/api/admin/sucursales/wizard/finalizar/',
     payload,
   )

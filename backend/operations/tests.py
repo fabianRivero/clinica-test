@@ -72,14 +72,14 @@ class AppointmentNoShowSyncTests(TestCase):
             operacion=self.operacion,
             medico=self.especialista,
             fecha_hora=reference_time - timedelta(days=2),
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         )
 
         summary = mark_expired_programmed_appointments_as_no_show(reference_time)
 
         appointment.refresh_from_db()
         self.assertEqual(summary["no_show"], 0)
-        self.assertEqual(appointment.estado, CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA)
+        self.assertEqual(appointment.estado, CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION)
 
     def test_creates_client_notification_when_appointment_becomes_no_show(self):
         reference_time = timezone.now()

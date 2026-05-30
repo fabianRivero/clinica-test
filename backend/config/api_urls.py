@@ -1,4 +1,6 @@
-from django.urls import path
+from django.urls import include, path
+
+from config.api.routers_operaciones import citas_d8_router
 
 from config.admin_availability_views import (
     admin_availability,
@@ -18,8 +20,9 @@ from config.api_views import (
     admin_catalogo_detalle,
     admin_catalogo_estado,
     admin_cancel_appointment,
-    admin_cliente_create_reservation,
+    admin_cancel_appointment_verification,
     admin_cliente_create_free_medical_appointment,
+    admin_cliente_create_reservation,
     admin_cliente_detalle,
     admin_cliente_free_medical_availability,
     admin_cliente_inactivate,
@@ -278,10 +281,11 @@ urlpatterns = [
         name="admin-appointment-biometric-confirm-api",
     ),
     path(
-        "citas/<int:appointment_id>/reprogramar/",
-        admin_reschedule_appointment,
-        name="admin-appointment-reschedule-api",
+        "citas/<int:appointment_id>/cancelar-verificacion/",
+        admin_cancel_appointment_verification,
+        name="admin-appointment-cancel-verification-api",
     ),
+    path("citas/", include(citas_d8_router.urls)),
     path("disponibilidad/", admin_availability, name="admin-availability-api"),
     path(
         "disponibilidad/habitual/crear/",

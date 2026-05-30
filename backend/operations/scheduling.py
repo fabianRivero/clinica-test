@@ -1,5 +1,6 @@
 from datetime import datetime, time
-from django.db.models import Q
+from django.db.models import Q, Value, CharField
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from operations.models import (
     AgendaExcepcionEspecialista,
@@ -13,7 +14,7 @@ from notifications.services import create_notification
 
 BLOCKING_RESERVATION_STATES = [
     CitaMedica.Estado.PROGRAMADA,
-    CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+    CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
     CitaMedica.Estado.CONFIRMADA,
 ]
 
@@ -117,6 +118,55 @@ def get_concurrency(sucursal_id, fecha, hora_inicio, hora_fin):
     ).count()
 
     return citas_medicas + citas_prospecto + citas_libre
+
+def get_concurrency_detail(sucursal_id, fecha, hora_inicio, hora_fin):
+    """
+    Returns detailed appointment list overlapping with the given time block in the branch.
+    Includes client name, treatment name, time, and appointment type.
+    """
+    start_dt = timezone.make_aware(datetime.combine(fecha, hora_inicio))
+    end_dt = timezone.make_aware(datetime.combine(fecha, hora_fin))
+
+    citas_medicas_qs = CitaMedica.objects.filter(
+        sucursal_id=sucursal_id,
+        fecha_hora__gte=start_dt,
+        fecha_hora__lt=end_dt,
+        estado__in=BLOCKING_RESERVATION_STATES
+    ).values(
+        cliente_nombre=Coalesce(
+            'operacion__cliente__nombre',
+            Value('Cliente no registrado'),
+        ),
+        tratamiento_nombre='operacion__tratamiento__nombre',
+        hora='fecha_hora',
+        tipo=Value('CitasMedicas', output_field=CharField()),
+    )
+
+    citas_prospecto_qs = CitaProspecto.objects.filter(
+        sucursal_id=sucursal_id,
+        fecha_hora__gte=start_dt,
+        fecha_hora__lt=end_dt,
+        estado=CitaProspecto.Estado.PROGRAMADA
+    ).values(
+        cliente_nombre='prospecto__nombre',
+        tratamiento_nombre='tratamiento__nombre',
+        hora='fecha_hora',
+        tipo=Value('CitasProspectos', output_field=CharField()),
+    )
+
+    citas_libre_qs = CitaClienteLibre.objects.filter(
+        sucursal_id=sucursal_id,
+        fecha_hora__gte=start_dt,
+        fecha_hora__lt=end_dt,
+        estado=CitaClienteLibre.Estado.PROGRAMADA
+    ).values(
+        cliente_nombre=Value('Cliente no registrado', output_field=CharField()),
+        tratamiento_nombre='tratamiento__nombre',
+        hora='fecha_hora',
+        tipo=Value('CitasClientesLibres', output_field=CharField()),
+    )
+
+    return citas_medicas_qs.union(citas_prospecto_qs, citas_libre_qs).order_by('hora')
 
 def get_specialists_present(sucursal_id, fecha, hora_inicio, hora_fin):
     """

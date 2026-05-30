@@ -66,7 +66,7 @@ class Operacion(TimeStampedModel):
     @property
     def sesiones_pendientes_confirmacion(self):
         return self.citas_medicas.filter(
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         ).count()
 
     @property
@@ -150,9 +150,9 @@ class CitaMedica(TimeStampedModel):
 
     class Estado(models.TextChoices):
         PROGRAMADA = "PROGRAMADA", "Programada"
-        REALIZADA_PENDIENTE_BIOMETRIA = (
-            "REALIZADA_PENDIENTE_BIOMETRIA",
-            "Realizada pendiente biometria",
+        REALIZADA_PENDIENTE_VERIFICACION = (
+            "REALIZADA_PENDIENTE_VERIFICACION",
+            "Realizada Pendiente de Verificación",
         )
         CONFIRMADA = "CONFIRMADA", "Confirmada"
         CANCELADA = "CANCELADA", "Cancelada"
@@ -212,13 +212,13 @@ class CitaMedica(TimeStampedModel):
             otras_citas = self.operacion.citas_medicas.exclude(pk=self.pk)
             sesiones_consumidas = otras_citas.filter(
                 models.Q(estado=self.Estado.PROGRAMADA)
-                | models.Q(estado=self.Estado.REALIZADA_PENDIENTE_BIOMETRIA)
+                | models.Q(estado=self.Estado.REALIZADA_PENDIENTE_VERIFICACION)
                 | models.Q(estado=self.Estado.CONFIRMADA)
             ).count()
 
             estado_consume_sesion = self.estado in {
                 self.Estado.PROGRAMADA,
-                self.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+                self.Estado.REALIZADA_PENDIENTE_VERIFICACION,
                 self.Estado.CONFIRMADA,
             }
             total_consumido = sesiones_consumidas + (1 if estado_consume_sesion else 0)
@@ -242,7 +242,7 @@ class CitaMedica(TimeStampedModel):
         # Compatibilidad temporal: derivamos campos nuevos desde el modelo legacy.
         if self.estado == self.Estado.CONFIRMADA:
             self.estado_verificacion = self.EstadoVerificacion.VERIFICADA
-        elif self.estado == self.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+        elif self.estado == self.Estado.REALIZADA_PENDIENTE_VERIFICACION:
             self.estado_verificacion = self.EstadoVerificacion.PENDIENTE
         elif (
             self.estado == self.Estado.PROGRAMADA

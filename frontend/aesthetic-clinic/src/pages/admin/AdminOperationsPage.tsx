@@ -28,7 +28,11 @@ export function AdminOperationsPage() {
   const filteredOperations = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase()
     return (data?.operations ?? []).filter((operation) => {
-      const matchesSearch = !normalizedSearch || operation.patient.toLowerCase().includes(normalizedSearch)
+      const matchesSearch =
+        !normalizedSearch ||
+        operation.patient.toLowerCase().includes(normalizedSearch) ||
+        operation.id.toLowerCase().includes(normalizedSearch) ||
+        String(operation.rawId).includes(normalizedSearch)
       const matchesStatus =
         statusFilter === OPERATION_STATUS_ALL ||
         (operation.status || '').toLowerCase() === statusFilter.toLowerCase()
@@ -104,6 +108,7 @@ export function AdminOperationsPage() {
                       <div>
                         <strong>{operation.patient}</strong>
                         <p>{operation.procedure}</p>
+                        <p className="text-muted text-small">ID: {operation.id}</p>
                       </div>
                       <StatusBadge tone="primary">{operation.status || 'Sin estado'}</StatusBadge>
                     </header>

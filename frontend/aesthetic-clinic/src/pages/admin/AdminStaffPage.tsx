@@ -41,6 +41,7 @@ function buildEmptyForm(): StaffFormState {
     telefono: '',
     observaciones: '',
     specialtyIds: [],
+    fechaNacimiento: '',
   }
 }
 
@@ -57,6 +58,7 @@ function buildFormFromStaffMember(staffMember: StaffCapacityItem): StaffFormStat
     telefono: staffMember.phone ?? '',
     observaciones: staffMember.observations ?? '',
     specialtyIds: staffMember.specialtyIds,
+    fechaNacimiento: staffMember.fechaNacimiento ?? '',
   }
 }
 
@@ -187,6 +189,7 @@ function StaffEditorForm({
       telefono: formState.telefono.trim(),
       observaciones: formState.observaciones.trim(),
       specialtyIds: formState.specialtyIds,
+      fechaNacimiento: formState.fechaNacimiento,
     }
 
     try {
@@ -334,6 +337,19 @@ function StaffEditorForm({
             onChange={(event) => handleChange('telefono', event.target.value)}
           />
           <FieldError message={fieldErrors.telefono} />
+        </label>
+
+        <label className="field" htmlFor="staff-fecha-nacimiento">
+          <span>Fecha de nacimiento <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+          <input
+            id="staff-fecha-nacimiento"
+            className="input"
+            type="date"
+            value={formState.fechaNacimiento}
+            onChange={(event) => handleChange('fechaNacimiento', event.target.value)}
+            required
+          />
+          <FieldError message={fieldErrors.fechaNacimiento} />
         </label>
 
         <label className="field field--full" htmlFor="staff-observaciones">

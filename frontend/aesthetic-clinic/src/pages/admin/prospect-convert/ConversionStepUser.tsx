@@ -46,7 +46,7 @@ export function ConversionStepUser({
   return (
     <form className="form-grid" onSubmit={onSubmit}>
       <label className="field">
-        <span>Primer nombre</span>
+        <span>Primer nombre <abbr title="obligatorio" className="required-mark">*</abbr></span>
         <input className="input" name="primerNombre" value={userForm.primerNombre} onChange={onUserChange} />
         {fieldErrors.primerNombre ? <small className="field__error">{fieldErrors.primerNombre}</small> : null}
       </label>
@@ -55,7 +55,7 @@ export function ConversionStepUser({
         <input className="input" name="segundoNombre" value={userForm.segundoNombre} onChange={onUserChange} />
       </label>
       <label className="field">
-        <span>Apellido paterno</span>
+        <span>Apellido paterno <abbr title="obligatorio" className="required-mark">*</abbr></span>
         <input className="input" name="apellidoPaterno" value={userForm.apellidoPaterno} onChange={onUserChange} />
         {fieldErrors.apellidoPaterno ? <small className="field__error">{fieldErrors.apellidoPaterno}</small> : null}
       </label>
@@ -64,7 +64,7 @@ export function ConversionStepUser({
         <input className="input" name="apellidoMaterno" value={userForm.apellidoMaterno} onChange={onUserChange} />
       </label>
       <label className="field">
-        <span>CI</span>
+        <span>CI <abbr title="obligatorio" className="required-mark">*</abbr></span>
         <input className="input" name="ci" value={userForm.ci} onChange={onUserChange} />
         {fieldErrors.ci ? <small className="field__error">{fieldErrors.ci}</small> : null}
       </label>
@@ -80,7 +80,7 @@ export function ConversionStepUser({
       {!isReactivation && (
         <>
           <label className="field field--password">
-            <span>Contraseña</span>
+            <span>Contraseña <abbr title="obligatorio" className="required-mark">*</abbr></span>
             <input
               className="input"
               type={showPassword ? 'text' : 'password'}
@@ -109,7 +109,7 @@ export function ConversionStepUser({
             {fieldErrors.password ? <small className="field__error">{fieldErrors.password}</small> : null}
           </label>
           <label className="field field--password">
-            <span>Confirmar contraseña</span>
+            <span>Confirmar contraseña <abbr title="obligatorio" className="required-mark">*</abbr></span>
             <input
               className="input"
               type={showConfirmPassword ? 'text' : 'password'}
@@ -139,10 +139,10 @@ export function ConversionStepUser({
       )}
       <label className="field">
         <span>Telefono</span>
-        <input className="input" name="telefono" value={userForm.telefono} onChange={onUserChange} />
+        <input className="input" name="telefono" type="tel" value={userForm.telefono} onChange={onUserChange} />
       </label>
       <label className="field">
-        <span>Fecha de nacimiento</span>
+        <span>Fecha de nacimiento <abbr title="obligatorio" className="required-mark">*</abbr></span>
         <input className="input" name="fechaNacimiento" type="date" value={userForm.fechaNacimiento} onChange={onUserChange} />
         {fieldErrors.fechaNacimiento ? <small className="field__error">{fieldErrors.fechaNacimiento}</small> : null}
       </label>

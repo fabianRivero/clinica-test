@@ -8,6 +8,7 @@ Three ViewSets:
 - OfflineConfirmationViewSet: offline confirmation conflicts + resolve + metrics
 """
 
+
 from datetime import timedelta as datetime_timedelta
 from decimal import Decimal
 from django.db import transaction
@@ -450,13 +451,13 @@ class CitasViewSet(viewsets.ViewSet):
         if appointment.estado != CitaMedica.Estado.PROGRAMADA:
             return Response({"detail": "Solo se pueden cerrar citas que aun esten programadas."}, status=400)
 
-        appointment.estado = CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
+        appointment.estado = CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION
         appointment.verif_biometria = False
         appointment.detalles_cita = appointment.detalles_cita or "Cita marcada como realizada desde administracion."
         appointment.save()
 
         return Response({
-            "detail": "La cita quedo realizada y pendiente de confirmacion biometrica.",
+            "detail": "La cita quedo realizada y pendiente de confirmación.",
             "appointment": _client_appointment_item(appointment),
             "operation": _client_operation_item(appointment.operacion),
         })
@@ -517,8 +518,8 @@ class CitasViewSet(viewsets.ViewSet):
         appointment = self._get_appointment(pk)
         if not appointment:
             return Response({"detail": "No encontramos la cita solicitada."}, status=404)
-        if appointment.estado != CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
-            return Response({"detail": "Solo se pueden confirmar citas pendientes de biometria."}, status=400)
+        if appointment.estado != CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION:
+            return Response({"detail": "Solo se pueden confirmar citas pendientes de verificacion."}, status=400)
 
         serializer = AppointmentBiometricConfirmSerializer(data=request.data)
         if not serializer.is_valid():
@@ -557,6 +558,27 @@ class CitasViewSet(viewsets.ViewSet):
             "detail": "La cita fue confirmada correctamente.",
             "appointment": _client_appointment_item(appointment),
             "operation": _client_operation_item(appointment.operacion),
+        })
+
+    @action(detail=True, methods=["post"], url_path="cancelar-verificacion")
+    def cancelar_verificacion(self, request, pk=None):
+        """
+        POST /citas/<int:appointment_id>/cancelar-verificacion/
+        Revert REALIZADA_PENDIENTE_VERIFICACION -> PROGRAMADA.
+        """
+        appointment = self._get_appointment(pk)
+        if not appointment:
+            return Response({"detail": "No encontramos la cita solicitada."}, status=404)
+        if appointment.estado != CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION:
+            return Response({"detail": "Solo se puede cancelar la verificacion de citas pendientes."}, status=400)
+
+        appointment.estado = CitaMedica.Estado.PROGRAMADA
+        appointment.verif_biometria = False
+        appointment.save(update_fields=["estado", "verif_biometria", "updated_at"])
+
+        return Response({
+            "detail": "La verificacion fue cancelada. La cita volvio a estado Programada.",
+            "appointment": _client_appointment_item(appointment),
         })
 
     @action(detail=True, methods=["post"], url_path="reprogramar")
@@ -698,7 +720,7 @@ class OfflineConfirmationViewSet(viewsets.ViewSet):
         if resolution == "ACCEPT":
             event.sync_status = EventoConfirmacionCita.EstadoSync.ACCEPTED
             cita = event.cita
-            if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+            if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION:
                 cita.estado = CitaMedica.Estado.CONFIRMADA
                 cita.metodo_confirmacion = CitaMedica.MetodoConfirmacion.MANUAL
                 cita.verif_biometria = False

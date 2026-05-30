@@ -6,6 +6,7 @@ import { useConfirmDialog } from '../../../hooks/useConfirmDialog'
 import { useNotifications } from '../../../providers/NotificationProvider'
 import {
   cancelAdminAppointment,
+  cancelAdminAppointmentVerification,
   checkAdminConcurrency,
   confirmAdminAppointmentBiometric,
   createAdminClientFreeMedicalAppointment,
@@ -97,7 +98,7 @@ export function useClientDetail(clientId: string) {
     try {
       const response = await markAdminAppointmentPendingBiometric(appointmentId)
       showNotification({
-        title: 'Cita pendiente de verificacion',
+        title: 'Cita pendiente de verificación',
         message: response.detail,
         tone: 'success',
       })
@@ -142,6 +143,34 @@ export function useClientDetail(clientId: string) {
     } catch (requestError) {
       showNotification({
         title: 'No se pudo confirmar la huella',
+        message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
+        tone: 'danger',
+      })
+    } finally {
+      setAppointmentActionId(null)
+    }
+  }
+
+  async function handleCancelFromVerification(appointmentId: number) {
+    const confirmed = await confirm({
+      title: '¿Está seguro?',
+      message: '¿Está seguro que desea cancelar la verificación?',
+      tone: 'warning',
+    })
+    if (!confirmed) return
+
+    setAppointmentActionId(appointmentId)
+    try {
+      const response = await cancelAdminAppointmentVerification(appointmentId)
+      showNotification({
+        title: 'Verificación cancelada',
+        message: response.detail,
+        tone: 'success',
+      })
+      reload()
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo cancelar la verificación',
         message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
         tone: 'danger',
       })
@@ -475,6 +504,7 @@ export function useClientDetail(clientId: string) {
     handleCancelAppointment,
     handleMarkPendingBiometric,
     handleConfirmBiometric,
+    handleCancelFromVerification,
     handleCheckRescheduleAvailability,
     handleRescheduleAppointment,
     handleCheckConcurrency,

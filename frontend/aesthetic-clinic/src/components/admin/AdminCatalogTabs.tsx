@@ -2,15 +2,15 @@ import { NavLink } from 'react-router-dom'
 
 const tabs = [
   { to: '/admin/catalogos/todos-los-servicios', label: 'Todos los servicios' },
-  { to: '/admin/catalogos/procedimientos-esteticos', label: 'Procedimientos esteticos' },
+  { to: '/admin/catalogos/procedimientos-esteticos', label: 'Procedimientos estéticos' },
   { to: '/admin/catalogos/tipos-servicio', label: 'Tipos de servicio' },
-  { to: '/admin/catalogos/patologias-cutaneas', label: 'Patologias cutaneas' },
   { to: '/admin/catalogos/especialidades', label: 'Especialidades' },
+  { to: '/admin/catalogos/categorias-gasto', label: 'Categorías de gasto' },
 ] as const
 
 export function AdminCatalogTabs() {
   return (
-    <nav className="section-tabs" aria-label="Subsecciones de catalogos">
+    <nav className="section-tabs" aria-label="Subsecciones de catálogos">
       {tabs.map((tab) => (
         <NavLink
           key={tab.to}

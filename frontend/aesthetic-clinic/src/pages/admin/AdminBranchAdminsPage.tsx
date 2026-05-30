@@ -24,8 +24,10 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
   const navigate = useNavigate()
   const [rows, setRows] = useState<AdminItem[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [userEdited, setUserEdited] = useState({ username: false, password: false })
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
+    ci: '',
     username: '',
     email: '',
     telefono: '',
@@ -57,7 +59,8 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
     try {
       await createAdminBranchAdmin(form)
       showNotification({ title: 'Administrador creado', message: 'El admin de sucursal se creo correctamente.', tone: 'success' })
-      setForm({ username: '', email: '', telefono: '', primerNombre: '', segundoNombre: '', apellidoPaterno: '', apellidoMaterno: '', password: '', fechaNacimiento: '' })
+      setUserEdited({ username: false, password: false })
+      setForm({ ci: '', username: '', email: '', telefono: '', primerNombre: '', segundoNombre: '', apellidoPaterno: '', apellidoMaterno: '', password: '', fechaNacimiento: '' })
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo crear admin de sucursal')
@@ -91,8 +94,23 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
         >
         <form className="form-grid" onSubmit={handleCreate}>
             <label className="field">
+              <span>CI <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
+              <input className="input" required value={form.ci} onChange={(e) => {
+                const ci = e.target.value
+                setForm((v) => ({
+                  ...v,
+                  ci,
+                  username: userEdited.username ? v.username : ci,
+                  password: userEdited.password ? v.password : ci,
+                }))
+              }} />
+            </label>
+            <label className="field">
               <span>Nombre de usuario <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
-              <input className="input" required value={form.username} onChange={(e) => setForm((v) => ({ ...v, username: e.target.value }))} />
+              <input className="input" required value={form.username} onChange={(e) => {
+                setUserEdited((v) => ({ ...v, username: true }))
+                setForm((v) => ({ ...v, username: e.target.value }))
+              }} />
             </label>
             <label className="field">
               <span>Email</span>
@@ -100,7 +118,11 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
             </label>
             <label className="field">
               <span>Contraseña <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>
-              <input className="input" type="password" required value={form.password} onChange={(e) => setForm((v) => ({ ...v, password: e.target.value }))} />
+              <input className="input" type="password" required               value={form.password}
+              onChange={(e) => {
+                setUserEdited((v) => ({ username: true, password: true }))
+                setForm((prev) => ({ ...prev, password: e.target.value }))
+              }} />
             </label>
             <label className="field">
               <span>Primer nombre <span style={{ color: 'var(--color-danger, #d42626)' }}>*</span></span>

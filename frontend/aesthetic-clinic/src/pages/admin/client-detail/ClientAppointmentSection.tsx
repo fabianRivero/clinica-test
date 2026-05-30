@@ -15,6 +15,7 @@ interface ClientAppointmentSectionProps {
   onCancelAppointment: (id: number) => void
   onMarkPendingBiometric: (id: number) => void
   onConfirmBiometric: (id: number, template: string) => void
+  onCancelFromVerification: (id: number) => void
   onSetRescheduleAppointment: (id: number) => void
   onRescheduleDateChange: (value: string) => void
   onRescheduleTimeChange: (value: string) => void
@@ -34,6 +35,7 @@ export function ClientAppointmentSection({
   onCancelAppointment,
   onMarkPendingBiometric,
   onConfirmBiometric,
+  onCancelFromVerification,
   onSetRescheduleAppointment,
   onRescheduleDateChange,
   onRescheduleTimeChange,
@@ -73,7 +75,7 @@ export function ClientAppointmentSection({
                           type="button"
                           onClick={() => void onMarkPendingBiometric(appointment.rawId)}
                         >
-                          {appointmentActionId === appointment.rawId ? 'Actualizando...' : 'Cambiar a pendiente de verificacion'}
+                          {appointmentActionId === appointment.rawId ? 'Actualizando...' : 'Cambiar a pendiente de verificación'}
                         </button>
                       ) : null}
                       {['programada', 'no asistio'].includes(appointment.status?.toLowerCase?.() ?? '') ? (
@@ -106,7 +108,17 @@ export function ClientAppointmentSection({
                           {appointmentActionId === appointment.rawId ? 'Validando...' : 'Confirmar huella mock'}
                         </button>
                       ) : null}
-                      {!appointment.canManage && !appointment.canMarkPendingBiometric && !appointment.canConfirmBiometric ? (
+                      {appointment.canCancelFromVerification ? (
+                        <button
+                          className="button button--ghost button--compact"
+                          disabled={appointmentActionId !== null}
+                          type="button"
+                          onClick={() => void onCancelFromVerification(appointment.rawId)}
+                        >
+                          Cancelar
+                        </button>
+                      ) : null}
+                      {!appointment.canManage && !appointment.canMarkPendingBiometric && !appointment.canConfirmBiometric && !appointment.canCancelFromVerification ? (
                         <span className="table-muted">Sin cambios</span>
                       ) : null}
                     </div>

@@ -62,7 +62,7 @@ class AppointmentConfirmationFlowTests(TestCase):
             operacion=self.operacion,
             sucursal=self.sucursal,
             fecha_hora=timezone.now(),
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         )
 
         response = self.client_http.post(
@@ -87,7 +87,7 @@ class AppointmentConfirmationFlowTests(TestCase):
             operacion=self.operacion,
             sucursal=self.sucursal,
             fecha_hora=timezone.now() - timedelta(days=1),
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         )
 
         response = self.client_http.post(
@@ -97,7 +97,7 @@ class AppointmentConfirmationFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         cita.refresh_from_db()
-        self.assertEqual(cita.estado, CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA)
+        self.assertEqual(cita.estado, CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION)
         self.assertFalse(EventoConfirmacionCita.objects.filter(cita=cita).exists())
 
     def test_admin_biometric_confirmation_creates_audit_event(self):
@@ -111,7 +111,7 @@ class AppointmentConfirmationFlowTests(TestCase):
             operacion=self.operacion,
             sucursal=self.sucursal,
             fecha_hora=timezone.now(),
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         )
 
         response = self.admin_http.post(
@@ -136,7 +136,7 @@ class AppointmentConfirmationFlowTests(TestCase):
             operacion=self.operacion,
             sucursal=self.sucursal,
             fecha_hora=timezone.now(),
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         )
 
         response = self.admin_http.post(
@@ -161,7 +161,7 @@ class AppointmentConfirmationFlowTests(TestCase):
             operacion=self.operacion,
             sucursal=self.sucursal,
             fecha_hora=timezone.now(),
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         )
 
         response = self.client_http.get("/api/client/tablet/cita-actual/")
@@ -178,7 +178,7 @@ class AppointmentConfirmationFlowTests(TestCase):
             operacion=self.operacion,
             sucursal=self.sucursal,
             fecha_hora=timezone.now(),
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         )
 
         response = self.client_http.post(
@@ -215,13 +215,13 @@ class AppointmentConfirmationFlowTests(TestCase):
             operacion=self.operacion,
             sucursal=self.sucursal,
             fecha_hora=timezone.now(),
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         )
         second_cita = CitaMedica.objects.create(
             operacion=second_operation,
             sucursal=self.sucursal,
             fecha_hora=timezone.now(),
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         )
 
         response = self.client_http.post(
@@ -234,7 +234,7 @@ class AppointmentConfirmationFlowTests(TestCase):
 
         first_cita.refresh_from_db()
         second_cita.refresh_from_db()
-        self.assertEqual(first_cita.estado, CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA)
+        self.assertEqual(first_cita.estado, CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION)
         self.assertEqual(second_cita.estado, CitaMedica.Estado.CONFIRMADA)
         self.assertEqual(second_cita.metodo_confirmacion, CitaMedica.MetodoConfirmacion.TABLET)
 
@@ -247,7 +247,7 @@ class AppointmentConfirmationFlowTests(TestCase):
             operacion=self.operacion,
             sucursal=self.sucursal,
             fecha_hora=timezone.now(),
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
             metodo_confirmacion=CitaMedica.MetodoConfirmacion.BIOMETRICO,
         )
 

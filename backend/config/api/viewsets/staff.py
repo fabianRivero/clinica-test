@@ -226,7 +226,7 @@ class StaffViewSet(viewsets.ViewSet):
 
         upcoming_appointments_qs = CitaMedica.objects.filter(fecha_hora__gte=timezone.now())
         pending_biometric_qs = CitaMedica.objects.filter(
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION
         )
         if branch:
             upcoming_appointments_qs = upcoming_appointments_qs.filter(sucursal=branch)

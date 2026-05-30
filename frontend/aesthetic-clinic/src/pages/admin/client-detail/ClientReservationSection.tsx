@@ -50,7 +50,7 @@ export function ClientReservationSection({
             <select className="input" value={effectiveOperationId} onChange={(event) => onOperationChange(Number(event.target.value))}>
               {reservableOperations.map((operation: any) => (
                 <option key={operation.id} value={operation.rawId}>
-                  {operation.procedure} | {operation.reserveMessage}
+                  {operation.selectLabel}
                 </option>
               ))}
             </select>

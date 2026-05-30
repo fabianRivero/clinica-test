@@ -38,6 +38,8 @@ export function AdminExpenseCreatePage() {
   )
   const { data, isLoading, error, reload } = useApiResource(loader)
 
+  const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1)
+
   const updateForm = (field: keyof UpsertAdminExpensePayload, value: string | File | null) => {
     setForm((current) => {
       const next = { ...current, [field]: value }
@@ -46,6 +48,9 @@ export function AdminExpenseCreatePage() {
           field === 'units' ? String(value) : next.units,
           field === 'unitCost' ? String(value) : next.unitCost,
         )
+      }
+      if (typeof value === 'string' && (field === 'concept' || field === 'provider' || field === 'details')) {
+        next[field] = capitalize(value)
       }
       return next
     })
@@ -114,14 +119,14 @@ export function AdminExpenseCreatePage() {
           description="El gasto se guardara en la sucursal activa del selector global."
         >
           <form className="catalog-form" onSubmit={handleFormSubmit}>
-            <label className="field">
-              <span>Fecha</span>
-              <input className="input" type="date" value={form.date} onChange={(event) => updateForm('date', event.target.value)} />
+            <label className="field" style={{ marginBottom: '1.25rem' }}>
+              <span>Fecha <span style={{ color: '#dc2626' }}>*</span></span>
+              <input className="input" type="date" value={form.date} onChange={(event) => updateForm('date', event.target.value)} required />
               {fieldErrors.date ? <small className="field__error">{fieldErrors.date}</small> : null}
             </label>
-            <label className="field">
-              <span>Categoria</span>
-              <select className="input" value={form.categoryId} onChange={(event) => updateForm('categoryId', event.target.value)}>
+            <label className="field" style={{ marginBottom: '1.25rem' }}>
+              <span>Categoria <span style={{ color: '#dc2626' }}>*</span></span>
+              <select className="input" value={form.categoryId} onChange={(event) => updateForm('categoryId', event.target.value)} required>
                 <option value="">Selecciona una categoria</option>
                 {data.categories.map((category) => (
                   <option key={category.id} value={category.id}>{category.name}</option>
@@ -129,29 +134,29 @@ export function AdminExpenseCreatePage() {
               </select>
               {fieldErrors.categoryId ? <small className="field__error">{fieldErrors.categoryId}</small> : null}
             </label>
-            <label className="field field--full">
-              <span>Concepto</span>
-              <input className="input" value={form.concept} onChange={(event) => updateForm('concept', event.target.value)} placeholder="Ej. Compra de guantes nitrilo" />
+            <label className="field field--full" style={{ marginBottom: '1.25rem' }}>
+              <span>Concepto <span style={{ color: '#dc2626' }}>*</span></span>
+              <input className="input" value={form.concept} onChange={(event) => updateForm('concept', event.target.value)} placeholder="Ej. Compra de guantes nitrilo" required />
               {fieldErrors.concept ? <small className="field__error">{fieldErrors.concept}</small> : null}
             </label>
-            <label className="field">
-              <span>Unidades</span>
-              <input className="input" min="0" step="0.01" type="number" value={form.units} onChange={(event) => updateForm('units', event.target.value)} />
+            <label className="field" style={{ marginBottom: '1.25rem' }}>
+              <span>Unidades <span style={{ color: '#dc2626' }}>*</span></span>
+              <input className="input" min="0" step="0.01" type="number" value={form.units} onChange={(event) => updateForm('units', event.target.value)} required />
               {fieldErrors.units ? <small className="field__error">{fieldErrors.units}</small> : null}
             </label>
-            <label className="field">
-              <span>Costo por unidad</span>
-              <input className="input" min="0" step="0.01" type="number" value={form.unitCost} onChange={(event) => updateForm('unitCost', event.target.value)} />
+            <label className="field" style={{ marginBottom: '1.25rem' }}>
+              <span>Costo por unidad <span style={{ color: '#dc2626' }}>*</span></span>
+              <input className="input" min="0" step="0.01" type="number" value={form.unitCost} onChange={(event) => updateForm('unitCost', event.target.value)} required />
               {fieldErrors.unitCost ? <small className="field__error">{fieldErrors.unitCost}</small> : null}
             </label>
-            <label className="field">
-              <span>Gasto total</span>
-              <input className="input" min="0" step="0.01" type="number" value={form.total} onChange={(event) => updateForm('total', event.target.value)} />
+            <label className="field" style={{ marginBottom: '1.25rem' }}>
+              <span>Gasto total <span style={{ color: '#dc2626' }}>*</span></span>
+              <input className="input" min="0" step="0.01" type="number" value={form.total} onChange={(event) => updateForm('total', event.target.value)} required />
               {fieldErrors.total ? <small className="field__error">{fieldErrors.total}</small> : null}
             </label>
-            <label className="field">
-              <span>Proveedor</span>
-              <input className="input" value={form.provider} onChange={(event) => updateForm('provider', event.target.value)} placeholder="Nombre del proveedor" />
+            <label className="field" style={{ marginBottom: '1.25rem' }}>
+              <span>Proveedor <span style={{ color: '#dc2626' }}>*</span></span>
+              <input className="input" value={form.provider} onChange={(event) => updateForm('provider', event.target.value)} placeholder="Nombre del proveedor" required />
             </label>
             <label className="field field--full">
               <span>Factura</span>

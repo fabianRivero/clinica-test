@@ -193,7 +193,7 @@ def appointment_biometric_status(cita):
 
     if cita.estado in {
         CitaMedica.Estado.PROGRAMADA,
-        CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+        CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
     }:
         return "Pendiente"
 
@@ -208,7 +208,7 @@ def agenda_status(cita):
     """Return a simplified status label for a medical appointment."""
     if cita.estado == CitaMedica.Estado.CONFIRMADA:
         return "confirmada"
-    if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+    if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION:
         return "biometria"
     return "programada"
 
@@ -217,7 +217,7 @@ def agenda_appointment_status(cita):
     """Return the appointment status string."""
     if cita.estado == CitaMedica.Estado.CONFIRMADA:
         return "confirmada"
-    if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+    if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION:
         return "pendiente_verificacion"
     return "programada"
 
@@ -226,7 +226,7 @@ def agenda_verification_status(cita):
     """Return the verification status label."""
     if cita.estado == CitaMedica.Estado.CONFIRMADA:
         return "verificada"
-    if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+    if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION:
         return "pendiente"
     return "no_requerida"
 

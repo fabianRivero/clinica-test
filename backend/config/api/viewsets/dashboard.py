@@ -82,7 +82,7 @@ def _dashboard_alerts():
 
     # Alert: appointments today without confirmed biometric
     pending_biometric = CitaMedica.objects.filter(
-        estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+        estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         fecha_hora__date=today,
     ).count()
     if pending_biometric > 0:
@@ -170,7 +170,7 @@ class DashboardViewSet(viewsets.ViewSet):
 
         appointments_today_qs = CitaMedica.objects.filter(fecha_hora__date=today)
         pending_biometric_qs = CitaMedica.objects.filter(
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION
         )
         if branch:
             appointments_today_qs = appointments_today_qs.filter(sucursal=branch)

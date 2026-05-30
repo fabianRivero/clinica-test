@@ -75,6 +75,7 @@ export type ClientAppointment = {
   canManage: boolean
   canMarkPendingBiometric: boolean
   canConfirmBiometric: boolean
+  canCancelFromVerification: boolean
   biometricMockTemplate: string
   isFreeMedicalAppointment?: boolean
 }

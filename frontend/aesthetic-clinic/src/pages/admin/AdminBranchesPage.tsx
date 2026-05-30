@@ -4,7 +4,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AdminBranchTabs } from '../../components/admin/AdminBranchTabs'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
-import { changeAdminBranchManager, finalizeAdminBranchWizard, getAdminBranchAdmins, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, initializeAdminBranchWizard, saveAdminBranchWizardStep1, saveAdminBranchWizardStep2CreateNew, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
+import { WizardSubTabs } from '../../components/admin/WizardSubTabs'
+import { changeAdminBranchManager, finalizeAdminBranchWizard, getAdminBranchAdmins, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, initializeAdminBranchWizard, saveAdminBranchWizardStep1, saveAdminBranchWizardStep2CreateNew, saveAdminBranchWizardStep2ExistingInactive, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
 import { useAuth } from '../../providers/AuthProvider'
 import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
@@ -32,11 +33,17 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   const [saving, setSaving] = useState(false)
 
   const [newBranch, setNewBranch] = useState({ nombre: '', ciudad: '', direccion: '' })
+  const [step1Submitted, setStep1Submitted] = useState(false)
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1)
   const [wizardStep1Completed, setWizardStep1Completed] = useState(false)
   const [wizardStep2Completed, setWizardStep2Completed] = useState(false)
-  const [wizardNewAdmin, setWizardNewAdmin] = useState({ username: '', email: '', primerNombre: '', apellidoPaterno: '', ci: '', password: '' })
+  const [wizardNewAdmin, setWizardNewAdmin] = useState({ username: '', ci: '', email: '', primerNombre: '', segundoNombre: '', apellidoPaterno: '', apellidoMaterno: '', telefono: '', fechaNacimiento: '', password: '' })
+  const [step2Submitted, setStep2Submitted] = useState(false)
+  const [step2SubTab, setStep2SubTab] = useState<'create' | 'select'>('create')
+  const [selectedInactiveAdminId, setSelectedInactiveAdminId] = useState<number | null>(null)
   const [wizardTablet, setWizardTablet] = useState({ nombre: '', clave: '' })
+  const [showWizardConfirmModal, setShowWizardConfirmModal] = useState(false)
+  const [createdBranchInfo, setCreatedBranchInfo] = useState<{ branchName: string; tabletCode: string; tabletClave: string } | null>(null)
   const [branchAdmins, setBranchAdmins] = useState<Array<{ id: number; username: string; fullName: string; isActive: boolean; branchId: number | null; branchName: string }>>([])
   const [editingBranch, setEditingBranch] = useState<BranchRow | null>(null)
   const [editForm, setEditForm] = useState({ nombre: '', ciudad: '', direccion: '' })
@@ -46,6 +53,8 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   const [auditRows, setAuditRows] = useState<Array<{ id: number; createdAt: string; action: string; detail: string; branchName: string; actor: string }>>([])
   const recentAuditRows = useMemo(() => auditRows.slice(0, 5), [auditRows])
   const logoutTimerRef = useRef<number | null>(null)
+  const [activatingBranch, setActivatingBranch] = useState<BranchRow | null>(null)
+  const [selectedActivatingAdminId, setSelectedActivatingAdminId] = useState<number | null>(null)
 
   const branchOptions = useMemo(() => rows.map((b) => ({ id: b.id, name: b.nombre })), [rows])
 
@@ -94,6 +103,10 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
 
   async function handleWizardStep1(e: React.FormEvent) {
     e.preventDefault()
+    setStep1Submitted(true)
+    if (!newBranch.nombre.trim() || !newBranch.ciudad.trim() || !newBranch.direccion.trim()) {
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -109,6 +122,10 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
 
   async function handleWizardStep2(e: React.FormEvent) {
     e.preventDefault()
+    setStep2Submitted(true)
+    if (!wizardNewAdmin.username.trim() || !wizardNewAdmin.ci.trim() || !wizardNewAdmin.primerNombre.trim() || !wizardNewAdmin.apellidoPaterno.trim() || !wizardNewAdmin.password.trim() || !wizardNewAdmin.fechaNacimiento.trim()) {
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -122,23 +139,38 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     }
   }
 
-  async function handleWizardStep3(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleWizardStep2SelectExisting() {
+    if (!selectedInactiveAdminId) return
+    setStep2Submitted(true)
     setSaving(true)
     setError(null)
     try {
-      await finalizeAdminBranchWizard(wizardTablet)
-      showNotification({
-        title: 'Sucursal creada',
-        message: 'La sucursal se creó correctamente.',
-        tone: 'success',
+      await saveAdminBranchWizardStep2ExistingInactive(selectedInactiveAdminId)
+      setWizardStep2Completed(true)
+      setWizardStep(3)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo asignar el administrador')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleWizardStep3(e: React.FormEvent) {
+    e.preventDefault()
+    setShowWizardConfirmModal(true)
+  }
+
+  async function handleWizardSubmit() {
+    setSaving(true)
+    setShowWizardConfirmModal(false)
+    setError(null)
+    try {
+      const result = await finalizeAdminBranchWizard(wizardTablet)
+      setCreatedBranchInfo({
+        branchName: newBranch.nombre,
+        tabletCode: result.tabletKioskCode,
+        tabletClave: wizardTablet.clave,
       })
-      setWizardStep(1)
-      setWizardStep1Completed(false)
-      setWizardStep2Completed(false)
-      setNewBranch({ nombre: '', ciudad: '', direccion: '' })
-      setWizardTablet({ nombre: '', clave: '' })
-      navigate('/admin/sucursales/editar')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo finalizar creación')
       showNotification({
@@ -161,41 +193,118 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
     setWizardStep(1)
     setWizardStep1Completed(false)
     setWizardStep2Completed(false)
+    setStep1Submitted(false)
+    setStep2Submitted(false)
+    setStep2SubTab('create')
+    setSelectedInactiveAdminId(null)
     setNewBranch({ nombre: '', ciudad: '', direccion: '' })
-    setWizardNewAdmin({ username: '', email: '', primerNombre: '', apellidoPaterno: '', ci: '', password: '' })
+    setWizardNewAdmin({ username: '', ci: '', email: '', primerNombre: '', segundoNombre: '', apellidoPaterno: '', apellidoMaterno: '', telefono: '', fechaNacimiento: '', password: '' })
     setWizardTablet({ nombre: '', clave: '' })
     void initializeAdminBranchWizard().catch(() => undefined)
   }
 
   async function handleToggle(row: BranchRow) {
     try {
-      if (row.activa) {
+      if (!row.activa) {
         const impact = await getAdminBranchDeactivationImpact(row.id)
         const p = impact.impact
         const hasPending = p.appointments_pending + p.payments_pending + p.processes_pending > 0
         if (hasPending) {
-          const ok = await confirm({
-            title: 'Desactivar sucursal',
-            message: `Hay pendientes en la sucursal:\n- Citas: ${p.appointments_pending}\n- Pagos: ${p.payments_pending}\n- Procesos: ${p.processes_pending}\n\n¿Deseas desactivar de todas formas?`,
+          showNotification({
+            title: 'No se puede activar',
+            message: `Esta sucursal tiene citas, pagos o procedimientos activos que deben completarse o cancelarse antes.`,
             tone: 'warning',
           })
-          if (!ok) return
-          await toggleAdminBranch(row.id, false, true)
-        } else {
-          await toggleAdminBranch(row.id, false)
+          return
         }
-      } else {
-        await toggleAdminBranch(row.id, true)
+        const adminsResp = await getAdminBranchAdmins()
+        const availableAdmins = adminsResp.admins.filter((a: any) => !a.isActive && a.branchId === null)
+        if (availableAdmins.length === 0) {
+          showNotification({
+            title: 'No se puede activar',
+            message: 'No hay administradores inactivos sin sucursal disponibles para asignar.',
+            tone: 'warning',
+          })
+          return
+        }
+        setActivatingBranch(row)
+        setSelectedActivatingAdminId(null)
+        void getAdminBranchAdmins().then((r) => setBranchAdmins(r.admins)).catch(() => undefined)
+        return
       }
+      const impact = await getAdminBranchDeactivationImpact(row.id)
+      const p = impact.impact
+      const hasPending = p.appointments_pending + p.payments_pending + p.processes_pending > 0
+      if (hasPending) {
+        showNotification({
+          title: 'No se puede desactivar',
+          message: `Esta sucursal tiene pendientes que deben completarse primero:\n\n- Citas activas: ${p.appointments_pending}\n- Pagos pendientes de verificación: ${p.payments_pending}\n- Procedimientos en proceso: ${p.processes_pending}\n\nCompleta o cancela todos los pendientes antes de desactivar.`,
+          tone: 'warning',
+        })
+        return
+      }
+      const ok = await confirm({
+        title: 'Desactivar sucursal',
+        message: `¿Estás seguro de que deseas desactivar "${row.nombre}"? Su administrador también quedará inactivo y sin sucursal asignada.`,
+        tone: 'warning',
+      })
+      if (!ok) return
+      await toggleAdminBranch(row.id, false)
       await load()
+      showNotification({
+        title: 'Sucursal desactivada',
+        message: 'La sucursal fue desactivada correctamente. Su administrador también fue desactivado y desasignado.',
+        tone: 'success',
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo actualizar estado')
+      const msg = err instanceof Error ? err.message : ''
+      if (msg.includes('pendientes operativos')) {
+        showNotification({
+          title: 'No se puede desactivar',
+          message: 'Esta sucursal tiene citas, pagos o procedimientos pendientes. Completa o cancela todos los pendientes antes de desactivar.',
+          tone: 'warning',
+        })
+      } else if (msg.includes('sin administrador')) {
+        showNotification({
+          title: 'No se puede activar',
+          message: 'Esta sucursal no tiene un administrador asignado. Asigna uno primero antes de activar.',
+          tone: 'warning',
+        })
+      } else {
+        setError(err instanceof Error ? err.message : 'No se pudo actualizar estado')
+      }
     }
   }
 
   function openEditModal(row: BranchRow) {
     setEditingBranch(row)
     setEditForm({ nombre: row.nombre, ciudad: row.ciudad, direccion: row.direccion })
+  }
+
+  async function handleConfirmActivation() {
+    if (!activatingBranch || !selectedActivatingAdminId) return
+    setSaving(true)
+    try {
+      await changeAdminBranchManager(activatingBranch.id, selectedActivatingAdminId)
+      await toggleAdminBranch(activatingBranch.id, true)
+      setActivatingBranch(null)
+      setSelectedActivatingAdminId(null)
+      await load()
+      showNotification({
+        title: 'Sucursal activada',
+        message: 'La sucursal fue activada correctamente con su administrador asignado.',
+        tone: 'success',
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo activar la sucursal')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleCancelActivation() {
+    setActivatingBranch(null)
+    setSelectedActivatingAdminId(null)
   }
 
   async function handleSaveEdit() {
@@ -312,25 +421,93 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
           </button>
         </div>
         {wizardStep === 1 ? <form onSubmit={handleWizardStep1}><div className="form-grid form-grid--three">
-          <label className="field"><span>Nombre de sucursal</span><input className="input" value={newBranch.nombre} onChange={(e) => setNewBranch((v) => ({ ...v, nombre: e.target.value }))} /></label>
-          <label className="field"><span>Ciudad</span><input className="input" value={newBranch.ciudad} onChange={(e) => setNewBranch((v) => ({ ...v, ciudad: e.target.value }))} /></label>
-          <label className="field"><span>Dirección</span><input className="input" value={newBranch.direccion} onChange={(e) => setNewBranch((v) => ({ ...v, direccion: e.target.value }))} /></label>
+          <label className="field"><span>Nombre de sucursal <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={newBranch.nombre} onChange={(e) => setNewBranch((v) => ({ ...v, nombre: e.target.value }))} />{step1Submitted && !newBranch.nombre.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+          <label className="field"><span>Ciudad <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={newBranch.ciudad} onChange={(e) => setNewBranch((v) => ({ ...v, ciudad: e.target.value }))} />{step1Submitted && !newBranch.ciudad.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+          <label className="field"><span>Dirección <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={newBranch.direccion} onChange={(e) => setNewBranch((v) => ({ ...v, direccion: e.target.value }))} />{step1Submitted && !newBranch.direccion.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
         </div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><button className="button" disabled={saving} type="submit">Continuar</button></div></form> : null}
-        {wizardStep === 2 ? <form onSubmit={handleWizardStep2}>
+        {wizardStep === 2 ? <div>
           <p style={{ marginBottom: '0.75rem', color: 'var(--c-neutral-600)' }}>
-            En este paso siempre se crea un administrador nuevo. El usuario se registra como inactivo y sin sucursal por defecto.
+            En este paso puedes crear un nuevo administrador o seleccionar uno inactivo existente.
           </p>
-          <div className="form-grid form-grid--three">
-            <label className="field"><span>Username</span><input className="input" value={wizardNewAdmin.username} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, username: e.target.value }))} /></label>
-            <label className="field"><span>Primer nombre</span><input className="input" value={wizardNewAdmin.primerNombre} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, primerNombre: e.target.value }))} /></label>
-            <label className="field"><span>Apellido paterno</span><input className="input" value={wizardNewAdmin.apellidoPaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoPaterno: e.target.value }))} /></label>
-            <label className="field"><span>CI</span><input className="input" value={wizardNewAdmin.ci} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, ci: e.target.value }))} /></label>
-            <label className="field"><span>Email</span><input className="input" value={wizardNewAdmin.email} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, email: e.target.value }))} /></label>
-            <label className="field"><span>Contraseña</span><input className="input" type="password" value={wizardNewAdmin.password} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, password: e.target.value }))} /></label>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="submit">Continuar</button></div></div>
-        </form> : null}
-        {wizardStep === 3 ? <form onSubmit={handleWizardStep3}><div className="form-grid form-grid--three">
+          <WizardSubTabs
+            tabs={[
+              { id: 'create', label: 'Crear nuevo admin' },
+              { id: 'select', label: 'Seleccionar admin existente' },
+            ]}
+            activeTab={step2SubTab}
+            onTabChange={(id) => { setStep2SubTab(id as 'create' | 'select'); setStep2Submitted(false) }}
+          />
+
+          {step2SubTab === 'create' ? (
+            <form onSubmit={handleWizardStep2}>
+              <div className="form-grid form-grid--three">
+                <label className="field"><span>CI <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={wizardNewAdmin.ci} onChange={(e) => { const val = e.target.value; setWizardNewAdmin((v) => ({ ...v, ci: val, username: val, password: val })) }} />{step2Submitted && !wizardNewAdmin.ci.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+                <label className="field"><span>Nombre de usuario <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={wizardNewAdmin.username} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, username: e.target.value }))} />{step2Submitted && !wizardNewAdmin.username.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+                <label className="field"><span>Contraseña <span style={{ color: "#dc2626" }}>*</span></span><input className="input" type="password" value={wizardNewAdmin.password} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, password: e.target.value }))} />{step2Submitted && !wizardNewAdmin.password.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+                <label className="field"><span>Email</span><input className="input" value={wizardNewAdmin.email} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, email: e.target.value }))} /></label>
+                <label className="field"><span>Primer nombre <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={wizardNewAdmin.primerNombre} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, primerNombre: e.target.value }))} />{step2Submitted && !wizardNewAdmin.primerNombre.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+                <label className="field"><span>Segundo nombre</span><input className="input" value={wizardNewAdmin.segundoNombre} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, segundoNombre: e.target.value }))} /></label>
+                <label className="field"><span>Apellido paterno <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={wizardNewAdmin.apellidoPaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoPaterno: e.target.value }))} />{step2Submitted && !wizardNewAdmin.apellidoPaterno.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+                <label className="field"><span>Apellido materno</span><input className="input" value={wizardNewAdmin.apellidoMaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoMaterno: e.target.value }))} /></label>
+                <label className="field"><span>Telefono</span><input className="input" value={wizardNewAdmin.telefono} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, telefono: e.target.value }))} /></label>
+                <label className="field"><span>Fecha de nacimiento <span style={{ color: "#dc2626" }}>*</span></span><input className="input" type="date" value={wizardNewAdmin.fechaNacimiento} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, fechaNacimiento: e.target.value }))} />{step2Submitted && !wizardNewAdmin.fechaNacimiento.trim() && <span style={{ color: "#dc2626", fontSize: "0.75rem" }}>Campo obligatorio</span>}</label>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="submit">Continuar</button></div></div>
+            </form>
+          ) : (
+            <div>
+              <p style={{ color: 'var(--c-neutral-600)', marginBottom: '1rem' }}>
+                Selecciona un administrador inactivo que no tenga sucursal asignada.
+              </p>
+              <div style={{ maxHeight: '320px', overflowY: 'auto', border: '1px solid var(--c-neutral-200)', borderRadius: '8px', marginBottom: '1rem' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ position: 'sticky', top: 0, background: 'var(--c-neutral-50)', zIndex: 1 }}>
+                    <tr>
+                      <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Nombre</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Usuario</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Email</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'center', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500, width: '60px' }}>Seleccionar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {branchAdmins.filter((a) => !a.isActive && a.branchId === null).length === 0 ? (
+                      <tr>
+                        <td colSpan={4} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--c-neutral-500)' }}>
+                          No hay admins inactivos disponibles
+                        </td>
+                      </tr>
+                    ) : (
+                      branchAdmins
+                        .filter((a) => !a.isActive && a.branchId === null)
+                        .map((a) => (
+                          <tr key={a.id} style={{ background: selectedInactiveAdminId === a.id ? 'var(--c-primary-50)' : undefined }}>
+                            <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.fullName}</td>
+                            <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.username}</td>
+                            <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.email || '-'}</td>
+                            <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)', textAlign: 'center' }}>
+                              <input
+                                type="radio"
+                                name="inactiveAdmin"
+                                value={a.id}
+                                checked={selectedInactiveAdminId === a.id}
+                                onChange={() => setSelectedInactiveAdminId(a.id)}
+                                style={{ cursor: 'pointer' }}
+                              />
+                            </td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {step2Submitted && !selectedInactiveAdminId && (
+                <span style={{ color: "#dc2626", fontSize: "0.75rem", display: 'block', marginBottom: '0.75rem' }}>Debes seleccionar un administrador</span>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="button" onClick={() => void handleWizardStep2SelectExisting()}>Continuar</button></div></div>
+            </div>
+          )}
+        </div> : null}
+        {wizardStep === 3 ? <form onSubmit={(e) => { e.preventDefault(); setShowWizardConfirmModal(true) }}><div className="form-grid form-grid--three">
           <label className="field"><span>Nombre tablet <span style={{ color: "#dc2626" }}>*</span></span><input className="input" value={wizardTablet.nombre} onChange={(e) => setWizardTablet((v) => ({ ...v, nombre: e.target.value }))} /></label>
           <label className="field"><span>Clave tablet <span style={{ color: "#dc2626" }}>*</span></span><input className="input" type="password" value={wizardTablet.clave} onChange={(e) => setWizardTablet((v) => ({ ...v, clave: e.target.value }))} /></label>
         </div><div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="button button--ghost" type="button" onClick={() => setWizardStep(2)}>Volver</button><button className="button" disabled={saving} type="submit">Finalizar</button></div></div></form> : null}
@@ -461,7 +638,304 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
           </div>
         </div>
       </div> : null}
+
+      {activatingBranch ? <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Activar sucursal">
+        <div className="booking-modal-content" style={{ maxWidth: '720px' }}>
+          <header className="booking-modal-header">
+            <h2 style={{ margin: 0 }}>Activar sucursal</h2>
+            <button className="booking-modal-close" type="button" onClick={() => void handleCancelActivation()}>×</button>
+          </header>
+          <div className="booking-modal-body" style={{ padding: '1rem 1.5rem' }}>
+            <p>Para activar la sucursal <strong>{activatingBranch.nombre}</strong>, seleccioná un administrador de sucursal inactivo que no tenga sucursal asignada.</p>
+            <div style={{ maxHeight: '320px', overflowY: 'auto', border: '1px solid var(--c-neutral-200)', borderRadius: '8px', marginBottom: '1rem' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead style={{ position: 'sticky', top: 0, background: 'var(--c-neutral-50)', zIndex: 1 }}>
+                  <tr>
+                    <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Nombre</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Usuario</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500 }}>Email</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'center', fontSize: '0.75rem', color: 'var(--c-neutral-500)', fontWeight: 500, width: '60px' }}>Seleccionar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {branchAdmins.filter((a) => !a.isActive && a.branchId === null).length === 0 ? (
+                    <tr>
+                      <td colSpan={4} style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--c-neutral-500)' }}>
+                        No hay admins inactivos disponibles
+                      </td>
+                    </tr>
+                  ) : (
+                    branchAdmins
+                      .filter((a) => !a.isActive && a.branchId === null)
+                      .map((a) => (
+                        <tr key={a.id} style={{ background: selectedActivatingAdminId === a.id ? 'var(--c-primary-50)' : undefined }}>
+                          <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.fullName}</td>
+                          <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.username}</td>
+                          <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)' }}>{a.email || '-'}</td>
+                          <td style={{ padding: '0.75rem', borderBottom: '1px solid var(--c-neutral-100)', textAlign: 'center' }}>
+                            <input
+                              type="radio"
+                              name="activatingAdmin"
+                              value={a.id}
+                              checked={selectedActivatingAdminId === a.id}
+                              onChange={() => setSelectedActivatingAdminId(a.id)}
+                              style={{ cursor: 'pointer' }}
+                            />
+                          </td>
+                        </tr>
+                      ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {selectedActivatingAdminId === null && (
+              <span style={{ color: "#dc2626", fontSize: "0.75rem", display: 'block', marginBottom: '0.75rem' }}>Debes seleccionar un administrador</span>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button className="button button--ghost" type="button" onClick={() => void handleCancelActivation()}>Cancelar</button>
+              <button className="button" type="button" onClick={() => void handleConfirmActivation()} disabled={saving || selectedActivatingAdminId === null}>Confirmar</button>
+            </div>
+          </div>
+        </div>
+      </div> : null}
       </> : null}
+
+      {showWizardConfirmModal ? (
+        <div
+          className="booking-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirmar creación de sucursal"
+        >
+          <div className="booking-modal-content" style={{ maxWidth: '640px' }}>
+            <header className="booking-modal-header">
+              <h2 style={{ margin: 0 }}>Confirmar creación de sucursal</h2>
+              <button
+                className="booking-modal-close"
+                type="button"
+                onClick={() => setShowWizardConfirmModal(false)}
+              >
+                ×
+              </button>
+            </header>
+            <div className="booking-modal-body" style={{ padding: '1rem 1.5rem' }}>
+              <p style={{ marginTop: 0, color: 'var(--c-neutral-600)' }}>
+                Revisa los datos antes de confirmar.
+              </p>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <h3
+                  style={{
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    marginBottom: '0.5rem',
+                    color: 'var(--c-neutral-600)',
+                  }}
+                >
+                  Sucursal
+                </h3>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '0.5rem',
+                    background: 'var(--c-neutral-50)',
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                  }}
+                >
+                  <div>
+                    <strong>Nombre:</strong> {newBranch.nombre}
+                  </div>
+                  <div>
+                    <strong>Ciudad:</strong> {newBranch.ciudad}
+                  </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <strong>Dirección:</strong> {newBranch.direccion}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <h3
+                  style={{
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    marginBottom: '0.5rem',
+                    color: 'var(--c-neutral-600)',
+                  }}
+                >
+                  Administrador
+                </h3>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '0.5rem',
+                    background: 'var(--c-neutral-50)',
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                  }}
+                >
+                  <div>
+                    <strong>Usuario:</strong> {wizardNewAdmin.username}
+                  </div>
+                  <div>
+                    <strong>CI:</strong> {wizardNewAdmin.ci}
+                  </div>
+                  <div>
+                    <strong>Nombre:</strong> {wizardNewAdmin.primerNombre}{' '}
+                    {wizardNewAdmin.segundoNombre} {wizardNewAdmin.apellidoPaterno}
+                  </div>
+                  <div>
+                    <strong>Email:</strong> {wizardNewAdmin.email || '-'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <h3
+                  style={{
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    marginBottom: '0.5rem',
+                    color: 'var(--c-neutral-600)',
+                  }}
+                >
+                  Tablet
+                </h3>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '0.5rem',
+                    background: 'var(--c-neutral-50)',
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                  }}
+                >
+                  <div>
+                    <strong>Nombre:</strong> {wizardTablet.nombre}
+                  </div>
+                  <div>
+                    <strong>Clave:</strong> {wizardTablet.clave}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: '0.75rem',
+                  marginTop: '1.5rem',
+                }}
+              >
+                <button
+                  className="button button--ghost"
+                  type="button"
+                  onClick={() => setShowWizardConfirmModal(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => void handleWizardSubmit()}
+                  disabled={saving}
+                >
+                  Confirmar y crear
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {createdBranchInfo ? (
+        <div className="booking-modal-overlay" role="dialog" aria-modal="true" aria-label="Sucursal creada">
+          <div className="booking-modal-content" style={{ maxWidth: '520px' }}>
+            <header className="booking-modal-header">
+              <h2 style={{ margin: 0 }}>Sucursal creada exitosamente</h2>
+            </header>
+            <div className="booking-modal-body" style={{ padding: '1.5rem' }}>
+              <p style={{ marginTop: 0, color: 'var(--c-neutral-600)' }}>
+                La sucursal <strong>{createdBranchInfo.branchName}</strong> fue creada. Anota las credenciales del tablet antes de continuar.
+              </p>
+
+              <div
+                style={{
+                  background: 'var(--c-neutral-50)',
+                  padding: '1rem',
+                  borderRadius: '8px',
+                  marginBottom: '1rem',
+                }}
+              >
+                <div style={{ marginBottom: '0.5rem' }}>
+                  <strong>Código tablet:</strong>
+                </div>
+                <div
+                  style={{
+                    fontSize: '1.25rem',
+                    fontWeight: 700,
+                    fontFamily: 'monospace',
+                    background: '#fff',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--c-neutral-200)',
+                    marginBottom: '1rem',
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  {createdBranchInfo.tabletCode}
+                </div>
+                <div style={{ marginBottom: '0.5rem' }}>
+                  <strong>Clave tablet:</strong>
+                </div>
+                <div
+                  style={{
+                    fontSize: '1.25rem',
+                    fontWeight: 700,
+                    fontFamily: 'monospace',
+                    background: '#fff',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '6px',
+                    border: '1px solid var(--c-neutral-200)',
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  {createdBranchInfo.tabletClave}
+                </div>
+              </div>
+
+              <p style={{ fontSize: '0.875rem', color: 'var(--c-neutral-500)', marginBottom: '1rem' }}>
+                Con estas credenciales el tablet podrá iniciar sesión. Se recomienda anotar estas credenciales.
+              </p>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => {
+                    setCreatedBranchInfo(null)
+                    setWizardStep(1)
+                    setWizardStep1Completed(false)
+                    setWizardStep2Completed(false)
+                    setStep1Submitted(false)
+                    setStep2Submitted(false)
+                    setNewBranch({ nombre: '', ciudad: '', direccion: '' })
+                    setWizardTablet({ nombre: '', clave: '' })
+                    navigate('/admin/sucursales/editar')
+                  }}
+                >
+                  Continuar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <ConfirmDialogModal />
     </section>
   )

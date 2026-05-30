@@ -435,9 +435,19 @@ class DisponibilidadViewSet(viewsets.ViewSet):
         hora_ventana_inicio = dt_ventana_inicio.time()
         hora_ventana_fin = dt_ventana_fin.time()
 
-        concurrency = get_concurrency(
+        appointments_raw = get_concurrency_detail(
             data["sucursal_id"], fecha, hora_ventana_inicio, hora_ventana_fin
         )
+        appointments = [
+            {
+                "cliente_nombre": row["cliente_nombre"],
+                "tratamiento_nombre": row["tratamiento_nombre"],
+                "hora": row["hora"].strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "tipo": row["tipo"],
+            }
+            for row in appointments_raw
+        ]
+        concurrency = len(appointments)
         presentes = get_specialists_present(
             data["sucursal_id"], fecha, hora_inicio, hora_inicio
         )
@@ -455,6 +465,7 @@ class DisponibilidadViewSet(viewsets.ViewSet):
 
         return Response({
             "concurrency": concurrency,
+            "appointments": appointments,
             "presentes": especialistas,
             "hora_inicio": hora_ventana_inicio.strftime("%H:%M"),
             "hora_fin": hora_ventana_fin.strftime("%H:%M"),

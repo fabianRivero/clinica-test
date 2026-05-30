@@ -15,6 +15,7 @@ import {
   getAdminProspects,
   updateAdminProspect,
   migrateAdminProspect,
+  updateAdminProspectAppointmentStatus,
 } from '../../services/api/admin'
 import { useAuth } from '../../providers/AuthProvider'
 import type {
@@ -147,6 +148,13 @@ export function AdminProspectsPage() {
       setSelectedTime('')
       setConcurrencyInfo(null)
       reload()
+      // Actualizar editingProspect con datos frescos si este prospecto está en edición
+      if (editingProspect && data?.prospects) {
+        const updatedProspect = data.prospects.find(p => p.rawId === bookingProspect.rawId)
+        if (updatedProspect) {
+          setEditingProspect(updatedProspect)
+        }
+      }
     } catch (requestError: any) {
       showNotification({
         title: 'No se pudo agendar',
@@ -158,7 +166,7 @@ export function AdminProspectsPage() {
     }
   }
 
-  async function handleCancelAppointment(appointmentId: number) {
+  async function handleCancelAppointment(appointmentId: number, prospectId?: number) {
     const confirmed = await confirm({
       title: 'Cancelar cita',
       message: 'Se cancelara la cita medica del prospecto. ¿Deseas continuar?',
@@ -170,9 +178,44 @@ export function AdminProspectsPage() {
       const response = await cancelAdminProspectMedicalAppointment(appointmentId)
       showNotification({ title: 'Cita cancelada', message: response.detail, tone: 'success' })
       reload()
+      // Actualizar editingProspect con datos frescos si este prospecto está en edición
+      if (editingProspect && prospectId && editingProspect.rawId === prospectId && data?.prospects) {
+        const updatedProspect = data.prospects.find(p => p.rawId === prospectId)
+        if (updatedProspect) {
+          setEditingProspect(updatedProspect)
+        }
+      }
     } catch (requestError) {
       showNotification({
         title: 'No se pudo cancelar',
+        message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
+        tone: 'danger',
+      })
+    }
+  }
+
+  async function handleMarkAppointmentAsCompleted(appointmentId: number, prospectId?: number) {
+    const confirmed = await confirm({
+      title: 'Marcar cita como realizada',
+      message: '¿Deseas marcar esta cita como realizada?',
+      tone: 'success',
+    })
+    if (!confirmed) return
+
+    try {
+      await updateAdminProspectAppointmentStatus(appointmentId, 'REALIZADA')
+      showNotification({ title: 'Cita marcada como realizada', message: 'La cita ha sido actualizada.', tone: 'success' })
+      reload()
+      // Actualizar editingProspect con datos frescos si este prospecto está en edición
+      if (editingProspect && prospectId && editingProspect.rawId === prospectId && data?.prospects) {
+        const updatedProspect = data.prospects.find(p => p.rawId === prospectId)
+        if (updatedProspect) {
+          setEditingProspect(updatedProspect)
+        }
+      }
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo actualizar',
         message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
         tone: 'danger',
       })
@@ -356,24 +399,6 @@ export function AdminProspectsPage() {
                                     </button>
                                   )}
                                 </div>
-
-                                {lead.medicalAppointments && lead.medicalAppointments.length > 0 && (
-                                  <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-                                    <div className="table-muted" style={{ fontSize: '0.75rem' }}>
-                                      {lead.medicalAppointments[0].dateTime} | {lead.medicalAppointments[0].status}
-                                    </div>
-                                    {lead.medicalAppointments[0].canCancel ? (
-                                      <button
-                                        className="button button--ghost button--compact"
-                                        type="button"
-                                        style={{ padding: '0', height: 'auto', color: 'var(--color-danger)', fontSize: '0.75rem' }}
-                                        onClick={() => void handleCancelAppointment(lead.medicalAppointments![0].rawId)}
-                                      >
-                                        Cancelar cita actual
-                                      </button>
-                                    ) : null}
-                                  </div>
-                                )}
                               </div>
                             ) : (
                               <div className="table-actions">
@@ -410,7 +435,7 @@ export function AdminProspectsPage() {
               onClose={() => setEditingProspect(null)}
               onSave={handleUpdateProspect}
               isUpdating={isUpdating}
-              handleCancelAppointment={handleCancelAppointment}
+              handleCancelAppointment={(appointmentId) => handleCancelAppointment(appointmentId, editingProspect.rawId)}
             />
           )}
 
@@ -616,6 +641,36 @@ function BookingModal({
                     <p>
                       <strong>Citas simultaneas de 1 hora antes a 1 hora despues ({concurrencyInfo.hora_inicio} a {concurrencyInfo.hora_fin}):</strong> {concurrencyInfo.concurrency}
                     </p>
+
+                    {concurrencyInfo.appointments && concurrencyInfo.appointments.length > 0 ? (
+                      <div style={{ marginTop: '0.75rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--color-border)' }}>
+                        <p style={{ marginBottom: '0.5rem' }}><strong>Citas simultáneas:</strong></p>
+                        <ul style={{ fontSize: '0.82rem', color: 'var(--color-text-soft)', paddingLeft: '1.2rem', margin: 0 }}>
+                          {concurrencyInfo.appointments.map((apt, idx) => (
+                            <li key={idx} style={{ marginBottom: '0.3rem' }}>
+                              <span style={{ fontWeight: 500 }}>{apt.cliente_nombre ?? 'Cliente no registrado'}</span>
+                              {' — '}
+                              {apt.tratamiento_nombre ?? 'Sin tratamiento'}
+                              {' — '}
+                              {new Date(apt.hora).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                              <span style={{
+                                marginLeft: '0.4rem',
+                                fontSize: '0.72rem',
+                                padding: '0.1rem 0.35rem',
+                                borderRadius: '3px',
+                                backgroundColor: apt.tipo === 'CitasMedicas' ? 'var(--color-primary)' : apt.tipo === 'CitasProspectos' ? '#6c757d' : '#17a2b8',
+                                color: '#fff',
+                              }}>
+                                {apt.tipo === 'CitasMedicas' ? 'Médica' : apt.tipo === 'CitasProspectos' ? 'Prospecto' : 'Libre'}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <p style={{ fontSize: '0.85rem', color: 'var(--color-text-soft)', marginTop: '0.5rem' }}>Sin citas simultáneas</p>
+                    )}
+
                     <p>
                       <strong>Especialistas en turno {concurrencyInfo.hora_seleccionada}:</strong>
                     </p>
@@ -827,15 +882,28 @@ function EditProspectModal({
                         </div>
                       </div>
                       {isEditable && cita.canCancel && !tempStatuses[cita.rawId] && (
-                        <button
-                          className="button button--danger button--compact"
-                          onClick={() => {
-                            void handleCancelAppointment(cita.rawId)
-                            onClose()
-                          }}
-                        >
-                          Anular
-                        </button>
+                        <>
+                          {currentStatusValue === 'PROGRAMADA' && (
+                            <button
+                              className="button button--primary button--compact"
+                              onClick={() => {
+                                void handleMarkAppointmentAsCompleted(cita.rawId, prospect.rawId)
+                                onClose()
+                              }}
+                            >
+                              Realizada
+                            </button>
+                          )}
+                          <button
+                            className="button button--danger button--compact"
+                            onClick={() => {
+                              void handleCancelAppointment(cita.rawId)
+                              onClose()
+                            }}
+                          >
+                            Anular
+                          </button>
+                        </>
                       )}
                     </div>
                   );

@@ -15,6 +15,14 @@ from django.utils import timezone
 from django.core.cache import cache
 from django.views.decorators.http import require_GET, require_POST
 
+
+def _request_ip(request):
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR")
+
+
 from accounts.models import Rol, Usuario
 from billing.models import CategoriaGasto, ConfiguracionPagoQR, CuotaPlanPago, GastoSucursal, PagoRealizado
 from catalogs.models import (
@@ -165,12 +173,14 @@ def _branch_payload(payload, *, partial=False):
 def _idempotency_cache_key(request, scope):
     idem_key = request.headers.get("Idempotency-Key")
     if not idem_key:
-        return None, json_response({"detail": "Idempotency-Key es obligatorio."}, status=400)
+        return None, None
     user_id = request.user.id if request.user.is_authenticated else "anon"
     return f"idempotency:{scope}:{user_id}:{idem_key}", None
 
 
 def _idempotency_replay_or_store(cache_key, fn):
+    if cache_key is None:
+        return fn()
     cached = cache.get(cache_key)
     if cached:
         return json_response(cached["data"], status=cached["status"])
@@ -178,6 +188,8 @@ def _idempotency_replay_or_store(cache_key, fn):
     if 200 <= response.status_code < 300:
         payload = json.loads(response.content.decode("utf-8"))
         cache.set(cache_key, {"status": response.status_code, "data": payload}, IDEMPOTENCY_TTL_SECONDS)
+    elif response.status_code == 409:
+        pass
     return response
 
 
@@ -189,11 +201,11 @@ def _branch_deactivation_impact(branch):
         + CitaClienteLibre.objects.filter(sucursal=branch, fecha_hora__gte=now, estado=CitaClienteLibre.Estado.PROGRAMADA).count()
     )
     payments_pending = PagoRealizado.objects.filter(
-        cuota__operacion__sucursal=branch,
+        cuota__operacion__paciente__sucursal_registro=branch,
         estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
     ).count()
     processes_pending = Operacion.objects.filter(
-        sucursal=branch
+        paciente__sucursal_registro=branch
     ).exclude(estado=Operacion.Estado.CANCELADA).count()
     return {
         "appointments_pending": appointments_pending,
@@ -458,7 +470,7 @@ def _operation_detail(operacion):
                 "biometricStatus": _appointment_biometric_status(cita),
                 "canConfirmBiometric": cita.estado in {
                     CitaMedica.Estado.PROGRAMADA,
-                    CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+                    CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
                 },
                 "canManage": cita.estado == CitaMedica.Estado.PROGRAMADA,
 
@@ -1144,7 +1156,6 @@ def _catalog_page_data(catalog_key):
                 f"Tipo: {item.tipo_p_estetico.tipo}",
                 item.activo,
                 [
-                    {"label": "Orden", "value": str(item.orden)},
                     {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
                     {
                         "label": "Servicios vinculados",
@@ -1155,7 +1166,6 @@ def _catalog_page_data(catalog_key):
                     "procedureTypeId": item.tipo_p_estetico_id,
                     "name": item.proceso,
                     "description": item.descripcion,
-                    "order": item.orden,
                 },
             )
             for item in queryset
@@ -1189,7 +1199,6 @@ def _catalog_page_data(catalog_key):
                 ),
                 _catalog_field("name", "Procedimiento", "text", required=True, placeholder="Ej. Borrado de tatuajes"),
                 _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas del procedimiento"),
-                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
             ],
             "items": items,
         }
@@ -1203,7 +1212,6 @@ def _catalog_page_data(catalog_key):
                 "Base comercial del servicio",
                 item.activo,
                 [
-                    {"label": "Orden", "value": str(item.orden)},
                     {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
                     {
                         "label": "Configuraciones activas",
@@ -1213,7 +1221,6 @@ def _catalog_page_data(catalog_key):
                 {
                     "name": item.tipo,
                     "description": item.descripcion,
-                    "order": item.orden,
                 },
             )
             for item in queryset
@@ -1236,7 +1243,6 @@ def _catalog_page_data(catalog_key):
             "fields": [
                 _catalog_field("name", "Tipo de servicio", "text", required=True, placeholder="Ej. Cita de consulta"),
                 _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas del tipo de servicio"),
-                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
             ],
             "items": items,
         }
@@ -1353,13 +1359,11 @@ def _catalog_page_data(catalog_key):
                 "Catalogo clinico",
                 item.activo,
                 [
-                    {"label": "Orden", "value": str(item.orden)},
                     {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
                 ],
                 {
                     "name": item.nombre,
                     "description": item.descripcion,
-                    "order": item.orden,
                 },
             )
             for item in queryset
@@ -1382,7 +1386,6 @@ def _catalog_page_data(catalog_key):
             "fields": [
                 _catalog_field("name", "Patologia cutanea", "text", required=True, placeholder="Ej. Rosacea"),
                 _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas o alcance"),
-                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
             ],
             "items": items,
         }
@@ -1592,7 +1595,6 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         name = text_value("name")
         if not name:
             errors["name"] = "El nombre del procedimiento es obligatorio."
-        order = int_value("order", minimum=0, allow_empty=True)
         if errors:
             raise ValidationError(errors)
         procedure_type = ProcEsteticosTipo.objects.filter(pk=procedure_type_id).first()
@@ -1602,20 +1604,17 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         obj.tipo_p_estetico = procedure_type
         obj.proceso = name
         obj.descripcion = text_value("description")
-        obj.orden = order or 0
         return obj
 
     if catalog_key == "tipos-servicio":
         name = text_value("name")
         if not name:
             errors["name"] = "El nombre del tipo de servicio es obligatorio."
-        order = int_value("order", minimum=0, allow_empty=True)
         if errors:
             raise ValidationError(errors)
         obj = instance or TipoServicio()
         obj.tipo = name
         obj.descripcion = text_value("description")
-        obj.orden = order or 0
         return obj
 
     if catalog_key == "campos-ficha":
@@ -1661,13 +1660,11 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         name = text_value("name")
         if not name:
             errors["name"] = "El nombre de la patologia es obligatorio."
-        order = int_value("order", minimum=0, allow_empty=True)
         if errors:
             raise ValidationError(errors)
         obj = instance or PatologiaCutanea()
         obj.nombre = name
         obj.descripcion = text_value("description")
-        obj.orden = order or 0
         return obj
 
     if catalog_key == "especialidades":
@@ -1735,7 +1732,7 @@ def _staff_item(especialista):
     pending_biometric = sum(
         1
         for cita in citas
-        if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
+        if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION
     )
     active_operations = {
         cita.operacion_id
@@ -1766,6 +1763,11 @@ def _staff_item(especialista):
         "activeOperations": len(active_operations),
         "upcomingAppointments": len(upcoming),
         "observations": especialista.observaciones or "",
+        "fechaNacimiento": (
+            especialista.usuario.fecha_nacimiento.isoformat()
+            if especialista.usuario.fecha_nacimiento
+            else None
+        ),
     }
 
 
@@ -1797,6 +1799,7 @@ def _parse_staff_payload(request, payload, errors, *, instance=None):
     ci = (payload.get("ci") or "").strip()
     telefono = (payload.get("telefono") or "").strip()
     observaciones = (payload.get("observaciones") or "").strip()
+    fecha_nacimiento_raw = (payload.get("fechaNacimiento") or "").strip()
     password = payload.get("password") or ""
     specialty_ids = payload.get("specialtyIds") or []
     branch_id = payload.get("branchId")
@@ -1811,6 +1814,14 @@ def _parse_staff_payload(request, payload, errors, *, instance=None):
         errors["ci"] = "El CI es obligatorio."
     if instance is None and not password:
         errors["password"] = "La contraseña inicial es obligatoria."
+
+    if fecha_nacimiento_raw:
+        try:
+            date.fromisoformat(fecha_nacimiento_raw)
+        except ValueError:
+            errors["fechaNacimiento"] = "Fecha de nacimiento no valida."
+    elif instance is None:
+        errors["fechaNacimiento"] = "La fecha de nacimiento es obligatoria."
 
     specialties = list(Especialidad.objects.filter(pk__in=specialty_ids, activo=True))
     if len(specialties) != len(set(specialty_ids)):
@@ -1837,6 +1848,8 @@ def _parse_staff_payload(request, payload, errors, *, instance=None):
         return None
 
     usuario = instance.usuario if instance else Usuario()
+    if fecha_nacimiento_raw:
+        usuario.fecha_nacimiento = date.fromisoformat(fecha_nacimiento_raw)
     usuario.username = username
     usuario.email = email
     usuario.primer_nombre = primer_nombre
@@ -1993,7 +2006,7 @@ def admin_resolve_offline_confirmation_conflict(request, event_id):
     if resolution == "ACCEPT":
         event.sync_status = EventoConfirmacionCita.EstadoSync.ACCEPTED
         cita = event.cita
-        if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+        if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION:
             cita.estado = CitaMedica.Estado.CONFIRMADA
             cita.metodo_confirmacion = CitaMedica.MetodoConfirmacion.MANUAL
             cita.verif_biometria = False
@@ -2089,7 +2102,7 @@ def admin_dashboard(request):
 
     appointments_today_qs = CitaMedica.objects.filter(fecha_hora__date=today)
     pending_biometric_qs = CitaMedica.objects.filter(
-        estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
+        estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION
     )
     if branch:
         appointments_today_qs = appointments_today_qs.filter(sucursal=branch)
@@ -2983,16 +2996,16 @@ def admin_mark_appointment_pending_biometric(request, appointment_id):
         return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
 
     if appointment.estado != CitaMedica.Estado.PROGRAMADA:
-        return json_response({"detail": "Solo se pueden cerrar citas que aun esten programadas."}, status=400)
+        return json_response({"detail": "Solo se pueden cerrar citas que aun estén programadas."}, status=400)
 
-    appointment.estado = CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
+    appointment.estado = CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION
     appointment.verif_biometria = False
     appointment.detalles_cita = appointment.detalles_cita or "Cita marcada como realizada desde administracion."
     appointment.save()
 
     return json_response(
         {
-            "detail": "La cita quedo realizada y pendiente de confirmacion biometrica.",
+            "detail": "La cita quedo realizada y pendiente de confirmaciòn.",
             "appointment": _client_appointment_item(appointment),
             "operation": _operation_detail(appointment.operacion),
         }
@@ -3010,7 +3023,7 @@ def admin_update_appointment_status(request, appointment_id):
     payload = load_payload(request)
     nuevo_estado = payload.get("status")
     if nuevo_estado not in [choice[0] for choice in CitaMedica.Estado.choices]:
-        return json_response({"detail": "El estado proporcionado no es valido."}, status=400)
+        return json_response({"detail": "El estado proporcionado no es válido."}, status=400)
 
     previous_status = appointment.estado
     appointment.estado = nuevo_estado
@@ -3077,7 +3090,7 @@ def admin_reschedule_appointment(request, appointment_id):
         if not new_date_time:
             raise ValueError
     except Exception:
-        return json_response({"detail": "Formato de fecha u hora invalido."}, status=400)
+        return json_response({"detail": "Formato de fecha u hora inválido."}, status=400)
     if new_date_time <= timezone.now():
         return json_response({"detail": "La nueva fecha y hora debe ser futura."}, status=400)
 
@@ -3085,7 +3098,7 @@ def admin_reschedule_appointment(request, appointment_id):
     appointment.estado = CitaMedica.Estado.PROGRAMADA
     appointment.verif_biometria = False
     appointment.metodo_confirmacion = ""
-    appointment.detalles_cita = "Reserva reprogramada desde administracion."
+    appointment.detalles_cita = "Reserva reprogramada desde administración."
     appointment.save(update_fields=["fecha_hora", "estado", "verif_biometria", "metodo_confirmacion", "detalles_cita", "updated_at"])
     client_user = appointment.operacion.paciente.usuario
     create_notification(recipient=client_user, branch=appointment.sucursal, type=Notification.Type.CLIENT_APPOINTMENT_RESCHEDULED, title="Cita reprogramada", message=f"Tu cita fue reprogramada para {_datetime_label(appointment.fecha_hora)}.", action_url="/cliente/reservas", source_event="appointment.rescheduled", source_entity_type="appointment", source_entity_id=appointment.id, created_by_type="admin", created_by_id=request.user.id)
@@ -3111,12 +3124,12 @@ def admin_confirm_appointment_biometric(request, appointment_id):
     if not appointment:
         return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
 
-    if appointment.estado != CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
-        return json_response({"detail": "Solo se pueden confirmar citas pendientes de biometria."}, status=400)
+    if appointment.estado != CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION:
+        return json_response({"detail": "Solo se pueden confirmar citas pendientes de confirmación."}, status=400)
 
     payload = load_payload(request)
     if payload is None:
-        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON válido."}, status=400)
 
     captured_template = (payload.get("template") or "").strip()
     try:
@@ -3170,6 +3183,41 @@ def admin_confirm_appointment_biometric(request, appointment_id):
 
 @require_POST
 @admin_required
+@transaction.atomic
+def admin_cancel_appointment_verification(request, appointment_id):
+    appointment = (
+        CitaMedica.objects.select_related(
+            "operacion__paciente__usuario",
+            "operacion__servicio_config__tipo_servicio",
+            "operacion__servicio_config__proc_estetico",
+        )
+        .filter(pk=appointment_id)
+        .first()
+    )
+    if not appointment:
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
+    if appointment.estado != CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION:
+        return json_response({"detail": "Solo se puede cancelar la verificacion de citas pendientes."}, status=400)
+
+    appointment.estado = CitaMedica.Estado.PROGRAMADA
+    appointment.verif_biometria = False
+    appointment.save(update_fields=["estado", "verif_biometria", "updated_at"])
+
+    return json_response({
+        "detail": "La verificacion fue cancelada. La cita volvio a estado Programada.",
+        "appointment": {
+            "id": f"CIT-{appointment.pk:04d}",
+            "rawId": appointment.pk,
+            "dateTime": _datetime_label(appointment.fecha_hora),
+            "operation": procedure_name(appointment.operacion),
+            "specialist": "Sin asignar",
+            "status": appointment.get_estado_display(),
+        },
+    })
+
+
+@require_POST
+@admin_required
 def admin_crear_prospecto(request):
     def _capitalize_first_letter(value):
         text = (value or "").strip()
@@ -3180,7 +3228,7 @@ def admin_crear_prospecto(request):
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
-        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON válido."}, status=400)
 
     primer_nombre = _capitalize_first_letter(payload.get("primerNombre") or payload.get("nombres"))
     segundo_nombre = _capitalize_first_letter(payload.get("segundoNombre"))
@@ -3978,7 +4026,7 @@ def admin_equipo(request):
 
     upcoming_appointments_qs = CitaMedica.objects.filter(fecha_hora__gte=timezone.now())
     pending_biometric_qs = CitaMedica.objects.filter(
-        estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA
+        estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION
     )
     
     if branch:
@@ -4627,6 +4675,7 @@ def admin_branch_wizard_finalize(request):
             "branchId": branch.id,
             "adminUserId": admin_user.id,
             "tabletKioskId": kiosko.id,
+            "tabletKioskCode": kiosko.codigo,
         },
         status=201,
     )
@@ -4688,13 +4737,23 @@ def admin_branch_management_toggle(request, branch_id):
             return json_response({"detail": "Debes indicar si la sucursal quedará activa o inactiva."}, status=400)
         impact = _branch_deactivation_impact(branch)
         has_pending = any(impact.values())
-        if active is False and has_pending and not force:
+        if active is False and has_pending:
             return json_response(
-                {"detail": "La sucursal tiene pendientes operativos.", "impact": impact, "requiresConfirmation": True},
+                {"detail": "La sucursal tiene pendientes operativos.", "impact": impact},
                 status=409,
             )
         if active is True and not _active_branch_has_any_admin(branch):
             return json_response({"detail": "No puedes activar una sucursal sin un administrador asignado."}, status=409)
+        if active is False:
+            branch_admin = Usuario.objects.filter(
+                rol__rol="ADMIN_SUCURSAL",
+                sucursal=branch,
+                is_active=True,
+            ).first()
+            if branch_admin:
+                branch_admin.is_active = False
+                branch_admin.sucursal = None
+                branch_admin.save(update_fields=["is_active", "sucursal", "updated_at"])
         branch.activa = active
         branch.save(update_fields=["activa", "updated_at"])
         _log_branch_admin_audit(
@@ -4702,7 +4761,7 @@ def admin_branch_management_toggle(request, branch_id):
             branch=branch,
             action=BranchAdminAuditLog.Action.TOGGLE_BRANCH,
             detail=f"Sucursal {'activada' if active else 'desactivada'}.",
-            metadata={"active": active, "force": force, "impact": impact},
+            metadata={"active": active, "force": force, "impact": impact, "adminDeactivated": branch_admin.id if active is False and branch_admin else None},
         )
         return json_response(
             {

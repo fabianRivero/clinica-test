@@ -189,6 +189,8 @@ class PagosViewSet(viewsets.ViewSet):
             .get(pk=payment.pk)
         )
 
+        old_state = payment.estado_verificacion if payment.pk else None
+
         if status_value == PagoRealizado.EstadoVerificacion.APROBADO:
             create_notification(
                 recipient=payment.cuota.operacion.paciente.usuario,
@@ -217,6 +219,35 @@ class PagosViewSet(viewsets.ViewSet):
                 created_by_type="admin",
                 created_by_id=request.user.id,
             )
+        elif status_value == PagoRealizado.EstadoVerificacion.CANCELADO:
+            create_notification(
+                recipient=payment.cuota.operacion.paciente.usuario,
+                branch=payment.cuota.operacion.paciente.sucursal_registro,
+                type=Notification.Type.CLIENT_PAYMENT_CANCELLED,
+                title="Pago cancelado",
+                message="Tu pago fue cancelado por administracion. Contacta a administracion para mas detalles.",
+                action_url="/cliente/pagos",
+                source_event="payment.cancelled",
+                source_entity_type="payment",
+                source_entity_id=payment.id,
+                created_by_type="admin",
+                created_by_id=request.user.id,
+            )
+        elif status_value == PagoRealizado.EstadoVerificacion.PENDIENTE:
+            if old_state != PagoRealizado.EstadoVerificacion.PENDIENTE and old_state is not None:
+                create_notification(
+                    recipient=payment.cuota.operacion.paciente.usuario,
+                    branch=payment.cuota.operacion.paciente.sucursal_registro,
+                    type=Notification.Type.CLIENT_PAYMENT_PENDING_REVERSION,
+                    title="Pago vuelto a pendiente",
+                    message="Tu pago fue vuelto a estado pendiente por administracion.",
+                    action_url="/cliente/pagos",
+                    source_event="payment.reverted_to_pending",
+                    source_entity_type="payment",
+                    source_entity_id=payment.id,
+                    created_by_type="admin",
+                    created_by_id=request.user.id,
+                )
 
         detail_map = {
             PagoRealizado.EstadoVerificacion.PENDIENTE: "El pago volvio a estado pendiente.",

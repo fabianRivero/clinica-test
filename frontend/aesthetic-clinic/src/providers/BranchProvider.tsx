@@ -46,8 +46,14 @@ export function BranchProvider({ children }: { children: ReactNode }) {
           const locked = response.branches.find((b) => b.id === lockedBranchId)
           applyActiveBranch(locked || response.branches[0])
         } else if (!activeBranch) {
-          const principal = response.branches.find((b) => b.es_principal)
-          applyActiveBranch(principal || response.branches[0])
+          // Admin general con sucursal asignada: usar esa como default
+          if (user?.branchId) {
+            const userBranch = response.branches.find((b) => b.id === user.branchId)
+            applyActiveBranch(userBranch || response.branches[0])
+          } else {
+            const principal = response.branches.find((b) => b.es_principal)
+            applyActiveBranch(principal || response.branches[0])
+          }
         } else {
           const stillExists = response.branches.find((b) => b.id === activeBranch.id)
           if (!stillExists) {
@@ -65,7 +71,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [activeBranch, applyActiveBranch, lockedBranchId])
+  }, [activeBranch, applyActiveBranch, lockedBranchId, user?.branchId])
 
   useEffect(() => {
     void fetchBranches()

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { AdminRelationshipTabs } from '../../../components/admin/AdminRelationshipTabs'
@@ -11,6 +12,7 @@ import { ClientFreeMedicalAppointmentSection } from './ClientFreeMedicalAppointm
 import { ClientAppointmentSection } from './ClientAppointmentSection'
 import { ClientPaymentSection } from './ClientPaymentSection'
 import { ClientOperationList } from './ClientOperationList'
+import { ClientProfileModal } from './ClientProfileModal'
 
 export function AdminClientDetailPage() {
   const { clientId = '' } = useParams()
@@ -70,6 +72,7 @@ export function AdminClientDetailPage() {
     handleCancelAppointment,
     handleMarkPendingBiometric,
     handleConfirmBiometric,
+    handleCancelFromVerification,
     handleCheckRescheduleAvailability,
     handleRescheduleAppointment,
 
@@ -91,6 +94,8 @@ export function AdminClientDetailPage() {
     pendingQuotaProcedures,
     filteredPendingQuotas,
   } = useClientDetail(clientId)
+
+  const [profileModalOpen, setProfileModalOpen] = useState(false)
 
   if (isLoading && !data) {
     return (
@@ -140,7 +145,8 @@ export function AdminClientDetailPage() {
                 handleMigrateClient(Number(targetBranchId))
               }
             }
-          }] : [])
+          }] : []),
+          { label: 'Ver perfil del cliente', variant: 'ghost' as const, onClick: () => setProfileModalOpen(true) }
         ]}
       />
 
@@ -222,6 +228,7 @@ export function AdminClientDetailPage() {
         onCancelAppointment={handleCancelAppointment}
         onMarkPendingBiometric={handleMarkPendingBiometric}
         onConfirmBiometric={handleConfirmBiometric}
+        onCancelFromVerification={handleCancelFromVerification}
         onSetRescheduleAppointment={(id) => { setRescheduleAppointmentId(id); setRescheduleCheck(null) }}
         onRescheduleDateChange={(v) => { setRescheduleDate(v); setRescheduleCheck(null) }}
         onRescheduleTimeChange={(v) => { setRescheduleTime(v); setRescheduleCheck(null) }}
@@ -269,6 +276,12 @@ export function AdminClientDetailPage() {
       />
 
       <ConfirmDialogModal />
+
+      <ClientProfileModal
+        clientId={clientId}
+        isOpen={profileModalOpen}
+        onClose={() => setProfileModalOpen(false)}
+      />
     </div>
   )
 }

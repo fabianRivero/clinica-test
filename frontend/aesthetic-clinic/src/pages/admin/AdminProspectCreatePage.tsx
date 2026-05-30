@@ -192,6 +192,7 @@ export function AdminProspectCreatePage() {
             <input
               className="input"
               name="telefono"
+              type="tel"
               onChange={handleChange}
               placeholder="Opcional"
               value={form.telefono}

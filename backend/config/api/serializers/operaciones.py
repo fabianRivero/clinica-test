@@ -25,7 +25,7 @@ class AppointmentStatusUpdateSerializer(serializers.Serializer):
         choices=[
             "PROGRAMADA",
             "CONFIRMADA",
-            "REALIZADA_PENDIENTE_BIOMETRIA",
+            "REALIZADA_PENDIENTE_VERIFICACION",
             "CANCELADA",
             "NO_ASISTIO",
         ],

@@ -12,6 +12,8 @@ from django.views.decorators.http import require_GET, require_POST
 
 from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
 from clinical.models import AnalisisEstetico
+from notifications.models import Notification
+from notifications.services import create_notification, admins_for_specialist_branch
 from config.api_helpers import (
     currency,
     date_label,
@@ -29,7 +31,7 @@ from operations.scheduling import mark_expired_programmed_appointments_as_no_sho
 RESERVATION_WINDOW_DAYS = 35
 BLOCKING_RESERVATION_STATES = {
     CitaMedica.Estado.PROGRAMADA,
-    CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+    CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
     CitaMedica.Estado.CONFIRMADA,
 }
 
@@ -157,7 +159,7 @@ def _quota_tone(cuota):
 def _appointment_tone(cita):
     if cita.estado == CitaMedica.Estado.CONFIRMADA:
         return "approved"
-    if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+    if cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION:
         return "warning"
     if cita.estado == CitaMedica.Estado.CANCELADA:
         return "danger"
@@ -174,6 +176,16 @@ def _reserve_message(operacion):
 
 def _operation_item(operacion):
     next_appointment = _next_appointment(operacion)
+    zone = ", ".join(
+        [value for value in [operacion.zona_general, operacion.zona_especifica] if value]
+    ) or "Sin zona registrada"
+    sessions_confirmed = operacion.sesiones_confirmadas
+    sessions_total = operacion.sesiones_totales
+    # Label for operation select: "#ID - Procedure | Zone | sessions (X/Y) | Status"
+    select_label = (
+        f"#{operacion.pk} - {procedure_name(operacion)} | {zone} | "
+        f"{sessions_confirmed}/{sessions_total} ses. | {operacion.get_estado_display()}"
+    )
     return {
         "id": f"OP-{operacion.pk:04d}",
         "rawId": operacion.pk,
@@ -191,18 +203,15 @@ def _operation_item(operacion):
             else "primary"
         ),
         "price": currency(operacion.precio_total),
-        "zone": ", ".join(
-            [value for value in [operacion.zona_general, operacion.zona_especifica] if value]
-        )
-        or "Sin zona registrada",
+        "zone": zone,
         "startedAt": date_label(operacion.fecha_inicio),
         "endedAt": date_label(operacion.fecha_final) if operacion.fecha_final else "En curso",
         "nextAppointment": datetime_label(next_appointment.fecha_hora) if next_appointment else "Sin cita futura",
         "recommendations": operacion.recomendaciones or "Sin recomendaciones registradas.",
         "details": operacion.detalles_op or "Sin detalle operativo.",
         "sessions": {
-            "total": operacion.sesiones_totales,
-            "confirmed": operacion.sesiones_confirmadas,
+            "total": sessions_total,
+            "confirmed": sessions_confirmed,
             "pendingBiometric": operacion.sesiones_pendientes_confirmacion,
             "reserved": operacion.reservas_activas,
             "available": operacion.sesiones_disponibles,
@@ -214,6 +223,7 @@ def _operation_item(operacion):
             f"{operacion.cuotas_plan_pagos.filter(estado=CuotaPlanPago.Estado.PAGADO).count()}"
             f"/{operacion.cuotas_plan_pagos.count()} cuota(s) pagadas"
         ),
+        "selectLabel": select_label,
     }
 
 
@@ -395,7 +405,8 @@ def _appointment_item(cita):
         "details": cita.detalles_cita or "Sin notas adicionales.",
         "canManage": can_manage,
         "canMarkPendingBiometric": cita.estado == CitaMedica.Estado.PROGRAMADA,
-        "canConfirmBiometric": cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+        "canConfirmBiometric": cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
+        "canCancelFromVerification": cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         "biometricMockTemplate": getattr(cita.operacion.paciente, "huella_biometrica", None).template_biometrico
         if hasattr(cita.operacion.paciente, "huella_biometrica")
         and cita.operacion.paciente.huella_biometrica.activo
@@ -581,8 +592,8 @@ def client_dashboard(request):
                 "client-upcoming-appointments",
                 "Proximas citas",
                 len(upcoming_appointments),
-                f"{appointments_qs.filter(estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA).count()} pendientes de biometria",
-                "danger" if appointments_qs.filter(estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA).exists() else "primary",
+                f"{appointments_qs.filter(estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION).count()} pendientes de biometria",
+                "danger" if appointments_qs.filter(estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION).exists() else "primary",
             ),
         ],
         "alerts": _client_alerts(
@@ -745,6 +756,22 @@ def client_upload_payment_receipt(request, quota_id):
             comprobante_url=receipt_file,
             detalles_pago=details or "Comprobante enviado por el cliente desde el portal.",
         )
+        sucursal = payment.cuota.operacion.paciente.sucursal_registro
+        for admin in admins_for_specialist_branch(sucursal):
+            create_notification(
+                recipient=admin,
+                branch=sucursal,
+                type=Notification.Type.ADMIN_PAYMENT_PENDING_CONFIRMATION,
+                title="Nuevo pago pendiente de revision",
+                message=f"El cliente {payment.cuota.operacion.paciente.usuario.get_full_name()} "
+                        f"envio un comprobante de Bs {payment.monto_pagado}.",
+                action_url="/admin/pagos",
+                source_event="payment.pending_submission",
+                source_entity_type="payment",
+                source_entity_id=payment.id,
+                created_by_type="client",
+                created_by_id=request.user.id,
+            )
         detail = "El comprobante fue enviado correctamente y quedo pendiente de revision."
 
     cuota.refresh_from_db(fields=["estado"])
@@ -792,7 +819,7 @@ def client_reservations(request):
             metric(
                 "client-reservations-biometric",
                 "Pendientes de biometria",
-                appointments_qs.filter(estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA).count(),
+                appointments_qs.filter(estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION).count(),
                 "Citas realizadas que esperan cierre final",
                 "danger",
             ),
@@ -811,20 +838,23 @@ def client_tablet_current_appointment(request):
     now = timezone.now()
     today = timezone.localdate()
     appointments_qs = (
-        CitaMedica.objects.filter(operacion__paciente=request.cliente)
+        CitaMedica.objects.filter(
+            operacion__paciente=request.cliente,
+            sucursal=request.tablet_kiosk.sucursal,
+        )
         .select_related("operacion__servicio_config__tipo_servicio", "operacion__servicio_config__proc_estetico")
         .order_by("fecha_hora")
     )
     today_appointments = appointments_qs.filter(
             estado__in=[
-                CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+                CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
                 CitaMedica.Estado.PROGRAMADA,
             ],
             fecha_hora__date=today,
         )
     current = today_appointments.first()
     pending_count = appointments_qs.filter(
-        estado__in=[CitaMedica.Estado.PROGRAMADA, CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA],
+        estado__in=[CitaMedica.Estado.PROGRAMADA, CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION],
         fecha_hora__gte=now,
     ).count()
     procedure_options = []
@@ -889,9 +919,15 @@ def tablet_client_login(request):
     user = authenticate(request, username=username, password=password)
     if not user or not user.es_cliente:
         return json_response({"detail": "Credenciales de cliente invalidas."}, status=401)
-    cliente = Cliente.objects.filter(usuario=user).first()
+    cliente = Cliente.objects.filter(usuario=user).select_related("usuario").first()
     if not cliente:
         return json_response({"detail": "No existe un perfil de cliente para esta cuenta."}, status=404)
+    # Validate the client belongs to this tablet's branch (data isolation)
+    kiosk_sucursal = request.tablet_kiosk.sucursal
+    cliente_sucursal = getattr(cliente, "sucursal_registro", None)
+    cliente_sucursal_id = cliente_sucursal.id if cliente_sucursal else None
+    if cliente_sucursal_id is None or cliente_sucursal_id != kiosk_sucursal.id:
+        return json_response({"detail": "Este cliente no pertenece a la sucursal de esta tablet."}, status=403)
     request.session["tablet_client_id"] = cliente.id
     return json_response({"detail": "Cliente autenticado en tablet.", "clientId": cliente.id, "fullName": user.nombre_completo or user.username})
 
@@ -915,7 +951,7 @@ def client_tablet_confirm_current_appointment(request):
         .select_related("operacion__paciente", "sucursal")
         .filter(
             operacion__paciente=request.cliente,
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
             fecha_hora__date=today,
         )
         .order_by("fecha_hora")
@@ -923,7 +959,7 @@ def client_tablet_confirm_current_appointment(request):
     )
     if not cita:
         return json_response(
-            {"detail": "No tienes una cita pendiente de biometria para confirmar hoy."},
+            {"detail": "No tienes una cita pendiente de confirmación para confirmar hoy."},
             status=404,
         )
 
@@ -970,7 +1006,8 @@ def client_tablet_confirm_appointment_for_operation(request):
         .filter(
             operacion__paciente=request.cliente,
             operacion_id=operation_id,
-            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+            sucursal=request.tablet_kiosk.sucursal,
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
             fecha_hora__date=today,
         )
         .order_by("fecha_hora")
@@ -978,7 +1015,7 @@ def client_tablet_confirm_appointment_for_operation(request):
     )
     if not cita:
         return json_response(
-            {"detail": "No tienes una cita pendiente de biometria hoy para el procedimiento seleccionado."},
+            {"detail": "No tienes una cita pendiente de confirmación para confirmar hoy."},
             status=404,
         )
 
@@ -1050,7 +1087,8 @@ def client_tablet_sync_offline_events(request):
             .filter(
                 operacion__paciente=request.cliente,
                 operacion_id=operation_id,
-                estado=CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA,
+                sucursal=request.tablet_kiosk.sucursal,
+                estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
                 fecha_hora__date=today,
             )
             .order_by("fecha_hora")
@@ -1060,7 +1098,7 @@ def client_tablet_sync_offline_events(request):
         if not cita:
             fallback_cita = (
                 CitaMedica.objects.select_related("operacion__paciente", "sucursal")
-                .filter(operacion__paciente=request.cliente, operacion_id=operation_id, fecha_hora__date=today)
+                .filter(operacion__paciente=request.cliente, operacion_id=operation_id, sucursal=request.tablet_kiosk.sucursal, fecha_hora__date=today)
                 .order_by("fecha_hora")
                 .first()
             )
@@ -1338,7 +1376,7 @@ def client_confirm_pending_appointment_tablet(request, appointment_id):
     )
     if not cita:
         return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
-    if cita.estado != CitaMedica.Estado.REALIZADA_PENDIENTE_BIOMETRIA:
+    if cita.estado != CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION:
         return json_response(
             {"detail": "Solo se pueden confirmar por tablet citas pendientes de biometria."},
             status=400,

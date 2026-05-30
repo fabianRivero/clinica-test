@@ -17,6 +17,8 @@ import {
 import { buildEmptyExceptionForm } from './availabilityHelpers'
 import { ExceptionForm } from './ExceptionForm'
 
+const PAGE_SIZE = 10
+
 export function AdminAvailabilityBlocksPage() {
   const { showNotification } = useNotifications()
   const { activeBranch } = useBranchContext()
@@ -28,6 +30,16 @@ export function AdminAvailabilityBlocksPage() {
   const [exceptionForm, setExceptionForm] = useState(buildEmptyExceptionForm(activeBranch?.id || 1))
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Filters for exceptions list
+  const [exceptionSpecialistFilter, setExceptionSpecialistFilter] = useState<string>('')
+  const [exceptionTypeFilter, setExceptionTypeFilter] = useState<string>('')
+
+  // Pagination for exceptions
+  const [exceptionPage, setExceptionPage] = useState(1)
+
+  // Pagination for closure days
+  const [closurePage, setClosurePage] = useState(1)
+
   // Filtrar los datos por la sucursal activa
   const branchExceptions = data?.exceptions.filter((e) => e.branchId === activeBranch?.id) || []
 
@@ -35,6 +47,44 @@ export function AdminAvailabilityBlocksPage() {
     setExceptionForm(buildEmptyExceptionForm(activeBranch?.id || 1))
     setGlobalForm({ date: '', detail: '' })
   }, [activeBranch?.id])
+
+  // Reset pages when branch changes
+  useEffect(() => {
+    setExceptionPage(1)
+    setClosurePage(1)
+  }, [activeBranch?.id])
+
+  // Filtered and paginated exceptions
+  const filteredExceptions = branchExceptions.filter((ex) => {
+    if (exceptionSpecialistFilter && ex.specialistId.toString() !== exceptionSpecialistFilter) return false
+    if (exceptionTypeFilter && ex.type !== exceptionTypeFilter) return false
+    return true
+  })
+
+  const totalExceptionPages = Math.ceil(filteredExceptions.length / PAGE_SIZE)
+  const visibleExceptions = filteredExceptions.slice(0, exceptionPage * PAGE_SIZE)
+
+  // Filtered and paginated closure days
+  const filteredClosures = data?.globalBlocks || []
+
+  const totalClosurePages = Math.ceil(filteredClosures.length / PAGE_SIZE)
+  const visibleClosures = filteredClosures.slice(0, closurePage * PAGE_SIZE)
+
+  function showMoreExceptions() {
+    setExceptionPage((p) => Math.min(p + 1, totalExceptionPages))
+  }
+
+  function showLessExceptions() {
+    setExceptionPage((p) => Math.max(1, p - 1))
+  }
+
+  function showMoreClosures() {
+    setClosurePage((p) => Math.min(p + 1, totalClosurePages))
+  }
+
+  function showLessClosures() {
+    setClosurePage((p) => Math.max(1, p - 1))
+  }
 
   async function handleGlobalBlock(e: FormEvent) {
     e.preventDefault()
@@ -140,8 +190,9 @@ export function AdminAvailabilityBlocksPage() {
       {error && !data && activeBranch ? <DataState title="Error de conexion" message={error} tone="danger" /> : null}
 
       {data && activeBranch ? (
-        <div className="dashboard-grid">
-          <div className="form-stack">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* Forms row - side by side */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
             <SectionCard title="Excepciones de Especialistas" description="Añade disponibilidad o bloquea dias para multiples especialistas a la vez.">
               <ExceptionForm
                 exceptionForm={exceptionForm}
@@ -182,48 +233,88 @@ export function AdminAvailabilityBlocksPage() {
             </SectionCard>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* Lists row - side by side */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
             <SectionCard title="Excepciones Activas en Sucursal">
               {branchExceptions.length ? (
-                <div className="table-card">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Especialista</th>
-                        <th>Tipo</th>
-                        <th>Fecha y Hora</th>
-                        <th>Accion</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {branchExceptions.map((ex) => {
-                        const spec = data.filters.specialists.find((s) => s.id === ex.specialistId)
-                        return (
-                          <tr key={ex.id}>
-                            <td>{spec?.label || ex.specialistId}</td>
-                            <td>
-                              <StatusBadge tone={ex.type === 'BLOQUEAR' ? 'danger' : 'success'}>
-                                {ex.typeLabel}
-                              </StatusBadge>
-                            </td>
-                            <td>
-                              {ex.dateLabel} | {ex.startTime === '00:00' && ex.endTime === '00:00' ? 'Todo el dia' : `${ex.startTime.slice(0, 5)} - ${ex.endTime.slice(0, 5)}`}
-                            </td>
-                            <td>
-                              <button
-                                className="button button--ghost button--compact"
-                                style={{ color: 'var(--c-danger-600)' }}
-                                onClick={() => void handleDeleteException(ex.id)}
-                              >
-                                Eliminar
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                    <select
+                      className="input"
+                      value={exceptionSpecialistFilter}
+                      onChange={(e) => { setExceptionSpecialistFilter(e.target.value); setExceptionPage(1) }}
+                      style={{ minWidth: '150px' }}
+                    >
+                      <option value="">Todos los especialistas</option>
+                      {data.filters.specialists.map((sp) => (
+                        <option key={sp.id} value={sp.id.toString()}>{sp.label}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="input"
+                      value={exceptionTypeFilter}
+                      onChange={(e) => { setExceptionTypeFilter(e.target.value); setExceptionPage(1) }}
+                      style={{ minWidth: '150px' }}
+                    >
+                      <option value="">Todos los tipos</option>
+                      <option value="BLOQUEAR">Bloquear</option>
+                      <option value="AGREGAR">Agregar</option>
+                    </select>
+                  </div>
+                  <div className="table-card">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Especialista</th>
+                          <th>Tipo</th>
+                          <th>Fecha y Hora</th>
+                          <th>Accion</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleExceptions.map((ex) => {
+                          const spec = data.filters.specialists.find((s) => s.id === ex.specialistId)
+                          return (
+                            <tr key={ex.id}>
+                              <td>{spec?.label || ex.specialistId}</td>
+                              <td>
+                                <StatusBadge tone={ex.type === 'BLOQUEAR' ? 'danger' : 'success'}>
+                                  {ex.typeLabel}
+                                </StatusBadge>
+                              </td>
+                              <td>
+                                {ex.dateLabel} | {ex.startTime === '00:00' && ex.endTime === '00:00' ? 'Todo el dia' : `${ex.startTime.slice(0, 5)} - ${ex.endTime.slice(0, 5)}`}
+                              </td>
+                              <td>
+                                <button
+                                  className="button button--ghost button--compact"
+                                  style={{ color: 'var(--c-danger-600)' }}
+                                  onClick={() => void handleDeleteException(ex.id)}
+                                >
+                                  Eliminar
+                                </button>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {filteredExceptions.length > PAGE_SIZE && (
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', marginTop: '1rem' }}>
+                      {exceptionPage > 1 && (
+                        <button className="button button--ghost" onClick={showLessExceptions}>
+                          Mostrar menos
+                        </button>
+                      )}
+                      {exceptionPage < totalExceptionPages && (
+                        <button className="button button--ghost" onClick={showMoreExceptions}>
+                          Mostrar mas
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
               ) : (
                 <DataState title="Sin excepciones activas" message="No hay bloqueos ni horas extra para especialistas." />
               )}
@@ -231,30 +322,46 @@ export function AdminAvailabilityBlocksPage() {
 
             <SectionCard title={`Dias de Cierre - ${activeBranch.nombre}`}>
               {data.globalBlocks.length ? (
-                <div className="table-card">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Fecha</th>
-                        <th>Motivo</th>
-                        <th>Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.globalBlocks.map((block) => (
-                        <tr key={block.id}>
-                          <td><strong>{block.dateLabel}</strong></td>
-                          <td>{block.detail}</td>
-                          <td>
-                            <button className="button button--ghost button--compact" onClick={() => void handleGlobalRestore(block.date)}>
-                              Restaurar dia
-                            </button>
-                          </td>
+                <>
+                  <div className="table-card">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Motivo</th>
+                          <th>Acciones</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {visibleClosures.map((block) => (
+                          <tr key={block.id}>
+                            <td><strong>{block.dateLabel}</strong></td>
+                            <td>{block.detail}</td>
+                            <td>
+                              <button className="button button--ghost button--compact" onClick={() => void handleGlobalRestore(block.date)}>
+                                Restaurar dia
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {filteredClosures.length > PAGE_SIZE && (
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '0.75rem', marginTop: '1rem' }}>
+                      {closurePage > 1 && (
+                        <button className="button button--ghost" onClick={showLessClosures}>
+                          Mostrar menos
+                        </button>
+                      )}
+                      {closurePage < totalClosurePages && (
+                        <button className="button button--ghost" onClick={showMoreClosures}>
+                          Mostrar mas
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
               ) : (
                 <DataState title="Sin cierres de sucursal" message="Esta sucursal opera normalmente." />
               )}
