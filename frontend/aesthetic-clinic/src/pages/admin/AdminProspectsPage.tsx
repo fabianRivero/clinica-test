@@ -255,7 +255,6 @@ export function AdminProspectsPage() {
         description="Administra prospectos pasajeros, su avance comercial y el momento en que pasan a clientes formales."
         actions={[
           { label: 'Registrar prospecto', variant: 'primary', to: '/admin/prospectos/nuevo' },
-          { label: 'Importar contactos', variant: 'ghost' },
         ]}
       />
 
