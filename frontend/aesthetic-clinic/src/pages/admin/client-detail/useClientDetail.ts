@@ -252,11 +252,15 @@ export function useClientDetail(clientId: string) {
   }
 
   async function handleReserve() {
-    if (!data || !effectiveOperationId || !activeBranch) return
+    const operationId = selectedOperationId
+    if (!data || !operationId || !activeBranch) {
+      showNotification({ title: 'Atencion', message: 'Selecciona un procedimiento.', tone: 'warning' })
+      return
+    }
     setIsBookingKey('booking')
 
     try {
-      const response = await createAdminClientReservation(data.client.rawId, effectiveOperationId, {
+      const response = await createAdminClientReservation(data.client.rawId, operationId, {
         branchId: activeBranch.id,
         dateTime: `${selectedDate}T${selectedTime}:00`
       })

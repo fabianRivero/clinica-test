@@ -285,6 +285,11 @@ urlpatterns = [
         admin_cancel_appointment_verification,
         name="admin-appointment-cancel-verification-api",
     ),
+    path(
+        "citas/<int:appointment_id>/reprogramar/",
+        admin_reschedule_appointment,
+        name="admin-appointment-reschedule-api",
+    ),
     path("citas/", include(citas_d8_router.urls)),
     path("disponibilidad/", admin_availability, name="admin-availability-api"),
     path(

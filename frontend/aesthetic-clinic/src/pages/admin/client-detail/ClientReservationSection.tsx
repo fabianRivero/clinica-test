@@ -46,6 +46,7 @@ export function ClientReservationSection({
           <label className="field field--full">
             <span>Procedimiento</span>
             <select className="input" value={effectiveOperationId} onChange={(event) => onOperationChange(Number(event.target.value))}>
+              <option value="">Elegir procedimiento...</option>
               {reservableOperations.map((operation: any) => (
                 <option key={operation.id} value={operation.rawId}>
                   {operation.selectLabel}

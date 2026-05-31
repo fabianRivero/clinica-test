@@ -2468,10 +2468,6 @@
   color: var(--color-text-soft);
 }
 
-._text-danger {
-  color: var(--color-danger);
-}
-
 ._text-warning {
   color: var(--color-warning);
 }
@@ -2616,3 +2612,8 @@
 
 // Line height
 ._leading-tight { line-height: 1.1; }
+
+// Text danger — must be last to override .field span specificity
+._text-danger {
+  color: var(--color-danger) !important;
+}

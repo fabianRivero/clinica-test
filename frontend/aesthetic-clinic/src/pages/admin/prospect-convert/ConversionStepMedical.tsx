@@ -273,7 +273,7 @@ export function ConversionStepMedical({
         </div>
         <div className="form-grid">
           <label className="field">
-            <span>Tipo de piel</span>
+            <span>Tipo de piel <span className="_text-danger">*</span></span>
             <select
               className="input"
               value={medicalForm.analisisEstetico.tipoPielId}
@@ -291,7 +291,7 @@ export function ConversionStepMedical({
             ) : null}
           </label>
           <label className="field">
-            <span>Grado de deshidratacion</span>
+            <span>Grado de deshidratacion <span className="_text-danger">*</span></span>
             <select
               className="input"
               value={medicalForm.analisisEstetico.gradoDeshidratacionId}
@@ -309,7 +309,7 @@ export function ConversionStepMedical({
             ) : null}
           </label>
           <label className="field">
-            <span>Grosor de piel</span>
+            <span>Grosor de piel <span className="_text-danger">*</span></span>
             <select
               className="input"
               value={medicalForm.analisisEstetico.grosorPielId}

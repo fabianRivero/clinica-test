@@ -233,6 +233,9 @@ export function TabletKioskPage() {
                 </button>
               </article>
             ))}
+            <button className="button _mt-md" onClick={backToClientLogin}>
+              Cancelar y volver al inicio de cliente
+            </button>
           </div>
         )}
         {step === 'done' && (
