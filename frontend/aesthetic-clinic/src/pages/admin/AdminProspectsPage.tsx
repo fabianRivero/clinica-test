@@ -358,15 +358,16 @@ export function AdminProspectsPage() {
                           <td>{lead.state}</td>
                           <td>
                             {lead.state === 'Pasajero' ? (
-                              <div className="table-actions _flex-col _flex-gap-sm">
-                                <div className="_flex-gap-sm">
+                              <div className="table-actions" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
                                   <Link className="button button--primary button--compact" to={`/admin/prospectos/${lead.rawId}/convertir`}>
                                     Convertir
                                   </Link>
                                   {hasScheduled ? (
                                     <button
-                                      className="button button--secondary button--compact _opacity-50 _cursor-not-allowed"
+                                      className="button button--secondary button--compact"
                                       disabled
+                                      style={{ opacity: 0.5, cursor: 'not-allowed' }}
                                       title="Ya tiene una cita programada activa"
                                     >
                                       Agendar cita
@@ -407,7 +408,7 @@ export function AdminProspectsPage() {
                                     Ultima cita: {lead.medicalAppointments[0].dateTime} ({lead.medicalAppointments[0].status})
                                   </div>
                                 )}
-                                <span className="_text-muted">Convertido/Finalizado</span>
+                                <span style={{ color: 'var(--color-text-soft)' }}>Convertido/Finalizado</span>
                               </div>
                             )}
                           </td>
@@ -629,9 +630,10 @@ function BookingModal({
 
                 <button
                   type="button"
-                  className="button button--secondary _w-full"
+                  className="button button--secondary"
                   disabled={!selectedDate || !selectedTime || isChecking}
                   onClick={() => void handleCheckConcurrency()}
+                  style={{ width: '100%' }}
                 >
                   {isChecking ? 'Verificando...' : 'Verificar Disponibilidad'}
                 </button>
@@ -643,12 +645,12 @@ function BookingModal({
                     </p>
 
                     {concurrencyInfo.appointments && concurrencyInfo.appointments.length > 0 ? (
-                      <div className="_mt-sm _border-left">
-                        <p className="_mb-sm"><strong>Citas simultáneas:</strong></p>
-                        <ul className="_text-sm _text-muted _list-unstyled">
+                      <div style={{ marginTop: '0.75rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--color-border)' }}>
+                        <p style={{ marginBottom: '0.5rem' }}><strong>Citas simultáneas:</strong></p>
+                        <ul style={{ fontSize: '0.82rem', color: 'var(--color-text-soft)', paddingLeft: '1.2rem', margin: 0 }}>
                           {concurrencyInfo.appointments.map((apt, idx) => (
-                            <li key={idx} className="_mb-xs">
-                              <span className="_font-medium">{apt.cliente_nombre ?? 'Cliente no registrado'}</span>
+                            <li key={idx} style={{ marginBottom: '0.3rem' }}>
+                              <span style={{ fontWeight: 500 }}>{apt.cliente_nombre ?? 'Cliente no registrado'}</span>
                               {' — '}
                               {apt.tratamiento_nombre ?? 'Sin tratamiento'}
                               {' — '}
@@ -668,13 +670,13 @@ function BookingModal({
                         </ul>
                       </div>
                     ) : (
-                      <p className="_text-sm _text-muted _mt-sm">Sin citas simultáneas</p>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--color-text-soft)', marginTop: '0.5rem' }}>Sin citas simultáneas</p>
                     )}
 
                     <p>
                       <strong>Especialistas en turno {concurrencyInfo.hora_seleccionada}:</strong>
                     </p>
-                    <ul className="_text-sm _text-muted _list-unstyled _mt-sm">
+                    <ul style={{ fontSize: '0.85rem', color: 'var(--color-text-soft)', paddingLeft: '1.2rem', margin: '0.5rem 0' }}>
                       {concurrencyInfo.presentes.map(esp => (
                         <li key={esp.id}>
                           {esp.usuario__primer_nombre} {esp.usuario__apellido_paterno} ({esp.especialidad})
@@ -690,9 +692,10 @@ function BookingModal({
 
                     <button
                       type="button"
-                      className="button button--primary _w-full _mt-md"
+                      className="button button--primary"
                       onClick={() => void onReserve()}
                       disabled={isBooking}
+                      style={{ width: '100%', marginTop: '1rem' }}
                     >
                       {isBooking ? 'Agendando...' : 'Confirmar Cita'}
                     </button>
@@ -749,9 +752,9 @@ function EditProspectModal({
           </button>
         </header>
 
-        <div className="booking-modal-body _p-lg">
+        <div className="booking-modal-body" style={{ padding: '2rem' }}>
           {!isEditable && (
-            <div className="form-error _mb-lg">
+            <div className="form-error" style={{ marginBottom: '1.5rem', background: 'var(--color-surface-alt)', color: 'var(--color-text)' }}>
               Los datos de este prospecto ya no son editables porque su estado es <strong>{prospect.state}</strong>.
             </div>
           )}
@@ -803,7 +806,7 @@ function EditProspectModal({
               />
             </label>
           </div>
-          <label className="field _mt-md">
+          <label className="field" style={{ marginTop: '1rem' }}>
             <span>Observaciones</span>
             <textarea
               className="input"
@@ -813,7 +816,7 @@ function EditProspectModal({
               disabled={!isEditable}
             />
           </label>
-          <label className="field _mt-md">
+          <label className="field" style={{ marginTop: '1rem' }}>
             <span>Estado del prospecto</span>
             <select
               className="input"
@@ -827,21 +830,22 @@ function EditProspectModal({
           </label>
 
           {prospect.medicalAppointments && prospect.medicalAppointments.length > 0 && (
-            <div className="_mt-lg _pt-md">
+            <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--color-border)', paddingTop: '1rem' }}>
               <h3>Historial de Citas (Etapa Prospecto)</h3>
-              <div className="_flex-col _flex-gap-md _mt-sm">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
                 {prospect.medicalAppointments.map((cita) => {
                   const currentStatusValue = tempStatuses[cita.rawId] || cita.statusValue;
                   const isBeingEdited = editingStatusId === cita.rawId;
 
                   return (
-                    <div key={cita.rawId} className="_flex-between _panel-card _flex-1">
-                        <div className="_font-bold">{cita.dateTime}</div>
-                        <div className="_mt-xs _flex-center _flex-gap-md">
+                    <div key={cita.rawId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--color-surface-alt)', borderRadius: '12px' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 'bold' }}>{cita.dateTime}</div>
+                        <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                           {isBeingEdited ? (
                             <select
-                              className="_p-xs _text-sm"
-                              style={{ height: 'auto', width: 'auto', minWidth: '140px' }}
+                              className="input"
+                              style={{ padding: '0.25rem 0.5rem', height: 'auto', fontSize: '0.85rem', width: 'auto', minWidth: '140px' }}
                               value={currentStatusValue}
                               onChange={(e) => {
                                 setTempStatuses(prev => ({ ...prev, [cita.rawId]: e.target.value }));
@@ -870,7 +874,8 @@ function EditProspectModal({
                               </StatusBadge>
                               {isEditable && (
                                 <button
-                                  className="button button--ghost button--compact _font-xs _p-xs"
+                                  className="button button--ghost button--compact"
+                                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
                                   onClick={() => setEditingStatusId(cita.rawId)}
                                 >
                                   Cambiar estado
@@ -912,7 +917,7 @@ function EditProspectModal({
           )}
         </div>
 
-        <div className="booking-modal-footer _footer-padding">
+        <div className="booking-modal-footer" style={{ padding: '1.5rem 2rem 3rem' }}>
           <button className="button button--ghost" onClick={onClose}>
             {isEditable ? 'Cancelar' : 'Cerrar'}
           </button>
