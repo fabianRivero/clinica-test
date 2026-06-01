@@ -45,8 +45,6 @@ interface ClientAppointmentSectionProps {
 
 export function ClientAppointmentSection({
   visibleAppointments,
-  appointmentMonth,
-  appointmentYear,
   changeAppointmentMonth,
   viewedMonthLabel,
   appointmentStatusFilter,

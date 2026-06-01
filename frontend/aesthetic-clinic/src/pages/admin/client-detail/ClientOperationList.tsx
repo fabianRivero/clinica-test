@@ -29,7 +29,6 @@ export function ClientOperationList({
   // Pagination props
   visibleOperations: externalVisibleOperations,
   visibleOperationsCount: externalVisibleCount,
-  setVisibleOperationsCount: externalSetVisibleCount,
   hasMoreOperations: externalHasMore,
   hasLessOperations: externalHasLess,
 }: ClientOperationListProps) {
@@ -42,16 +41,11 @@ export function ClientOperationList({
 
   const visibleOperations = externalVisibleOperations ?? filteredOperations.slice(0, internalVisibleCount)
   const visibleCount = externalVisibleCount ?? internalVisibleCount
-  const setVisibleCount = externalSetVisibleCount ?? setInternalVisibleCount
   const hasMore = externalHasMore ?? filteredOperations.length > internalVisibleCount
   const hasLess = externalHasLess ?? internalVisibleCount > 5
 
-  const showMoreHandler = externalSetVisibleCount
-    ? () => externalSetVisibleCount((c: number) => c + 5)
-    : showMore
-  const showLessHandler = externalSetVisibleCount
-    ? () => externalSetVisibleCount((c: number) => Math.max(5, c - 5))
-    : showLess
+  const showMoreHandler = showMore
+  const showLessHandler = showLess
 
   return (
     <SectionCard eyebrow="Tratamientos" title="Procedimientos del cliente" description="Resumen operativo de tratamientos activos e historicos.">

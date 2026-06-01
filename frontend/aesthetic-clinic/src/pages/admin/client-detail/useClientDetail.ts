@@ -102,7 +102,6 @@ export function useClientDetail(clientId: string) {
     return appointments.filter(a => {
       // Parse "DD/MM HH:MM" format
       const parts = a.dateTime.split(' ')[0].split('/') // ["DD", "MM"]
-      const appointmentDay = parseInt(parts[0], 10)
       const appointmentMonthNum = parseInt(parts[1], 10)
       const matchesMonth = appointmentMonthNum === appointmentMonth
       const matchesYear = true // No year in dateTime format, show all years
@@ -183,7 +182,7 @@ export function useClientDetail(clientId: string) {
     const confirmed = await confirm({
       title: 'Confirmar cita',
       message: '¿Está seguro que desea marcar esta cita como realizada?',
-      tone: 'success',
+      tone: 'info',
     })
     if (!confirmed) return
 
@@ -214,7 +213,7 @@ export function useClientDetail(clientId: string) {
       showNotification({
         title: 'Cita pendiente de verificación',
         message: response.detail,
-        tone: 'success',
+        tone: 'info',
       })
       reload()
     } catch (requestError) {

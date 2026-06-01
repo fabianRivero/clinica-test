@@ -18,18 +18,6 @@ import {
 import type { UpdateAdminPaymentStatusPayload } from '../../types/admin'
 import { monthNames } from './expenses/expenseUtils'
 
-function toComparableDate(value?: string) {
-  if (!value) return null
-  const normalized = value.trim()
-  const direct = new Date(normalized)
-  if (!Number.isNaN(direct.getTime())) return direct
-  const ddmmyyyy = normalized.match(/(\d{2})\/(\d{2})\/(\d{4})/)
-  if (!ddmmyyyy) return null
-  const [, dd, mm, yyyy] = ddmmyyyy
-  const parsed = new Date(`${yyyy}-${mm}-${dd}T00:00:00`)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
-}
-
 export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuotas' }) {
   const { activeBranch } = useBranchContext()
   const branchId = activeBranch?.id ?? null

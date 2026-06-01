@@ -9,7 +9,6 @@ import { DataState } from '../../../components/admin/DataState'
 import { useClientDetail } from './useClientDetail'
 import { ClientReservationSection } from './ClientReservationSection'
 import { ClientFreeMedicalAppointmentSection } from './ClientFreeMedicalAppointmentSection'
-import { ClientAppointmentSection } from './ClientAppointmentSection'
 import { ClientPaymentSection } from './ClientPaymentSection'
 import { ClientOperationList } from './ClientOperationList'
 import { ClientProfileModal } from './ClientProfileModal'
@@ -57,58 +56,23 @@ export function AdminClientDetailPage() {
     handleInactivateClient,
     handleMigrateClient,
 
-    // Appointment state
-    appointmentActionId,
-    rescheduleAppointmentId,
-    setRescheduleAppointmentId,
-    rescheduleDate,
-    setRescheduleDate,
-    rescheduleTime,
-    setRescheduleTime,
-    rescheduleCheck,
-    setRescheduleCheck,
-    isCheckingReschedule,
-    handleCancelAppointment,
-    handleCancelFreeMedicalAppointment,
-    handleConfirmFreeMedicalAppointment,
-    handleMarkPendingBiometric,
-    handleConfirmBiometric,
-    handleCancelFromVerification,
-    handleCheckRescheduleAvailability,
-    handleRescheduleAppointment,
-
     // Payment state
     paymentActionId,
     getPaymentNote,
     handlePaymentNoteChange,
     handlePaymentStatusUpdate,
 
-    // Operation state
-    operationStatusFilter,
-    setOperationStatusFilter,
-    operationStatuses,
-    filteredOperations,
-
     // Pending quota state
     pendingQuotaProcedureFilter,
-    setPendingQuotaProcedureFilter,
     pendingQuotaProcedures,
     filteredPendingQuotas,
+    setPendingQuotaProcedureFilter,
 
-    // Appointment month navigation & pagination
-    appointmentMonth,
-    appointmentYear,
-    changeAppointmentMonth,
-    viewedMonthLabel,
-    appointmentStatusFilter,
-    setAppointmentStatusFilter,
-    appointmentStatuses,
-    visibleAppointments,
-    visibleAppointmentCount,
-    setVisibleAppointmentCount,
-    filteredAppointments,
-    hasMore,
-    hasLess,
+    // Operation state
+    operationStatusFilter,
+    operationStatuses,
+    filteredOperations,
+    setOperationStatusFilter,
 
     // Payments pagination
     visiblePayments,
@@ -127,7 +91,6 @@ export function AdminClientDetailPage() {
     // Operations pagination
     visibleOperations,
     visibleOperationsCount,
-    setVisibleOperationsCount,
     hasMoreOperations,
     hasLessOperations,
   } = useClientDetail(clientId)
@@ -308,7 +271,6 @@ export function AdminClientDetailPage() {
       <ClientOperationList
         visibleOperations={visibleOperations}
         visibleOperationsCount={visibleOperationsCount}
-        setVisibleOperationsCount={setVisibleOperationsCount}
         hasMoreOperations={hasMoreOperations}
         hasLessOperations={hasLessOperations}
         operations={data.operations}

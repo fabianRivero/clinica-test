@@ -17,12 +17,12 @@ interface ClientPaymentSectionProps {
   // Pagination props
   visiblePayments: any[]
   visiblePaymentsCount: number
-  setVisiblePaymentsCount: (count: number) => void
+  setVisiblePaymentsCount: (count: number | ((prev: number) => number)) => void
   hasMorePayments: boolean
   hasLessPayments: boolean
 
   visiblePendingQuotasCount: number
-  setVisiblePendingQuotasCount: (count: number) => void
+  setVisiblePendingQuotasCount: (count: number | ((prev: number) => number)) => void
   hasMorePendingQuotas: boolean
   hasLessPendingQuotas: boolean
 }
@@ -82,10 +82,10 @@ export function ClientPaymentSection({
                     <span>Mostrando {Math.min(visiblePendingQuotasCount, filteredPendingQuotas.length)} de {filteredPendingQuotas.length} pagos pendientes</span>
                     <div>
                       {hasLessPendingQuotas && (
-                        <button type="button" className="button button--ghost" onClick={() => setVisiblePendingQuotasCount(c => c - 5)}>Ver menos</button>
+                        <button type="button" className="button button--ghost" onClick={() => setVisiblePendingQuotasCount((c: number) => c - 5)}>Ver menos</button>
                       )}
                       {hasMorePendingQuotas && (
-                        <button type="button" className="button button--secondary" onClick={() => setVisiblePendingQuotasCount(c => c + 5)}>Ver más</button>
+                        <button type="button" className="button button--secondary" onClick={() => setVisiblePendingQuotasCount((c: number) => c + 5)}>Ver más</button>
                       )}
                     </div>
                   </div>
@@ -161,10 +161,10 @@ export function ClientPaymentSection({
                 <span>Mostrando {visiblePaymentsCount} de {payments.length} pagos realizados</span>
                 <div>
                   {hasLessPayments && (
-                    <button type="button" className="button button--ghost" onClick={() => setVisiblePaymentsCount(c => c - 5)}>Ver menos</button>
+                    <button type="button" className="button button--ghost" onClick={() => setVisiblePaymentsCount((c: number) => c - 5)}>Ver menos</button>
                   )}
                   {hasMorePayments && (
-                    <button type="button" className="button button--secondary" onClick={() => setVisiblePaymentsCount(c => c + 5)}>Ver más</button>
+                    <button type="button" className="button button--secondary" onClick={() => setVisiblePaymentsCount((c: number) => c + 5)}>Ver más</button>
                   )}
                 </div>
               </div>

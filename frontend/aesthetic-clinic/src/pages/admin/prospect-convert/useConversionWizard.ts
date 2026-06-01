@@ -175,7 +175,10 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
         setBiometricForm(response.draft.biometricData)
         setMedicalDocumentFile(null)
         setActiveStep(getInitialStep(response.draft))
-        const paymentsResponse = await getAdminPayments()
+        const now = new Date()
+        const month = now.getMonth() + 1
+        const year = now.getFullYear()
+        const paymentsResponse = await getAdminPayments(month, year)
         setPaymentQrImageUrl(paymentsResponse.paymentQrConfig?.qrImageUrl || '')
       } catch (requestError) {
         if (!cancelled) {
