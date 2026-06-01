@@ -20,12 +20,43 @@ export function AdminExpenseListPage() {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [showMonthPicker, setShowMonthPicker] = useState(false)
+  const [pickerMonth, setPickerMonth] = useState(month)
+  const [pickerYear, setPickerYear] = useState(year)
   const { showNotification } = useNotifications()
   const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
 
   const loader = useCallback(() => getAdminExpenses(month, year), [month, year, branchId])
   const { data, isLoading, error, reload } = useApiResource(loader)
   const viewedMonthLabel = `${monthNames[month - 1]} ${year}`
+
+  const openMonthPicker = () => {
+    setPickerMonth(month)
+    setPickerYear(year)
+    setShowMonthPicker(true)
+  }
+
+  const applyMonthPicker = () => {
+    setMonth(pickerMonth)
+    setYear(pickerYear)
+    setShowMonthPicker(false)
+  }
+
+  const changeMonth = (direction: -1 | 1) => {
+    const currentMonth = month
+    const currentYear = year
+    let nextMonth = currentMonth + direction
+    let nextYear = currentYear
+    if (nextMonth < 1) {
+      nextMonth = 12
+      nextYear = currentYear - 1
+    } else if (nextMonth > 12) {
+      nextMonth = 1
+      nextYear = currentYear + 1
+    }
+    setYear(nextYear)
+    setMonth(nextMonth)
+  }
 
   const categorySummary = useMemo(() => {
     if (!data) return []
@@ -47,21 +78,6 @@ export function AdminExpenseListPage() {
     () => categorySummary.reduce((accumulator, item) => accumulator + item.total, 0),
     [categorySummary],
   )
-
-  const changeMonth = (direction: -1 | 1) => {
-    setMonth((current) => {
-      const next = current + direction
-      if (next < 1) {
-        setYear((currentYear) => currentYear - 1)
-        return 12
-      }
-      if (next > 12) {
-        setYear((currentYear) => currentYear + 1)
-        return 1
-      }
-      return next
-    })
-  }
 
   const handleDelete = async (expense: ExpenseItem) => {
     const confirmed = await confirm({
@@ -113,9 +129,9 @@ export function AdminExpenseListPage() {
             action={
               <div className="expense-period-controls">
                 <button className="button button--ghost" type="button" onClick={() => changeMonth(-1)}>←</button>
-                <div>
+                <div style={{ cursor: 'pointer' }} onClick={openMonthPicker}>
                   <span className="eyebrow">Mes seleccionado</span>
-                  <h3>{viewedMonthLabel}</h3>
+                  <h3 style={{ cursor: 'pointer' }}>{viewedMonthLabel}</h3>
                 </div>
                 <button className="button button--ghost" type="button" onClick={() => changeMonth(1)}>→</button>
               </div>
@@ -185,6 +201,69 @@ export function AdminExpenseListPage() {
         </>
       ) : null}
       <ConfirmDialogModal />
+
+      {showMonthPicker ? (
+        <div className="qr-modal" role="dialog" aria-modal="true" aria-label="Seleccionar mes">
+          <div className="qr-modal__backdrop" onClick={() => setShowMonthPicker(false)} />
+          <div className="qr-modal__content">
+            <header className="qr-modal__header">
+              <div>
+                <span>Seleccionar periodo</span>
+                <strong>Elige el mes y año</strong>
+              </div>
+              <button
+                className="button button--ghost button--compact"
+                type="button"
+                onClick={() => setShowMonthPicker(false)}
+              >
+                Cerrar
+              </button>
+            </header>
+            <div className="form-grid" style={{ marginTop: '1rem' }}>
+              <label className="field">
+                <span>Mes</span>
+                <select
+                  className="input"
+                  value={pickerMonth}
+                  onChange={(e) => setPickerMonth(parseInt(e.target.value))}
+                >
+                  {monthNames.map((name, index) => (
+                    <option key={name} value={index + 1}>{name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Año</span>
+                <select
+                  className="input"
+                  value={pickerYear}
+                  onChange={(e) => setPickerYear(parseInt(e.target.value))}
+                >
+                  {[2024, 2025, 2026, 2027, 2028, 2029, 2030].map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="form-actions" style={{ marginTop: '1rem' }}>
+              <button
+                className="button button--ghost"
+                type="button"
+                onClick={() => setShowMonthPicker(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="button"
+                type="button"
+                onClick={applyMonthPicker}
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

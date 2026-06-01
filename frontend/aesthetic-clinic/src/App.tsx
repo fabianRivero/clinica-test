@@ -36,6 +36,7 @@ import { LoginPage } from './pages/auth/LoginPage'
 import { TabletKioskPage } from './pages/tablet/TabletKioskPage'
 import { ClientDashboardPage } from './pages/client/ClientDashboardPage'
 import { ClientPaymentsPage } from './pages/client/ClientPaymentsPage'
+import { ClientPaymentHistoryPage } from './pages/client/ClientPaymentHistoryPage'
 import { ClientReservationsPage } from './pages/client/ClientReservationsPage'
 import { ClientTreatmentsPage } from './pages/client/ClientTreatmentsPage'
 import { SpecialistLayout } from './layouts/SpecialistLayout'
@@ -178,6 +179,7 @@ function App() {
           <Route index element={<ClientDashboardPage />} />
           <Route path="tratamientos" element={<ClientTreatmentsPage />} />
           <Route path="pagos" element={<ClientPaymentsPage />} />
+          <Route path="pagos/historial" element={<ClientPaymentHistoryPage />} />
           <Route path="reservas" element={<ClientReservationsPage />} />
           <Route path="notificaciones" element={<NotificationsPage />} />
         </Route>

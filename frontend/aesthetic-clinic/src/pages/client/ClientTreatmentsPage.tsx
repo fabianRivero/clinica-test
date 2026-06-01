@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
@@ -7,6 +8,14 @@ import { getClientTreatments } from '../../services/api/client'
 
 export function ClientTreatmentsPage() {
   const { data, isLoading, error } = useApiResource(getClientTreatments)
+  const [statusFilter, setStatusFilter] = useState('')
+
+  const operationStatuses = data ? [...new Set(data.operations.map((op) => op.status))] : []
+  const filteredOperations = data
+    ? statusFilter
+      ? data.operations.filter((op) => op.status === statusFilter)
+      : data.operations
+    : []
 
   return (
     <div className="page-stack">
@@ -35,9 +44,18 @@ export function ClientTreatmentsPage() {
             title="Detalle de tratamientos"
             description="Cada tarjeta resume sesiones, recomendaciones y zona tratada."
           >
-            {data.operations.length ? (
+            <label className="field _mb-sm">
+              <span>Filtrar por estado</span>
+              <select className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                <option value="">Todos los estados</option>
+                {operationStatuses.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </label>
+            {filteredOperations.length ? (
               <div className="operation-grid">
-                {data.operations.map((operation) => (
+                {filteredOperations.map((operation) => (
                   <article className="operation-card" key={operation.id}>
                     <header>
                       <div>
@@ -114,6 +132,8 @@ export function ClientTreatmentsPage() {
                   </article>
                 ))}
               </div>
+            ) : data.operations.length ? (
+              <DataState title="Sin resultados" message="No hay tratamientos para el estado seleccionado." />
             ) : (
               <DataState title="Sin tratamientos" message="No encontramos operaciones registradas para esta cuenta." />
             )}

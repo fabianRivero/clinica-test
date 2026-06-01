@@ -1,21 +1,20 @@
 import { useState } from 'react'
+
 import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
-import { verificationStatusLabel, verificationStatusTone } from '../../constants/verification'
 import { useApiResource } from '../../hooks/useApiResource'
-import { getClientReservations } from '../../services/api/client'
-import { useLocation } from 'react-router-dom'
+import { getClientPayments } from '../../services/api/client'
 import { monthNames } from '../admin/expenses/expenseUtils'
 
-function parseAppointmentDate(value?: string, currentYear?: number): Date | null {
+function parsePaymentDate(value?: string, currentYear?: number): Date | null {
   if (!value) return null
   const trimmed = value.trim()
   if (!trimmed) return null
 
-  // Try DD/MM HH:MM or DD/MM/YYYY HH:MM format
-  const shortFormat = trimmed.match(/^(\d{2})\/(\d{2})\s+(\d{2}:\d{2})/)
+  // Try DD/MM HH:MM format (e.g., "30/05 23:25")
+  const shortFormat = trimmed.match(/^(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})/)
   if (shortFormat) {
     const [, dd, mm] = shortFormat
     const year = currentYear ?? new Date().getFullYear()
@@ -31,10 +30,26 @@ function parseAppointmentDate(value?: string, currentYear?: number): Date | null
     if (!Number.isNaN(date.getTime())) return date
   }
 
-  // Try ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+  // Try ISO format first (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
   const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/)
   if (isoMatch) {
     const [, yyyy, mm, dd] = isoMatch
+    const date = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd))
+    if (!Number.isNaN(date.getTime())) return date
+  }
+
+  // Try DD-MM-YYYY format
+  const ddmmyyyyDash = trimmed.match(/^(\d{2})-(\d{2})-(\d{4})/)
+  if (ddmmyyyyDash) {
+    const [, dd, mm, yyyy] = ddmmyyyyDash
+    const date = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd))
+    if (!Number.isNaN(date.getTime())) return date
+  }
+
+  // Try MM/DD/YYYY format (US format)
+  const mmddyyyy = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
+  if (mmddyyyy) {
+    const [, mm, dd, yyyy] = mmddyyyy
     const date = new Date(parseInt(yyyy), parseInt(mm) - 1, parseInt(dd))
     if (!Number.isNaN(date.getTime())) return date
   }
@@ -46,14 +61,7 @@ function parseAppointmentDate(value?: string, currentYear?: number): Date | null
   return null
 }
 
-export function ClientReservationsPage() {
-  const location = useLocation()
-  const { data, isLoading, error } = useApiResource(getClientReservations)
-  const flashMessage =
-    typeof location.state === 'object' && location.state && 'flashMessage' in location.state
-      ? String(location.state.flashMessage)
-      : null
-
+export function ClientPaymentHistoryPage() {
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [year, setYear] = useState(now.getFullYear())
@@ -63,6 +71,8 @@ export function ClientReservationsPage() {
   const [pickerYear, setPickerYear] = useState(year)
 
   const viewedMonthLabel = `${monthNames[month - 1]} ${year}`
+
+  const { data, isLoading, error } = useApiResource(getClientPayments)
 
   const openMonthPicker = () => {
     setPickerMonth(month)
@@ -92,49 +102,47 @@ export function ClientReservationsPage() {
     setMonth(nextMonth)
   }
 
-  const filteredAppointments = (data?.appointments ?? []).filter((appointment) => {
-    if (statusFilter && appointment.status.toLowerCase() !== statusFilter.toLowerCase()) {
+  const filteredPayments = (data?.payments ?? []).filter((payment) => {
+    if (statusFilter && payment.status.toLowerCase() !== statusFilter.toLowerCase()) {
       return false
     }
 
-    const appointmentDate = parseAppointmentDate(appointment.dateTime, year)
-    if (appointmentDate) {
-      if (appointmentDate.getMonth() + 1 !== month) return false
-      if (appointmentDate.getFullYear() !== year) return false
+    const paymentDate = parsePaymentDate(payment.submittedAt, year)
+    if (paymentDate) {
+      if (paymentDate.getMonth() + 1 !== month) return false
+      if (paymentDate.getFullYear() !== year) return false
     }
 
     return true
   })
 
-  const appointmentStatuses = data ? [...new Set(data.appointments.map((a) => a.status))] : []
+  const paymentStatuses = data ? [...new Set(data.payments.map((p) => p.status))] : []
 
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Agenda y reservas"
-        title="Mis reservas"
-        description="Consulta citas registradas y su estado de confirmacion."
+        eyebrow="Historial de pagos"
+        title="Todos tus comprobantes"
+        description="Revisa todos tus pagos organizados por mes, con filtro por estado."
       />
 
-      {flashMessage ? <DataState title="Reserva registrada" message={flashMessage} /> : null}
-
       {isLoading && !data ? (
-        <SectionCard title="Cargando reservas">
-          <DataState title="Sincronizando agenda" message="Estamos cargando tus citas y cupos disponibles." />
+        <SectionCard title="Cargando historial">
+          <DataState title="Sincronizando pagos" message="Estamos trayendo tu historial de comprobantes." />
         </SectionCard>
       ) : null}
 
       {error && !data ? (
-        <SectionCard title="No pudimos cargar tus reservas">
+        <SectionCard title="No pudimos cargar el historial">
           <DataState title="Conexion no disponible" message={error} tone="danger" />
         </SectionCard>
       ) : null}
 
       {data ? (
         <SectionCard
-          eyebrow="Agenda"
-          title={`Citas de ${viewedMonthLabel}`}
-          description="Incluye citas futuras y tambien las que esperan confirmacion o quedaron con observaciones."
+          eyebrow="Comprobantes"
+          title={`Pagos de ${viewedMonthLabel}`}
+          description="Historial completo de comprobantes cargados en el mes seleccionado."
           action={
             <div className="expense-period-controls">
               <button className="button button--ghost" type="button" onClick={() => changeMonth(-1)}>←</button>
@@ -151,40 +159,53 @@ export function ClientReservationsPage() {
               <span>Estado</span>
               <select className="input" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                 <option value="">Todos los estados</option>
-                {appointmentStatuses.map((status) => (
+                {paymentStatuses.map((status) => (
                   <option key={status} value={status}>{status}</option>
                 ))}
               </select>
             </label>
           </div>
-          {filteredAppointments.length ? (
+          {filteredPayments.length ? (
             <div className="table-card">
               <table>
                 <thead>
                   <tr>
                     <th>Operacion</th>
-                    <th>Especialista</th>
+                    <th>Cuota</th>
+                    <th>Monto</th>
                     <th>Fecha</th>
                     <th>Estado</th>
-                    <th>Confirmacion</th>
+                    <th>Comprobante</th>
+                    <th>Revision</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAppointments.map((appointment) => (
-                    <tr key={appointment.id}>
+                  {filteredPayments.map((payment) => (
+                    <tr key={payment.id}>
                       <td>
-                        <strong>{appointment.operation}</strong>
-                        <span>{appointment.details}</span>
-                      </td>
-                      <td>{appointment.specialist}</td>
-                      <td>{appointment.dateTime}</td>
-                      <td>
-                        <StatusBadge tone={appointment.statusTone}>{appointment.status}</StatusBadge>
+                        <strong>{payment.operation}</strong>
                       </td>
                       <td>
-                        <StatusBadge tone={verificationStatusTone[appointment.verificationStatus ?? 'pendiente']}>
-                          {verificationStatusLabel[appointment.verificationStatus ?? 'pendiente']}
-                        </StatusBadge>
+                        <strong>{payment.quotaLabel}</strong>
+                        <span>Vence {payment.dueDate}</span>
+                      </td>
+                      <td>{payment.amount}</td>
+                      <td>{payment.submittedAt}</td>
+                      <td>
+                        <StatusBadge tone={payment.statusTone}>{payment.status}</StatusBadge>
+                      </td>
+                      <td>
+                        {payment.receiptUrl ? (
+                          <a className="button button--ghost button--compact" href={payment.receiptUrl} target="_blank" rel="noreferrer">
+                            Ver archivo
+                          </a>
+                        ) : (
+                          <span>Sin archivo</span>
+                        )}
+                      </td>
+                      <td>
+                        <strong>{payment.verifier}</strong>
+                        <span>{payment.note}</span>
                       </td>
                     </tr>
                   ))}
@@ -193,8 +214,8 @@ export function ClientReservationsPage() {
             </div>
           ) : (
             <DataState
-              title="Sin citas en este mes"
-              message={`No hay citas registradas para ${viewedMonthLabel}.`}
+              title="Sin pagos en este mes"
+              message={`No hay comprobantes registrados para ${viewedMonthLabel}.`}
             />
           )}
         </SectionCard>

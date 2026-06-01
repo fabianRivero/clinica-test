@@ -34,7 +34,7 @@ export function ClientDashboardPage() {
 
       {data ? (
         <>
-          <section className="client-summary-card">
+          <section className="client-summary-card" style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
             <div>
               <span className="client-summary-card__eyebrow">Hola, {data.welcome.name}</span>
               <h2>Tu estado actual es {data.welcome.status.toLowerCase()}.</h2>
@@ -44,7 +44,7 @@ export function ClientDashboardPage() {
               </p>
             </div>
 
-            <div className="client-summary-card__grid">
+            <div className="client-summary-card__grid" style={{ marginLeft: 'auto' }}>
               <article>
                 <span>Tratamientos activos</span>
                 <strong>{data.welcome.activeOperations}</strong>
@@ -123,27 +123,40 @@ export function ClientDashboardPage() {
             </SectionCard>
 
             <SectionCard
-              eyebrow="Alertas"
-              title="Seguimiento importante"
-              description="Mensajes relevantes sobre pagos, cuotas o disponibilidad de sesiones."
+              eyebrow="Agenda"
+              title="Proximas citas"
+              description="Citas ya registradas o pendientes de cierre de verificacion."
             >
-              <div className="alert-list">
-                {data.alerts.map((alert) => (
-                  <article className={`alert-card alert-card--${alert.severity}`} key={alert.id}>
-                    <div>
-                      <strong>{alert.title}</strong>
-                      <p>{alert.description}</p>
-                    </div>
-                    <button className="button button--ghost" type="button">
-                      {alert.action}
-                    </button>
-                  </article>
-                ))}
-              </div>
+              {data.upcomingAppointments.length ? (
+                <div className="agenda-list">
+                  {data.upcomingAppointments.map((appointment) => (
+                    <article className="agenda-item" key={appointment.id}>
+                      <div className="agenda-item__time">
+                        {appointment.dateTime.split(' ')[1] || appointment.dateTime}
+                      </div>
+                      <div className="agenda-item__content">
+                        <strong>{appointment.operation}</strong>
+                        <p>
+                          {appointment.specialist} | metodo verificacion:{' '}
+                          {appointment.verificationMethod
+                            ? verificationMethodLabel[appointment.verificationMethod]
+                            : 'No especificado'}
+                        </p>
+                      </div>
+                      <StatusBadge tone={appointment.statusTone}>{appointment.status}</StatusBadge>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <DataState
+                  title="Sin citas futuras"
+                  message="No tienes citas próximas registradas en el calendario."
+                />
+              )}
             </SectionCard>
           </section>
 
-          <section className="dashboard-grid dashboard-grid--secondary">
+          <section className="dashboard-grid dashboard-grid--secondary" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <SectionCard
               eyebrow="Cuotas"
               title="Pagos por atender"
@@ -211,39 +224,6 @@ export function ClientDashboardPage() {
                 </div>
               ) : (
                 <DataState title="Sin pagos registrados" message="Aun no existen comprobantes en tu historial." />
-              )}
-            </SectionCard>
-
-            <SectionCard
-              eyebrow="Agenda"
-              title="Proximas citas"
-              description="Citas ya registradas o pendientes de cierre de verificacion."
-            >
-              {data.upcomingAppointments.length ? (
-                <div className="agenda-list">
-                  {data.upcomingAppointments.map((appointment) => (
-                    <article className="agenda-item" key={appointment.id}>
-                      <div className="agenda-item__time">
-                        {appointment.dateTime.split(' ')[1] || appointment.dateTime}
-                      </div>
-                      <div className="agenda-item__content">
-                        <strong>{appointment.operation}</strong>
-                        <p>
-                          {appointment.specialist} | metodo verificacion:{' '}
-                          {appointment.verificationMethod
-                            ? verificationMethodLabel[appointment.verificationMethod]
-                            : 'No especificado'}
-                        </p>
-                      </div>
-                      <StatusBadge tone={appointment.statusTone}>{appointment.status}</StatusBadge>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <DataState
-                  title="Sin citas futuras"
-                  message="No tienes citas próximas registradas en el calendario."
-                />
               )}
             </SectionCard>
           </section>

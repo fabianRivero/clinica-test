@@ -29,8 +29,17 @@ export function AdminAvailabilitySchedulesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [editingHabitualId, setEditingHabitualId] = useState<number | null>(null)
 
+  // Filter for habitual schedules list
+  const [specialistFilter, setSpecialistFilter] = useState<string>('')
+
   // Filtrar los datos por la sucursal activa
   const branchHabitualRules = data?.habitualRules.filter((r) => r.branchId === activeBranch?.id) || []
+
+  // Filtered habitual rules by specialist
+  const filteredHabitualRules = branchHabitualRules.filter((rule) => {
+    if (specialistFilter && rule.specialistId.toString() !== specialistFilter) return false
+    return true
+  })
 
   useEffect(() => {
     setHabitualForm(buildEmptyHabitualForm(activeBranch?.id || 1))
@@ -115,7 +124,7 @@ export function AdminAvailabilitySchedulesPage() {
       {error && !data && activeBranch ? <DataState title="Error de conexion" message={error} tone="danger" /> : null}
 
       {data && activeBranch ? (
-        <div className="dashboard-grid">
+        <div className="page-stack">
           <HabitualScheduleForm
             habitualForm={habitualForm}
             setHabitualForm={setHabitualForm}
@@ -130,75 +139,89 @@ export function AdminAvailabilitySchedulesPage() {
 
           <SectionCard title={`Agendas Habituales - ${activeBranch.nombre}`}>
             {branchHabitualRules.length > 0 ? (
-              <div className="table-card">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Especialista</th>
-                      <th>Periodo</th>
-                      <th>Dias</th>
-                      <th>Horario</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {branchHabitualRules.map((rule) => {
-                      const spec = data.filters.specialists.find((s) => s.id === rule.specialistId)
-                      return (
-                        <tr key={rule.id}>
-                          <td>
-                            <strong>{spec?.label || 'Especialista ' + rule.specialistId}</strong>
-                          </td>
-                          <td>
-                            {rule.startDate} al {rule.endDate || 'Siempre'}
-                          </td>
-                          <td>
-                            <div className="_flex-gap-sm _flex-wrap">
-                              {rule.weekdayLabels.map((lbl) => (
-                                <StatusBadge key={lbl} tone="neutral">
-                                  {lbl.slice(0, 3)}
-                                </StatusBadge>
-                              ))}
-                            </div>
-                          </td>
-                          <td>
-                            {rule.startTime.slice(0, 5)} - {rule.endTime.slice(0, 5)}
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="button button--ghost button--compact"
-                              onClick={() => {
-                                setEditingHabitualId(rule.id)
-                                setHabitualForm({
-                                  specialistId: rule.specialistId,
-                                  specialistIds: [rule.specialistId],
-                                  branchId: activeBranch.id,
-                                  startDate: rule.startDate,
-                                  endDate: rule.endDate || '',
-                                  weekdayCodes: rule.weekdayCodes,
-                                  startTime: rule.startTime.slice(0, 5),
-                                  endTime: rule.endTime.slice(0, 5),
-                                  detail: rule.detail,
-                                })
-                              }}
-                            >
-                              Editar
-                            </button>
-                            <button
-                              type="button"
-                              className="button button--ghost button--compact _text-danger"
-                              onClick={() => void handleDeleteHabitual(rule.id)}
-                            >
-                              Eliminar
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <div className="_flex-gap-md _mb-md _flex-wrap">
+                  <select
+                    className="input _min-w-dropdown"
+                    value={specialistFilter}
+                    onChange={(e) => setSpecialistFilter(e.target.value)}
+                  >
+                    <option value="">Todos los especialistas</option>
+                    {data.filters.specialists.map((sp) => (
+                      <option key={sp.id} value={sp.id.toString()}>{sp.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="table-card">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Especialista</th>
+                        <th>Periodo</th>
+                        <th>Dias</th>
+                        <th>Horario</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredHabitualRules.map((rule) => {
+                        const spec = data.filters.specialists.find((s) => s.id === rule.specialistId)
+                        return (
+                          <tr key={rule.id}>
+                            <td>
+                              <strong>{spec?.label || 'Especialista ' + rule.specialistId}</strong>
+                            </td>
+                            <td>
+                              {rule.startDate} al {rule.endDate || 'Siempre'}
+                            </td>
+                            <td>
+                              <div className="_flex-gap-sm _flex-wrap">
+                                {rule.weekdayLabels.map((lbl) => (
+                                  <StatusBadge key={lbl} tone="neutral">
+                                    {lbl.slice(0, 3)}
+                                  </StatusBadge>
+                                ))}
+                              </div>
+                            </td>
+                            <td>
+                              {rule.startTime.slice(0, 5)} - {rule.endTime.slice(0, 5)}
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="button button--ghost button--compact"
+                                onClick={() => {
+                                  setEditingHabitualId(rule.id)
+                                  setHabitualForm({
+                                    specialistId: rule.specialistId,
+                                    specialistIds: [rule.specialistId],
+                                    branchId: activeBranch.id,
+                                    startDate: rule.startDate,
+                                    endDate: rule.endDate || '',
+                                    weekdayCodes: rule.weekdayCodes,
+                                    startTime: rule.startTime.slice(0, 5),
+                                    endTime: rule.endTime.slice(0, 5),
+                                    detail: rule.detail,
+                                  })
+                                }}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                className="button button--ghost button--compact _text-danger"
+                                onClick={() => void handleDeleteHabitual(rule.id)}
+                              >
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             ) : (
               <DataState title="Sin agendas habituales" message="No se han configurado horarios recurrentes en esta sucursal." />
             )}

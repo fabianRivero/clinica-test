@@ -185,6 +185,15 @@ def _free_client_appointment_item(appointment):
         "operation": appointment.servicio_config.tipo_servicio.tipo if appointment.servicio_config else "Cita libre",
         "specialist": "Por asignar",
         "status": appointment.get_estado_display(),
+        "statusTone": "warning",
+        "verificationStatus": "no_requerida",
+        "details": "",
+        "canManage": appointment.estado == CitaClienteLibre.Estado.PROGRAMADA,
+        "canMarkPendingBiometric": False,
+        "canConfirmBiometric": False,
+        "canCancelFromVerification": False,
+        "biometricMockTemplate": "",
+        "isFreeMedicalAppointment": True,
         "branchId": appointment.sucursal_id,
         "branchName": appointment.sucursal.nombre if appointment.sucursal else "Sin sucursal",
     }
@@ -617,3 +626,44 @@ class FreeMedicalAppointmentViewSet(viewsets.ViewSet):
             },
             status=201,
         )
+
+    @action(detail=True, methods=["post"], url_path="cancelar")
+    def cancelar(self, request, pk=None):
+        """
+        POST /citas-medicas-libres/<int:appointment_id>/cancelar/
+        Cancel a free medical appointment.
+        """
+        appointment = CitaClienteLibre.objects.filter(pk=pk).first()
+        if not appointment:
+            return Response({"detail": "No encontramos la cita solicitada."}, status=404)
+        if appointment.estado != CitaClienteLibre.Estado.PROGRAMADA:
+            return Response({"detail": "Solo se pueden cancelar citas que esten programadas."}, status=400)
+
+        appointment.estado = CitaClienteLibre.Estado.CANCELADA
+        appointment.detalles_cita = "Cita medica libre cancelada por administracion."
+        appointment.save()
+
+        return Response({
+            "detail": "La cita medica libre fue cancelada correctamente.",
+            "appointment": _free_client_appointment_item(appointment),
+        })
+
+    @action(detail=True, methods=["post"], url_path="confirmar")
+    def confirmar(self, request, pk=None):
+        """
+        POST /citas-medicas-libres/<int:appointment_id>/confirmar/
+        Confirm a free medical appointment as completed (REALIZADA).
+        """
+        appointment = CitaClienteLibre.objects.filter(pk=pk).first()
+        if not appointment:
+            return Response({"detail": "No encontramos la cita solicitada."}, status=404)
+        if appointment.estado != CitaClienteLibre.Estado.PROGRAMADA:
+            return Response({"detail": "Solo se pueden confirmar citas que esten programadas."}, status=400)
+
+        appointment.estado = CitaClienteLibre.Estado.REALIZADA
+        appointment.save()
+
+        return Response({
+            "detail": "La cita medica libre fue confirmada correctamente.",
+            "appointment": _free_client_appointment_item(appointment),
+        })

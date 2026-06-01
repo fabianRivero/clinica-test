@@ -6,7 +6,23 @@ import type { AdminConcurrencyCheckResponse } from '../../../types/admin'
 import type { ClientAppointment } from '../../../types/common'
 
 interface ClientAppointmentSectionProps {
-  appointments: ClientAppointment[]
+  // Pagination & Navigation
+  visibleAppointments: ClientAppointment[]
+  appointmentMonth: number
+  appointmentYear: number
+  changeAppointmentMonth: (direction: -1 | 1) => void
+  viewedMonthLabel: string
+  // Filter
+  appointmentStatusFilter: string
+  setAppointmentStatusFilter: (value: string) => void
+  appointmentStatuses: string[]
+  // Pagination state
+  visibleAppointmentCount: number
+  setVisibleAppointmentCount: (value: number | ((prev: number) => number)) => void
+  filteredAppointmentsLength: number
+  hasMore: boolean
+  hasLess: boolean
+  // Existing props
   appointmentActionId: number | null
   rescheduleAppointmentId: number | null
   rescheduleDate: string
@@ -14,6 +30,8 @@ interface ClientAppointmentSectionProps {
   rescheduleCheck: AdminConcurrencyCheckResponse | null
   isCheckingReschedule: boolean
   onCancelAppointment: (id: number) => void
+  onCancelFreeMedicalAppointment: (id: number) => void
+  onConfirmFreeMedicalAppointment: (id: number) => void
   onMarkPendingBiometric: (id: number) => void
   onConfirmBiometric: (id: number, template: string) => void
   onCancelFromVerification: (id: number) => void
@@ -26,7 +44,19 @@ interface ClientAppointmentSectionProps {
 }
 
 export function ClientAppointmentSection({
-  appointments,
+  visibleAppointments,
+  appointmentMonth,
+  appointmentYear,
+  changeAppointmentMonth,
+  viewedMonthLabel,
+  appointmentStatusFilter,
+  setAppointmentStatusFilter,
+  appointmentStatuses,
+  visibleAppointmentCount,
+  setVisibleAppointmentCount,
+  filteredAppointmentsLength,
+  hasMore,
+  hasLess,
   appointmentActionId,
   rescheduleAppointmentId,
   rescheduleDate,
@@ -34,6 +64,8 @@ export function ClientAppointmentSection({
   rescheduleCheck,
   isCheckingReschedule,
   onCancelAppointment,
+  onCancelFreeMedicalAppointment,
+  onConfirmFreeMedicalAppointment,
   onMarkPendingBiometric,
   onConfirmBiometric,
   onCancelFromVerification,
@@ -45,8 +77,37 @@ export function ClientAppointmentSection({
   onCancelReschedule,
 }: ClientAppointmentSectionProps) {
   return (
-    <SectionCard eyebrow="Agenda" title="Todas las citas del cliente" description="Historial completo de reservas, sesiones realizadas, cancelaciones y pendientes de verificacion.">
-      {appointments.length ? (
+    <SectionCard
+      eyebrow="Agenda"
+      title="Todas las citas del cliente"
+      description="Historial completo de reservas, sesiones realizadas, cancelaciones y pendientes de verificacion."
+      action={
+        <div className="expense-period-controls">
+          <button className="button button--ghost" type="button" onClick={() => changeAppointmentMonth(-1)}>←</button>
+          <div>
+            <span className="eyebrow">Mes seleccionado</span>
+            <h3>{viewedMonthLabel}</h3>
+          </div>
+          <button className="button button--ghost" type="button" onClick={() => changeAppointmentMonth(1)}>→</button>
+        </div>
+      }
+    >
+      {/* Status Filter */}
+      <div className="_mb-md">
+        <select
+          className="input"
+          value={appointmentStatusFilter}
+          onChange={(event) => setAppointmentStatusFilter(event.target.value)}
+        >
+          <option value="">Todos</option>
+          {appointmentStatuses.map(status => (
+            <option key={status} value={status}>{status}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Table or Empty State */}
+      {visibleAppointments.length ? (
         <div className="table-card">
           <table>
             <thead>
@@ -60,7 +121,7 @@ export function ClientAppointmentSection({
               </tr>
             </thead>
             <tbody>
-              {appointments.map((appointment) => (
+              {visibleAppointments.map((appointment) => (
                 <tr key={appointment.id}>
                   <td><strong>{appointment.operation}</strong><span>{appointment.details}</span></td>
                   <td>{appointment.specialist}</td>
@@ -69,6 +130,26 @@ export function ClientAppointmentSection({
                   <td>{verificationStatusLabel[appointment.verificationStatus]}</td>
                   <td>
                     <div className="table-action-list">
+                      {appointment.isFreeMedicalAppointment && appointment.status?.toLowerCase() === 'programada' ? (
+                        <>
+                          <button
+                            className="button button--primary button--compact"
+                            disabled={appointmentActionId !== null}
+                            type="button"
+                            onClick={() => void onConfirmFreeMedicalAppointment(appointment.rawId)}
+                          >
+                            Confirmar cita
+                          </button>
+                          <button
+                            className="button button--ghost button--compact"
+                            disabled={appointmentActionId !== null}
+                            type="button"
+                            onClick={() => void onCancelFreeMedicalAppointment(appointment.rawId)}
+                          >
+                            Cancelar reserva
+                          </button>
+                        </>
+                      ) : null}
                       {appointment.canMarkPendingBiometric ? (
                         <button
                           className="button button--ghost button--compact"
@@ -79,7 +160,7 @@ export function ClientAppointmentSection({
                           {appointmentActionId === appointment.rawId ? 'Actualizando...' : 'Cambiar a pendiente de verificación'}
                         </button>
                       ) : null}
-                      {['programada', 'no asistio'].includes(appointment.status?.toLowerCase?.() ?? '') ? (
+                      {!appointment.isFreeMedicalAppointment && ['programada', 'no asistio'].includes(appointment.status?.toLowerCase?.() ?? '') ? (
                         <button
                           className="button button--ghost button--compact"
                           disabled={appointmentActionId !== null}
@@ -129,7 +210,35 @@ export function ClientAppointmentSection({
             </tbody>
           </table>
         </div>
-      ) : <DataState title="Sin citas registradas" message="El cliente aun no tiene citas asociadas." />}
+      ) : <DataState title={`No hay citas en ${viewedMonthLabel}`} message="Este mes no tiene citas registradas." />}
+
+      {/* Pagination Info + Controls */}
+      {filteredAppointmentsLength > 0 && (
+        <div className="_flex-between _mt-md">
+          <span>Mostrando {visibleAppointmentCount} de {filteredAppointmentsLength} citas de {viewedMonthLabel}</span>
+          <div>
+            {hasLess && (
+              <button
+                type="button"
+                className="button button--ghost"
+                onClick={() => setVisibleAppointmentCount(c => c - 5)}
+              >
+                Ver menos
+              </button>
+            )}
+            {hasMore && (
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => setVisibleAppointmentCount(c => c + 5)}
+              >
+                Ver más
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {rescheduleAppointmentId ? (
         <div className="_mt-md _panel-card">
           <p className="_mb-md"><strong>Reprogramar cita seleccionada</strong></p>

@@ -1,6 +1,7 @@
 from django.urls import include, path
 
 from config.api.routers_operaciones import citas_d8_router
+from config.api.routers_clientes import clientes_router, free_medical_router
 
 from config.admin_availability_views import (
     admin_availability,
@@ -366,4 +367,6 @@ urlpatterns = [
         admin_equipo_cambiar_sucursal,
         name="admin-equipo-change-branch-api",
     ),
+    path("", include(free_medical_router.urls)),
+    path("clientes/", include(clientes_router.urls)),
 ]

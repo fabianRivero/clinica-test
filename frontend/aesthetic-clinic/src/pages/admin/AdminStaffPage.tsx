@@ -474,6 +474,24 @@ export function AdminStaffManagePage() {
   const isMainAdmin = user?.isMainAdmin || user?.isSuperuser
   const [isChangingBranchId, setIsChangingBranchId] = useState<number | null>(null)
 
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [searchName, setSearchName] = useState('')
+  const [searchCI, setSearchCI] = useState('')
+
+  const filteredStaff = useMemo(() => {
+    if (!data) return []
+    return data.staff.filter(item => {
+      const matchesStatus =
+        statusFilter === 'all' ||
+        (statusFilter === 'active' && item.isActive) ||
+        (statusFilter === 'inactive' && !item.isActive)
+      const nameLower = item.specialist.toLowerCase()
+      const matchesName = searchName === '' || nameLower.includes(searchName.toLowerCase())
+      const matchesCI = searchCI === '' || (item.ci ?? '').toLowerCase().includes(searchCI.toLowerCase())
+      return matchesStatus && matchesName && matchesCI
+    })
+  }, [data, statusFilter, searchName, searchCI])
+
   async function handleChangeBranch(staffMember: StaffCapacityItem, branchId: number) {
     const branchName = branches.find(b => b.id === branchId)?.nombre || 'esta sucursal'
     const confirmed = await confirm({
@@ -548,9 +566,45 @@ export function AdminStaffManagePage() {
             title="Especialistas actuales"
             description="Seguimiento de especialistas, agenda futura, validaciones pendientes y estado de actividad."
           >
-            {data.staff.length ? (
+            <div className="list-filters">
+              <div className="filter-row">
+                <label className="input-group">
+                  <span>Estado</span>
+                  <select
+                    value={statusFilter}
+                    onChange={e => setStatusFilter(e.target.value as typeof statusFilter)}
+                    className="input"
+                  >
+                    <option value="all">Todos</option>
+                    <option value="active">Activos</option>
+                    <option value="inactive">Inactivos</option>
+                  </select>
+                </label>
+                <label className="input-group">
+                  <span>Nombre</span>
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre..."
+                    value={searchName}
+                    onChange={e => setSearchName(e.target.value)}
+                    className="input"
+                  />
+                </label>
+                <label className="input-group">
+                  <span>CI</span>
+                  <input
+                    type="text"
+                    placeholder="Buscar por CI..."
+                    value={searchCI}
+                    onChange={e => setSearchCI(e.target.value)}
+                    className="input"
+                  />
+                </label>
+              </div>
+            </div>
+            {filteredStaff.length ? (
               <div className="capacity-list">
-                {data.staff.map((item) => (
+                {filteredStaff.map((item) => (
                   <article className="capacity-item" key={item.id}>
                     <div className="capacity-item__header">
                       <div>
@@ -618,7 +672,9 @@ export function AdminStaffManagePage() {
             ) : (
               <DataState
                 title="Sin especialistas"
-                message="Todavia no hay trabajadores operativos listados en la base conectada."
+                message={searchName || searchCI || statusFilter !== 'all'
+                  ? "No hay especialistas que coincidan con los filtros seleccionados."
+                  : "Todavia no hay trabajadores operativos listados en la base conectada."}
               />
             )}
           </SectionCard>

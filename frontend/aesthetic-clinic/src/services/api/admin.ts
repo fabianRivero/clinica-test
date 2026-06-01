@@ -172,6 +172,20 @@ export function cancelAdminAppointment(appointmentId: number) {
   )
 }
 
+export function cancelAdminFreeMedicalAppointment(appointmentId: number) {
+  return requestJsonWithBody<AdminCancelAppointmentResponse>(
+    `/api/admin/citas-medicas-libres/${appointmentId}/cancelar/`,
+    {},
+  )
+}
+
+export function confirmAdminFreeMedicalAppointment(appointmentId: number) {
+  return requestJsonWithBody<{ detail: string }>(
+    `/api/admin/citas-medicas-libres/${appointmentId}/confirmar/`,
+    {},
+  )
+}
+
 export function rescheduleAdminAppointment(appointmentId: number, payload: { dateTime: string }) {
   return requestJsonWithBody<{ detail: string }>(
     `/api/admin/citas/${appointmentId}/reprogramar/`,
@@ -244,19 +258,17 @@ export function removeAdminVisibleAvailability(slotId: number) {
 
 export type AdminPaymentsFilters = {
   status?: '' | 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO'
-  dateFrom?: string
-  dateTo?: string
   search?: string
 }
 
-export function getAdminPayments(filters?: AdminPaymentsFilters) {
+export function getAdminPayments(month: number, year: number, filters?: AdminPaymentsFilters) {
   const params = new URLSearchParams()
+  params.set('month', String(month))
+  params.set('year', String(year))
   if (filters?.status) params.set('status', filters.status)
-  if (filters?.dateFrom) params.set('dateFrom', filters.dateFrom)
-  if (filters?.dateTo) params.set('dateTo', filters.dateTo)
   if (filters?.search) params.set('search', filters.search)
   const query = params.toString()
-  return requestJson<PaymentsResponse>(`/api/admin/pagos/${query ? `?${query}` : ''}`)
+  return requestJson<PaymentsResponse>(`/api/admin/pagos/?${query}`)
 }
 
 export function updateAdminPaymentQrConfig(file: File, instructions: string) {

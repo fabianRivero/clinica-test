@@ -4,9 +4,12 @@ import { useNavigate } from 'react-router-dom'
 import { useApiResource } from '../../../hooks/useApiResource'
 import { useConfirmDialog } from '../../../hooks/useConfirmDialog'
 import { useNotifications } from '../../../providers/NotificationProvider'
+import { monthNames } from '../expenses/expenseUtils'
 import {
   cancelAdminAppointment,
   cancelAdminAppointmentVerification,
+  cancelAdminFreeMedicalAppointment,
+  confirmAdminFreeMedicalAppointment,
   checkAdminConcurrency,
   confirmAdminAppointmentBiometric,
   createAdminClientFreeMedicalAppointment,
@@ -59,6 +62,75 @@ export function useClientDetail(clientId: string) {
   const isMainAdmin = user?.isMainAdmin || user?.isSuperuser
   const { branches } = useBranchContext()
 
+  // Appointment month navigation state
+  const now = new Date()
+  const [appointmentMonth, setAppointmentMonth] = useState(now.getMonth() + 1)
+  const [appointmentYear, setAppointmentYear] = useState(now.getFullYear())
+  const [appointmentStatusFilter, setAppointmentStatusFilter] = useState('')
+  const [visibleAppointmentCount, setVisibleAppointmentCount] = useState(5)
+
+  // Pagination state for other sections
+  const [visiblePaymentsCount, setVisiblePaymentsCount] = useState(5)
+  const [visibleSessionsCount, setVisibleSessionsCount] = useState(5)
+  const [visibleOperationsCount, setVisibleOperationsCount] = useState(5)
+
+  // Month navigation function with year wrap logic
+  const changeAppointmentMonth = (direction: -1 | 1) => {
+    setAppointmentMonth(current => {
+      const next = current + direction
+      if (next < 1) { setAppointmentYear(y => y - 1); return 12 }
+      if (next > 12) { setAppointmentYear(y => y + 1); return 1 }
+      return next
+    })
+    setVisibleAppointmentCount(5)
+  }
+
+  // Month label for display
+  const viewedMonthLabel = `${monthNames[appointmentMonth - 1]} ${appointmentYear}`
+
+  // Extract unique statuses from appointments
+  const appointmentStatuses = useMemo(() => {
+    const appointments = data?.appointments ?? []
+    const statuses = [...new Set(appointments.map(a => a.status))]
+    return statuses.sort()
+  }, [data])
+
+  // Filter appointments by month/year/status
+  // dateTime format is "DD/MM HH:MM" (e.g., "31/05 01:00")
+  const filteredAppointments = useMemo(() => {
+    const appointments = data?.appointments ?? []
+    return appointments.filter(a => {
+      // Parse "DD/MM HH:MM" format
+      const parts = a.dateTime.split(' ')[0].split('/') // ["DD", "MM"]
+      const appointmentDay = parseInt(parts[0], 10)
+      const appointmentMonthNum = parseInt(parts[1], 10)
+      const matchesMonth = appointmentMonthNum === appointmentMonth
+      const matchesYear = true // No year in dateTime format, show all years
+      const matchesStatus = !appointmentStatusFilter || a.status === appointmentStatusFilter
+      return matchesMonth && matchesYear && matchesStatus
+    })
+  }, [data, appointmentMonth, appointmentYear, appointmentStatusFilter])
+
+  // Visible slice for pagination
+  const visibleAppointments = filteredAppointments.slice(0, visibleAppointmentCount)
+  const hasMore = visibleAppointmentCount < filteredAppointments.length
+  const hasLess = visibleAppointmentCount > 5
+
+  // Payments pagination
+  const visiblePayments = (data?.payments ?? []).slice(0, visiblePaymentsCount)
+  const hasMorePayments = visiblePaymentsCount < (data?.payments?.length ?? 0)
+  const hasLessPayments = visiblePaymentsCount > 5
+
+  // Sessions pagination
+  const visibleSessions = (data?.sessions ?? []).slice(0, visibleSessionsCount)
+  const hasMoreSessions = visibleSessionsCount < (data?.sessions?.length ?? 0)
+  const hasLessSessions = visibleSessionsCount > 5
+
+  // Operations pagination
+  const visibleOperations = (data?.operations ?? []).slice(0, visibleOperationsCount)
+  const hasMoreOperations = visibleOperationsCount < (data?.operations?.length ?? 0)
+  const hasLessOperations = visibleOperationsCount > 5
+
   const reservableOperations = useMemo(
     () => data?.operations.filter((operation: any) => operation.status === 'En proceso') ?? [],
     [data],
@@ -80,6 +152,48 @@ export function useClientDetail(clientId: string) {
     } catch (requestError) {
       showNotification({
         title: 'No se pudo cancelar la cita',
+        message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
+        tone: 'danger',
+      })
+    }
+  }
+
+  async function handleCancelFreeMedicalAppointment(appointmentId: number) {
+    const shouldCancel = await confirm({
+      title: 'Cancelar reserva',
+      message: 'Se cancelara esta reserva y el cupo volvera a quedar disponible. ¿Deseas continuar?',
+      tone: 'warning',
+    })
+    if (!shouldCancel) return
+
+    try {
+      const response = await cancelAdminFreeMedicalAppointment(appointmentId)
+      showNotification({ title: 'Cita cancelada', message: response.detail, tone: 'success' })
+      reload()
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo cancelar la cita',
+        message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
+        tone: 'danger',
+      })
+    }
+  }
+
+  async function handleConfirmFreeMedicalAppointment(appointmentId: number) {
+    const confirmed = await confirm({
+      title: 'Confirmar cita',
+      message: '¿Está seguro que desea marcar esta cita como realizada?',
+      tone: 'success',
+    })
+    if (!confirmed) return
+
+    try {
+      const response = await confirmAdminFreeMedicalAppointment(appointmentId)
+      showNotification({ title: 'Cita confirmada', message: response.detail, tone: 'success' })
+      reload()
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo confirmar la cita',
         message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
         tone: 'danger',
       })
@@ -506,6 +620,8 @@ export function useClientDetail(clientId: string) {
 
     // Handlers
     handleCancelAppointment,
+    handleCancelFreeMedicalAppointment,
+    handleConfirmFreeMedicalAppointment,
     handleMarkPendingBiometric,
     handleConfirmBiometric,
     handleCancelFromVerification,
@@ -520,5 +636,41 @@ export function useClientDetail(clientId: string) {
     getPaymentNote,
     handlePaymentNoteChange,
     handlePaymentStatusUpdate,
+
+    // Appointment month navigation
+    appointmentMonth,
+    appointmentYear,
+    changeAppointmentMonth,
+    viewedMonthLabel,
+    appointmentStatusFilter,
+    setAppointmentStatusFilter,
+    appointmentStatuses,
+    visibleAppointments,
+    visibleAppointmentCount,
+    setVisibleAppointmentCount,
+    filteredAppointments,
+    hasMore,
+    hasLess,
+
+    // Payments pagination
+    visiblePayments,
+    visiblePaymentsCount,
+    setVisiblePaymentsCount,
+    hasMorePayments,
+    hasLessPayments,
+
+    // Sessions pagination
+    visibleSessions,
+    visibleSessionsCount,
+    setVisibleSessionsCount,
+    hasMoreSessions,
+    hasLessSessions,
+
+    // Operations pagination
+    visibleOperations,
+    visibleOperationsCount,
+    setVisibleOperationsCount,
+    hasMoreOperations,
+    hasLessOperations,
   }
 }

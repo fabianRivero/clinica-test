@@ -69,6 +69,8 @@ export function AdminClientDetailPage() {
     setRescheduleCheck,
     isCheckingReschedule,
     handleCancelAppointment,
+    handleCancelFreeMedicalAppointment,
+    handleConfirmFreeMedicalAppointment,
     handleMarkPendingBiometric,
     handleConfirmBiometric,
     handleCancelFromVerification,
@@ -92,6 +94,42 @@ export function AdminClientDetailPage() {
     setPendingQuotaProcedureFilter,
     pendingQuotaProcedures,
     filteredPendingQuotas,
+
+    // Appointment month navigation & pagination
+    appointmentMonth,
+    appointmentYear,
+    changeAppointmentMonth,
+    viewedMonthLabel,
+    appointmentStatusFilter,
+    setAppointmentStatusFilter,
+    appointmentStatuses,
+    visibleAppointments,
+    visibleAppointmentCount,
+    setVisibleAppointmentCount,
+    filteredAppointments,
+    hasMore,
+    hasLess,
+
+    // Payments pagination
+    visiblePayments,
+    visiblePaymentsCount,
+    setVisiblePaymentsCount,
+    hasMorePayments,
+    hasLessPayments,
+
+    // Sessions pagination
+    visibleSessions,
+    visibleSessionsCount,
+    setVisibleSessionsCount,
+    hasMoreSessions,
+    hasLessSessions,
+
+    // Operations pagination
+    visibleOperations,
+    visibleOperationsCount,
+    setVisibleOperationsCount,
+    hasMoreOperations,
+    hasLessOperations,
   } = useClientDetail(clientId)
 
   const [profileModalOpen, setProfileModalOpen] = useState(false)
@@ -215,31 +253,11 @@ export function AdminClientDetailPage() {
         handleReserveFreeMedicalAppointment={handleReserveFreeMedicalAppointment}
       />
 
-      <ClientAppointmentSection
-        appointments={data.appointments}
-        appointmentActionId={appointmentActionId}
-        rescheduleAppointmentId={rescheduleAppointmentId}
-        rescheduleDate={rescheduleDate}
-        rescheduleTime={rescheduleTime}
-        rescheduleCheck={rescheduleCheck}
-        isCheckingReschedule={isCheckingReschedule}
-        onCancelAppointment={handleCancelAppointment}
-        onMarkPendingBiometric={handleMarkPendingBiometric}
-        onConfirmBiometric={handleConfirmBiometric}
-        onCancelFromVerification={handleCancelFromVerification}
-        onSetRescheduleAppointment={(id) => { setRescheduleAppointmentId(id); setRescheduleCheck(null) }}
-        onRescheduleDateChange={(v) => { setRescheduleDate(v); setRescheduleCheck(null) }}
-        onRescheduleTimeChange={(v) => { setRescheduleTime(v); setRescheduleCheck(null) }}
-        onCheckRescheduleAvailability={handleCheckRescheduleAvailability}
-        onRescheduleAppointment={handleRescheduleAppointment}
-        onCancelReschedule={() => { setRescheduleAppointmentId(null); setRescheduleCheck(null) }}
-      />
-
-      <section className="dashboard-grid">
-        <SectionCard eyebrow="Sesiones" title="Sesiones realizadas" description="Citas confirmadas con verificacion registrada.">
-          {data.sessions.length ? (
+      <SectionCard eyebrow="Sesiones" title="Sesiones realizadas" description="Citas confirmadas con verificacion registrada.">
+        {data.sessions.length ? (
+          <>
             <div className="capacity-list">
-              {data.sessions.map((session: any) => (
+              {visibleSessions.map((session: any) => (
                 <article className="capacity-item" key={session.id}>
                   <div className="capacity-item__header">
                     <div><strong>{session.operation}</strong><p>{session.dateTime} | {session.specialist}</p></div>
@@ -248,24 +266,51 @@ export function AdminClientDetailPage() {
                 </article>
               ))}
             </div>
-          ) : <DataState title="Sin sesiones realizadas" message="Todavia no hay sesiones confirmadas con verificacion." />}
-        </SectionCard>
+            {data.sessions.length > 5 && (
+              <div className="_flex-between _mt-md">
+                <span>Mostrando {visibleSessionsCount} de {data.sessions.length} sesiones</span>
+                <div>
+                  {hasLessSessions && (
+                    <button type="button" className="button button--ghost" onClick={() => setVisibleSessionsCount(c => c - 5)}>Ver menos</button>
+                  )}
+                  {hasMoreSessions && (
+                    <button type="button" className="button button--secondary" onClick={() => setVisibleSessionsCount(c => c + 5)}>Ver más</button>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        ) : <DataState title="Sin sesiones realizadas" message="Todavia no hay sesiones confirmadas con verificacion." />}
+      </SectionCard>
 
-        <ClientPaymentSection
-          pendingQuotas={data.pendingQuotas}
-          payments={data.payments}
-          paymentActionId={paymentActionId}
-          getPaymentNote={getPaymentNote}
-          onPaymentNoteChange={handlePaymentNoteChange}
-          onUpdatePaymentStatus={handlePaymentStatusUpdate}
-          pendingQuotaProcedureFilter={pendingQuotaProcedureFilter}
-          pendingQuotaProcedures={pendingQuotaProcedures}
-          filteredPendingQuotas={filteredPendingQuotas}
-          onPendingQuotaFilterChange={setPendingQuotaProcedureFilter}
-        />
-      </section>
+      <ClientPaymentSection
+        pendingQuotas={data.pendingQuotas}
+        payments={data.payments}
+        paymentActionId={paymentActionId}
+        getPaymentNote={getPaymentNote}
+        onPaymentNoteChange={handlePaymentNoteChange}
+        onUpdatePaymentStatus={handlePaymentStatusUpdate}
+        pendingQuotaProcedureFilter={pendingQuotaProcedureFilter}
+        pendingQuotaProcedures={pendingQuotaProcedures}
+        filteredPendingQuotas={filteredPendingQuotas}
+        onPendingQuotaFilterChange={setPendingQuotaProcedureFilter}
+        visiblePayments={visiblePayments}
+        visiblePaymentsCount={visiblePaymentsCount}
+        setVisiblePaymentsCount={setVisiblePaymentsCount}
+        hasMorePayments={hasMorePayments}
+        hasLessPayments={hasLessPayments}
+        visiblePendingQuotasCount={5}
+        setVisiblePendingQuotasCount={() => {}}
+        hasMorePendingQuotas={false}
+        hasLessPendingQuotas={false}
+      />
 
       <ClientOperationList
+        visibleOperations={visibleOperations}
+        visibleOperationsCount={visibleOperationsCount}
+        setVisibleOperationsCount={setVisibleOperationsCount}
+        hasMoreOperations={hasMoreOperations}
+        hasLessOperations={hasLessOperations}
         operations={data.operations}
         operationStatusFilter={operationStatusFilter}
         operationStatuses={operationStatuses}

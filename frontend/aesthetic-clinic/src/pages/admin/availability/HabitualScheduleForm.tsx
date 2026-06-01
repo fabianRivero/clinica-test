@@ -74,7 +74,7 @@ export function HabitualScheduleForm({
         </div>
 
         <div className="form-group _grid-2cols">
-          <div>
+          <div className="form-group">
             <label>Fecha de inicio</label>
             <input
               type="date"
@@ -84,7 +84,7 @@ export function HabitualScheduleForm({
               required
             />
           </div>
-          <div>
+          <div className="form-group">
             <label>Fecha de fin (opcional)</label>
             <input
               type="date"
@@ -96,7 +96,7 @@ export function HabitualScheduleForm({
         </div>
 
         <div className="form-group _grid-2cols">
-          <div>
+          <div className="form-group">
             <label>Hora Inicio</label>
             <input
               type="time"
@@ -106,7 +106,7 @@ export function HabitualScheduleForm({
               required
             />
           </div>
-          <div>
+          <div className="form-group">
             <label>Hora Fin</label>
             <input
               type="time"

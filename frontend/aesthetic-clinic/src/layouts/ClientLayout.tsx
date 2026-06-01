@@ -84,7 +84,6 @@ export function ClientLayout() {
 
           <div className="topbar__right">
             <NavLink to="/cliente/notificaciones" className="button button--ghost button--compact">🔔 {unreadCount}</NavLink>
-            <div className="search-pill search-pill--client">Seguimiento de pagos, cuotas y sesiones</div>
             <div className="profile-chip profile-chip--client">
               <div className="profile-chip__meta">
                 <strong>{user?.fullName}</strong>

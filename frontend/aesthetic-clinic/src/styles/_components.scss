@@ -351,6 +351,16 @@
   justify-content: flex-start;
 }
 
+.form-stack {
+  display: grid;
+  gap: var(--spacing-5);
+}
+
+.form-group {
+  display: grid;
+  gap: var(--spacing-2);
+}
+
 .selection-row {
   display: grid;
   gap: var(--spacing-3);
@@ -562,6 +572,25 @@
     color: var(--color-text-soft);
     font-size: 0.88rem;
   }
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 0;
+  margin-top: 0.5rem;
+  border-top: 1px solid rgba(217, 232, 236, 0.85);
+}
+
+.pagination-info {
+  font-size: 0.88rem;
+  color: var(--color-text-soft);
+}
+
+.pagination-buttons {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .expense-period-controls {
@@ -1448,6 +1477,11 @@
   background: rgba(255, 255, 255, 0.98);
   border: 1px solid rgba(217, 232, 236, 0.95);
   cursor: zoom-in;
+}
+
+.payment-qr-form {
+  display: grid;
+  gap: var(--spacing-6);
 }
 
 .payment-upload-form {

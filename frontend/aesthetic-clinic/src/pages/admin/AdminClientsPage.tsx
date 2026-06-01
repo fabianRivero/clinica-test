@@ -27,6 +27,7 @@ export function AdminClientsPage() {
   const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('TODOS')
+  const [visibleCount, setVisibleCount] = useState(10)
 
   // Global search state
   const [globalSearch, setGlobalSearch] = useState('')
@@ -93,13 +94,24 @@ export function AdminClientsPage() {
     })
   }, [data, searchTerm, statusFilter])
 
+  const visibleClients = useMemo(() => {
+    return filteredClients.slice(0, visibleCount)
+  }, [filteredClients, visibleCount])
+
+  function handleShowMore() {
+    setVisibleCount((prev) => prev + 10)
+  }
+
+  function handleShowLess() {
+    setVisibleCount((prev) => Math.max(10, prev - 10))
+  }
+
   return (
     <div className="page-stack">
       <PageHeader
         eyebrow="Relacion comercial"
         title="Clientes"
         description="Consulta los clientes consolidados que ya tienen cuenta, historial clinico y acceso al portal para pagos y reservas."
-        actions={[{ label: 'Exportar clientes', variant: 'ghost' }]}
       />
 
       <AdminRelationshipTabs />
@@ -221,7 +233,7 @@ export function AdminClientsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredClients.map((client) => (
+                    {visibleClients.map((client) => (
                       <tr key={client.id}>
                         <td>
                           <Link className="table-strong-link" to={`/admin/clientes/${client.rawId}`}>
@@ -259,6 +271,31 @@ export function AdminClientsPage() {
                     ))}
                   </tbody>
                 </table>
+                <div className="pagination-controls">
+                  <span className="pagination-info">
+                    Mostrando {visibleClients.length} de {filteredClients.length} clientes
+                  </span>
+                  <div className="pagination-buttons">
+                    {visibleCount > 10 && (
+                      <button
+                        className="button button--secondary button--compact"
+                        type="button"
+                        onClick={handleShowLess}
+                      >
+                        Ver menos
+                      </button>
+                    )}
+                    {visibleCount < filteredClients.length && (
+                      <button
+                        className="button button--secondary button--compact"
+                        type="button"
+                        onClick={handleShowMore}
+                      >
+                        Ver mas
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             ) : (
               <DataState

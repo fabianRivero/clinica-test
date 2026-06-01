@@ -1,4 +1,5 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
@@ -272,51 +273,60 @@ export function ClientPaymentsPage() {
             description="Incluye pagos pendientes, aprobados y observados, con comentarios de administracion."
           >
             {pageData.payments.length ? (
-              <div className="table-card">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Operacion</th>
-                      <th>Cuota</th>
-                      <th>Monto</th>
-                      <th>Estado</th>
-                      <th>Comprobante</th>
-                      <th>Revision</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pageData.payments.map((payment) => (
-                      <tr key={payment.id}>
-                        <td>
-                          <strong>{payment.operation}</strong>
-                          <span>{payment.submittedAt}</span>
-                        </td>
-                        <td>
-                          <strong>{payment.quotaLabel}</strong>
-                          <span>Vence {payment.dueDate}</span>
-                        </td>
-                        <td>{payment.amount}</td>
-                        <td>
-                          <StatusBadge tone={payment.statusTone}>{payment.status}</StatusBadge>
-                        </td>
-                        <td>
-                          {payment.receiptUrl ? (
-                            <a className="button button--ghost button--compact" href={payment.receiptUrl} target="_blank" rel="noreferrer">
-                              Ver archivo
-                            </a>
-                          ) : (
-                            <span>Sin archivo</span>
-                          )}
-                        </td>
-                        <td>
-                          <strong>{payment.verifier}</strong>
-                          <span>{payment.note}</span>
-                        </td>
+              <>
+                <div className="table-card">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Operacion</th>
+                        <th>Cuota</th>
+                        <th>Monto</th>
+                        <th>Estado</th>
+                        <th>Comprobante</th>
+                        <th>Revision</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {pageData.payments.slice(0, 10).map((payment) => (
+                        <tr key={payment.id}>
+                          <td>
+                            <strong>{payment.operation}</strong>
+                            <span>{payment.submittedAt}</span>
+                          </td>
+                          <td>
+                            <strong>{payment.quotaLabel}</strong>
+                            <span>Vence {payment.dueDate}</span>
+                          </td>
+                          <td>{payment.amount}</td>
+                          <td>
+                            <StatusBadge tone={payment.statusTone}>{payment.status}</StatusBadge>
+                          </td>
+                          <td>
+                            {payment.receiptUrl ? (
+                              <a className="button button--ghost button--compact" href={payment.receiptUrl} target="_blank" rel="noreferrer">
+                                Ver archivo
+                              </a>
+                            ) : (
+                              <span>Sin archivo</span>
+                            )}
+                          </td>
+                          <td>
+                            <strong>{payment.verifier}</strong>
+                            <span>{payment.note}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {pageData.payments.length > 0 && (
+                  <div className="_mt-md" style={{ textAlign: 'center' }}>
+                    <Link className="button button--secondary" to="/cliente/pagos/historial">
+                      Ver todo el historial
+                    </Link>
+                  </div>
+                )}
+              </>
             ) : (
               <DataState title="Sin pagos registrados" message="Aun no se registran comprobantes dentro de esta cuenta." />
             )}

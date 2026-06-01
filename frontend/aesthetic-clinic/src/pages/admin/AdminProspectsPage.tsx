@@ -59,6 +59,7 @@ export function AdminProspectsPage() {
   const [statusFilter, setStatusFilter] = useState('TODOS')
   const [editingProspect, setEditingProspect] = useState<ProspectLead | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
+  const [visibleCount, setVisibleCount] = useState(10)
   const flashMessage =
     typeof location.state === 'object' && location.state && 'flashMessage' in location.state
       ? String(location.state.flashMessage)
@@ -75,6 +76,18 @@ export function AdminProspectsPage() {
       return matchesSearch && matchesStatus
     })
   }, [data, searchTerm, statusFilter])
+
+  const visibleProspects = useMemo(() => {
+    return filteredProspects.slice(0, visibleCount)
+  }, [filteredProspects, visibleCount])
+
+  function handleShowMore() {
+    setVisibleCount((prev) => prev + 10)
+  }
+
+  function handleShowLess() {
+    setVisibleCount((prev) => Math.max(10, prev - 10))
+  }
 
   async function handleOpenBooking(lead: ProspectLead) {
     if (!lead.rawId) return
@@ -326,7 +339,7 @@ export function AdminProspectsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProspects.map((lead) => {
+                    {visibleProspects.map((lead) => {
                       const hasScheduled = lead.medicalAppointments?.some(a => a.statusValue === 'PROGRAMADA');
 
                       return (
@@ -416,6 +429,31 @@ export function AdminProspectsPage() {
                     })}
                   </tbody>
                 </table>
+                <div className="pagination-controls">
+                  <span className="pagination-info">
+                    Mostrando {visibleProspects.length} de {filteredProspects.length} prospectos
+                  </span>
+                  <div className="pagination-buttons">
+                    {visibleCount > 10 && (
+                      <button
+                        className="button button--secondary button--compact"
+                        type="button"
+                        onClick={handleShowLess}
+                      >
+                        Ver menos
+                      </button>
+                    )}
+                    {visibleCount < filteredProspects.length && (
+                      <button
+                        className="button button--secondary button--compact"
+                        type="button"
+                        onClick={handleShowMore}
+                      >
+                        Ver mas
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             ) : (
               <DataState

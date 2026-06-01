@@ -3543,16 +3543,27 @@ def admin_update_operation_price_plan(request, operacion_id):
 def admin_pagos(request):
     branch = get_user_branch(request)
     status_filter = (request.GET.get("status") or "").strip().upper()
-    date_from = (request.GET.get("dateFrom") or "").strip()
-    date_to = (request.GET.get("dateTo") or "").strip()
     search = (request.GET.get("search") or "").strip()
+
+    today = timezone.localdate()
+    try:
+        month = int(request.GET.get("month") or today.month)
+        year = int(request.GET.get("year") or today.year)
+        start = date(year, month, 1)
+    except (TypeError, ValueError):
+        return json_response({"detail": "Mes o anio invalido."}, status=400)
+
+    if month == 12:
+        end = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end = date(year, month + 1, 1) - timedelta(days=1)
 
     pagos_qs = (
         PagoRealizado.objects.select_related(
             "cuota__operacion__paciente__usuario",
             "cuota__operacion__servicio_config__proc_estetico",
             "verificado_por",
-        ).order_by("-created_at")
+        ).filter(cuota__fecha_vencimiento__range=(start, end)).order_by("-created_at")
     )
     if branch:
         # Filtrar por la sucursal activa del cliente/operacion sin depender de citas,
@@ -3561,10 +3572,6 @@ def admin_pagos(request):
     valid_statuses = {choice[0] for choice in PagoRealizado.EstadoVerificacion.choices}
     if status_filter and status_filter in valid_statuses:
         pagos_qs = pagos_qs.filter(estado_verificacion=status_filter)
-    if date_from:
-        pagos_qs = pagos_qs.filter(created_at__date__gte=date_from)
-    if date_to:
-        pagos_qs = pagos_qs.filter(created_at__date__lte=date_to)
     if search:
         pagos_qs = pagos_qs.filter(
             Q(cuota__operacion__paciente__usuario__primer_nombre__icontains=search)
@@ -3582,11 +3589,13 @@ def admin_pagos(request):
     cuotas_qs = CuotaPlanPago.objects.select_related(
         "operacion__paciente__usuario",
         "operacion__servicio_config__proc_estetico",
-    ).prefetch_related("pagos_realizados").order_by("fecha_vencimiento", "nro_cuota")
+    ).prefetch_related("pagos_realizados").filter(fecha_vencimiento__range=(start, end)).order_by("fecha_vencimiento", "nro_cuota")
     if branch:
         cuotas_qs = cuotas_qs.filter(operacion__paciente__sucursal_registro=branch).distinct()
 
     data = {
+        "month": month,
+        "year": year,
         "metrics": [
             metric(
                 "payments-pending",

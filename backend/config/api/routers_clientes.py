@@ -25,5 +25,5 @@ operaciones_router = DefaultRouter(trailing_slash=False)
 operaciones_router.register(r"operaciones", OperacionesViewSet, basename="admin-operacion")
 
 # FreeMedicalAppointmentViewSet router
-free_medical_router = DefaultRouter(trailing_slash=False)
+free_medical_router = DefaultRouter(trailing_slash=True)
 free_medical_router.register(r"citas-medicas-libres", FreeMedicalAppointmentViewSet, basename="admin-citas-medicas-libres")

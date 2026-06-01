@@ -331,6 +331,7 @@ class CitaProspecto(TimeStampedModel):
 class CitaClienteLibre(TimeStampedModel):
     class Estado(models.TextChoices):
         PROGRAMADA = "PROGRAMADA", "Programada"
+        REALIZADA = "REALIZADA", "Realizada"
         CANCELADA = "CANCELADA", "Cancelada"
         NO_ASISTIO = "NO_ASISTIO", "No asistio"
 

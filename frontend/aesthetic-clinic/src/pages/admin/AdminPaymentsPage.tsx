@@ -16,6 +16,7 @@ import {
   updateAdminPaymentStatus,
 } from '../../services/api/admin'
 import type { UpdateAdminPaymentStatusPayload } from '../../types/admin'
+import { monthNames } from './expenses/expenseUtils'
 
 function toComparableDate(value?: string) {
   if (!value) return null
@@ -32,6 +33,9 @@ function toComparableDate(value?: string) {
 export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuotas' }) {
   const { activeBranch } = useBranchContext()
   const branchId = activeBranch?.id ?? null
+  const now = new Date()
+  const [month, setMonth] = useState(now.getMonth() + 1)
+  const [year, setYear] = useState(now.getFullYear())
   const [instructions, setInstructions] = useState('')
   const [qrFile, setQrFile] = useState<File | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -39,18 +43,50 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
   const [paymentNotes, setPaymentNotes] = useState<Record<number, string>>({})
   const [paymentActionId, setPaymentActionId] = useState<number | null>(null)
   const [statusFilter, setStatusFilter] = useState<AdminPaymentsFilters['status']>('')
-  const [dateFromFilter, setDateFromFilter] = useState('')
-  const [dateToFilter, setDateToFilter] = useState('')
   const [searchInput, setSearchInput] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
   const [quotaStatusFilter, setQuotaStatusFilter] = useState('')
+  const [qrModalOpen, setQrModalOpen] = useState(false)
+  const [qrModalImageUrl, setQrModalImageUrl] = useState('')
+  const [showMonthPicker, setShowMonthPicker] = useState(false)
+  const [pickerMonth, setPickerMonth] = useState(month)
+  const [pickerYear, setPickerYear] = useState(year)
+  const viewedMonthLabel = `${monthNames[month - 1]} ${year}`
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loader = useCallback(
-    () => getAdminPayments(),
-    [branchId],
+    () => getAdminPayments(month, year),
+    [month, year, branchId],
   )
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
+
+  const openMonthPicker = () => {
+    setPickerMonth(month)
+    setPickerYear(year)
+    setShowMonthPicker(true)
+  }
+
+  const applyMonthPicker = () => {
+    setMonth(pickerMonth)
+    setYear(pickerYear)
+    setShowMonthPicker(false)
+  }
+
+  const changeMonth = (direction: -1 | 1) => {
+    const currentMonth = month
+    const currentYear = year
+    let nextMonth = currentMonth + direction
+    let nextYear = currentYear
+    if (nextMonth < 1) {
+      nextMonth = 12
+      nextYear = currentYear - 1
+    } else if (nextMonth > 12) {
+      nextMonth = 1
+      nextYear = currentYear + 1
+    }
+    setYear(nextYear)
+    setMonth(nextMonth)
+  }
 
   useEffect(() => {
     if (data) {
@@ -168,15 +204,6 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
       if (!haystack.includes(term)) return false
     }
 
-    const dueDate = toComparableDate(payment.dueDate)
-    if (dateFromFilter) {
-      const from = new Date(`${dateFromFilter}T00:00:00`)
-      if (dueDate && dueDate < from) return false
-    }
-    if (dateToFilter) {
-      const to = new Date(`${dateToFilter}T23:59:59`)
-      if (dueDate && dueDate > to) return false
-    }
     return true
   })
 
@@ -200,15 +227,6 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
       if (!haystack.includes(term)) return false
     }
 
-    const dueDate = toComparableDate(quota.dueDate)
-    if (dateFromFilter) {
-      const from = new Date(`${dateFromFilter}T00:00:00`)
-      if (dueDate && dueDate < from) return false
-    }
-    if (dateToFilter) {
-      const to = new Date(`${dateToFilter}T23:59:59`)
-      if (dueDate && dueDate > to) return false
-    }
     return true
   })
 
@@ -218,10 +236,6 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
         eyebrow="Tesoreria"
         title="Pagos y verificaciones"
         description="Modulo para revisar comprobantes cargados por clientes y controlar cuotas aprobadas, observadas o pendientes."
-        actions={[
-          { label: 'Revision masiva', variant: 'primary' },
-          { label: 'Exportar movimientos', variant: 'ghost' },
-        ]}
       />
 
       <AdminPaymentsTabs />
@@ -266,6 +280,10 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                     alt="QR de pago activo"
                     className="payment-qr-card__image"
                     src={data.paymentQrConfig.qrImageUrl}
+                    onClick={() => {
+                      setQrModalImageUrl(data.paymentQrConfig.qrImageUrl)
+                      setQrModalOpen(true)
+                    }}
                   />
                 ) : (
                   <DataState
@@ -320,6 +338,16 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
             eyebrow="Comprobantes"
             title="Cola de verificacion"
             description="Los estados replican el flujo real del negocio: pendiente, observado y aprobado."
+            action={
+              <div className="expense-period-controls">
+                <button className="button button--ghost" type="button" onClick={() => changeMonth(-1)}>←</button>
+                <div style={{ cursor: 'pointer' }} onClick={openMonthPicker}>
+                  <span className="eyebrow">Mes seleccionado</span>
+                  <h3 style={{ cursor: 'pointer' }}>{viewedMonthLabel}</h3>
+                </div>
+                <button className="button button--ghost" type="button" onClick={() => changeMonth(1)}>→</button>
+              </div>
+            }
           >
             <div className="form-grid _mb-md">
               <label className="field">
@@ -331,14 +359,6 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                   <option value="RECHAZADO">Observado</option>
                   <option value="CANCELADO">Cancelado</option>
                 </select>
-              </label>
-              <label className="field">
-                <span>Desde</span>
-                <input className="input" type="date" value={dateFromFilter} onChange={(event) => setDateFromFilter(event.target.value)} />
-              </label>
-              <label className="field">
-                <span>Hasta</span>
-                <input className="input" type="date" value={dateToFilter} onChange={(event) => setDateToFilter(event.target.value)} />
               </label>
               <label className="field field--full">
                 <span>Buscar paciente/procedimiento</span>
@@ -498,8 +518,18 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
           {view === 'cuotas' ? (
             <SectionCard
               eyebrow="Plan de pagos"
-              title="Cuotas de todos los estados"
+              title={`Cuotas de ${viewedMonthLabel}`}
               description="Vista consolidada de cuotas pagadas, pendientes, vencidas, observadas o canceladas."
+              action={
+                <div className="expense-period-controls">
+                  <button className="button button--ghost" type="button" onClick={() => changeMonth(-1)}>←</button>
+                  <div style={{ cursor: 'pointer' }} onClick={openMonthPicker}>
+                    <span className="eyebrow">Mes seleccionado</span>
+                    <h3 style={{ cursor: 'pointer' }}>{viewedMonthLabel}</h3>
+                  </div>
+                  <button className="button button--ghost" type="button" onClick={() => changeMonth(1)}>→</button>
+                </div>
+              }
             >
               <div className="form-grid _mb-md">
                 <label className="field">
@@ -513,14 +543,6 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                     <option value="OBSERVADO">Observado</option>
                     <option value="CANCELADO">Cancelado</option>
                   </select>
-                </label>
-                <label className="field">
-                  <span>Desde</span>
-                  <input className="input" type="date" value={dateFromFilter} onChange={(event) => setDateFromFilter(event.target.value)} />
-                </label>
-                <label className="field">
-                  <span>Hasta</span>
-                  <input className="input" type="date" value={dateToFilter} onChange={(event) => setDateToFilter(event.target.value)} />
                 </label>
                 <label className="field field--full">
                   <span>Buscar paciente/procedimiento</span>
@@ -575,6 +597,94 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
               )}
             </SectionCard>
           ) : null}
+        {qrModalOpen ? (
+          <div className="qr-modal" role="dialog" aria-modal="true" aria-label="Vista previa del QR">
+            <div className="qr-modal__backdrop" onClick={() => setQrModalOpen(false)} />
+            <div className="qr-modal__content">
+              <header className="qr-modal__header">
+                <div>
+                  <span>QR activo</span>
+                  <strong>Vista previa ampliada</strong>
+                </div>
+                <button
+                  className="button button--ghost button--compact"
+                  type="button"
+                  onClick={() => setQrModalOpen(false)}
+                >
+                  ×
+                </button>
+              </header>
+              <img
+                alt="QR de pago activo ampliado"
+                className="qr-modal__image"
+                src={qrModalImageUrl}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {showMonthPicker ? (
+          <div className="qr-modal" role="dialog" aria-modal="true" aria-label="Seleccionar mes">
+            <div className="qr-modal__backdrop" onClick={() => setShowMonthPicker(false)} />
+            <div className="qr-modal__content">
+              <header className="qr-modal__header">
+                <div>
+                  <span>Seleccionar periodo</span>
+                  <strong>Elige el mes y año</strong>
+                </div>
+                <button
+                  className="button button--ghost button--compact"
+                  type="button"
+                  onClick={() => setShowMonthPicker(false)}
+                >
+                  Cerrar
+                </button>
+              </header>
+              <div className="form-grid" style={{ marginTop: '1rem' }}>
+                <label className="field">
+                  <span>Mes</span>
+                  <select
+                    className="input"
+                    value={pickerMonth}
+                    onChange={(e) => setPickerMonth(parseInt(e.target.value))}
+                  >
+                    {monthNames.map((name, index) => (
+                      <option key={name} value={index + 1}>{name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Año</span>
+                  <select
+                    className="input"
+                    value={pickerYear}
+                    onChange={(e) => setPickerYear(parseInt(e.target.value))}
+                  >
+                    {[2024, 2025, 2026, 2027, 2028, 2029, 2030].map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="form-actions" style={{ marginTop: '1rem' }}>
+                <button
+                  className="button button--ghost"
+                  type="button"
+                  onClick={() => setShowMonthPicker(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  onClick={applyMonthPicker}
+                >
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         </>
       ) : null}
     </div>

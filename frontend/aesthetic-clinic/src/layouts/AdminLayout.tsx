@@ -83,23 +83,18 @@ function BranchSelector() {
   if (isLoading || branches.length === 0) return null
 
   return (
-    <div className="_ml-sm _flex-center _flex-gap-sm">
-      <label htmlFor="global-branch-selector" className="_text-sm _text-muted">
-        Sucursal:
-      </label>
-      <select
-        id="global-branch-selector"
-        value={activeBranch?.id || ''}
-        onChange={(e) => setActiveBranch(Number(e.target.value))}
-        className="input _branch-select"
-      >
-        {branches.map((b) => (
-          <option key={b.id} value={b.id}>
-            {b.nombre} {b.es_principal ? '(Principal)' : ''}
-          </option>
-        ))}
-      </select>
-    </div>
+    <select
+      id="global-branch-selector"
+      value={activeBranch?.id || ''}
+      onChange={(e) => setActiveBranch(Number(e.target.value))}
+      className="input _branch-select"
+    >
+      {branches.map((b) => (
+        <option key={b.id} value={b.id}>
+          {b.nombre} {b.es_principal ? '(Principal)' : ''}
+        </option>
+      ))}
+    </select>
   )
 }
 
@@ -107,6 +102,7 @@ function AdminLayoutInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const { user, logout } = useAuth()
+  const { activeBranch } = useBranchContext()
   const [unreadCount, setUnreadCount] = useState(0)
 
   const loadUnreadCount = () => {
@@ -214,7 +210,13 @@ function AdminLayoutInner() {
               <span />
             </button>
             <div>
-              <span className="topbar__eyebrow">{isMainAdmin ? 'Administracion clinica' : `Sucursal: ${user?.branchName || ''}`}</span>
+              <span className="topbar__eyebrow">
+              {isMainAdmin
+                ? activeBranch
+                  ? `Administracion clinica - ${activeBranch.nombre}`
+                  : 'Administracion clinica'
+                : `Sucursal: ${user?.branchName || ''}`}
+            </span>
               <strong>{user?.fullName || 'Administrador'}</strong>
             </div>
             {isMainAdmin ? <BranchSelector /> : null}
@@ -222,7 +224,6 @@ function AdminLayoutInner() {
 
           <div className="topbar__right">
             <NavLink to="/admin/notificaciones" className="button button--ghost button--compact">🔔 {unreadCount}</NavLink>
-            <div className="search-pill">Buscar pacientes, pagos u operaciones</div>
             <div className="profile-chip">
               <div className="profile-chip__meta">
                 <strong>{user?.fullName}</strong>

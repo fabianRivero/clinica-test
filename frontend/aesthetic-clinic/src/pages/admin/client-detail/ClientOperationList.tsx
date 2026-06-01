@@ -4,15 +4,19 @@ import { StatusBadge } from '../../../components/admin/StatusBadge'
 import { DataState } from '../../../components/admin/DataState'
 import { SectionCard } from '../../../components/admin/SectionCard'
 
-const INITIAL_COUNT = 5
-const STEP = 5
-
 interface ClientOperationListProps {
   operations: any[]
   operationStatusFilter: string
   operationStatuses: string[]
   filteredOperations: any[]
   onFilterChange: (value: string) => void
+
+  // Pagination props (optional - fall back to internal if not provided)
+  visibleOperations?: any[]
+  visibleOperationsCount?: number
+  setVisibleOperationsCount?: (count: number) => void
+  hasMoreOperations?: boolean
+  hasLessOperations?: boolean
 }
 
 export function ClientOperationList({
@@ -21,15 +25,33 @@ export function ClientOperationList({
   operationStatuses,
   filteredOperations,
   onFilterChange,
+
+  // Pagination props
+  visibleOperations: externalVisibleOperations,
+  visibleOperationsCount: externalVisibleCount,
+  setVisibleOperationsCount: externalSetVisibleCount,
+  hasMoreOperations: externalHasMore,
+  hasLessOperations: externalHasLess,
 }: ClientOperationListProps) {
-  const [visibleCount, setVisibleCount] = useState(INITIAL_COUNT)
+  // Use external pagination props if provided, otherwise use internal
+  const internalStep = 5
 
-  const showMore = () => setVisibleCount((c) => c + STEP)
-  const showLess = () => setVisibleCount((c) => Math.max(INITIAL_COUNT, c - STEP))
+  const [internalVisibleCount, setInternalVisibleCount] = useState(5)
+  const showMore = () => setInternalVisibleCount((c) => c + internalStep)
+  const showLess = () => setInternalVisibleCount((c) => Math.max(5, c - internalStep))
 
-  const visibleOperations = filteredOperations.slice(0, visibleCount)
-  const hasMore = filteredOperations.length > visibleCount
-  const hasLess = visibleCount > INITIAL_COUNT
+  const visibleOperations = externalVisibleOperations ?? filteredOperations.slice(0, internalVisibleCount)
+  const visibleCount = externalVisibleCount ?? internalVisibleCount
+  const setVisibleCount = externalSetVisibleCount ?? setInternalVisibleCount
+  const hasMore = externalHasMore ?? filteredOperations.length > internalVisibleCount
+  const hasLess = externalHasLess ?? internalVisibleCount > 5
+
+  const showMoreHandler = externalSetVisibleCount
+    ? () => externalSetVisibleCount((c: number) => c + 5)
+    : showMore
+  const showLessHandler = externalSetVisibleCount
+    ? () => externalSetVisibleCount((c: number) => Math.max(5, c - 5))
+    : showLess
 
   return (
     <SectionCard eyebrow="Tratamientos" title="Procedimientos del cliente" description="Resumen operativo de tratamientos activos e historicos.">
@@ -67,18 +89,19 @@ export function ClientOperationList({
                   </article>
                 ))}
               </div>
-              <div className="_mt-md" style={{ display: 'flex', gap: '0.5rem' }}>
-                {hasLess && (
-                  <button className="button button--ghost" type="button" onClick={showLess}>
-                    Ver menos
-                  </button>
-                )}
-                {hasMore && (
-                  <button className="button" type="button" onClick={showMore}>
-                    Ver mas ({filteredOperations.length - visibleCount} restantes)
-                  </button>
-                )}
-              </div>
+              {filteredOperations.length > 5 && (
+                <div className="_flex-between _mt-md">
+                  <span>Mostrando {visibleCount} de {filteredOperations.length} procedimientos</span>
+                  <div>
+                    {hasLess && (
+                      <button className="button button--ghost" type="button" onClick={showLessHandler}>Ver menos</button>
+                    )}
+                    {hasMore && (
+                      <button className="button button--secondary" type="button" onClick={showMoreHandler}>Ver más</button>
+                    )}
+                  </div>
+                </div>
+              )}
             </>
           ) : <DataState title="Sin resultados" message="No hay procedimientos para el estado seleccionado." />}
         </>

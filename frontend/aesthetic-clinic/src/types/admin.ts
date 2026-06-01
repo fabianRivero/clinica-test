@@ -403,6 +403,8 @@ export type UpdateAdminOperationPricePayload = {
 
 
 export type PaymentsResponse = {
+  month: number
+  year: number
   metrics: AdminMetric[]
   paymentQrConfig: PaymentQrConfig
   payments: VerificationPayment[]
