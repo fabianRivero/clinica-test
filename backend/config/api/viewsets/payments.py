@@ -91,7 +91,12 @@ class PagosViewSet(viewsets.ViewSet):
         if branch:
             cuotas_qs = cuotas_qs.filter(operacion__paciente__sucursal_registro=branch).distinct()
 
-        config = ConfiguracionPagoQR.objects.order_by("-updated_at").first()
+        import logging
+        logger = logging.getLogger('billing')
+        logger.warning(f"[QR-GET] branch={branch.id if branch else None}, headers={dict(request.headers)}")
+        config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
+
+        config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
 
         return Response({
             "metrics": [
@@ -129,15 +134,19 @@ class PagosViewSet(viewsets.ViewSet):
             "quotas": [self._admin_quota_item(c) for c in cuotas_qs],
         })
 
-    @action(detail=False, methods=["post"], url_path="configuracion-qr")
+@action(detail=False, methods=["post"], url_path="configuracion-qr")
     def update_qr_config(self, request):
         """POST /pagos/configuracion-qr/ — update QR config (multipart)."""
+        import logging
+        logger = logging.getLogger('billing')
+        branch = get_user_branch(request)
         qr_file = request.FILES.get("qrImage")
-        instructions = (request.POST.get("instructions") or "").strip()
-
-        config = ConfiguracionPagoQR.objects.order_by("-updated_at").first()
+        instructions = request.POST.get("instructions", "").strip()
+        logger.warning(f"[QR-UPDATE] user={request.user.username}, is_superuser={request.user.is_superuser}, es_admin_principal={getattr(request.user, 'es_admin_principal', False)}, branch={branch.id if branch else None}, headers={dict(request.headers)}")
+        
+        config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
         if not config:
-            config = ConfiguracionPagoQR()
+            config = ConfiguracionPagoQR(sucursal=branch)
 
         if qr_file:
             config.imagen_qr = qr_file
@@ -146,7 +155,7 @@ class PagosViewSet(viewsets.ViewSet):
 
         config.save()
         return Response({
-            "detail": "El QR de pago fue actualizado correctamente.",
+            "detail": f"QR actualizado. Branch_id usado: {branch.id if branch else 'None'}",
             "paymentQrConfig": self._payment_qr_config_item(config),
         })
 

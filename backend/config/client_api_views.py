@@ -657,6 +657,12 @@ def client_treatments(request):
 def client_payments(request):
     _, payments_qs, _, quotas_qs = _base_client_queryset(request.cliente)
 
+    client_branch = getattr(request.cliente, "sucursal_registro", None)
+    if not client_branch:
+        return json_response({"detail": "No branch assigned to user"}, status=404)
+
+    qr_config = ConfiguracionPagoQR.objects.filter(sucursal=client_branch).first()
+
     data = {
         "metrics": [
             metric(
@@ -688,7 +694,7 @@ def client_payments(request):
                 "primary",
             ),
         ],
-        "paymentQrConfig": _payment_qr_config_item(ConfiguracionPagoQR.objects.order_by("-updated_at").first()),
+        "paymentQrConfig": _payment_qr_config_item(qr_config),
         "activeQuotas": [
             _quota_item(cuota)
             for cuota in quotas_qs.exclude(
@@ -927,7 +933,7 @@ def tablet_client_login(request):
     cliente_sucursal = getattr(cliente, "sucursal_registro", None)
     cliente_sucursal_id = cliente_sucursal.id if cliente_sucursal else None
     if cliente_sucursal_id is None or cliente_sucursal_id != kiosk_sucursal.id:
-        return json_response({"detail": "Este cliente no pertenece a la sucursal de esta tablet."}, status=403)
+        return json_response({"detail": "Nombre de usuario y/o contraseña incorrecta."}, status=403)
     request.session["tablet_client_id"] = cliente.id
     return json_response({"detail": "Cliente autenticado en tablet.", "clientId": cliente.id, "fullName": user.nombre_completo or user.username})
 

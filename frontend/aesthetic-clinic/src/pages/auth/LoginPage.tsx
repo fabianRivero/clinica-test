@@ -116,11 +116,9 @@ export function LoginPage() {
           <strong>Credenciales demo</strong>
           <ul>
             <li>`admin.general / admin123456`</li>
-            <li>`admin.sucursal / admin123456`</li>
+            <li>`admin.norte / admin123456`</li>
             <li>`paciente.demo / paciente123456`</li>
             <li>`lucia.laser / laser123456`</li>
-            <li>`especialista.movible.norte / especialista123456`</li>
-            <li>`especialista.movible.sur / especialista123456`</li>
           </ul>
         </div>
       </div>

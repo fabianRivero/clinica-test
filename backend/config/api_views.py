@@ -3626,7 +3626,7 @@ def admin_pagos(request):
                 "primary",
             ),
         ],
-        "paymentQrConfig": _payment_qr_config_item(ConfiguracionPagoQR.objects.order_by("-updated_at").first()),
+        "paymentQrConfig": _payment_qr_config_item(ConfiguracionPagoQR.objects.filter(sucursal=branch).first()),
         "payments": [_payment_item(payment) for payment in pagos_qs],
         "quotas": [_admin_quota_item(cuota) for cuota in cuotas_qs],
     }
@@ -3639,9 +3639,10 @@ def admin_update_payment_qr_config(request):
     qr_file = request.FILES.get("qrImage")
     instructions = (request.POST.get("instructions") or "").strip()
 
-    config = ConfiguracionPagoQR.objects.order_by("-updated_at").first()
+    branch = get_user_branch(request)
+    config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
     if not config:
-        config = ConfiguracionPagoQR()
+        config = ConfiguracionPagoQR(sucursal=branch)
 
     if qr_file:
         config.imagen_qr = qr_file

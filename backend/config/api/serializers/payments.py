@@ -68,11 +68,12 @@ class CuotaPlanPagoSerializer(serializers.ModelSerializer):
 
 class ConfiguracionPagoQRSerializer(serializers.ModelSerializer):
     """Read serializer for QR config."""
+    sucursal = serializers.PrimaryKeyRelatedField(read_only=True)
     imagen_qr_url = serializers.SerializerMethodField()
 
     class Meta:
         model = ConfiguracionPagoQR
-        fields = ["id", "instrucciones", "imagen_qr_url", "updated_at"]
+        fields = ["id", "sucursal", "instrucciones", "imagen_qr_url", "updated_at"]
 
     def get_imagen_qr_url(self, obj):
         if obj.imagen_qr:

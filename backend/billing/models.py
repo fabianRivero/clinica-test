@@ -269,6 +269,12 @@ class GastoSucursal(TimeStampedModel):
 
 
 class ConfiguracionPagoQR(TimeStampedModel):
+    sucursal = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
     instrucciones = models.TextField(
         blank=True,
         default=(
@@ -287,6 +293,12 @@ class ConfiguracionPagoQR(TimeStampedModel):
         db_table = "configuracion_pago_qr"
         verbose_name = "Configuracion de pago QR"
         verbose_name_plural = "Configuracion de pago QR"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sucursal"],
+                name="uniq_config_qr_sucursal",
+            )
+        ]
 
     def save(self, *args, **kwargs):
         previous_file_name = None
