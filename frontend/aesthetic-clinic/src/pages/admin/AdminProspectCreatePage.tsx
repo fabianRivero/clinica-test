@@ -131,7 +131,7 @@ export function AdminProspectCreatePage() {
       <PageHeader
         eyebrow="Nuevo prospecto"
         title="Registrar prospecto"
-        description="Crea un registro interno para una persona interesada en los servicios de la clinica. Se registran nombre y apellidos por separado; solo primer nombre y apellido paterno son obligatorios."
+        description="Crea un registro interno para una persona interesada en los servicios de la clínica. Se registran nombre y apellidos por separado; solo primer nombre y apellido paterno son obligatorios."
         actions={[{ label: 'Volver a prospectos', variant: 'ghost', to: '/admin/prospectos' }]}
       />
 
@@ -188,7 +188,7 @@ export function AdminProspectCreatePage() {
           </label>
 
           <label className="field">
-            <span>Telefono</span>
+            <span>Teléfono</span>
             <input
               className="input"
               name="telefono"

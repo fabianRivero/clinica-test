@@ -29,7 +29,7 @@ export function RoleHomePage({ eyebrow, title, description }: RoleHomePageProps)
 
         <div className="role-card__actions">
           <button className="button" type="button" onClick={() => void logout()}>
-            Cerrar sesion
+            Cerrar sesión
           </button>
         </div>
       </section>

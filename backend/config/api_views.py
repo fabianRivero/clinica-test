@@ -501,7 +501,7 @@ def _prospect_item(prospecto):
         "segundoNombre": prospecto.segundo_nombre,
         "apellidoPaterno": prospecto.apellido_paterno,
         "apellidoMaterno": prospecto.apellido_materno,
-        "phone": prospecto.telefono or "Sin telefono",
+        "phone": prospecto.telefono or "Sin teléfono",
         "interest": _prospect_interest(prospecto),
         "registeredBy": full_name(prospecto.registrado_por),
         "stage": _prospect_stage(prospecto),
@@ -637,7 +637,7 @@ def _client_item(cliente):
         "id": f"CLI-{cliente.pk:04d}",
         "rawId": cliente.pk,
         "name": full_name(cliente.usuario),
-        "phone": cliente.telefono or "Sin telefono",
+        "phone": cliente.telefono or "Sin teléfono",
         "ci": cliente.ci or "Sin CI",
         "status": cliente.get_estado_cliente_display(),
         "activeOperations": cliente.operaciones.filter(estado=Operacion.Estado.EN_PROCESO).count(),
@@ -725,14 +725,14 @@ def _admin_client_detail(cliente):
                 "admin-client-appointments",
                 "Citas reservadas",
                 len(appointments),
-                f"{len(upcoming_appointments)} proxima(s)",
+                f"{len(upcoming_appointments)} próxima(s)",
                 "primary",
             ),
             metric(
                 "admin-client-sessions",
                 "Sesiones realizadas",
                 len(completed_sessions),
-                "Confirmadas con biometria",
+                "Confirmadas con biometría",
                 "success",
             ),
             metric(
@@ -985,7 +985,7 @@ def _catalog_entry(item_id, title, subtitle, active, metadata, values):
 def _catalog_metric_set(active_count, inactive_count, total_count, relation_label):
     return [
         metric("catalog-active", "Activos", active_count, "Visibles para nuevas operaciones", "success"),
-        metric("catalog-inactive", "Inactivos", inactive_count, "Preservados para historico y reactivacion", "warning"),
+        metric("catalog-inactive", "Inactivos", inactive_count, "Preservados para historico y reactivación", "warning"),
         metric("catalog-total", "Total", total_count, relation_label, "primary"),
     ]
 
@@ -1014,8 +1014,8 @@ def _catalog_summary_descriptor():
         },
         {
             "key": "procedimientos-esteticos",
-            "title": "Procedimientos esteticos",
-            "description": "Catalogo operativo de procedimientos disponibles para las ventas y fichas clinicas.",
+            "title": "Procedimientos estéticos",
+            "description": "Catálogo operativo de procedimientos disponibles para las ventas y fichas clínicas.",
         },
         {
             "key": "tipos-servicio",
@@ -1025,27 +1025,27 @@ def _catalog_summary_descriptor():
         {
             "key": "campos-ficha",
             "title": "Campos de ficha",
-            "description": "Preguntas configurables por procedimiento dentro de la ficha clinica.",
+            "description": "Preguntas configurables por procedimiento dentro de la ficha clínica.",
         },
         {
             "key": "patologias-cutaneas",
-            "title": "Patologias cutaneas",
-            "description": "Catalogo de patologias usado en el analisis estetico del paciente.",
+            "title": "Patologías cutaneas",
+            "description": "Catálogo de patologías usado en el análisis estético del paciente.",
         },
         {
             "key": "especialidades",
             "title": "Especialidades",
-            "description": "Especialidades disponibles para especialistas y asignacion de agenda.",
+            "description": "Especialidades disponibles para especialistas y asignación de agenda.",
         },
         {
             "key": "grupos-opciones",
             "title": "Grupos de opciones",
-            "description": "Grupos reutilizables para respuestas de seleccion unica o multiple.",
+            "description": "Grupos reutilizables para respuestas de selección única o múltiple.",
         },
         {
             "key": "categorias-gasto",
-            "title": "Categorias de gasto",
-            "description": "Categorias administrativas usadas al registrar gastos de sucursal.",
+            "title": "Categorías de gasto",
+            "description": "Categorías administrativas usadas al registrar gastos de sucursal.",
         },
     ]
 
@@ -1071,7 +1071,7 @@ def _catalog_page_data(catalog_key):
                     {"label": "Tipo de servicio", "value": item.tipo_servicio.tipo},
                     {
                         "label": "Procedimiento",
-                        "value": item.proc_estetico.proceso if item.proc_estetico else "Sin procedimiento",
+                        "value": item.proc_estetico.proceso if item.proc_estetico else "Sín procedimiento",
                     },
                     {
                         "label": "Tipo de procedimiento",
@@ -1096,14 +1096,14 @@ def _catalog_page_data(catalog_key):
             "catalog": {
                 "key": catalog_key,
                 "title": "Todos los servicios",
-                "description": "Administra cada servicio disponible con su precio base y el procedimiento estetico asociado.",
+                "description": "Administra cada servicio disponible con su precio base y el procedimiento estético asociado.",
                 "createLabel": "Crear servicio",
             },
             "metrics": _catalog_metric_set(
                 active_count,
                 total_count - active_count,
                 total_count,
-                f"{Operacion.objects.count()} operacion(es) usan este catalogo",
+                f"{Operacion.objects.count()} operacion(es) usan este catálogo",
             ),
             "fields": [
                 _catalog_field(
@@ -1119,7 +1119,7 @@ def _catalog_page_data(catalog_key):
                 ),
                 _catalog_field(
                     "procedureId",
-                    "Procedimiento estetico",
+                    "Procedimiento estético",
                     "select",
                     value_type="number",
                     allow_empty=True,
@@ -1133,7 +1133,7 @@ def _catalog_page_data(catalog_key):
                         .filter(activo=True)
                         .order_by("tipo_p_estetico__tipo", "orden", "proceso")
                     ],
-                    hint="Deja este campo vacio para servicios generales como la cita de consulta.",
+                    hint="Deja este campo vacío para servicios generales como la cita de consulta.",
                 ),
                 _catalog_field(
                     "basePrice",
@@ -1156,7 +1156,7 @@ def _catalog_page_data(catalog_key):
                 f"Tipo: {item.tipo_p_estetico.tipo}",
                 item.activo,
                 [
-                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {"label": "Descripción", "value": item.descripcion or "Sin descripción"},
                     {
                         "label": "Servicios vinculados",
                         "value": str(item.servicios_config.count()),
@@ -1175,7 +1175,7 @@ def _catalog_page_data(catalog_key):
         return {
             "catalog": {
                 "key": catalog_key,
-                "title": "Procedimientos esteticos",
+                "title": "Procedimientos estéticos",
                 "description": "Crea, edita y desactiva procedimientos especificos que luego pueden vincularse a servicios.",
                 "createLabel": "Crear procedimiento",
             },
@@ -1198,7 +1198,7 @@ def _catalog_page_data(catalog_key):
                     ],
                 ),
                 _catalog_field("name", "Procedimiento", "text", required=True, placeholder="Ej. Borrado de tatuajes"),
-                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas del procedimiento"),
+                _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas del procedimiento"),
             ],
             "items": items,
         }
@@ -1212,7 +1212,7 @@ def _catalog_page_data(catalog_key):
                 "Base comercial del servicio",
                 item.activo,
                 [
-                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {"label": "Descripción", "value": item.descripcion or "Sin descripción"},
                     {
                         "label": "Configuraciones activas",
                         "value": str(item.servicios_config.filter(activo=True).count()),
@@ -1231,7 +1231,7 @@ def _catalog_page_data(catalog_key):
             "catalog": {
                 "key": catalog_key,
                 "title": "Tipos de servicio",
-                "description": "Administra las categorias comerciales que se usan al vender tratamientos y consultas.",
+                "description": "Administra las categorías comerciales que se usan al vender tratamientos y consultas.",
                 "createLabel": "Crear tipo de servicio",
             },
             "metrics": _catalog_metric_set(
@@ -1242,7 +1242,7 @@ def _catalog_page_data(catalog_key):
             ),
             "fields": [
                 _catalog_field("name", "Tipo de servicio", "text", required=True, placeholder="Ej. Cita de consulta"),
-                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas del tipo de servicio"),
+                _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas del tipo de servicio"),
             ],
             "items": items,
         }
@@ -1259,7 +1259,7 @@ def _catalog_page_data(catalog_key):
                 f"{item.seccion.proc_estetico.proceso} · {item.seccion.nombre}",
                 item.activo,
                 [
-                    {"label": "Codigo", "value": item.codigo},
+                    {"label": "Código", "value": item.codigo},
                     {"label": "Tipo", "value": item.get_tipo_campo_display()},
                     {
                         "label": "Grupo de opciones",
@@ -1356,10 +1356,10 @@ def _catalog_page_data(catalog_key):
             _catalog_entry(
                 item.pk,
                 item.nombre,
-                "Catalogo clinico",
+                "Catálogo clínico",
                 item.activo,
                 [
-                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {"label": "Descripción", "value": item.descripcion or "Sin descripción"},
                 ],
                 {
                     "name": item.nombre,
@@ -1374,18 +1374,18 @@ def _catalog_page_data(catalog_key):
             "catalog": {
                 "key": catalog_key,
                 "title": "Patologias cutaneas",
-                "description": "Administra las patologias disponibles para el analisis estetico y sus reportes.",
-                "createLabel": "Crear patologia cutanea",
+                "description": "Administra las patologias disponibles para el análisis estético y sus reportes.",
+                "createLabel": "Crear patología cutanea",
             },
             "metrics": _catalog_metric_set(
                 active_count,
                 total_count - active_count,
                 total_count,
-                "Utilizadas en analisis esteticos historicos",
+                "Utilizadas en análisis estéticos históricos",
             ),
             "fields": [
-                _catalog_field("name", "Patologia cutanea", "text", required=True, placeholder="Ej. Rosacea"),
-                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas o alcance"),
+                _catalog_field("name", "Patología cutanea", "text", required=True, placeholder="Ej. Rosacea"),
+                _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas o alcance"),
             ],
             "items": items,
         }
@@ -1400,7 +1400,7 @@ def _catalog_page_data(catalog_key):
                 item.activo,
                 [
                     {"label": "Orden", "value": str(item.orden)},
-                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {"label": "Descripción", "value": item.descripcion or "Sin descripción"},
                     {
                         "label": "Especialistas vinculados",
                         "value": str(item.especialistas_rel.count()),
@@ -1420,7 +1420,7 @@ def _catalog_page_data(catalog_key):
             "catalog": {
                 "key": catalog_key,
                 "title": "Especialidades",
-                "description": "Administra las especialidades disponibles para asignar al equipo medico y tecnico.",
+                "description": "Administra las especialidades disponibles para asignar al equipo médico y técnico.",
                 "createLabel": "Crear especialidad",
             },
             "metrics": _catalog_metric_set(
@@ -1430,8 +1430,8 @@ def _catalog_page_data(catalog_key):
                 f"{Especialista.objects.count()} especialista(s) registrados",
             ),
             "fields": [
-                _catalog_field("name", "Especialidad", "text", required=True, placeholder="Ej. Laser terapeutico"),
-                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas sobre la especialidad"),
+                _catalog_field("name", "Especialidad", "text", required=True, placeholder="Ej. Laser terapéutico"),
+                _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas sobre la especialidad"),
                 _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
             ],
             "items": items,
@@ -1446,7 +1446,7 @@ def _catalog_page_data(catalog_key):
                 item.codigo,
                 item.activo,
                 [
-                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {"label": "Descripción", "value": item.descripcion or "Sin descripción"},
                     {"label": "Opciones activas", "value": str(item.opciones.filter(activo=True).count())},
                     {"label": "Opciones totales", "value": str(item.opciones.count())},
                 ],
@@ -1464,7 +1464,7 @@ def _catalog_page_data(catalog_key):
             "catalog": {
                 "key": catalog_key,
                 "title": "Grupos de opciones",
-                "description": "Agrupa respuestas reutilizables para campos de ficha y otros formularios dinamicos.",
+                "description": "Agrupa respuestas reutilizables para campos de ficha y otros formularios dinámicos.",
                 "createLabel": "Crear grupo de opciones",
             },
             "metrics": _catalog_metric_set(
@@ -1474,9 +1474,9 @@ def _catalog_page_data(catalog_key):
                 f"{OpcionCatalogo.objects.filter(activo=True).count()} opcion(es) activas asociadas",
             ),
             "fields": [
-                _catalog_field("code", "Codigo", "text", required=True, placeholder="Ej. SI_NO"),
+                _catalog_field("code", "Código", "text", required=True, placeholder="Ej. SI_NO"),
                 _catalog_field("name", "Nombre", "text", required=True, placeholder="Ej. Si / No"),
-                _catalog_field("description", "Descripcion", "textarea", placeholder="Describe el uso del grupo"),
+                _catalog_field("description", "Descripción", "textarea", placeholder="Describe el uso del grupo"),
             ],
             "items": items,
         }
@@ -1487,10 +1487,10 @@ def _catalog_page_data(catalog_key):
             _catalog_entry(
                 item.pk,
                 item.nombre,
-                "Categoria administrativa de gasto",
+                "Categoría administrativa de gasto",
                 item.activo,
                 [
-                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {"label": "Descripción", "value": item.descripcion or "Sin descripción"},
                     {"label": "Gastos vinculados", "value": str(item.gastos.count())},
                 ],
                 {
@@ -1516,8 +1516,8 @@ def _catalog_page_data(catalog_key):
                 f"{GastoSucursal.objects.count()} gasto(s) registrados",
             ),
             "fields": [
-                _catalog_field("name", "Categoria", "text", required=True, placeholder="Ej. Insumos"),
-                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas o alcance"),
+                _catalog_field("name", "Categoría", "text", required=True, placeholder="Ej. Insumos"),
+                _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas o alcance"),
             ],
             "items": items,
         }
@@ -1541,10 +1541,10 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         try:
             value = int(raw)
         except (TypeError, ValueError):
-            errors[field_name] = "Debes enviar un numero valido."
+            errors[field_name] = "Debes enviar un numero válido."
             return None
         if value < minimum:
-            errors[field_name] = f"El valor minimo permitido es {minimum}."
+            errors[field_name] = f"El valor mínimo permitido es {minimum}."
             return None
         return value
 
@@ -1557,10 +1557,10 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         try:
             value = Decimal(str(raw))
         except (InvalidOperation, TypeError, ValueError):
-            errors[field_name] = "Debes enviar un monto valido."
+            errors[field_name] = "Debes enviar un monto válido."
             return None
         if value < minimum:
-            errors[field_name] = f"El valor minimo permitido es {minimum}."
+            errors[field_name] = f"El valor mínimo permitido es {minimum}."
             return None
         return value
 
@@ -1576,13 +1576,13 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
 
         service_type = TipoServicio.objects.filter(pk=service_type_id).first()
         if not service_type:
-            raise ValidationError({"serviceTypeId": "Selecciona un tipo de servicio valido."})
+            raise ValidationError({"serviceTypeId": "Selecciona un tipo de servicio válido."})
 
         procedure = None
         if procedure_id:
             procedure = ProcEstetico.objects.filter(pk=procedure_id).first()
             if not procedure:
-                raise ValidationError({"procedureId": "Selecciona un procedimiento valido."})
+                raise ValidationError({"procedureId": "Selecciona un procedimiento válido."})
 
         obj = instance or ServicioConfig()
         obj.tipo_servicio = service_type
@@ -1599,7 +1599,7 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
             raise ValidationError(errors)
         procedure_type = ProcEsteticosTipo.objects.filter(pk=procedure_type_id).first()
         if not procedure_type:
-            raise ValidationError({"procedureTypeId": "Selecciona un tipo de procedimiento valido."})
+            raise ValidationError({"procedureTypeId": "Selecciona un tipo de procedimiento válido."})
         obj = instance or ProcEstetico()
         obj.tipo_p_estetico = procedure_type
         obj.proceso = name
@@ -1626,23 +1626,23 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         order = int_value("order", minimum=0, allow_empty=True)
 
         if not code:
-            errors["code"] = "El codigo interno es obligatorio."
+            errors["code"] = "El código interno es obligatorio."
         if not label:
             errors["label"] = "La etiqueta visible es obligatoria."
         if field_type not in {choice for choice, _ in FichaCampo.TipoCampo.choices}:
-            errors["fieldType"] = "Selecciona un tipo de campo valido."
+            errors["fieldType"] = "Selecciona un tipo de campo válido."
         if errors:
             raise ValidationError(errors)
 
         section = FichaSeccion.objects.filter(pk=section_id).first()
         if not section:
-            raise ValidationError({"sectionId": "Selecciona una seccion valida."})
+            raise ValidationError({"sectionId": "Selecciona una sección válida."})
 
         option_group = None
         if option_group_id:
             option_group = GrupoOpciones.objects.filter(pk=option_group_id).first()
             if not option_group:
-                raise ValidationError({"optionGroupId": "Selecciona un grupo de opciones valido."})
+                raise ValidationError({"optionGroupId": "Selecciona un grupo de opciones válido."})
 
         obj = instance or FichaCampo()
         obj.seccion = section
@@ -1659,7 +1659,7 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
     if catalog_key == "patologias-cutaneas":
         name = text_value("name")
         if not name:
-            errors["name"] = "El nombre de la patologia es obligatorio."
+            errors["name"] = "El nombre de la patología es obligatorio."
         if errors:
             raise ValidationError(errors)
         obj = instance or PatologiaCutanea()
@@ -1684,7 +1684,7 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         code = text_value("code")
         name = text_value("name")
         if not code:
-            errors["code"] = "El codigo es obligatorio."
+            errors["code"] = "El código es obligatorio."
         if not name:
             errors["name"] = "El nombre es obligatorio."
         if errors:
@@ -1698,7 +1698,7 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
     if catalog_key == "categorias-gasto":
         name = text_value("name")
         if not name:
-            errors["name"] = "El nombre de la categoria es obligatorio."
+            errors["name"] = "El nombre de la categoría es obligatorio."
         if errors:
             raise ValidationError(errors)
         obj = instance or CategoriaGasto()
@@ -1819,7 +1819,7 @@ def _parse_staff_payload(request, payload, errors, *, instance=None):
         try:
             date.fromisoformat(fecha_nacimiento_raw)
         except ValueError:
-            errors["fechaNacimiento"] = "Fecha de nacimiento no valida."
+            errors["fechaNacimiento"] = "Fecha de nacimiento no válida."
     elif instance is None:
         errors["fechaNacimiento"] = "La fecha de nacimiento es obligatoria."
 
@@ -1836,7 +1836,7 @@ def _parse_staff_payload(request, payload, errors, *, instance=None):
     elif branch_id:
         sucursal_base = Sucursal.objects.filter(pk=branch_id, activa=True).first()
         if not sucursal_base:
-            errors["branchId"] = "La sucursal seleccionada no es valida."
+            errors["branchId"] = "La sucursal seleccionada no es válida."
     else:
         # Admin principal/superuser sin branchId explicito: usar sucursal activa del contexto.
         sucursal_base = get_user_branch(request)
@@ -1895,7 +1895,7 @@ def _dashboard_alerts():
             {
                 "id": "alert-payments",
                 "title": "Pagos pendientes por mas de 24 horas",
-                "description": f"Hay {overdue_pending} comprobante(s) que aun no fueron revisados.",
+                "description": f"Hay {overdue_pending} comprobante(s) que aún no fueron revisados.",
                 "severity": "high",
                 "action": "Revisar cola de pagos",
             }
@@ -1905,7 +1905,7 @@ def _dashboard_alerts():
             {
                 "id": "alert-payments-ok",
                 "title": "Cola de pagos controlada",
-                "description": "No hay comprobantes vencidos esperando revision administrativa.",
+                "description": "No hay comprobantes vencidos esperando revisión administrativa.",
                 "severity": "low",
                 "action": "Ver pagos recientes",
             }
@@ -1940,10 +1940,10 @@ def _dashboard_alerts():
                 "id": "alert-catalogs",
                 "title": "Procedimientos sin ficha configurada",
                 "description": (
-                    f"Hay {procedures_without_sections} procedimiento(s) activos sin secciones de ficha clinica."
+                    f"Hay {procedures_without_sections} procedimiento(s) activos sin secciones de ficha clínica."
                 ),
                 "severity": "medium",
-                "action": "Completar catalogos",
+                "action": "Completar catálogos",
             }
         )
 
@@ -1988,7 +1988,7 @@ def admin_offline_confirmation_conflicts(request):
 def admin_resolve_offline_confirmation_conflict(request, event_id):
     payload = load_payload(request)
     if payload is None:
-        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON válido."}, status=400)
 
     resolution = (payload.get("resolution") or "").strip().upper()
     reason = (payload.get("reason") or "").strip()
@@ -2919,7 +2919,7 @@ def admin_cliente_inactivate(request, client_id):
         {
             "detail": (
                 "El cliente fue convertido a inactivo. "
-                f"Antes de la inactivacion tenia {pendientes['sesiones_pendientes']} sesion(es) "
+                f"Antes de la inactivación tenia {pendientes['sesiones_pendientes']} sesion(es) "
                 f"y {pendientes['cuotas_pendientes']} cuota(s) pendiente(s). "
                 f"Se convirtieron {converted_quotas} cuota(s) a no pagadas "
                 f"y se omitieron {skipped_pending_review_quotas} por tener pagos pendientes de revision. "

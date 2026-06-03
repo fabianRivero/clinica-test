@@ -88,7 +88,7 @@ export function AdminDashboardPage() {
         
         <SectionCard
           eyebrow="Cobros"
-          title="Pagos proximos"
+          title="Pagos próximos"
           description="Cuotas de tratamiento pendientes por vencer."
           action={
             <MonthNavigator 
@@ -165,7 +165,7 @@ export function AdminDashboardPage() {
 
         <SectionCard
           eyebrow="Operaciones"
-          title="Citas proximas"
+          title="Citas próximas"
           description="Agenda de tratamientos programados."
           action={
             <MonthNavigator 
@@ -235,7 +235,7 @@ export function AdminDashboardPage() {
             </div>
           ) : (
             <DataState
-              title="Agenda vacia"
+              title="Agenda vacía"
               message={`No hay citas programadas para ${monthNames[aMonth - 1]} ${aYear}.`}
               tone="neutral"
             />

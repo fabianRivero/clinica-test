@@ -140,7 +140,7 @@ export function SpecialistPortalPage() {
         </>
       ) : (
         <section className="dashboard-grid dashboard-grid--secondary">
-          <SectionCard eyebrow="Bandeja" title="Mensajes con administracion" description="Comunicacion interna por sucursal con formato tipo correo.">
+          <SectionCard eyebrow="Bandeja" title="Mensajes con administración" description="Comunicación interna por sucursal con formato tipo correo.">
             <div className="table-card">
               <table>
                 <thead>

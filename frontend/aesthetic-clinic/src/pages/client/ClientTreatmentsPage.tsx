@@ -83,7 +83,7 @@ export function ClientTreatmentsPage() {
                         <dd>{operation.endedAt}</dd>
                       </div>
                       <div>
-                        <dt>Proxima cita</dt>
+                        <dt>Próxima cita</dt>
                         <dd>{operation.nextAppointment}</dd>
                       </div>
                       <div>

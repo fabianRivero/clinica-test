@@ -249,7 +249,7 @@ export function ConversionStepMedical({
         <div className="wizard-block__header">
           <div>
             <strong>Datos generales de la ficha</strong>
-            <p>Completa la informacion administrativa y clinica base para el procedimiento.</p>
+            <p>Completa la información administrativa y clínica base para el procedimiento.</p>
           </div>
         </div>
         <div className="form-grid">
@@ -354,7 +354,7 @@ export function ConversionStepMedical({
         <div className="wizard-block__header">
           <div>
             <strong>Parte 6. Observaciones</strong>
-            <p>Registra observaciones generales importantes para el tratamiento, seguimiento o conducta clinica.</p>
+            <p>Registra observaciones generales importantes para el tratamiento, seguimiento o conducta clínica.</p>
           </div>
         </div>
         <label className="field field--full">
@@ -530,7 +530,7 @@ export function ConversionStepMedical({
         <div className="wizard-block__header">
           <div>
             <strong>Documento escaneado de la ficha</strong>
-            <p>Adjunta el PDF final escaneado. Este archivo se guardara junto a la ficha clinica de la operacion.</p>
+            <p>Adjunta el PDF final escaneado. Este archivo se guardará junto a la ficha clínica de la operación.</p>
           </div>
         </div>
         <label className="field field--full">

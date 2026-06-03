@@ -102,7 +102,7 @@ export function ClientProfileModal({ clientId, isOpen, onClose }: Props) {
                 <input className="input" name="email" type="email" value={form.email} onChange={handleChange} />
               </label>
               <label className="field">
-                <span>Telefono</span>
+                <span>Teléfono</span>
                 <input className="input" name="telefono" type="tel" value={form.telefono} onChange={handleChange} />
               </label>
               <label className="field">

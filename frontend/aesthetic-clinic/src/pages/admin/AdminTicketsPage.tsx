@@ -211,7 +211,7 @@ export function AdminMessagingPermissionsPage() {
 
       {user && !user.isMainAdmin ? (
         <SectionCard
-          eyebrow="Comunicacion"
+          eyebrow="Comunicación"
           title="Administradores principales"
           description="Puedes crear fichas para comunicarte con el administrador principal."
         >

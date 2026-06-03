@@ -567,8 +567,8 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
         ? await finalizeAdminClientReactivation(clientId, medicalDocumentFile || undefined, firstPaymentPayload)
         : await finalizeAdminProspectConversion(prospectId, medicalDocumentFile || undefined, firstPaymentPayload)
       showNotification({
-        title: isReactivation ? 'Reactivacion exitosa' : 'Conversion exitosa',
-        message: `${finalizeResponse.detail} Cliente: ${finalizeResponse.client.name}. Operacion: ${finalizeResponse.operation.procedure}.`,
+        title: isReactivation ? 'Reactivación exitosa' : 'Conversión exitosa',
+        message: `${finalizeResponse.detail} Cliente: ${finalizeResponse.client.name}. Operación: ${finalizeResponse.operation.procedure}.`,
         tone: 'success',
         duration: 6000,
       })

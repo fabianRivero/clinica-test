@@ -90,7 +90,7 @@ export function ClientLayout() {
                 <span>{user?.role || 'CLIENTE'}</span>
               </div>
               <button className="button button--ghost button--compact" type="button" onClick={() => void logout()}>
-                Cerrar sesion
+                Cerrar sesión
               </button>
             </div>
           </div>

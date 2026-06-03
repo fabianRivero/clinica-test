@@ -33,7 +33,7 @@ class CatalogFormatMixin:
                 "id": "catalog-inactive",
                 "label": "Inactivos",
                 "value": str(inactive_count),
-                "delta": "Preservados para historico y reactivacion",
+                "delta": "Preservados para historico y reactivación",
                 "tone": "warning",
             },
             {

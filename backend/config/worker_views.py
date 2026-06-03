@@ -11,7 +11,7 @@ from staff.models import Especialista
 # Python weekday (0=Mon..6=Sun) → Django DiaSemana (0=Sun,1=Mon..6=Sat)
 PYTHON_TO_DJANGO_WEEKDAY = {0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 0}
 
-WEEKDAY_LABELS = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"]
+WEEKDAY_LABELS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
 
 
 def worker_availability(request):

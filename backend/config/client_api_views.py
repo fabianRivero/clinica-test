@@ -463,7 +463,7 @@ def _client_alerts(cliente, active_operations, pending_quotas, pending_payments,
             {
                 "id": "client-alert-ok",
                 "title": "Todo en orden",
-                "description": "Tus tratamientos, pagos y proximas citas no muestran bloqueos importantes.",
+                "description": "Tus tratamientos, pagos y próximas citas no muestran bloqueos importantes.",
                 "severity": "low",
                 "action": "Ver resumen",
             }
@@ -560,7 +560,7 @@ def client_dashboard(request):
         "welcome": {
             "name": full_name(cliente.usuario),
             "status": cliente.get_estado_cliente_display(),
-            "phone": cliente.telefono or "Sin telefono",
+            "phone": cliente.telefono or "Sin teléfono",
             "ci": cliente.ci or "Sin CI registrado",
             "lastAnalysis": date_label(latest_analysis.fecha_analisis) if latest_analysis else "Sin analisis",
             "activeOperations": len(active_operations),
@@ -590,7 +590,7 @@ def client_dashboard(request):
             ),
             metric(
                 "client-upcoming-appointments",
-                "Proximas citas",
+                "Próximas citas",
                 len(upcoming_appointments),
                 f"{appointments_qs.filter(estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION).count()} pendientes de biometria",
                 "danger" if appointments_qs.filter(estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION).exists() else "primary",

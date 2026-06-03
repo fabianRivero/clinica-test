@@ -102,7 +102,7 @@ export function AdminClientDetailPage() {
       <div className="page-stack">
         <PageHeader eyebrow="Clientes" title="Cargando cliente" description="Estamos preparando su historial administrativo." />
         <SectionCard title="Sincronizando">
-          <DataState title="Cargando informacion" message="Consultando citas, sesiones, pagos y procedimientos." />
+          <DataState title="Cargando información" message="Consultando citas, sesiones, pagos y procedimientos." />
         </SectionCard>
       </div>
     )
@@ -124,7 +124,7 @@ export function AdminClientDetailPage() {
       <PageHeader
         eyebrow="Administrador de cliente"
         title={data.client.name}
-        description={`${data.client.status} | ${data.client.phone} | Ultimo analisis: ${data.client.lastAnalysis}`}
+        description={`${data.client.status} | ${data.client.phone} | Último análisis: ${data.client.lastAnalysis}`}
         actions={[
           { label: 'Volver a clientes', variant: 'ghost', to: '/admin/clientes' },
           ...(data.client.status === 'Inactivo' ? [{
@@ -216,7 +216,7 @@ export function AdminClientDetailPage() {
         handleReserveFreeMedicalAppointment={handleReserveFreeMedicalAppointment}
       />
 
-      <SectionCard eyebrow="Sesiones" title="Sesiones realizadas" description="Citas confirmadas con verificacion registrada.">
+      <SectionCard eyebrow="Sesiones" title="Sesiones realizadas" description="Citas confirmadas con verificación registrada.">
         {data.sessions.length ? (
           <>
             <div className="capacity-list">
@@ -243,7 +243,7 @@ export function AdminClientDetailPage() {
               </div>
             )}
           </>
-        ) : <DataState title="Sin sesiones realizadas" message="Todavia no hay sesiones confirmadas con verificacion." />}
+        ) : <DataState title="Sin sesiones realizadas" message="Todavía no hay sesiones confirmadas con verificación." />}
       </SectionCard>
 
       <ClientPaymentSection

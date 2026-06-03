@@ -13,10 +13,10 @@ class DiaSemana(models.IntegerChoices):
     DOMINGO = 0, "Domingo"
     LUNES = 1, "Lunes"
     MARTES = 2, "Martes"
-    MIERCOLES = 3, "Miercoles"
+    MIERCOLES = 3, "Miércoles"
     JUEVES = 4, "Jueves"
     VIERNES = 5, "Viernes"
-    SABADO = 6, "Sabado"
+    SABADO = 6, "Sábado"
 
 
 class Operacion(TimeStampedModel):

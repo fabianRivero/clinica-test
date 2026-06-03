@@ -376,7 +376,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
       <PageHeader
         eyebrow="Administracion"
         title="Gestion de sucursales"
-        description="Modulo para administracion general de sucursales."
+        description="Módulo para administración general de sucursales."
       />
 
       <AdminBranchTabs />
@@ -398,9 +398,8 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
         </div>
       </div> : null}
 
-      {view === 'create' ? <SectionCard title="Crear sucursal" description="Completa el wizard para registrar una nueva sucursal, su administrador y su tablet.">
+      {view === 'create' ? <SectionCard title="Crear sucursal" description="Completa el proceso para registrar una nueva sucursal, su administrador y su tablet.">
         <section className="wizard-summary">
-          <p className="wizard-summary__title">Wizard de creacion</p>
           <p className="wizard-summary__description">Avanza paso a paso y valida los datos antes de finalizar.</p>
         </section>
 
@@ -444,7 +443,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                 <label className="field"><span>Segundo nombre</span><input className="input" value={wizardNewAdmin.segundoNombre} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, segundoNombre: e.target.value }))} /></label>
                 <label className="field"><span>Apellido paterno <span className="_text-danger">*</span></span><input className="input" value={wizardNewAdmin.apellidoPaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoPaterno: e.target.value }))} />{step2Submitted && !wizardNewAdmin.apellidoPaterno.trim() && <span className="_text-danger _text-xs">Campo obligatorio</span>}</label>
                 <label className="field"><span>Apellido materno</span><input className="input" value={wizardNewAdmin.apellidoMaterno} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, apellidoMaterno: e.target.value }))} /></label>
-                <label className="field"><span>Telefono</span><input className="input" value={wizardNewAdmin.telefono} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, telefono: e.target.value }))} /></label>
+                <label className="field"><span>Teléfono</span><input className="input" value={wizardNewAdmin.telefono} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, telefono: e.target.value }))} /></label>
                 <label className="field"><span>Fecha de nacimiento <span className="_text-danger">*</span></span><input className="input" type="date" value={wizardNewAdmin.fechaNacimiento} onChange={(e) => setWizardNewAdmin((v) => ({ ...v, fechaNacimiento: e.target.value }))} />{step2Submitted && !wizardNewAdmin.fechaNacimiento.trim() && <span className="_text-danger _text-xs">Campo obligatorio</span>}</label>
               </div>
               <div className="_flex-between _mt-md"><button className="button button--ghost" type="button" onClick={handleCancelWizard}>Cancelar</button><div className="_flex-gap-sm"><button className="button button--ghost" type="button" onClick={() => setWizardStep(1)}>Volver</button><button className="button" disabled={saving} type="submit">Continuar</button></div></div>

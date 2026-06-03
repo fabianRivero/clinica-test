@@ -86,7 +86,7 @@ export function ConversionStepUser({
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(event) => onChangePassword(event.target.value)}
-              placeholder={hasPassword ? 'Dejar vacio para conservar la actual' : ''}
+              placeholder={hasPassword ? 'Dejar vacío para conservar la actual' : ''}
             />
             <button
               className="field__toggle"
@@ -138,7 +138,7 @@ export function ConversionStepUser({
         </>
       )}
       <label className="field">
-        <span>Telefono</span>
+        <span>Teléfono</span>
         <input className="input" name="telefono" type="tel" value={userForm.telefono} onChange={onUserChange} />
       </label>
       <label className="field">

@@ -269,28 +269,28 @@ class Command(BaseCommand):
     def _seed_staff(self, users, branches):
         specialty_specs = {
             "dermatologia_laser": {
-                "nombre": "Dermatologia laser",
-                "descripcion": "Evaluacion y tratamientos laser.",
+                "nombre": "Dermatologìa laser",
+                "descripcion": "Evaluación y tratamientos laser.",
                 "orden": 1,
             },
             "borrado_tatuajes": {
                 "nombre": "Borrado de tatuajes",
-                "descripcion": "Atencion de tatuajes con equipo laser.",
+                "descripcion": "Atención de tatuajes con equipo laser.",
                 "orden": 2,
             },
             "tratamiento_manchas": {
                 "nombre": "Tratamiento de manchas",
-                "descripcion": "Protocolos de manchas y pigmentacion.",
+                "descripcion": "Protocolos de manchas y pigmentación.",
                 "orden": 3,
             },
             "consulta_medica": {
-                "nombre": "Consulta medica",
-                "descripcion": "Valoracion inicial y controles.",
+                "nombre": "Consulta médica",
+                "descripcion": "Valoración inicial y controles.",
                 "orden": 4,
             },
             "medicina_estetica": {
-                "nombre": "Medicina estetica",
-                "descripcion": "Seguimiento clinico de procedimientos.",
+                "nombre": "Medicina estética",
+                "descripcion": "Seguimiento clínico de procedimientos.",
                 "orden": 5,
             },
         }
@@ -312,7 +312,7 @@ class Command(BaseCommand):
                 "user": users["lucia.laser"],
                 "ci": "4567890",
                 "telefono": "70111222",
-                "observaciones": "Especialista en depilacion definitiva y protocolos laser.",
+                "observaciones": "Especialista en depilación definitiva y protocolos laser.",
                 "specialties": ["dermatologia_laser", "medicina_estetica"],
             },
             "diego": {
@@ -326,7 +326,7 @@ class Command(BaseCommand):
                 "user": users["sofia.manchas"],
                 "ci": "6789012",
                 "telefono": "73344556",
-                "observaciones": "Especialista en manchas y evaluacion estetica.",
+                "observaciones": "Especialista en manchas y evaluación estética.",
                 "specialties": ["tratamiento_manchas", "medicina_estetica"],
             },
             "rafael": {

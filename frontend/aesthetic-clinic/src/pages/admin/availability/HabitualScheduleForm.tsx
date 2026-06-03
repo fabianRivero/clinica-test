@@ -143,7 +143,7 @@ export function HabitualScheduleForm({
             className="input"
             value={habitualForm.detail}
             onChange={(e) => setHabitualForm({ ...habitualForm, detail: e.target.value })}
-            placeholder="Ej. Turno mañana cardiologia"
+            placeholder="Ej. Turno mañana cardiología"
           />
         </div>
 

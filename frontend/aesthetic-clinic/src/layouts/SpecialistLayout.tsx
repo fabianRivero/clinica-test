@@ -43,7 +43,7 @@ export function SpecialistLayout() {
         <div className="brand-card">
           <span className="brand-card__eyebrow">Portal de especialista</span>
           <strong>Nataly Ferrufino Estetic & Academy</strong>
-          <p>Disponibilidad semanal y coordinacion con administracion.</p>
+          <p>Disponibilidad semanal y coordinación con administración.</p>
         </div>
 
         <nav className="side-nav" aria-label="Navegacion principal del especialista">
@@ -106,7 +106,7 @@ export function SpecialistLayout() {
                 <span>{user?.role || 'TRABAJADOR'}</span>
               </div>
               <button className="button button--ghost button--compact" type="button" onClick={() => void logout()}>
-                Cerrar sesion
+                Cerrar sesión
               </button>
             </div>
           </div>

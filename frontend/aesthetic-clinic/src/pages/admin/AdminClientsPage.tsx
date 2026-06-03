@@ -136,7 +136,7 @@ export function AdminClientsPage() {
           <SectionCard
             eyebrow="Red global"
             title="Buscar e importar de otra sucursal"
-            description="Si el cliente ya tiene cuenta en otra sede, buscalo por CI o Nombre para importarlo a esta sucursal."
+            description="Si el cliente ya tiene cuenta en otra sede, búscalo por CI o Nombre para importarlo a esta sucursal."
           >
             <div className="field">
               <input
@@ -228,7 +228,7 @@ export function AdminClientsPage() {
                       <th>CI</th>
                       <th>Operaciones activas</th>
                       <th>Historial</th>
-                      <th>Ultimo analisis</th>
+                      <th>Último análisis</th>
                       <th>Citas programadas</th>
                     </tr>
                   </thead>
@@ -291,7 +291,7 @@ export function AdminClientsPage() {
                         type="button"
                         onClick={handleShowMore}
                       >
-                        Ver mas
+                        Ver más
                       </button>
                     )}
                   </div>

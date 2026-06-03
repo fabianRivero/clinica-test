@@ -14,7 +14,7 @@ export function ClientDashboardPage() {
       <PageHeader
         eyebrow="Resumen personal"
         title="Portal del cliente"
-        description="Consulta el estado de tus tratamientos, pagos, cuotas y proximas citas desde una sola vista."
+        description="Consulta el estado de tus tratamientos, pagos, cuotas y próximas citas desde una sola vista."
       />
 
       {isLoading && !data ? (
@@ -39,7 +39,7 @@ export function ClientDashboardPage() {
               <span className="client-summary-card__eyebrow">Hola, {data.welcome.name}</span>
               <h2>Tu estado actual es {data.welcome.status.toLowerCase()}.</h2>
               <p>
-                CI: {data.welcome.ci} | Telefono: {data.welcome.phone} | Ultimo analisis:{' '}
+                CI: {data.welcome.ci} | Teléfono: {data.welcome.phone} | Último análisis:{' '}
                 {data.welcome.lastAnalysis}
               </p>
             </div>
@@ -84,7 +84,7 @@ export function ClientDashboardPage() {
                           <dd>{operation.zone}</dd>
                         </div>
                         <div>
-                          <dt>Proxima cita</dt>
+                          <dt>Próxima cita</dt>
                           <dd>{operation.nextAppointment}</dd>
                         </div>
                         <div>
@@ -124,7 +124,7 @@ export function ClientDashboardPage() {
 
             <SectionCard
               eyebrow="Agenda"
-              title="Proximas citas"
+              title="Próximas citas"
               description="Citas ya registradas o pendientes de cierre de verificacion."
             >
               {data.upcomingAppointments.length ? (
@@ -137,7 +137,7 @@ export function ClientDashboardPage() {
                       <div className="agenda-item__content">
                         <strong>{appointment.operation}</strong>
                         <p>
-                          {appointment.specialist} | metodo verificacion:{' '}
+                          {appointment.specialist} | método verificación:{' '}
                           {appointment.verificationMethod
                             ? verificationMethodLabel[appointment.verificationMethod]
                             : 'No especificado'}
@@ -160,7 +160,7 @@ export function ClientDashboardPage() {
             <SectionCard
               eyebrow="Cuotas"
               title="Pagos por atender"
-              description="Cuotas activas y ultimo estado de tus comprobantes."
+              description="Cuotas activas y último estado de tus comprobantes."
             >
               {data.pendingQuotas.length ? (
                 <div className="capacity-list">
@@ -177,7 +177,7 @@ export function ClientDashboardPage() {
                         </div>
                         <StatusBadge tone={quota.statusTone}>{quota.status}</StatusBadge>
                       </div>
-                      <p>Ultimo comprobante: {quota.latestPaymentStatus}</p>
+                      <p>Último comprobante: {quota.latestPaymentStatus}</p>
                     </article>
                   ))}
                 </div>
@@ -192,7 +192,7 @@ export function ClientDashboardPage() {
             <SectionCard
               eyebrow="Pagos recientes"
               title="Historial inmediato"
-              description="Ultimos comprobantes subidos y su estado de revision."
+              description="Últimos comprobantes subidos y su estado de revisión."
             >
               {data.recentPayments.length ? (
                 <div className="table-card">

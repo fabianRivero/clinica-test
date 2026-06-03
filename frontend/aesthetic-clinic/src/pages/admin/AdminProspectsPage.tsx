@@ -330,8 +330,8 @@ export function AdminProspectsPage() {
                   <thead>
                     <tr>
                       <th>Nombre</th>
-                      <th>Telefono</th>
-                      <th>Interes</th>
+                      <th>Teléfono</th>
+                      <th>Interés</th>
                       <th>Registrado por</th>
                       <th>Etapa</th>
                       <th>Estado</th>
@@ -449,7 +449,7 @@ export function AdminProspectsPage() {
                         type="button"
                         onClick={handleShowMore}
                       >
-                        Ver mas
+                        Ver más
                       </button>
                     )}
                   </div>

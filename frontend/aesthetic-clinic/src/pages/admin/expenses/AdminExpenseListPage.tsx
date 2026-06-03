@@ -143,7 +143,7 @@ export function AdminExpenseListPage() {
                   <thead>
                     <tr>
                       <th>Fecha</th>
-                      <th>Categoria</th>
+                      <th>Categoría</th>
                       <th>Concepto</th>
                       <th>Proveedor</th>
                       <th>Total</th>
@@ -179,7 +179,7 @@ export function AdminExpenseListPage() {
           <SectionCard
             eyebrow="Resumen mensual"
             title={`Total de ${viewedMonthLabel}: ${formatMoney(totalForMonth)}`}
-            description="Distribucion del gasto por categoria en el mes seleccionado."
+            description="Distribucion del gasto por categoría en el mes seleccionado."
           >
             {categorySummary.length ? (
               <div className="catalog-admin-grid">

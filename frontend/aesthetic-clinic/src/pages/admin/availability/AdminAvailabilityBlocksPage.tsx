@@ -175,7 +175,7 @@ export function AdminAvailabilityBlocksPage() {
       <PageHeader
         eyebrow="Excepciones y Cierres"
         title="Excepciones generales de horarios"
-        description="Gestiona cierres globales de la clinica o excepciones especificas para uno o varios especialistas."
+        description="Gestiona cierres globales de la clínica o excepciones específicas para uno o varios especialistas."
       >
         <AdminAvailabilityTabs />
       </PageHeader>
@@ -306,7 +306,7 @@ export function AdminAvailabilityBlocksPage() {
                       )}
                       {exceptionPage < totalExceptionPages && (
                         <button className="button button--ghost" onClick={showMoreExceptions}>
-                          Mostrar mas
+                          Mostrar más
                         </button>
                       )}
                     </div>
@@ -353,7 +353,7 @@ export function AdminAvailabilityBlocksPage() {
                       )}
                       {closurePage < totalClosurePages && (
                         <button className="button button--ghost" onClick={showMoreClosures}>
-                          Mostrar mas
+                          Mostrar más
                         </button>
                       )}
                     </div>

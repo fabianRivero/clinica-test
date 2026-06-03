@@ -160,13 +160,13 @@ export function AdminOperationDetailPage() {
         <PageHeader
           eyebrow="Detalle de operacion"
           title="Cargando tratamiento"
-          description="Estamos recuperando la informacion clinica, financiera y documental de la operacion."
+          description="Estamos recuperando la información clínica, financiera y documental de la operación."
           actions={[{ label: 'Volver a operaciones', variant: 'ghost', to: '/admin/operaciones' }]}
         />
         <SectionCard title="Cargando detalle">
           <DataState
             title="Consultando operacion"
-            message="Sincronizando citas, cuotas y ficha clinica desde Django."
+            message="Sincronizando citas, cuotas y ficha clínica desde Django."
           />
         </SectionCard>
       </div>
@@ -201,7 +201,7 @@ export function AdminOperationDetailPage() {
       <PageHeader
         eyebrow="Detalle de operacion"
         title={`${operation.procedure} · ${operation.patient}`}
-        description="Aqui puedes revisar la ficha clinica, el documento escaneado, las cuotas y el seguimiento de citas."
+        description="Aquí puedes revisar la ficha clínica, el documento escaneado, las cuotas y el seguimiento de citas."
         actions={[{ label: 'Volver a operaciones', variant: 'ghost', to: '/admin/operaciones' }]}
       />
 
@@ -244,7 +244,7 @@ export function AdminOperationDetailPage() {
                 <dd>{operation.price}</dd>
               </div>
               <div>
-                <dt>Proxima cita</dt>
+                <dt>Próxima cita</dt>
                 <dd>{operation.nextAppointment}</dd>
               </div>
             </dl>
@@ -391,7 +391,7 @@ export function AdminOperationDetailPage() {
       </SectionCard>
 
       <SectionCard
-        eyebrow="Ficha clinica"
+        eyebrow="Ficha clínica"
         title="Documento y observaciones"
         description="Vista del PDF escaneado y de los datos generales registrados en la ficha medica."
       >
@@ -449,7 +449,7 @@ export function AdminOperationDetailPage() {
             ) : (
               <DataState
                 title="Sin documento escaneado"
-                message="Esta operacion todavia no tiene un PDF adjunto en la ficha clinica."
+                message="Esta operación todavía no tiene un PDF adjunto en la ficha clínica."
               />
             )}
           </article>

@@ -38,7 +38,7 @@ export function LoginPage() {
       setError(
         submitError instanceof Error
           ? submitError.message
-          : 'No pudimos iniciar sesion con esas credenciales.',
+          : 'No pudimos iniciar sesión con esas credenciales.',
       )
     } finally {
       setIsSubmitting(false)
@@ -75,7 +75,7 @@ export function LoginPage() {
       <div className="auth-card">
         <div className="auth-card__header">
           <span className="auth-card__eyebrow">Acceso seguro</span>
-          <h2>Iniciar sesion</h2>
+          <h2>Iniciar sesión</h2>
           <p>Ingresa con tu usuario y contraseña para acceder al sistema.</p>
         </div>
 

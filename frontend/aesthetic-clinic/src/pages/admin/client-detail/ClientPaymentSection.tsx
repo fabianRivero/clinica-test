@@ -103,13 +103,13 @@ export function ClientPaymentSection({
               <table>
                 <thead>
                   <tr>
-                    <th>Operacion</th>
+                    <th>Operación</th>
                     <th>Cuota</th>
                     <th>Monto</th>
                     <th>Fecha</th>
                     <th>Estado</th>
                     <th>Comprobante</th>
-                    <th>Observacion</th>
+                    <th>Observación</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -127,7 +127,7 @@ export function ClientPaymentSection({
                           className="input"
                           value={getPaymentNote(payment.rawId, payment.note)}
                           onChange={(event) => onPaymentNoteChange(payment.rawId, event.target.value)}
-                          placeholder="Nota para aprobacion u observacion"
+                          placeholder="Nota para aprobación u observación"
                         />
                       </td>
                       <td>

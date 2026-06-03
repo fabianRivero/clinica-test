@@ -21,8 +21,8 @@ class Migration(migrations.Migration):
                 ('imagen_qr', models.FileField(blank=True, null=True, upload_to='pagos_qr/%Y/%m/', validators=[django.core.validators.FileExtensionValidator(['png', 'jpg', 'jpeg', 'webp'])])),
             ],
             options={
-                'verbose_name': 'Configuracion de pago QR',
-                'verbose_name_plural': 'Configuracion de pago QR',
+                'verbose_name': 'Configuración de pago QR',
+                'verbose_name_plural': 'Configuración de pago QR',
                 'db_table': 'configuracion_pago_qr',
             },
         ),

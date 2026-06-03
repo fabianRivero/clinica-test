@@ -36,7 +36,7 @@ export function SpecialistMessagesCreatePage() {
   const [form, setForm] = useState(initialCompose)
   const [isSending, setIsSending] = useState(false)
   return <SpecialistMessagingShell>
-    <SectionCard eyebrow="Nueva ficha" title="Abrir comunicacion" description="Crea una ficha nueva con asunto y mensaje.">
+    <SectionCard eyebrow="Nueva ficha" title="Abrir comunicación" description="Crea una ficha nueva con asunto y mensaje.">
       <form className="form-stack" onSubmit={async (e) => { e.preventDefault(); const ok = await confirm({ title: 'Enviar ficha', message: '¿Deseas enviar esta ficha ahora?' }); if (!ok) return; setIsSending(true); void createTicket({ subject: form.subject, message: form.body, attachment: form.files[0] ?? null }).then(() => { setForm(initialCompose); showNotification({ title: 'Ficha enviada', message: 'La ficha se envio correctamente.', tone: 'success' }) }).catch((err: unknown) => showNotification({ title: 'Error', message: err instanceof Error ? err.message : 'No se pudo crear la ficha.', tone: 'danger' })).finally(() => setIsSending(false)) }}>
         <div className="form-group"><label>Asunto</label><input className="input" value={form.subject} onChange={(e) => setForm((c) => ({ ...c, subject: e.target.value }))} required /></div>
         <div className="form-group"><label>Mensaje</label><textarea className="input" rows={6} value={form.body} onChange={(e) => setForm((c) => ({ ...c, body: e.target.value }))} required /></div>

@@ -99,7 +99,7 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('dia_semana', models.PositiveSmallIntegerField(choices=[(0, 'Domingo'), (1, 'Lunes'), (2, 'Martes'), (3, 'Miercoles'), (4, 'Jueves'), (5, 'Viernes'), (6, 'Sabado')])),
+                ('dia_semana', models.PositiveSmallIntegerField(choices=[(0, 'Domingo'), (1, 'Lunes'), (2, 'Martes'), (3, 'Miércoles'), (4, 'Jueves'), (5, 'Viernes'), (6, 'Sábado')])),
                 ('agenda', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='dias', to='operations.agendahabitualespecialista')),
             ],
             options={

@@ -98,7 +98,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
   const handleSubmitQrConfig = async (event: FormEvent) => {
     event.preventDefault()
     if (!qrFile) {
-      setSubmitError('Debes seleccionar una imagen QR para actualizar la configuracion de pago.')
+      setSubmitError('Debes seleccionar una imagen QR para actualizar la configuración de pago.')
       return
     }
 
@@ -223,7 +223,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
       <PageHeader
         eyebrow="Tesoreria"
         title="Pagos y verificaciones"
-        description="Modulo para revisar comprobantes cargados por clientes y controlar cuotas aprobadas, observadas o pendientes."
+        description="Módulo para revisar comprobantes cargados por clientes y controlar cuotas aprobadas, observadas o pendientes."
       />
 
       <AdminPaymentsTabs />
@@ -232,7 +232,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
         <SectionCard title="Cargando pagos">
           <DataState
             title="Sincronizando tesoreria"
-            message="Cargando pagos, montos, cuotas y verificacion administrativa."
+            message="Cargando pagos, montos, cuotas y verificación administrativa."
           />
         </SectionCard>
       ) : null}
@@ -248,7 +248,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
           {view === 'qr' ? (
           <SectionCard
             eyebrow="Pago por QR"
-            title="Configuracion del QR bancario"
+            title="Configuración del QR bancario"
             description="Este QR se mostrara a los clientes cuando quieran pagar una cuota desde su portal."
           >
             <div className="payment-qr-grid">
@@ -411,7 +411,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                             )}
                             <textarea
                               className="input textarea textarea--compact"
-                              placeholder="Nota para aprobacion u observacion"
+                              placeholder="Nota para aprobación u observación"
                               rows={3}
                               value={getPaymentNote(payment.rawId, payment.note)}
                               onChange={(event) =>

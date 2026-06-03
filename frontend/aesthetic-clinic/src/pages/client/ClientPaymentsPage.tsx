@@ -152,14 +152,14 @@ export function ClientPaymentsPage() {
                   <p>{pageData.paymentQrConfig.instructions}</p>
                   <p>
                     Elige una cuota pendiente, realiza el pago con este QR y luego adjunta el
-                    comprobante para que administracion lo revise.
+                    comprobante para que administración lo revise.
                   </p>
                 </article>
               </div>
             ) : (
               <DataState
                 title="QR no disponible"
-                message="Administracion todavia no configuró el QR bancario. Vuelve a intentar mas tarde o contacta a la clinica."
+                message="Administración todavía no configuró el QR bancario. Vuelve a intentar más tarde o contacta a la clínica."
                 tone="danger"
               />
             )}
@@ -168,7 +168,7 @@ export function ClientPaymentsPage() {
           <SectionCard
             eyebrow="Cuotas vigentes"
             title="Estado de cuotas"
-            description="Resumen de montos estimados por cuota y del ultimo comprobante asociado."
+            description="Resumen de montos estimados por cuota y del último comprobante asociado."
           >
             {pageData.activeQuotas.length ? (
               <div className="capacity-list">
@@ -186,7 +186,7 @@ export function ClientPaymentsPage() {
                       <StatusBadge tone={quota.statusTone}>{quota.status}</StatusBadge>
                     </div>
                     <div className="client-inline-meta">
-                      <span>Ultimo comprobante</span>
+                      <span>Último comprobante</span>
                       <StatusBadge tone={quota.latestPaymentTone}>{quota.latestPaymentStatus}</StatusBadge>
                     </div>
                     <button
@@ -270,7 +270,7 @@ export function ClientPaymentsPage() {
           <SectionCard
             eyebrow="Comprobantes"
             title="Historial de pagos"
-            description="Incluye pagos pendientes, aprobados y observados, con comentarios de administracion."
+            description="Incluye pagos pendientes, aprobados y observados, con comentarios de administración."
           >
             {pageData.payments.length ? (
               <>

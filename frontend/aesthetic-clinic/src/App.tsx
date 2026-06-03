@@ -50,8 +50,8 @@ function AppLoadingScreen() {
   return (
     <div className="app-state-screen">
       <div className="app-state-screen__card">
-        <strong>Validando sesion</strong>
-        <p>Estamos comprobando tu acceso y preparando la interfaz adecuada para tu rol.</p>
+        <strong>Validando sesión</strong>
+        <p>Estamos comprobando tu acceso y preparando la interfaz.</p>
       </div>
     </div>
   )

@@ -33,19 +33,19 @@ const catalogFallbackInfo: Record<
   'procedimientos-esteticos': {
     title: 'Procedimientos esteticos',
     description:
-      'Gestiona procedimientos especificos que luego puedes vincular a servicios y fichas clinicas.',
+      'Gestiona procedimientos específicos que luego puedes vincular a servicios y fichas clínicas.',
     createLabel: 'Crear procedimiento',
   },
   'tipos-servicio': {
     title: 'Tipos de servicio',
     description:
-      'Administra las categorias comerciales visibles al registrar operaciones y configuraciones de servicio.',
+      'Administra las categorías comerciales visibles al registrar operaciones y configuraciones de servicio.',
     createLabel: 'Crear tipo de servicio',
   },
   'campos-ficha': {
     title: 'Campos de ficha',
     description:
-      'Configura preguntas y respuestas visibles en las fichas clinicas por procedimiento.',
+      'Configura preguntas y respuestas visibles en las fichas clínicas por procedimiento.',
     createLabel: 'Crear campo de ficha',
   },
   'patologias-cutaneas': {
@@ -59,9 +59,9 @@ const catalogFallbackInfo: Record<
     createLabel: 'Crear especialidad',
   },
   'categorias-gasto': {
-    title: 'Categorias de gasto',
-    description: 'Define las categorias usadas para clasificar gastos de cada sucursal.',
-    createLabel: 'Crear categoria',
+    title: 'Categorías de gasto',
+    description: 'Define las categorías usadas para clasificar gastos de cada sucursal.',
+    createLabel: 'Crear categoría',
   },
   'grupos-opciones': {
     title: 'Grupos de opciones',
@@ -428,7 +428,7 @@ function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
         <SectionCard title={`Cargando ${pageInfo.title.toLowerCase()}`}>
           <DataState
             title="Sincronizando catalogo"
-            message="Estamos cargando la configuracion editable desde la base conectada."
+            message="Estamos cargando la configuración editable desde la base conectada."
           />
         </SectionCard>
       ) : null}

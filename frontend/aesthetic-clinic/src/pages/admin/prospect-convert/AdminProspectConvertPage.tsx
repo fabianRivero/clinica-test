@@ -75,12 +75,12 @@ export function AdminProspectConvertPage() {
       <div className="page-stack">
         <PageHeader
           eyebrow="Conversion de prospecto"
-          title="Preparando wizard de conversion"
-          description="Estamos cargando el prospecto, el borrador guardado y la configuracion clinica necesaria."
+          title="Preparando proceso de conversion"
+          description="Estamos cargando el prospecto, el borrador guardado y la configuración clínica necesaria."
           actions={[{ label: 'Volver a prospectos', variant: 'ghost', to: '/admin/prospectos' }]}
         />
         <SectionCard title="Cargando conversion">
-          <DataState title="Sincronizando informacion" message="Consultando el borrador y los catalogos relacionados." />
+          <DataState title="Sincronizando información" message="Consultando el borrador y los catálogos relacionados." />
         </SectionCard>
       </div>
     )
@@ -106,8 +106,8 @@ export function AdminProspectConvertPage() {
   const wizardTitle = isActiveClient
     ? 'Nuevo procedimiento'
     : isReactivation
-      ? 'Reactivacion de cliente'
-      : 'Conversion de prospecto'
+      ? 'Reactivación de cliente'
+      : 'Conversión de prospecto'
   const wizardSubject = isActiveClient
     ? `Nuevo procedimiento para ${data.client?.name}`
     : isReactivation
@@ -119,7 +119,7 @@ export function AdminProspectConvertPage() {
       <PageHeader
         eyebrow={wizardTitle}
         title={wizardSubject}
-        description="Este flujo guarda temporalmente la informacion en cuatro pasos: datos de usuario, operacion, ficha medica y huella biometrica. Solo al finalizar se crea/actualiza el cliente y la nueva operacion."
+        description="Este flujo guarda temporalmente la información en cuatro pasos: datos de usuario, operación, ficha médica y huella biometrica. Solo al finalizar se crea/actualiza el cliente y la nueva operación."
         actions={[{
           label: isReactivation ? 'Volver a cliente' : 'Volver a prospectos',
           variant: 'ghost',
@@ -178,7 +178,7 @@ export function AdminProspectConvertPage() {
         <SectionCard
           eyebrow="Paso 1"
           title="Datos de usuario"
-          description="Aqui se define la cuenta del nuevo cliente y la informacion administrativa principal."
+          description="Aquí se define la cuenta del nuevo cliente y la información administrativa principal."
         >
           <ConversionStepUser
             userForm={userForm}
@@ -206,7 +206,7 @@ export function AdminProspectConvertPage() {
         <SectionCard
           eyebrow="Paso 2"
           title="Crear operacion"
-          description="Configura el servicio que el prospecto adquiere y los datos base de la nueva operacion."
+          description="Configura el servicio que el prospecto adquiere y los datos base de la nueva operación."
         >
           <ConversionStepOperation
             operationForm={operationForm}
@@ -229,7 +229,7 @@ export function AdminProspectConvertPage() {
         <SectionCard
           eyebrow="Paso 3"
           title="Ficha medica"
-          description="Completa la informacion clinica general y, si aplica, las respuestas del procedimiento seleccionado."
+          description="Completa la información clínica general y, si aplica, las respuestas del procedimiento seleccionado."
         >
           <ConversionStepMedical
             medicalForm={medicalForm}

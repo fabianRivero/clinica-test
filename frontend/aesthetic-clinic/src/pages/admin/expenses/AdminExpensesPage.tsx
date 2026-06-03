@@ -218,9 +218,9 @@ export function AdminExpensesPage() {
                   <FieldError message={fieldErrors.date} />
                 </label>
                 <label className="field">
-                  <span>Categoria</span>
+                  <span>Categoría</span>
                   <select className="input" value={form.categoryId} onChange={(event) => updateForm('categoryId', event.target.value)}>
-                    <option value="">Selecciona una categoria</option>
+                    <option value="">Selecciona una categoría</option>
                     {data.categories.map((category) => (
                       <option key={category.id} value={category.id}>{category.name}</option>
                     ))}
@@ -296,7 +296,7 @@ export function AdminExpensesPage() {
                       <thead>
                         <tr>
                           <th>Fecha</th>
-                          <th>Categoria</th>
+                          <th>Categoría</th>
                           <th>Concepto</th>
                           <th>Proveedor</th>
                           <th>Total</th>
@@ -331,7 +331,7 @@ export function AdminExpensesPage() {
               <SectionCard
                 eyebrow="Resumen mensual"
                 title={`Total de ${viewedMonthLabel}: ${formatMoney(totalForMonth)}`}
-                description="Distribucion del gasto por categoria en el mes seleccionado."
+                description="Distribucion del gasto por categoría en el mes seleccionado."
               >
                 {categorySummary.length ? (
                   <div className="catalog-admin-grid">

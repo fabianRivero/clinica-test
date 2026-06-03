@@ -71,7 +71,7 @@ export function AdminOperationsPage() {
           <SectionCard
             eyebrow="Control operativo"
             title="Resumen de tratamientos"
-            description="Lectura real de operaciones vigentes, sesiones disponibles y situacion de cuotas."
+            description="Lectura real de operaciones vigentes, sesiones disponibles y situación de cuotas."
           >
             <div className="form-grid">
               <label className="field">
@@ -121,7 +121,7 @@ export function AdminOperationsPage() {
                         <dd>{operation.sessions}</dd>
                       </div>
                       <div>
-                        <dt>Proxima cita</dt>
+                        <dt>Próxima cita</dt>
                         <dd>{operation.nextAppointment}</dd>
                       </div>
                       <div>

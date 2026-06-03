@@ -101,13 +101,13 @@ export function AdminExpenseCreatePage() {
       />
 
       {isLoading && !data ? (
-        <SectionCard title="Cargando categorias">
-          <DataState title="Sincronizando categorias" message="Preparando el formulario de gastos." />
+        <SectionCard title="Cargando categorías">
+          <DataState title="Sincronizando categorías" message="Preparando el formulario de gastos." />
         </SectionCard>
       ) : null}
 
       {error && !data ? (
-        <SectionCard title="No pudimos cargar categorias">
+        <SectionCard title="No pudimos cargar categorías">
           <DataState title="Conexion no disponible" message={error} tone="danger" />
         </SectionCard>
       ) : null}
@@ -116,7 +116,7 @@ export function AdminExpenseCreatePage() {
         <SectionCard
           eyebrow={editingExpense ? 'Edicion' : 'Nuevo registro'}
           title={editingExpense ? editingExpense.concept : 'Registrar gasto'}
-          description="El gasto se guardara en la sucursal activa del selector global."
+          description="El gasto se guardará en la sucursal activa del selector global."
         >
           <form className="catalog-form" onSubmit={handleFormSubmit}>
             <label className="field _mb-md">
@@ -125,9 +125,9 @@ export function AdminExpenseCreatePage() {
               {fieldErrors.date ? <small className="field__error">{fieldErrors.date}</small> : null}
             </label>
             <label className="field _mb-md">
-              <span>Categoria <span className="_text-danger">*</span></span>
+              <span>Categoría <span className="_text-danger">*</span></span>
               <select className="input" value={form.categoryId} onChange={(event) => updateForm('categoryId', event.target.value)} required>
-                <option value="">Selecciona una categoria</option>
+                <option value="">Selecciona una categoría</option>
                 {data.categories.map((category) => (
                   <option key={category.id} value={category.id}>{category.name}</option>
                 ))}

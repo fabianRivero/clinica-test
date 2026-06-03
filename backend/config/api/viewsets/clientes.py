@@ -53,7 +53,7 @@ def _client_item(cliente):
         "id": cliente.pk,
         "name": full_name(cliente.usuario),
         "ci": cliente.ci or "Sin CI",
-        "phone": cliente.telefono or "Sin telefono",
+        "phone": cliente.telefono or "Sin teléfono",
         "branchId": cliente.sucursal_registro_id,
         "branchName": cliente.sucursal_registro.nombre if cliente.sucursal_registro else "Sin sucursal",
         "cityName": cliente.sucursal_registro.ciudad if cliente.sucursal_registro else "Sin ciudad",
@@ -140,7 +140,7 @@ def _admin_client_detail(cliente):
                 "admin-client-appointments",
                 "Citas reservadas",
                 len(appointments),
-                f"{len(upcoming_appointments)} proxima(s)",
+                f"{len(upcoming_appointments)} próxima(s)",
                 "primary",
             ),
             metric(
@@ -375,10 +375,10 @@ class ClientesViewSet(viewsets.ViewSet):
         return Response({
             "detail": (
                 f"El cliente fue convertido a inactivo. "
-                f"Antes de la inactivacion tenia {pendientes['sesiones_pendientes']} sesion(es) "
+                f"Antes de la inactivación tenia {pendientes['sesiones_pendientes']} sesion(es) "
                 f"y {pendientes['cuotas_pendientes']} cuota(s) pendiente(s). "
                 f"Se convirtieron {converted_quotas} cuota(s) a no pagadas "
-                f"y se omitieron {skipped_pending_review_quotas} por tener pagos pendientes de revision. "
+                f"y se omitieron {skipped_pending_review_quotas} por tener pagos pendientes de revisión. "
                 f"Se cancelaron {cancelled_operations} procedimiento(s) en proceso y "
                 f"{cancelled_appointments} cita(s) programada(s)."
             ),

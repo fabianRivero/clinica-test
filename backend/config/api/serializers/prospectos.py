@@ -28,7 +28,7 @@ class ProspectListSerializer(serializers.Serializer):
         return " ".join(p for p in parts if p)
 
     def get_phone(self, obj):
-        return obj.telefono or "Sin telefono"
+        return obj.telefono or "Sin teléfono"
 
     def get_state(self, obj):
         return obj.get_estado_display()

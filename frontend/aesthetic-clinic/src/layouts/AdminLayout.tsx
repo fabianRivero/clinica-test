@@ -148,10 +148,10 @@ function AdminLayoutInner() {
         <div className="brand-card">
           <span className="brand-card__eyebrow">Panel administrativo</span>
           <strong>Nataly Ferrufino Estetic & Academy</strong>
-          <p>Operacion clinica, pagos y catalogos en una sola vista.</p>
+          <p>Operación clínica, pagos y catálogos en una sola vista.</p>
         </div>
 
-        <nav className="side-nav" aria-label="Navegacion principal de administracion">
+        <nav className="side-nav" aria-label="Navegación principal de administración">
           {navigation.map((item) =>
             'children' in item ? (
               <div
@@ -219,8 +219,8 @@ function AdminLayoutInner() {
               <span className="topbar__eyebrow">
               {isMainAdmin
                 ? activeBranch
-                  ? `Administracion clinica - ${activeBranch.nombre}`
-                  : 'Administracion clinica'
+                  ? `Administración clínica - ${activeBranch.nombre}`
+                  : 'Administración clínica'
                 : `Sucursal: ${user?.branchName || ''}`}
             </span>
               <strong>{user?.fullName || 'Administrador'}</strong>
@@ -236,7 +236,7 @@ function AdminLayoutInner() {
                 <span>{user?.role || 'ADMINISTRADOR'}</span>
               </div>
               <button className="button button--ghost button--compact" type="button" onClick={() => void logout()}>
-                Cerrar sesion
+                Cerrar sesión
               </button>
             </div>
           </div>

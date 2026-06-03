@@ -291,8 +291,8 @@ class ConfiguracionPagoQR(TimeStampedModel):
 
     class Meta:
         db_table = "configuracion_pago_qr"
-        verbose_name = "Configuracion de pago QR"
-        verbose_name_plural = "Configuracion de pago QR"
+        verbose_name = "Configuración de pago QR"
+        verbose_name_plural = "Configuración de pago QR"
         constraints = [
             models.UniqueConstraint(
                 fields=["sucursal"],
@@ -314,7 +314,7 @@ class ConfiguracionPagoQR(TimeStampedModel):
             _safe_delete_file(previous_file_name)
 
     def __str__(self):
-        return "Configuracion QR de pagos"
+        return "Configuración QR de pagos"
 
 
 @receiver(post_delete, sender=PagoRealizado)

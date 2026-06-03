@@ -78,14 +78,14 @@ export function ClientReservationSection({
         <SectionCard title="Resultados de disponibilidad">
           <div className="_panel-card">
             <p className="_mb-sm">
-              <strong>Citas simultaneas de 1 hora antes a 1 hora despues ({concurrencyInfo.hora_inicio} a {concurrencyInfo.hora_fin}):</strong> {concurrencyInfo.concurrency}
+              <strong>Citas simultáneas de 1 hora antes a 1 hora después ({concurrencyInfo.hora_inicio} a {concurrencyInfo.hora_fin}):</strong> {concurrencyInfo.concurrency}
             </p>
             <p className="_mb-sm">
               <strong>Especialistas en turno {concurrencyInfo.hora_seleccionada}:</strong> {concurrencyInfo.presentes.length > 0 ? concurrencyInfo.presentes.map(p => p.usuario__primer_nombre).join(', ') : 'Ninguno registrado'}
             </p>
             {concurrencyInfo.concurrency >= concurrencyInfo.presentes.length && concurrencyInfo.presentes.length > 0 && (
               <p className="_text-danger _mt-sm _font-bold">
-                Aviso: Hay mas citas ({concurrencyInfo.concurrency}) que especialistas en turno ({concurrencyInfo.presentes.length}).
+                Aviso: Hay más citas ({concurrencyInfo.concurrency}) que especialistas en turno ({concurrencyInfo.presentes.length}).
               </p>
             )}
             {concurrencyInfo.presentes.length === 0 && (

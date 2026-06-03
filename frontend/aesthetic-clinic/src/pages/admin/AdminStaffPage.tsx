@@ -329,7 +329,7 @@ function StaffEditorForm({
         </label>
 
         <label className="field" htmlFor="staff-telefono">
-          <span>Telefono</span>
+          <span>Teléfono</span>
           <input
             id="staff-telefono"
             className="input"
@@ -611,7 +611,7 @@ export function AdminStaffManagePage() {
                         <strong>{item.specialist}</strong>
                         <p>{item.specialty}</p>
                         <p>
-                          @{item.username} | {item.phone || 'Sin telefono'} | {item.activeOperations} operaciones activas |{' '}
+                          @{item.username} | {item.phone || 'Sin teléfono'} | {item.activeOperations} operaciones activas |{' '}
                           {item.upcomingAppointments} citas futuras
                         </p>
                       </div>

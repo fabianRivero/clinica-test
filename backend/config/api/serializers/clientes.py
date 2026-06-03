@@ -38,7 +38,7 @@ class ClientSearchSerializer(serializers.Serializer):
         return full_name(obj.usuario)
 
     def get_phone(self, obj):
-        return obj.telefono or "Sin telefono"
+        return obj.telefono or "Sin teléfono"
 
     def get_branchName(self, obj):
         return obj.sucursal_registro.nombre if obj.sucursal_registro else "Sin sucursal"

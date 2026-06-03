@@ -45,7 +45,7 @@ def prospect_item(prospecto):
         "segundoNombre": prospecto.segundo_nombre,
         "apellidoPaterno": prospecto.apellido_paterno,
         "apellidoMaterno": prospecto.apellido_materno,
-        "phone": prospecto.telefono or "Sin telefono",
+        "phone": prospecto.telefono or "Sin teléfono",
         "interest": _prospect_interest(prospecto),
         "registeredBy": full_name(prospecto.registrado_por),
         "stage": _prospect_stage(prospecto),

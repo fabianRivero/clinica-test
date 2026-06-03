@@ -78,7 +78,7 @@ export function ClientAppointmentSection({
     <SectionCard
       eyebrow="Agenda"
       title="Todas las citas del cliente"
-      description="Historial completo de reservas, sesiones realizadas, cancelaciones y pendientes de verificacion."
+      description="Historial completo de reservas, sesiones realizadas, cancelaciones y pendientes de verificación."
       action={
         <div className="expense-period-controls">
           <button className="button button--ghost" type="button" onClick={() => changeAppointmentMonth(-1)}>←</button>
