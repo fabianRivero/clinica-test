@@ -114,11 +114,11 @@ export function ClientProfileModal({ clientId, isOpen, onClose }: Props) {
                 <input className="input" name="nroHijos" type="number" min="0" value={form.nroHijos} onChange={handleChange} />
               </label>
               <label className="field">
-                <span>Ocupacion</span>
+                <span>Ocupación</span>
                 <input className="input" name="ocupacion" value={form.ocupacion} onChange={handleChange} />
               </label>
               <label className="field field--full">
-                <span>Direccion</span>
+                <span>Dirección</span>
                 <input className="input" name="direccionDomicilio" value={form.direccionDomicilio} onChange={handleChange} />
               </label>
               <label className="field field--full">

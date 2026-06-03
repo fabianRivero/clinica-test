@@ -295,11 +295,12 @@ class PagosViewSet(viewsets.ViewSet):
 
     def _payment_qr_config_item(self, config):
         if not config:
-            return None
+            return {"hasQr": False, "qrImageUrl": "", "instructions": ""}
         return {
             "id": config.pk,
-            "instrucciones": config.instrucciones or "",
-            "imagen_qr_url": config.imagen_qr.url if config.imagen_qr else None,
+            "hasQr": bool(config.imagen_qr),
+            "qrImageUrl": config.imagen_qr.url if config.imagen_qr else "",
+            "instructions": config.instrucciones or "",
             "updated_at": config.updated_at.isoformat() if config.updated_at else None,
         }
 

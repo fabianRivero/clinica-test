@@ -56,7 +56,7 @@ export function useFormSubmission(
         }
         if (options?.successTitle || options?.successMessage) {
           showNotification({
-            title: options.successTitle ?? 'Operacion exitosa',
+            title: options.successTitle ?? 'Operación exitosa',
             message:
               typeof options.successMessage === 'function'
                 ? options.successMessage(response)

@@ -116,7 +116,7 @@ export function AdminDashboardPage() {
                     <th>Fecha vcto.</th>
                     <th>Monto</th>
                     <th>Cliente</th>
-                    <th>Operacion</th>
+                    <th>Operación</th>
                     <th>Cuota</th>
                   </tr>
                 </thead>
@@ -193,7 +193,7 @@ export function AdminDashboardPage() {
                     <th>Fecha</th>
                     <th>Hora</th>
                     <th>Paciente</th>
-                    <th>Operacion</th>
+                    <th>Operación</th>
                     <th>Estado</th>
                   </tr>
                 </thead>

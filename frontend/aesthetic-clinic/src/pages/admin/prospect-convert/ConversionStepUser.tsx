@@ -152,11 +152,11 @@ export function ConversionStepUser({
         {fieldErrors.nroHijos ? <small className="field__error">{fieldErrors.nroHijos}</small> : null}
       </label>
       <label className="field">
-        <span>Ocupacion</span>
+        <span>Ocupación</span>
         <input className="input" name="ocupacion" value={userForm.ocupacion} onChange={onUserChange} />
       </label>
       <label className="field field--full">
-        <span>Direccion</span>
+        <span>Dirección</span>
         <input className="input" name="direccionDomicilio" value={userForm.direccionDomicilio} onChange={onUserChange} />
       </label>
       <label className="field field--full">

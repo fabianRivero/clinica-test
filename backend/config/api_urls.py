@@ -2,6 +2,7 @@ from django.urls import include, path
 
 from config.api.routers_operaciones import citas_d8_router
 from config.api.routers_clientes import clientes_router, free_medical_router
+from config.api.routers_payments import pagos_router
 from config.worker_urls import worker_urlpatterns
 
 from config.admin_availability_views import (
@@ -331,8 +332,7 @@ urlpatterns = [
         name="admin-availability-check-concurrency-api",
     ),
     path("disponibilidad/sucursales/", admin_get_branches, name="admin-branches-api"),
-    path("pagos/", admin_pagos, name="admin-pagos-api"),
-    path("pagos/<int:payment_id>/estado/", admin_update_payment_status, name="admin-pagos-status-api"),
+    path("", include(pagos_router.urls)),
     path("catalogos/", admin_catalogos, name="admin-catalogos-api"),
     path("catalogos/<slug:catalog_key>/", admin_catalogo_detalle, name="admin-catalogo-detail-api"),
     path("catalogos/<slug:catalog_key>/crear/", admin_catalogo_crear, name="admin-catalogo-create-api"),

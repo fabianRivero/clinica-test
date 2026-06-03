@@ -360,7 +360,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                     <tr>
                       <th>ID</th>
                       <th>Paciente</th>
-                      <th>Operacion</th>
+                      <th>Operación</th>
                       <th>Cuota</th>
                       <th>Monto</th>
                       <th>Vencimiento</th>
@@ -544,7 +544,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                       <tr>
                         <th>ID</th>
                         <th>Paciente</th>
-                        <th>Operacion</th>
+                        <th>Operación</th>
                         <th>Cuota</th>
                         <th>Monto programado</th>
                         <th>Vencimiento</th>

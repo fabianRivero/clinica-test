@@ -139,7 +139,7 @@ export function AdminOperationsPage() {
                           Ver detalle
                         </Link>
                       ) : (
-                        <span className="field__hint">Sin detalle de operacion</span>
+                        <span className="field__hint">Sin detalle de operación</span>
                       )}
                     </div>
                   </article>

@@ -10,9 +10,9 @@ import type {
 
 export const stepLabels: Array<{ step: ConversionStep; label: string }> = [
   { step: 1, label: 'Datos de usuario' },
-  { step: 2, label: 'Operacion' },
-  { step: 3, label: 'Ficha medica' },
-  { step: 4, label: 'Huella biometrica' },
+  { step: 2, label: 'Operación' },
+  { step: 3, label: 'Ficha médica' },
+  { step: 4, label: 'Huella biométrica' },
   { step: 5, label: 'Primer pago (opcional)' },
 ]
 

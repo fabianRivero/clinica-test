@@ -205,7 +205,7 @@ export function AdminProspectConvertPage() {
       {activeStep === 2 && (
         <SectionCard
           eyebrow="Paso 2"
-          title="Crear operacion"
+          title="Crear operación"
           description="Configura el servicio que el prospecto adquiere y los datos base de la nueva operación."
         >
           <ConversionStepOperation
@@ -228,7 +228,7 @@ export function AdminProspectConvertPage() {
       {activeStep === 3 && (
         <SectionCard
           eyebrow="Paso 3"
-          title="Ficha medica"
+          title="Ficha médica"
           description="Completa la información clínica general y, si aplica, las respuestas del procedimiento seleccionado."
         >
           <ConversionStepMedical

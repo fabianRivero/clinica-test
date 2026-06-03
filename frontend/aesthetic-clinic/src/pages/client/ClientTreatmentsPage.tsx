@@ -27,20 +27,20 @@ export function ClientTreatmentsPage() {
 
       {isLoading && !data ? (
         <SectionCard title="Cargando tratamientos">
-          <DataState title="Sincronizando historial" message="Estamos cargando tu historial clinico y operativo." />
+          <DataState title="Sincronizando historial" message="Estamos cargando tu historial clínico y operativo." />
         </SectionCard>
       ) : null}
 
       {error && !data ? (
         <SectionCard title="No pudimos cargar tus tratamientos">
-          <DataState title="Conexion no disponible" message={error} tone="danger" />
+          <DataState title="Conexión no disponible" message={error} tone="danger" />
         </SectionCard>
       ) : null}
 
       {data ? (
         <>
           <SectionCard
-            eyebrow="Operacion por operacion"
+            eyebrow="Operación por operación"
             title="Detalle de tratamientos"
             description="Cada tarjeta resume sesiones, recomendaciones y zona tratada."
           >

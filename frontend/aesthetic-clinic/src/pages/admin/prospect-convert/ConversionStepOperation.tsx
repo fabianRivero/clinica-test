@@ -71,7 +71,7 @@ export function ConversionStepOperation({
         {fieldErrors.sesionesTotales ? <small className="field__error">{fieldErrors.sesionesTotales}</small> : null}
       </label>
       <label className="field">
-        <span>Estado de la operacion</span>
+        <span>Estado de la operación</span>
         <select className="input" name="estado" value={operationForm.estado} onChange={onChange}>
           {data.operationStates.map((item) => (
             <option key={item.value} value={item.value}>
@@ -136,7 +136,7 @@ export function ConversionStepOperation({
       </div>
 
       <label className="field field--full">
-        <span>Detalle de la operacion</span>
+        <span>Detalle de la operación</span>
         <textarea className="input textarea" name="detallesOperacion" rows={4} value={operationForm.detallesOperacion} onChange={onChange} />
       </label>
       <label className="field field--full">
@@ -150,7 +150,7 @@ export function ConversionStepOperation({
           type="button"
           onClick={onCancel}
         >
-          {isCancelling ? 'Cancelando...' : 'Cancelar conversion'}
+          {isCancelling ? 'Cancelando...' : 'Cancelar conversión'}
         </button>
         <button className="button button--ghost" disabled={isSaving || isCancelling} type="button" onClick={onBack}>
           Volver

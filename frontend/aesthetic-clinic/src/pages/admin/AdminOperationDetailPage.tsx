@@ -131,7 +131,7 @@ export function AdminOperationDetailPage() {
       setIsEditingDetails(false)
       reload()
     } catch (requestError) {
-      setActionError(requestError instanceof Error ? requestError.message : 'No se pudo actualizar la operacion.')
+      setActionError(requestError instanceof Error ? requestError.message : 'No se pudo actualizar la operación.')
     } finally {
       setIsSavingDetails(false)
     }
@@ -158,14 +158,14 @@ export function AdminOperationDetailPage() {
     return (
       <div className="page-stack">
         <PageHeader
-          eyebrow="Detalle de operacion"
+          eyebrow="Detalle de operación"
           title="Cargando tratamiento"
           description="Estamos recuperando la información clínica, financiera y documental de la operación."
           actions={[{ label: 'Volver a operaciones', variant: 'ghost', to: '/admin/operaciones' }]}
         />
         <SectionCard title="Cargando detalle">
           <DataState
-            title="Consultando operacion"
+            title="Consultando operación"
             message="Sincronizando citas, cuotas y ficha clínica desde Django."
           />
         </SectionCard>
@@ -177,14 +177,14 @@ export function AdminOperationDetailPage() {
     return (
       <div className="page-stack">
         <PageHeader
-          eyebrow="Detalle de operacion"
-          title="No pudimos cargar la operacion"
-          description="Puede que la operacion no exista o que la conexion no este disponible."
+          eyebrow="Detalle de operación"
+          title="No pudimos cargar la operación"
+          description="Puede que la operación no exista o que la conexión no esté disponible."
           actions={[{ label: 'Volver a operaciones', variant: 'ghost', to: '/admin/operaciones' }]}
         />
         <SectionCard title="Detalle no disponible">
           <DataState
-            title="Operacion no disponible"
+            title="Operación no disponible"
             message={error || 'No encontramos datos suficientes para mostrar el detalle.'}
             tone="danger"
           />
@@ -199,14 +199,14 @@ export function AdminOperationDetailPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Detalle de operacion"
+        eyebrow="Detalle de operación"
         title={`${operation.procedure} · ${operation.patient}`}
         description="Aquí puedes revisar la ficha clínica, el documento escaneado, las cuotas y el seguimiento de citas."
         actions={[{ label: 'Volver a operaciones', variant: 'ghost', to: '/admin/operaciones' }]}
       />
 
       <SectionCard
-        eyebrow="Resumen clinico"
+        eyebrow="Resumen clínico"
         title="Información principal"
         description="Estado global del tratamiento, paciente, procedimiento y seguimiento activo."
       >
@@ -308,7 +308,7 @@ export function AdminOperationDetailPage() {
         {isEditingDetails && canEditPricePlan ? (
           <form className="form-grid" onSubmit={handleSaveDetails}>
             <label className="field field--full">
-              <span>Detalles de la operacion</span>
+              <span>Detalles de la operación</span>
               <textarea
                 className="input textarea"
                 rows={4}
@@ -495,7 +495,7 @@ export function AdminOperationDetailPage() {
             ) : (
               <DataState
                 title="Sin citas registradas"
-                message="Todavia no hay citas asociadas a esta operacion."
+                message="Todavia no hay citas asociadas a esta operación."
               />
             )}
           </article>
@@ -521,7 +521,7 @@ export function AdminOperationDetailPage() {
             ) : (
               <DataState
                 title="Sin cuotas creadas"
-                message="Esta operacion no tiene cuotas registradas por el momento."
+                message="Esta operación no tiene cuotas registradas por el momento."
               />
             )}
           </article>
