@@ -113,7 +113,7 @@ export function ClientReservationsPage() {
       <PageHeader
         eyebrow="Agenda y reservas"
         title="Mis reservas"
-        description="Consulta citas registradas y su estado de confirmacion."
+        description="Consulta citas registradas y su estado de confirmación."
       />
 
       {flashMessage ? <DataState title="Reserva registrada" message={flashMessage} /> : null}
@@ -134,7 +134,7 @@ export function ClientReservationsPage() {
         <SectionCard
           eyebrow="Agenda"
           title={`Citas de ${viewedMonthLabel}`}
-          description="Incluye citas futuras y tambien las que esperan confirmacion o quedaron con observaciones."
+          description="Incluye citas futuras y tambien las que esperan confirmación o quedaron con observaciones."
           action={
             <div className="expense-period-controls">
               <button className="button button--ghost" type="button" onClick={() => changeMonth(-1)}>←</button>
@@ -162,11 +162,11 @@ export function ClientReservationsPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Operacion</th>
+                    <th>Operación</th>
                     <th>Especialista</th>
                     <th>Fecha</th>
                     <th>Estado</th>
-                    <th>Confirmacion</th>
+                    <th>Confirmación</th>
                   </tr>
                 </thead>
                 <tbody>

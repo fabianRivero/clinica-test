@@ -158,7 +158,7 @@ export function AdminClientsPage() {
                       <th>CI</th>
                       <th>Sucursal Origen</th>
                       <th>Ciudad</th>
-                      <th>Accion</th>
+                      <th>Acción</th>
                     </tr>
                   </thead>
                   <tbody>

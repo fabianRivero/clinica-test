@@ -267,8 +267,8 @@ export function ConversionStepMedical({
       <div className="wizard-block field--full">
         <div className="wizard-block__header">
           <div>
-            <strong>Parte 5. Analisis estetico</strong>
-            <p>Estos datos alimentan el historial clinico del paciente y se guardan como un analisis estetico inicial.</p>
+            <strong>Parte 5. Analisis estético</strong>
+            <p>Estos datos alimentan el historial clínico del paciente y se guardan como un análisis estético inicial.</p>
           </div>
         </div>
         <div className="form-grid">
@@ -367,7 +367,7 @@ export function ConversionStepMedical({
         <div className="wizard-block__header">
           <div>
             <strong>Antecedentes medicos</strong>
-            <p>Usa el mismo catalogo para antecedentes personales y familiares.</p>
+            <p>Usa el mismo catálogo para antecedentes personales y familiares.</p>
           </div>
           <button className="button button--ghost button--compact" type="button" onClick={onAddAntecedente}>
             Agregar antecedente

@@ -426,7 +426,7 @@ class EventoConfirmacionCita(TimeStampedModel):
         ordering = ("-confirmado_en", "-id")
 
     def __str__(self):
-        return f"Evento confirmacion cita #{self.cita_id} - {self.metodo}"
+        return f"Evento confirmación cita #{self.cita_id} - {self.metodo}"
 
 
 class TabletKiosko(TimeStampedModel):

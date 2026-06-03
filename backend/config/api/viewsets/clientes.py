@@ -154,7 +154,7 @@ def _admin_client_detail(cliente):
                 "admin-client-payments",
                 "Pagos realizados",
                 len(payments),
-                f"{len([p for p in payments if p.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE])} en revision",
+                f"{len([p for p in payments if p.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE])} en revisión",
                 "warning",
             ),
             metric(
@@ -332,7 +332,7 @@ class ClientesViewSet(viewsets.ViewSet):
             return Response(
                 {
                     "detail": (
-                        f"No se puede inactivar al cliente porque tiene un pago realizado pendiente de revision. "
+                        f"No se puede inactivar al cliente porque tiene un pago realizado pendiente de revisión. "
                         f"Primero revisa el pago #{pending_review_payment.pk} de la operacion "
                         f"#{pending_review_payment.cuota.operacion_id}."
                     )

@@ -102,7 +102,7 @@ export function ClientTreatmentsPage() {
                         <strong>{operation.sessions.confirmed}</strong>
                       </article>
                       <article>
-                        <span>Pend. verificacion</span>
+                        <span>Pend. verificación</span>
                         <strong>{operation.sessions.pendingBiometric}</strong>
                       </article>
                       <article>

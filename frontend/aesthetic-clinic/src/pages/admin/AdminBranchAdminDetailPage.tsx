@@ -41,7 +41,7 @@ export function AdminBranchAdminDetailPage() {
   }
 
   return <section className='page-stack'>
-    <PageHeader eyebrow='Equipo clinico' title='Detalle admin sucursal' description='Informacion completa y edicion permitida.' />
+    <PageHeader eyebrow='Equipo clinico' title='Detalle admin sucursal' description='Información completa y edicion permitida.' />
     <AdminStaffTabs />
     {error ? <p className='error-text'>{error}</p> : null}
     <SectionCard eyebrow='Edicion' title={fullName || 'Admin de sucursal'} description='Solo se puede editar usuario, email, contraseña (opcional) y telefono.'>

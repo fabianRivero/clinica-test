@@ -399,7 +399,7 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
         password:
           !userForm.hasPassword && !password
             ? 'Debes definir una contraseña para la nueva cuenta.'
-            : 'La confirmacion de contraseña no coincide.',
+            : 'La confirmación de contraseña no coincide.',
       })
       return
     }
@@ -552,7 +552,7 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
 
     const shouldContinue = await confirm({
       title: 'Confirmar finalizacion',
-      message: '¿Estás seguro de que toda la informacion es correcta para finalizar el proceso?',
+      message: '¿Estás seguro de que toda la información es correcta para finalizar el proceso?',
       tone: 'warning',
     })
     if (!shouldContinue) {

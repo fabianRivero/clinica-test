@@ -188,7 +188,7 @@ export function AdminMessagingPermissionsPage() {
           ) : (
             <div className="table-card">
               <table>
-                <thead><tr><th>Usuario</th><th>Sucursal</th><th>Permiso</th><th>Accion</th></tr></thead>
+                <thead><tr><th>Usuario</th><th>Sucursal</th><th>Permiso</th><th>Acción</th></tr></thead>
                 <tbody>
                   {branchAdmins.map((admin) => (
                     <tr key={admin.adminId}>
@@ -220,7 +220,7 @@ export function AdminMessagingPermissionsPage() {
           ) : (
             <div className="table-card">
               <table>
-                <thead><tr><th>Usuario</th><th>Sucursal</th><th>Permiso</th><th>Accion</th></tr></thead>
+                <thead><tr><th>Usuario</th><th>Sucursal</th><th>Permiso</th><th>Acción</th></tr></thead>
                 <tbody>
                   {mainAdmins.map((admin) => (
                     <tr key={admin.adminId}>
@@ -253,7 +253,7 @@ export function AdminMessagingPermissionsPage() {
         ) : (
           <div className="table-card">
             <table>
-              <thead><tr><th>Especialista</th><th>Permiso</th><th>Accion</th></tr></thead>
+              <thead><tr><th>Especialista</th><th>Permiso</th><th>Acción</th></tr></thead>
               <tbody>
                 {specialists.map((s) => (
                   <tr key={s.specialistId}>

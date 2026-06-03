@@ -109,7 +109,7 @@ def _dashboard_alerts():
     if pending_payments > 5:
         alerts.append({
             "type": "danger",
-            "message": f"{pending_payments} pagos pendientes de revision — hayqueue acumulado.",
+            "message": f"{pending_payments} pagos pendientes de revisión — hay queue acumulado.",
         })
 
     return alerts

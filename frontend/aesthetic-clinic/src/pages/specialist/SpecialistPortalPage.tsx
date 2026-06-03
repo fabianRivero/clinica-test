@@ -153,7 +153,7 @@ export function SpecialistPortalPage() {
                 </thead>
                 <tbody>
                   <tr><td><StatusBadge tone="warning">Nuevo</StatusBadge></td><td>Ajuste de horarios por mantenimiento</td><td>Admin Norte</td><td>2026-05-14 09:20</td></tr>
-                  <tr><td><StatusBadge tone="neutral">Leido</StatusBadge></td><td>Confirmacion de cobertura sabado</td><td>Admin Norte</td><td>2026-05-13 16:45</td></tr>
+                  <tr><td><StatusBadge tone="neutral">Leido</StatusBadge></td><td>Confirmación de cobertura sabado</td><td>Admin Norte</td><td>2026-05-13 16:45</td></tr>
                 </tbody>
               </table>
             </div>

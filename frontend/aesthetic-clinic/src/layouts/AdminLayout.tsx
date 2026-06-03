@@ -58,7 +58,7 @@ const fullNavigation = [
     mainAdminOnly: true,
     children: [
       { to: '/admin/catalogos/todos-los-servicios', label: 'Todos los servicios' },
-      { to: '/admin/catalogos/procedimientos-esteticos', label: 'Procedimientos esteticos' },
+      { to: '/admin/catalogos/procedimientos-esteticos', label: 'Procedimientos estéticos' },
       { to: '/admin/catalogos/tipos-servicio', label: 'Tipos de servicio' },
       { to: '/admin/catalogos/especialidades', label: 'Especialidades' },
       { to: '/admin/catalogos/categorias-gasto', label: 'Categorías de gasto' },

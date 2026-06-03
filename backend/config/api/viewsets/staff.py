@@ -248,7 +248,7 @@ class StaffViewSet(viewsets.ViewSet):
                     "id": "team-specialties",
                     "label": "Especialidades",
                     "value": str(Especialidad.objects.filter(activo=True).count()),
-                    "delta": "Catalogo editable desde administracion",
+                    "delta": "Catálogo editable desde administración",
                     "tone": "success",
                 },
                 {

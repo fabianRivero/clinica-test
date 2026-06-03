@@ -28,12 +28,12 @@ def worker_availability(request):
         return json_response({"detail": "Autenticacion requerida."}, status=401)
 
     if not getattr(request.user, "es_trabajador", False):
-        return json_response({"detail": "No tienes acceso a esta informacion."}, status=403)
+        return json_response({"detail": "No tienes acceso a esta información."}, status=403)
 
     try:
         especialista = Especialista.objects.select_related("sucursal_base").get(usuario=request.user)
     except Especialista.DoesNotExist:
-        return json_response({"detail": "No tienes acceso a esta informacion."}, status=403)
+        return json_response({"detail": "No tienes acceso a esta información."}, status=403)
 
     branch_name = especialista.sucursal_base.nombre if especialista.sucursal_base else ""
 

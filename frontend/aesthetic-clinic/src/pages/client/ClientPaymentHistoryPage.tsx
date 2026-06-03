@@ -170,13 +170,13 @@ export function ClientPaymentHistoryPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Operacion</th>
+                    <th>Operación</th>
                     <th>Cuota</th>
                     <th>Monto</th>
                     <th>Fecha</th>
                     <th>Estado</th>
                     <th>Comprobante</th>
-                    <th>Revision</th>
+                    <th>Revisión</th>
                   </tr>
                 </thead>
                 <tbody>

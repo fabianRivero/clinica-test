@@ -103,7 +103,7 @@ class PagosViewSet(viewsets.ViewSet):
             "metrics": [
                 {
                     "id": "payments-pending",
-                    "label": "Pendientes de revision",
+                    "label": "Pendientes de revisión",
                     "value": str(pagos_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE).count()),
                     "delta": f"Bs {pending_amount:.2f}",
                     "tone": "warning",

@@ -324,7 +324,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
           {view === 'pendientes' ? (
           <SectionCard
             eyebrow="Comprobantes"
-            title="Cola de verificacion"
+            title="Cola de verificación"
             description="Los estados replican el flujo real del negocio: pendiente, observado y aprobado."
             action={
               <div className="expense-period-controls">

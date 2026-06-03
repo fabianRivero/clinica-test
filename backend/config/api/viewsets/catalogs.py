@@ -104,13 +104,13 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
                 "especialidades",
                 "Especialidades",
                 Especialidad.objects.filter(activo=True).count(),
-                "Catalogo usado para especialistas y asignaciones del equipo",
+                "Catálogo usado para especialistas y asignaciones del equipo",
             ),
             self._catalog_item(
                 "categorias-gasto",
                 "Categorias de gasto",
                 CategoriaGasto.objects.filter(activo=True).count(),
-                "Clasificacion administrativa para gastos por sucursal",
+                "Clasificación administrativa para gastos por sucursal",
             ),
         ]
         return Response({"catalogs": catalogs})
@@ -310,18 +310,18 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
             return {
                 "catalog": self.build_catalog_meta(
                     catalog_key, "Todos los servicios",
-                    "Administra cada servicio disponible con su precio base y el procedimiento estetico asociado.",
+                    "Administra cada servicio disponible con su precio base y el procedimiento estético asociado.",
                     "Crear servicio",
                 ),
                 "metrics": self.build_metric_set(
                     active_count, total_count - active_count, total_count,
-                    f"{Operacion.objects.count()} operacion(es) usan este catalogo",
+                    f"{Operacion.objects.count()} operacion(es) usan este catálogo",
                 ),
                 "fields": [
                     self.build_field_definition("serviceTypeId", "Tipo de servicio", "select",
                         required=True, value_type="number",
                         options=[self.build_option(t.pk, t.tipo) for t in TipoServicio.objects.filter(activo=True).order_by("orden", "tipo")]),
-                    self.build_field_definition("procedureId", "Procedimiento estetico", "select",
+                    self.build_field_definition("procedureId", "Procedimiento estético", "select",
                         value_type="number", allow_empty=True,
                         options=[self.build_option(p.pk, p.proceso) for p in ProcEstetico.objects.filter(activo=True).order_by("proceso")]),
                     self.build_field_definition("basePrice", "Precio base", "number",
@@ -347,8 +347,8 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
             active_count = queryset.filter(activo=True).count()
             total_count = queryset.count()
             return {
-                "catalog": self.build_catalog_meta(catalog_key, "Procedimientos esteticos",
-                    "Catalogo operativo de procedimientos disponibles para las ventas y fichas clinicas.",
+                "catalog": self.build_catalog_meta(catalog_key, "Procedimientos estéticos",
+                    "Catálogo operativo de procedimientos disponibles para las ventas y fichas clinicas.",
                     "Crear procedimiento"),
                 "metrics": self.build_metric_set(active_count, total_count - active_count, total_count,
                     "Usados en configuraciones de servicio"),
@@ -444,9 +444,9 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
                 "metrics": self.build_metric_set(active_count, total_count - active_count, total_count,
                     f"{OpcionCatalogo.objects.filter(activo=True).count()} opcion(es) activas asociadas"),
                 "fields": [
-                    self.build_field_definition("code", "Codigo", "text", required=True, placeholder="Ej. SI_NO"),
+                    self.build_field_definition("code", "Código", "text", required=True, placeholder="Ej. SI_NO"),
                     self.build_field_definition("name", "Nombre", "text", required=True, placeholder="Ej. Si / No"),
-                    self.build_field_definition("description", "Descripcion", "textarea", placeholder="Describe el uso del grupo"),
+                    self.build_field_definition("description", "Descripción", "textarea", placeholder="Describe el uso del grupo"),
                 ],
                 "items": items,
             }
@@ -474,8 +474,8 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
                 "metrics": self.build_metric_set(active_count, total_count - active_count, total_count,
                     f"{GastoSucursal.objects.count()} gasto(s) registrados"),
                 "fields": [
-                    self.build_field_definition("name", "Categoria", "text", required=True, placeholder="Ej. Insumos"),
-                    self.build_field_definition("description", "Descripcion", "textarea", placeholder="Notas internas o alcance"),
+                    self.build_field_definition("name", "Categoría", "text", required=True, placeholder="Ej. Insumos"),
+                    self.build_field_definition("description", "Descripción", "textarea", placeholder="Notas internas o alcance"),
                 ],
                 "items": items,
             }
@@ -485,10 +485,10 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
             queryset = PatologiaCutanea.objects.order_by("orden", "nombre")
             items = [
                 self.build_catalog_entry(
-                    item.pk, item.nombre, "Catalogo clinico",
+                    item.pk, item.nombre, "Catálogo clínico",
                     item.activo,
                     [
-                        {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                        {"label": "Descripción", "value": item.descripcion or "Sin descripción"},
                     ],
                     {"name": item.nombre, "description": item.descripcion},
                 )
@@ -497,14 +497,14 @@ class CatalogsViewSet(CatalogFormatMixin, viewsets.ViewSet):
             active_count = queryset.filter(activo=True).count()
             total_count = queryset.count()
             return {
-                "catalog": self.build_catalog_meta(catalog_key, "Patologias cutaneas",
+                "catalog": self.build_catalog_meta(catalog_key, "Patologías cutaneas",
                     "Administra las patologias disponibles para el analisis estetico y sus reportes.",
                     "Crear patologia cutanea"),
                 "metrics": self.build_metric_set(active_count, total_count - active_count, total_count,
                     "Utilizadas en analisis esteticos historicos"),
                 "fields": [
-                    self.build_field_definition("name", "Patologia cutanea", "text", required=True, placeholder="Ej. Rosacea"),
-                    self.build_field_definition("description", "Descripcion", "textarea", placeholder="Notas internas o alcance"),
+                    self.build_field_definition("name", "Patología cutanea", "text", required=True, placeholder="Ej. Rosacea"),
+                    self.build_field_definition("description", "Descripción", "textarea", placeholder="Notas internas o alcance"),
                 ],
                 "items": items,
             }

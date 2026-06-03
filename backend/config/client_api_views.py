@@ -293,7 +293,7 @@ def _quota_item(cuota):
         status = cuota.get_estado_display()
         status_tone = "approved"
     elif latest_payment and latest_payment.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE:
-        status = "Pendiente de revision"
+        status = "Pendiente de revisión"
         status_tone = "pending"
     elif latest_payment and latest_payment.estado_verificacion == PagoRealizado.EstadoVerificacion.RECHAZADO:
         status = "Comprobante observado"
@@ -303,7 +303,7 @@ def _quota_item(cuota):
         status_tone = _quota_tone(cuota)
 
     latest_payment_status = (
-        "Pendiente de revision"
+        "Pendiente de revisión"
         if latest_payment and latest_payment.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE
         else "Comprobante observado"
         if latest_payment and latest_payment.estado_verificacion == PagoRealizado.EstadoVerificacion.RECHAZADO
@@ -354,7 +354,7 @@ def _payment_item(payment):
         "statusTone": _payment_tone(payment),
         "dueDate": date_label(payment.cuota.fecha_vencimiento),
         "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
-        "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Pendiente de revision",
+        "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Pendiente de revisión",
         "note": payment.observacion_verificacion or payment.detalles_pago or "Sin observaciones.",
     }
 
@@ -366,7 +366,7 @@ def _payment_qr_config_item(config):
         "instructions": (
             config.instrucciones
             if config
-            else "Escanea el QR de pago y luego adjunta tu comprobante para revision administrativa."
+            else "Escanea el QR de pago y luego adjunta tu comprobante para revisión administrativa."
         ),
     }
 
@@ -428,7 +428,7 @@ def _client_alerts(cliente, active_operations, pending_quotas, pending_payments,
             {
                 "id": "client-alert-observed-payment",
                 "title": "Tienes comprobantes observados",
-                "description": "Uno o mas pagos necesitan un nuevo comprobante o revision administrativa.",
+                "description": "Uno o mas pagos necesitan un nuevo comprobante o revisión administrativa.",
                 "severity": "high",
                 "action": "Revisar pagos",
             }
@@ -583,7 +583,7 @@ def client_dashboard(request):
             ),
             metric(
                 "client-pending-payments",
-                "Pagos en revision",
+                "Pagos en revisión",
                 payments_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE).count(),
                 f"{payments_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO).count()} aprobados",
                 "success",
@@ -667,7 +667,7 @@ def client_payments(request):
         "metrics": [
             metric(
                 "client-payments-pending",
-                "Pagos en revision",
+                "Pagos en revisión",
                 payments_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE).count(),
                 "Comprobantes enviados a administracion",
                 "warning",
@@ -754,7 +754,7 @@ def client_upload_payment_receipt(request, quota_id):
         editable_payment.observacion_verificacion = ""
         editable_payment.save()
         payment = editable_payment
-        detail = "El comprobante fue actualizado correctamente y quedo pendiente de revision."
+        detail = "El comprobante fue actualizado correctamente y quedo pendiente de revisión."
     else:
         payment = PagoRealizado.objects.create(
             cuota=cuota,
@@ -773,7 +773,7 @@ def client_upload_payment_receipt(request, quota_id):
                 recipient=admin,
                 branch=sucursal,
                 type=Notification.Type.ADMIN_PAYMENT_PENDING_CONFIRMATION,
-                title="Nuevo pago pendiente de revision",
+                title="Nuevo pago pendiente de revisión",
                 message=(
                     f"El cliente {paciente_user.primer_nombre} {paciente_user.apellido_paterno} "
                     f"({paciente_user.username}), envio el comprobante del pago de la cuota Nro {nro_cuota} "
@@ -787,7 +787,7 @@ def client_upload_payment_receipt(request, quota_id):
                 created_by_type="client",
                 created_by_id=request.user.id,
             )
-        detail = "El comprobante fue enviado correctamente y quedo pendiente de revision."
+        detail = "El comprobante fue enviado correctamente y quedo pendiente de revisión."
 
     cuota.refresh_from_db(fields=["estado"])
 

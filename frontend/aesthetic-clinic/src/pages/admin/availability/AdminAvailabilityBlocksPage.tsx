@@ -266,7 +266,7 @@ export function AdminAvailabilityBlocksPage() {
                           <th>Especialista</th>
                           <th>Tipo</th>
                           <th>Fecha y Hora</th>
-                          <th>Accion</th>
+                          <th>Acción</th>
                         </tr>
                       </thead>
                       <tbody>

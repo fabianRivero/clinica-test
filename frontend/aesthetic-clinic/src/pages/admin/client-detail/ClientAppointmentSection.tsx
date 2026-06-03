@@ -110,11 +110,11 @@ export function ClientAppointmentSection({
           <table>
             <thead>
               <tr>
-                <th>Operacion</th>
+                <th>Operación</th>
                 <th>Especialista</th>
                 <th>Fecha</th>
                 <th>Estado</th>
-                <th>Verificacion</th>
+                <th>Verificación</th>
                 <th>Acciones</th>
               </tr>
             </thead>

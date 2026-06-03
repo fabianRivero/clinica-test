@@ -42,7 +42,7 @@ export function useApiResource<T>(loader: () => Promise<T>) {
           setState({
             data: null,
             isLoading: false,
-            error: error instanceof Error ? error.message : 'No se pudo cargar la informacion.',
+            error: error instanceof Error ? error.message : 'No se pudo cargar la información.',
           })
         }
       })

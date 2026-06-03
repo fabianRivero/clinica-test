@@ -180,7 +180,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
 
   async function handleCancelWizard() {
     const ok = await confirm({
-      title: 'Cancelar creacion',
+      title: 'Cancelar creación',
       message: '¿Seguro que deseas cancelar la creación de sucursal? Se perderán los cambios no finalizados.',
       tone: 'danger',
     })
@@ -539,7 +539,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                 <td>{row.admin?.nombre || '-'}</td>
                 <td>{row.activa ? 'Activa' : 'Inactiva'}</td>
                 <td className="_flex-gap-sm">
-                  <button className="button button--ghost" type="button" onClick={() => openEditModal(row)}>Editar informacion</button>
+                  <button className="button button--ghost" type="button" onClick={() => openEditModal(row)}>Editar información</button>
                   <button className="button button--ghost" type="button" onClick={() => openChangeAdminModal(row)}>Cambiar administrador</button>
                   {(!user?.branchId || row.id !== user.branchId) && (
                     <button className="button button--ghost" type="button" onClick={() => void handleToggle(row)}>{row.activa ? 'Desactivar' : 'Activar'}</button>
@@ -556,7 +556,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
           <h3>Historial de cambios</h3>
           <div className="table-card">
             <table>
-          <thead><tr><th>Fecha</th><th>Sucursal</th><th>Accion</th><th>Detalle</th><th>Actor</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Sucursal</th><th>Acción</th><th>Detalle</th><th>Actor</th></tr></thead>
           <tbody>
             {recentAuditRows.map((row) => (
               <tr key={row.id}>

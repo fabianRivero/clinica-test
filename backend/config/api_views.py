@@ -739,7 +739,7 @@ def _admin_client_detail(cliente):
                 "admin-client-payments",
                 "Pagos realizados",
                 len(payments),
-                f"{len([p for p in payments if p.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE])} en revision",
+                f"{len([p for p in payments if p.estado_verificacion == PagoRealizado.EstadoVerificacion.PENDIENTE])} en revisión",
                 "warning",
             ),
             metric(
@@ -787,7 +787,7 @@ def _payment_qr_config_item(config):
         "instructions": (
             config.instrucciones
             if config
-            else "Escanea el QR de pago y luego adjunta tu comprobante para revision administrativa."
+            else "Escanea el QR de pago y luego adjunta tu comprobante para revisión administrativa."
         ),
     }
 
@@ -2876,8 +2876,8 @@ def admin_cliente_inactivate(request, client_id):
         return json_response(
             {
                 "detail": (
-                    "No se puede inactivar al cliente porque tiene un pago realizado pendiente de revision. "
-                    f"Primero revisa el pago #{pending_review_payment.pk} de la operacion "
+                    "No se puede inactivar al cliente porque tiene un pago realizado pendiente de revisión. "
+                    f"Primero revisa el pago #{pending_review_payment.pk} de la operación "
                     f"#{pending_review_payment.cuota.operacion_id}."
                 )
             },
@@ -2922,7 +2922,7 @@ def admin_cliente_inactivate(request, client_id):
                 f"Antes de la inactivación tenia {pendientes['sesiones_pendientes']} sesion(es) "
                 f"y {pendientes['cuotas_pendientes']} cuota(s) pendiente(s). "
                 f"Se convirtieron {converted_quotas} cuota(s) a no pagadas "
-                f"y se omitieron {skipped_pending_review_quotas} por tener pagos pendientes de revision. "
+                f"y se omitieron {skipped_pending_review_quotas} por tener pagos pendientes de revisión. "
                 f"Se cancelaron {cancelled_operations} procedimiento(s) en proceso y "
                 f"{cancelled_appointments} cita(s) programada(s)."
             ),
@@ -3629,7 +3629,7 @@ def admin_pagos(request):
         "metrics": [
             metric(
                 "payments-pending",
-                "Pendientes de revision",
+                "Pendientes de revisión",
                 pagos_qs.filter(estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE).count(),
                 currency(pending_amount),
                 "warning",
@@ -3969,13 +3969,13 @@ def admin_catalogos(request):
                 "especialidades",
                 "Especialidades",
                 Especialidad.objects.filter(activo=True).count(),
-                "Catalogo usado para especialistas y asignaciones del equipo",
+                "Catálogo usado para especialistas y asignaciones del equipo",
             ),
             _catalog_item(
                 "categorias-gasto",
                 "Categorias de gasto",
                 CategoriaGasto.objects.filter(activo=True).count(),
-                "Clasificacion administrativa para gastos por sucursal",
+                "Clasificación administrativa para gastos por sucursal",
             ),
         ],
     }
@@ -4118,7 +4118,7 @@ def admin_equipo(request):
                 "team-specialties",
                 "Especialidades",
                 Especialidad.objects.filter(activo=True).count(),
-                "Catalogo editable desde administracion",
+                "Catálogo editable desde administración",
                 "success",
             ),
             metric(

@@ -378,7 +378,7 @@ class Command(BaseCommand):
 
         service_type_specs = {
             "consulta": ("Cita de consulta", "Reserva para valoracion o control medico.", 1),
-            "tratamiento": ("Tratamiento estetico", "Procedimientos de la ficha medica.", 2),
+            "tratamiento": ("Tratamiento estético", "Procedimientos de la ficha medica.", 2),
         }
         for key, (name, description, order) in service_type_specs.items():
             item, _ = TipoServicio.objects.update_or_create(

@@ -113,7 +113,7 @@ type Block = { reason: string; type: 'BLOQUEAR' }
 | Request | Response |
 |---------|----------|
 | Unauthenticated | 401 `{"detail": "Autenticacion requerida."}` |
-| Authenticated but not TRABAJADOR | 403 `{"detail": "No tienes acceso a esta informacion."}` |
+| Authenticated but not TRABAJADOR | 403 `{"detail": "No tienes acceso a esta información."}` |
 | Authenticated TRABAJADOR with no agenda | 200 with all 7 days having `shifts: []`, `blocks: [{"reason": "Sin agenda configurada", "type": "BLOQUEAR"}]` |
 
 ## Testing Strategy

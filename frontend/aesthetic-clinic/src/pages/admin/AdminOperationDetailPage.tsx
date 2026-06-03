@@ -207,11 +207,11 @@ export function AdminOperationDetailPage() {
 
       <SectionCard
         eyebrow="Resumen clinico"
-        title="Informacion principal"
+        title="Información principal"
         description="Estado global del tratamiento, paciente, procedimiento y seguimiento activo."
       >
         {actionError ? (
-          <DataState title="No se pudo confirmar verificacion" message={actionError} tone="danger" />
+          <DataState title="No se pudo confirmar verificación" message={actionError} tone="danger" />
         ) : null}
         <div className="operation-detail-grid">
           <article className="operation-detail-panel">
@@ -288,7 +288,7 @@ export function AdminOperationDetailPage() {
 
         <div className="operation-card__note-grid">
           <article>
-            <span>Detalles de la operacion</span>
+            <span>Detalles de la operación</span>
             <p>{operation.detallesOperacion}</p>
           </article>
           <article>
@@ -423,7 +423,7 @@ export function AdminOperationDetailPage() {
             <div className="operation-detail-panel__header">
               <div>
                 <span>Documento escaneado</span>
-                <strong>{operation.documentPdfUrl ? 'Disponible para revision' : 'No adjuntado'}</strong>
+                <strong>{operation.documentPdfUrl ? 'Disponible para revisión' : 'No adjuntado'}</strong>
               </div>
             </div>
             {operation.documentPdfUrl ? (
@@ -459,7 +459,7 @@ export function AdminOperationDetailPage() {
       <SectionCard
         eyebrow="Seguimiento"
         title="Citas y cuotas"
-        description="Resumen rapido del historial de reservas y del plan de pagos asociado a la operacion."
+        description="Resumen rápido del historial de reservas y del plan de pagos asociado a la operación."
       >
         <div className="operation-detail-grid">
           <article className="operation-detail-panel">
@@ -476,7 +476,7 @@ export function AdminOperationDetailPage() {
                     <strong>{appointment.dateTime}</strong>
                     <p>{appointment.specialist}</p>
                     <span>{appointment.status}</span>
-                    <small>Verificacion: {appointment.biometricStatus}</small>
+                    <small>Verificación: {appointment.biometricStatus}</small>
                     {['programada', 'no asistio'].includes(appointment.status?.toLowerCase?.() ?? '') ? (
                       <div className="table-actions">
                         <button className="button button--ghost button--compact" type="button" onClick={() => setSelectedAppointment(appointment.rawId)}>

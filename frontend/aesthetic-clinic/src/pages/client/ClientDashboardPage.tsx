@@ -20,7 +20,7 @@ export function ClientDashboardPage() {
       {isLoading && !data ? (
         <SectionCard title="Cargando portal">
           <DataState
-            title="Preparando tu informacion"
+            title="Preparando tu información"
             message="Estamos consultando tratamientos, cuotas, pagos y citas en tiempo real."
           />
         </SectionCard>
@@ -60,7 +60,7 @@ export function ClientDashboardPage() {
             <SectionCard
               eyebrow="Tratamientos activos"
               title="Tus operaciones vigentes"
-              description="Resumen rapido de sesiones y especialista asignado."
+              description="Resumen rápido de sesiones."
             >
               {data.operations.length ? (
                 <div className="operation-grid">
@@ -125,7 +125,7 @@ export function ClientDashboardPage() {
             <SectionCard
               eyebrow="Agenda"
               title="Próximas citas"
-              description="Citas ya registradas o pendientes de cierre de verificacion."
+              description="Citas ya registradas o pendientes de cierre de verificación."
             >
               {data.upcomingAppointments.length ? (
                 <div className="agenda-list">
@@ -199,7 +199,7 @@ export function ClientDashboardPage() {
                   <table>
                     <thead>
                       <tr>
-                        <th>Operacion</th>
+                        <th>Operación</th>
                         <th>Cuota</th>
                         <th>Monto</th>
                         <th>Estado</th>

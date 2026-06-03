@@ -27,11 +27,11 @@ const catalogFallbackInfo: Record<
   'todos-los-servicios': {
     title: 'Todos los servicios',
     description:
-      'Administra cada servicio disponible con su precio base y el procedimiento estetico asociado.',
+      'Administra cada servicio disponible con su precio base y el procedimiento estético asociado.',
     createLabel: 'Crear servicio',
   },
   'procedimientos-esteticos': {
-    title: 'Procedimientos esteticos',
+    title: 'Procedimientos estéticos',
     description:
       'Gestiona procedimientos específicos que luego puedes vincular a servicios y fichas clínicas.',
     createLabel: 'Crear procedimiento',
@@ -49,13 +49,13 @@ const catalogFallbackInfo: Record<
     createLabel: 'Crear campo de ficha',
   },
   'patologias-cutaneas': {
-    title: 'Patologias cutaneas',
-    description: 'Mantiene actualizado el catalogo de patologias usadas en el analisis estetico.',
-    createLabel: 'Crear patologia cutanea',
+    title: 'Patologías cutaneas',
+    description: 'Mantiene actualizado el catálogo de patologías usadas en el análisis estético.',
+    createLabel: 'Crear patología cutanea',
   },
   especialidades: {
     title: 'Especialidades',
-    description: 'Define las especialidades que puede tener el equipo operativo y medico.',
+    description: 'Define las especialidades que puede tener el equipo operativo y médico.',
     createLabel: 'Crear especialidad',
   },
   'categorias-gasto': {
@@ -202,7 +202,7 @@ function CatalogFormField({
           }}
         >
           <option value="">
-            {field.allowEmpty ? 'Sin seleccionar' : 'Selecciona una opcion'}
+            {field.allowEmpty ? 'Sin seleccionar' : 'Selecciona una opción'}
           </option>
           {field.options?.map((option) => (
             <option key={`${field.name}-${option.value}`} value={option.value}>
@@ -297,15 +297,15 @@ function CatalogEditorForm({
       if (editingItem) {
         await updateAdminCatalogItem(catalogKey, editingItem.id, payload)
         showNotification({
-          title: 'Catalogo actualizado',
-          message: 'Los cambios se guardaron correctamente.',
+          title: 'Catálogo actualizado',
+          message: 'Los cambios se guardaron corréctamente.',
           tone: 'success',
         })
       } else {
         await createAdminCatalogItem(catalogKey, payload)
         showNotification({
           title: 'Registro creado',
-          message: 'El nuevo elemento del catalogo ya esta disponible.',
+          message: 'El nuevo elemento del catálogo ya esta disponible.',
           tone: 'success',
         })
       }
@@ -331,7 +331,7 @@ function CatalogEditorForm({
     <SectionCard
       eyebrow="Edicion"
       title={editingItem ? `Editar: ${editingItem.title}` : createLabel}
-      description="Guarda cambios sobre este catalogo sin salir de la pantalla."
+      description="Guarda cambios sobre este catálogo sin salir de la pantalla."
     >
       <form className="form-grid" onSubmit={(event) => void handleSubmit(event)}>
         {fields.map((field) => (
@@ -427,14 +427,14 @@ function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
       {isLoading && !data ? (
         <SectionCard title={`Cargando ${pageInfo.title.toLowerCase()}`}>
           <DataState
-            title="Sincronizando catalogo"
+            title="Sincronizando catálogo"
             message="Estamos cargando la configuración editable desde la base conectada."
           />
         </SectionCard>
       ) : null}
 
       {error && !data ? (
-        <SectionCard title="No pudimos cargar el catalogo">
+        <SectionCard title="No pudimos cargar el catálogo">
           <DataState title="Conexion no disponible" message={error} tone="danger" />
         </SectionCard>
       ) : null}
@@ -456,7 +456,7 @@ function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
           />
 
           <SectionCard
-            eyebrow="Catalogo"
+            eyebrow="Catálogo"
             title={`Registros de ${pageInfo.title.toLowerCase()}`}
             description="Edita, desactiva o reactiva registros segun la necesidad operativa."
           >
@@ -505,7 +505,7 @@ function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
             ) : (
               <DataState
                 title="Sin registros todavia"
-                message="Este catalogo aun no tiene elementos creados en la base conectada."
+                message="Este catálogo aun no tiene elementos creados en la base conectada."
               />
             )}
           </SectionCard>
