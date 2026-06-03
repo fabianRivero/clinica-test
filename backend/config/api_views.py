@@ -2961,7 +2961,22 @@ def admin_cancel_appointment(request, appointment_id):
     appointment.save()
 
     client_user = appointment.operacion.paciente.usuario
-    create_notification(recipient=client_user, branch=appointment.sucursal, type=Notification.Type.CLIENT_APPOINTMENT_CANCELLED, title="Cita cancelada", message="Tu cita fue cancelada por administracion.", action_url="/cliente/reservas", source_event="appointment.cancelled", source_entity_type="appointment", source_entity_id=appointment.id, created_by_type="admin", created_by_id=request.user.id)
+    procedimiento = procedure_name(appointment.operacion)
+    fecha_cita = appointment.fecha_hora.strftime('%d/%m/%Y')
+    hora_cita = appointment.fecha_hora.strftime('%H:%M')
+    create_notification(
+        recipient=client_user,
+        branch=appointment.sucursal,
+        type=Notification.Type.CLIENT_APPOINTMENT_CANCELLED,
+        title="Cita cancelada",
+        message=f"Tu cita de la fecha {fecha_cita}, a la hora {hora_cita}, para el procedimiento {procedimiento} fue cancelada. Puedes verlo en tu registro de citas.",
+        action_url="/cliente/reservas",
+        source_event="appointment.cancelled",
+        source_entity_type="appointment",
+        source_entity_id=appointment.id,
+        created_by_type="admin",
+        created_by_id=request.user.id,
+    )
 
     return json_response(
         {
@@ -3101,7 +3116,22 @@ def admin_reschedule_appointment(request, appointment_id):
     appointment.detalles_cita = "Reserva reprogramada desde administración."
     appointment.save(update_fields=["fecha_hora", "estado", "verif_biometria", "metodo_confirmacion", "detalles_cita", "updated_at"])
     client_user = appointment.operacion.paciente.usuario
-    create_notification(recipient=client_user, branch=appointment.sucursal, type=Notification.Type.CLIENT_APPOINTMENT_RESCHEDULED, title="Cita reprogramada", message=f"Tu cita fue reprogramada para {_datetime_label(appointment.fecha_hora)}.", action_url="/cliente/reservas", source_event="appointment.rescheduled", source_entity_type="appointment", source_entity_id=appointment.id, created_by_type="admin", created_by_id=request.user.id)
+    procedimiento = procedure_name(appointment.operacion)
+    fecha_cita = appointment.fecha_hora.strftime('%d/%m/%Y')
+    hora_cita = appointment.fecha_hora.strftime('%H:%M')
+    create_notification(
+        recipient=client_user,
+        branch=appointment.sucursal,
+        type=Notification.Type.CLIENT_APPOINTMENT_RESCHEDULED,
+        title="Cita reprogramada",
+        message=f"Tu cita de la fecha {fecha_cita}, a la hora {hora_cita}, para el procedimiento {procedimiento} fue reprogramada para la fecha {new_date_time.strftime('%d/%m/%Y')} a la hora {new_date_time.strftime('%H:%M')}. Puedes verlo en tu registro de citas.",
+        action_url="/cliente/reservas",
+        source_event="appointment.rescheduled",
+        source_entity_type="appointment",
+        source_entity_id=appointment.id,
+        created_by_type="admin",
+        created_by_id=request.user.id,
+    )
     return json_response({"detail": "La reserva fue reprogramada correctamente.", "appointment": _client_appointment_item(appointment)})
 
 
@@ -3712,10 +3742,39 @@ def admin_update_payment_status(request, payment_id):
         .get(pk=payment.pk)
     )
 
+    paciente_user = payment.cuota.operacion.paciente.usuario
+    nro_cuota = payment.cuota.nro_cuota
+    monto_pago = payment.monto_pagado
+    procedimiento = payment.cuota.operacion.servicio_config.proc_estetico.proceso
+
     if status_value == PagoRealizado.EstadoVerificacion.APROBADO:
-        create_notification(recipient=payment.cuota.operacion.paciente.usuario, branch=payment.cuota.operacion.paciente.sucursal_registro, type=Notification.Type.CLIENT_PAYMENT_CONFIRMED, title="Pago confirmado", message="Tu pago fue confirmado por administracion.", action_url="/cliente/pagos", source_event="payment.approved", source_entity_type="payment", source_entity_id=payment.id, created_by_type="admin", created_by_id=request.user.id)
+        create_notification(
+            recipient=paciente_user,
+            branch=payment.cuota.operacion.paciente.sucursal_registro,
+            type=Notification.Type.CLIENT_PAYMENT_CONFIRMED,
+            title="Pago confirmado",
+            message=f"El pago de la cuota Nro {nro_cuota} de monto Bs {monto_pago} del procedimiento {procedimiento} fue aprobado.",
+            action_url="/cliente/pagos",
+            source_event="payment.approved",
+            source_entity_type="payment",
+            source_entity_id=payment.id,
+            created_by_type="admin",
+            created_by_id=request.user.id,
+        )
     elif status_value == PagoRealizado.EstadoVerificacion.RECHAZADO:
-        create_notification(recipient=payment.cuota.operacion.paciente.usuario, branch=payment.cuota.operacion.paciente.sucursal_registro, type=Notification.Type.CLIENT_PAYMENT_REJECTED, title="Pago rechazado", message="Tu pago fue rechazado. Revisa el detalle en pagos.", action_url="/cliente/pagos", source_event="payment.rejected", source_entity_type="payment", source_entity_id=payment.id, created_by_type="admin", created_by_id=request.user.id)
+        create_notification(
+            recipient=paciente_user,
+            branch=payment.cuota.operacion.paciente.sucursal_registro,
+            type=Notification.Type.CLIENT_PAYMENT_REJECTED,
+            title="Pago rechazado",
+            message=f"El pago de la cuota Nro {nro_cuota} de monto Bs {monto_pago} del procedimiento {procedimiento} fue rechazado.",
+            action_url="/cliente/pagos",
+            source_event="payment.rejected",
+            source_entity_type="payment",
+            source_entity_id=payment.id,
+            created_by_type="admin",
+            created_by_id=request.user.id,
+        )
 
     detail_map = {
         PagoRealizado.EstadoVerificacion.PENDIENTE: "El pago volvio a estado pendiente.",

@@ -762,15 +762,24 @@ def client_upload_payment_receipt(request, quota_id):
             comprobante_url=receipt_file,
             detalles_pago=details or "Comprobante enviado por el cliente desde el portal.",
         )
+        paciente_user = payment.cuota.operacion.paciente.usuario
+        procedimiento = payment.cuota.operacion.servicio_config.proc_estetico.proceso
         sucursal = payment.cuota.operacion.paciente.sucursal_registro
+        operacion_id = payment.cuota.operacion.pk
+        nro_cuota = payment.cuota.nro_cuota
+        monto_cuota = payment.monto_pagado
         for admin in admins_for_specialist_branch(sucursal):
             create_notification(
                 recipient=admin,
                 branch=sucursal,
                 type=Notification.Type.ADMIN_PAYMENT_PENDING_CONFIRMATION,
                 title="Nuevo pago pendiente de revision",
-                message=f"El cliente {payment.cuota.operacion.paciente.usuario.get_full_name()} "
-                        f"envio un comprobante de Bs {payment.monto_pagado}.",
+                message=(
+                    f"El cliente {paciente_user.primer_nombre} {paciente_user.apellido_paterno} "
+                    f"({paciente_user.username}), envio el comprobante del pago de la cuota Nro {nro_cuota} "
+                    f"del procedimiento {procedimiento} con ID {operacion_id}. "
+                    f"El monto de la cuota de pago es: Bs {monto_cuota}."
+                ),
                 action_url="/admin/pagos",
                 source_event="payment.pending_submission",
                 source_entity_type="payment",

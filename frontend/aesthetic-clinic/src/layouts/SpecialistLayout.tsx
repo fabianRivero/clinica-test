@@ -100,7 +100,6 @@ export function SpecialistLayout() {
           </div>
           <div className="topbar__right">
             <NavLink to="/trabajador/notificaciones" className="button button--ghost button--compact">🔔 {unreadCount}</NavLink>
-            <div className="search-pill search-pill--client">Agenda abierta, disponibilidad y mensajes internos</div>
             <div className="profile-chip profile-chip--client">
               <div className="profile-chip__meta">
                 <strong>{user?.fullName}</strong>

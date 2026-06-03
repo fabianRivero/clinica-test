@@ -3,29 +3,30 @@ import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
+import { useSpecialistAvailability } from '../../hooks/useSpecialistAvailability'
+import type { DayAvailability } from '../../types/worker'
 
-type WeekdayAvailability = {
-  date: string
-  weekdayLabel: string
-  branch: string
-  shifts: Array<{ start: string; end: string; source: 'HABITUAL' | 'EXCEPCION' }>
-  blocks: Array<{ reason: string }>
+function Spinner() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
+      <span className="status-badge status-badge--primary">Cargando...</span>
+    </div>
+  )
 }
-
-const WEEK_AVAILABILITY: WeekdayAvailability[] = [
-  { date: '2026-05-18', weekdayLabel: 'Lunes', branch: 'Sucursal Norte', shifts: [{ start: '08:00', end: '14:00', source: 'HABITUAL' }], blocks: [] },
-  { date: '2026-05-19', weekdayLabel: 'Martes', branch: 'Sucursal Norte', shifts: [{ start: '10:00', end: '18:00', source: 'HABITUAL' }], blocks: [] },
-  { date: '2026-05-20', weekdayLabel: 'Miercoles', branch: 'Sucursal Norte', shifts: [{ start: '08:00', end: '12:00', source: 'HABITUAL' }, { start: '15:00', end: '18:00', source: 'EXCEPCION' }], blocks: [] },
-  { date: '2026-05-21', weekdayLabel: 'Jueves', branch: 'Sucursal Norte', shifts: [], blocks: [{ reason: 'Bloqueo por capacitacion interna (todo el dia)' }] },
-  { date: '2026-05-22', weekdayLabel: 'Viernes', branch: 'Sucursal Norte', shifts: [{ start: '09:00', end: '17:00', source: 'HABITUAL' }], blocks: [] },
-  { date: '2026-05-23', weekdayLabel: 'Sabado', branch: 'Sucursal Norte', shifts: [{ start: '09:00', end: '13:00', source: 'HABITUAL' }], blocks: [] },
-  { date: '2026-05-24', weekdayLabel: 'Domingo', branch: 'Sucursal Norte', shifts: [], blocks: [{ reason: 'Sin agenda configurada' }] },
-]
 
 export function SpecialistPortalPage() {
   const [activeTab, setActiveTab] = useState<'AGENDA' | 'MENSAJES'>('AGENDA')
-  const [selectedDate, setSelectedDate] = useState(WEEK_AVAILABILITY[0].date)
-  const selectedDay = useMemo(() => WEEK_AVAILABILITY.find((item) => item.date === selectedDate) ?? WEEK_AVAILABILITY[0], [selectedDate])
+  const { loading, availability, error, refetch } = useSpecialistAvailability()
+
+  const days = useMemo(() => availability?.days ?? [], [availability?.days])
+
+  const today = new Date().toISOString().split('T')[0]
+  const [selectedDate, setSelectedDate] = useState<string>(today)
+
+  const selectedDay = useMemo((): DayAvailability | null => {
+    if (!days.length) return null
+    return days.find((item) => item.date === selectedDate) ?? days[0] ?? null
+  }, [days, selectedDate])
 
   return (
     <div className="page-stack">
@@ -45,68 +46,98 @@ export function SpecialistPortalPage() {
       </nav>
 
       {activeTab === 'AGENDA' ? (
-        <section className="dashboard-grid">
-          <SectionCard eyebrow="Semana" title="Calendario de disponibilidad" description="Selecciona un dia para revisar horarios y excepciones.">
-            <div className="capacity-list">
-              {WEEK_AVAILABILITY.map((day) => {
-                const active = day.date === selectedDate
-                const hasShifts = day.shifts.length > 0
-                return (
-                  <article className="capacity-item" key={day.date}>
-                    <div className="capacity-item__header">
-                      <div>
-                        <strong>{day.weekdayLabel}</strong>
-                        <p>{day.date}</p>
-                      </div>
-                      <StatusBadge tone={hasShifts ? 'success' : 'warning'}>{hasShifts ? 'Con turno' : 'Sin turno'}</StatusBadge>
-                    </div>
-                    <button className={`button ${active ? '' : 'button--ghost'} button--compact`} type="button" onClick={() => setSelectedDate(day.date)}>
-                      {active ? 'Dia seleccionado' : 'Ver detalle'}
-                    </button>
-                  </article>
-                )
-              })}
-            </div>
-          </SectionCard>
+        <>
+          {loading ? (
+            <Spinner />
+          ) : null}
 
-          <SectionCard eyebrow="Detalle diario" title={`${selectedDay.weekdayLabel} · ${selectedDay.date}`} description="La reserva la atiende cualquier especialista presente en la franja horaria.">
-            <div className="table-card">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Sucursal</th>
-                    <th>Bloque</th>
-                    <th>Origen</th>
-                    <th>Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedDay.shifts.map((shift) => (
-                    <tr key={`${shift.start}-${shift.end}`}>
-                      <td>{selectedDay.branch}</td>
-                      <td>{shift.start} - {shift.end}</td>
-                      <td>{shift.source === 'HABITUAL' ? 'Agenda habitual' : 'Excepcion AGREGAR'}</td>
-                      <td><StatusBadge tone="success">Disponible</StatusBadge></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {!loading && (!availability || (days.length > 0 && days.every((day) => day.shifts.length === 0 && day.blocks.length === 0))) ? (
+            <DataState
+              title="Sin agenda configurada"
+              message="Contacta al administrador para configurar tu disponibilidad."
+              tone="warning"
+            />
+          ) : null}
+
+          {!loading && error && !availability ? (
+            <DataState
+              title="Error"
+              message={error}
+              tone="danger"
+            />
+          ) : null}
+
+          {!loading && error && !availability ? (
+            <div style={{ textAlign: 'center', marginTop: '1rem' }}>
+              <button className="button" type="button" onClick={refetch}>
+                Reintentar
+              </button>
             </div>
-            {!selectedDay.shifts.length ? <DataState title="Sin bloques disponibles" message="No hay franjas activas para este dia." tone="warning" /> : null}
-            {selectedDay.blocks.length ? (
-              <div className="alert-list _mt-md">
-                {selectedDay.blocks.map((block) => (
-                  <article className="alert-card alert-card--warning" key={block.reason}>
-                    <div>
-                      <strong>Bloqueo / observacion</strong>
-                      <p>{block.reason}</p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : null}
-          </SectionCard>
-        </section>
+          ) : null}
+
+          {!loading && availability && days.length > 0 && !days.every((day) => day.shifts.length === 0 && day.blocks.length === 0) ? (
+            <section className="dashboard-grid">
+              <SectionCard eyebrow="Semana" title="Calendario de disponibilidad" description="Selecciona un dia para revisar horarios y excepciones.">
+                <div className="capacity-list">
+                  {days.map((day) => {
+                    const active = day.date === selectedDate
+                    const hasShifts = day.shifts.length > 0
+                    return (
+                      <article className="capacity-item" key={day.date}>
+                        <div className="capacity-item__header">
+                          <div>
+                            <strong>{day.weekdayLabel}</strong>
+                            <p>{day.date}</p>
+                          </div>
+                          <StatusBadge tone={hasShifts ? 'success' : 'warning'}>{hasShifts ? 'Con turno' : 'Sin turno'}</StatusBadge>
+                        </div>
+                        <button className={`button ${active ? '' : 'button--ghost'} button--compact`} type="button" onClick={() => setSelectedDate(day.date)}>
+                          {active ? 'Dia seleccionado' : 'Ver detalle'}
+                        </button>
+                      </article>
+                    )
+                  })}
+                </div>
+              </SectionCard>
+
+              <SectionCard eyebrow="Detalle diario" title={`${selectedDay?.weekdayLabel ?? ''} · ${selectedDay?.date ?? ''}`} description="Tu disponibilidad para este dia.">
+                <div className="table-card">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Bloque horario</th>
+                        <th>Origen</th>
+                        <th>Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedDay?.shifts.map((shift) => (
+                        <tr key={`${shift.start}-${shift.end}`}>
+                          <td>{shift.start} - {shift.end}</td>
+                          <td>{shift.source === 'HABITUAL' ? 'Agenda habitual' : 'Excepcion'}</td>
+                          <td><StatusBadge tone="success">Disponible</StatusBadge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {!selectedDay?.shifts.length && selectedDay ? <DataState title="Sin bloques disponibles" message="No hay franjas activas para este dia." tone="warning" /> : null}
+                {selectedDay?.blocks.length && selectedDay ? (
+                  <div className="alert-list _mt-md">
+                    {selectedDay.blocks.map((block) => (
+                      <article className="alert-card alert-card--warning" key={block.reason}>
+                        <div>
+                          <strong>Bloqueo / observacion</strong>
+                          <p>{block.reason}</p>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </SectionCard>
+            </section>
+          ) : null}
+        </>
       ) : (
         <section className="dashboard-grid dashboard-grid--secondary">
           <SectionCard eyebrow="Bandeja" title="Mensajes con administracion" description="Comunicacion interna por sucursal con formato tipo correo.">

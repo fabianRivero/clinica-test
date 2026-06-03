@@ -61,3 +61,42 @@ p {
   margin: 0;
   color: var(--color-text-soft);
 }
+
+// Utility classes
+._flex-row {
+  display: flex;
+  flex-direction: row;
+}
+
+._flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+._gap-sm {
+  gap: var(--spacing-2);
+}
+
+._gap-md {
+  gap: var(--spacing-4);
+}
+
+._gap-lg {
+  gap: var(--spacing-6);
+}
+
+._grid {
+  display: grid;
+}
+
+._mt-sm {
+  margin-top: var(--spacing-2);
+}
+
+._mt-md {
+  margin-top: var(--spacing-4);
+}
+
+._leading-tight {
+  line-height: 1.2;
+}

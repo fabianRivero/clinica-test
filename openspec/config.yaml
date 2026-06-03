@@ -1,0 +1,68 @@
+# OpenSpec Configuration — clinica-test
+# Project: /media/fabianrivero/disco-d/proyecto C
+
+schema: spec-driven
+
+context: |
+  Tech stack: Django 5.2 + DRF (Python 3.12) backend, React 19 + Vite (TypeScript) frontend
+  Architecture: Monorepo with backend/ and frontend/ directories, PostgreSQL database
+  Testing: Django unittest (backend), Playwright E2E (frontend); pytest not installed
+  Style: ESLint + TypeScript strict mode on frontend
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+  design:
+    - Include sequence diagrams for complex flows
+    - Document architecture decisions with rationale
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+  apply:
+    - Follow existing Django/DRF patterns
+    tdd: false
+    test_command: ""
+  verify:
+    test_command: "python manage.py test"
+    build_command: "npm run build"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas
+
+testing:
+  strict_tdd: false
+  backend:
+    runner: django.test
+    command: python manage.py test
+    unit_available: true
+    integration_available: false
+    e2e_available: false
+    coverage_available: false
+  frontend:
+    runner: playwright
+    command: npx playwright test
+    unit_available: false
+    integration_available: false
+    e2e_available: true
+    coverage_available: false
+  quality:
+    linter_available: true
+    linter_command: "npm run lint"
+    type_checker_available: true
+    type_checker_command: "npx tsc --noEmit"
+    formatter_available: true
+    formatter_command: "prettier --write"
+
+persistence:
+  mode: openspec
+  project: clinica-test
+  delivery_strategy: ask-on-risk
+  review_budget_lines: 400
+  chain_strategy: not_yet_set
+
+strict_tdd: false
+# Note: pytest not installed; using Django's built-in unittest framework
+# For strict TDD, install pytest and configure accordingly

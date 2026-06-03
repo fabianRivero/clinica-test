@@ -2,6 +2,7 @@ from django.urls import include, path
 
 from config.api.routers_operaciones import citas_d8_router
 from config.api.routers_clientes import clientes_router, free_medical_router
+from config.worker_urls import worker_urlpatterns
 
 from config.admin_availability_views import (
     admin_availability,
@@ -98,6 +99,7 @@ from config.prospect_conversion_views import (
 
 
 urlpatterns = [
+    path("trabajador/", include(worker_urlpatterns)),
     path("disponibilidad/sucursales/cambiar/", admin_set_session_branch, name="admin-set-session-branch-api"),
     path("sucursales/", admin_branch_management_list, name="admin-branch-management-list-api"),
     path("sucursales/crear/", admin_branch_management_create, name="admin-branch-management-create-api"),
@@ -330,7 +332,6 @@ urlpatterns = [
     ),
     path("disponibilidad/sucursales/", admin_get_branches, name="admin-branches-api"),
     path("pagos/", admin_pagos, name="admin-pagos-api"),
-    path("pagos/configuracion-qr/", admin_update_payment_qr_config, name="admin-pagos-qr-config-api"),
     path("pagos/<int:payment_id>/estado/", admin_update_payment_status, name="admin-pagos-status-api"),
     path("catalogos/", admin_catalogos, name="admin-catalogos-api"),
     path("catalogos/<slug:catalog_key>/", admin_catalogo_detalle, name="admin-catalogo-detail-api"),

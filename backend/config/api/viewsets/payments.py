@@ -12,7 +12,8 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from billing.models import CuotaPlanPago, PagoRealizado, ConfiguracionPagoQR
-from notifications.models import create_notification, Notification
+from notifications.models import Notification
+from notifications.services import create_notification
 
 from config.api.permissions import AdminRequired
 from config.api.serializers.payments import (
@@ -134,7 +135,7 @@ class PagosViewSet(viewsets.ViewSet):
             "quotas": [self._admin_quota_item(c) for c in cuotas_qs],
         })
 
-@action(detail=False, methods=["post"], url_path="configuracion-qr")
+    @action(detail=False, methods=["post"], url_path="configuracion-qr")
     def update_qr_config(self, request):
         """POST /pagos/configuracion-qr/ — update QR config (multipart)."""
         import logging
@@ -159,7 +160,8 @@ class PagosViewSet(viewsets.ViewSet):
             "paymentQrConfig": self._payment_qr_config_item(config),
         })
 
-    def update(self, request, payment_id=None):
+    @action(detail=True, methods=["post"], url_path="estado")
+    def update_status(self, request, payment_id=None):
         """POST /pagos/<int:payment_id>/estado/ — update payment verification status."""
         payment = (
             PagoRealizado.objects.select_related(
@@ -200,13 +202,21 @@ class PagosViewSet(viewsets.ViewSet):
 
         old_state = payment.estado_verificacion if payment.pk else None
 
+        paciente_user = payment.cuota.operacion.paciente.usuario
+        nro_cuota = payment.cuota.nro_cuota
+        monto_pago = payment.monto_pagado
+        procedimiento = payment.cuota.operacion.servicio_config.proc_estetico.proceso
+
         if status_value == PagoRealizado.EstadoVerificacion.APROBADO:
             create_notification(
-                recipient=payment.cuota.operacion.paciente.usuario,
+                recipient=paciente_user,
                 branch=payment.cuota.operacion.paciente.sucursal_registro,
                 type=Notification.Type.CLIENT_PAYMENT_CONFIRMED,
                 title="Pago confirmado",
-                message="Tu pago fue confirmado por administracion.",
+                message=(
+                    f"El pago de la cuota Nro {nro_cuota} de monto Bs {monto_pago} "
+                    f"del procedimiento {procedimiento} fue aprobado."
+                ),
                 action_url="/cliente/pagos",
                 source_event="payment.approved",
                 source_entity_type="payment",
@@ -216,11 +226,14 @@ class PagosViewSet(viewsets.ViewSet):
             )
         elif status_value == PagoRealizado.EstadoVerificacion.RECHAZADO:
             create_notification(
-                recipient=payment.cuota.operacion.paciente.usuario,
+                recipient=paciente_user,
                 branch=payment.cuota.operacion.paciente.sucursal_registro,
                 type=Notification.Type.CLIENT_PAYMENT_REJECTED,
                 title="Pago rechazado",
-                message="Tu pago fue rechazado. Revisa el detalle en pagos.",
+                message=(
+                    f"El pago de la cuota Nro {nro_cuota} de monto Bs {monto_pago} "
+                    f"del procedimiento {procedimiento} fue rechazado."
+                ),
                 action_url="/cliente/pagos",
                 source_event="payment.rejected",
                 source_entity_type="payment",
@@ -230,11 +243,14 @@ class PagosViewSet(viewsets.ViewSet):
             )
         elif status_value == PagoRealizado.EstadoVerificacion.CANCELADO:
             create_notification(
-                recipient=payment.cuota.operacion.paciente.usuario,
+                recipient=paciente_user,
                 branch=payment.cuota.operacion.paciente.sucursal_registro,
                 type=Notification.Type.CLIENT_PAYMENT_CANCELLED,
                 title="Pago cancelado",
-                message="Tu pago fue cancelado por administracion. Contacta a administracion para mas detalles.",
+                message=(
+                    f"El pago de la cuota Nro {nro_cuota} de monto Bs {monto_pago} "
+                    f"del procedimiento {procedimiento} fue cancelado."
+                ),
                 action_url="/cliente/pagos",
                 source_event="payment.cancelled",
                 source_entity_type="payment",
@@ -245,11 +261,14 @@ class PagosViewSet(viewsets.ViewSet):
         elif status_value == PagoRealizado.EstadoVerificacion.PENDIENTE:
             if old_state != PagoRealizado.EstadoVerificacion.PENDIENTE and old_state is not None:
                 create_notification(
-                    recipient=payment.cuota.operacion.paciente.usuario,
+                    recipient=paciente_user,
                     branch=payment.cuota.operacion.paciente.sucursal_registro,
                     type=Notification.Type.CLIENT_PAYMENT_PENDING_REVERSION,
                     title="Pago vuelto a pendiente",
-                    message="Tu pago fue vuelto a estado pendiente por administracion.",
+                    message=(
+                        f"El pago de la cuota Nro {nro_cuota} de monto Bs {monto_pago} "
+                        f"del procedimiento {procedimiento} fue vuelto a estado pendiente."
+                    ),
                     action_url="/cliente/pagos",
                     source_event="payment.reverted_to_pending",
                     source_entity_type="payment",

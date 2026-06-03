@@ -321,15 +321,18 @@ def mark_expired_programmed_appointments_as_no_show(reference_time=None):
         recipient = getattr(cliente, "usuario", None) if cliente else None
         if not recipient:
             continue
+        proc_estetico = getattr(appointment.operacion.servicio_config, "proc_estetico", None)
+        procedimiento = proc_estetico.proceso if proc_estetico else (
+            getattr(appointment.operacion.servicio_config.tipo_servicio, "tipo", "Procedimiento") if hasattr(appointment.operacion.servicio_config, "tipo_servicio") else "Procedimiento"
+        )
+        fecha_cita = timezone.localtime(appointment.fecha_hora).strftime('%d/%m/%Y')
+        hora_cita = timezone.localtime(appointment.fecha_hora).strftime('%H:%M')
         create_notification(
             recipient=recipient,
             branch=appointment.sucursal,
             type="CLIENT_APPOINTMENT_CANCELLED",
-            title="Reserva marcada como no asistida",
-            message=(
-                f"Tu reserva del {timezone.localtime(appointment.fecha_hora).strftime('%d/%m %H:%M')} "
-                "pasó al estado No asistió."
-            ),
+            title="No asististe a tu cita",
+            message=f"No asististe a la cita con la fecha {fecha_cita}, a la hora {hora_cita}, para el procedimiento {procedimiento}. Puedes verlo en tu registro de citas.",
             action_url="/cliente/reservas",
             payload={
                 "appointmentType": "cita_medica",

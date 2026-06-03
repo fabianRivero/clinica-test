@@ -121,15 +121,25 @@ def _notify_ticket_message(ticket, author, body):
     for recipient in recipients:
         if recipient.es_trabajador:
             notif_type = Notification.Type.SPECIALIST_MESSAGE_FROM_ADMIN if author.es_administrador else Notification.Type.SPECIALIST_MESSAGE_FROM_ADMIN
-            title = "Nueva respuesta en ficha"
+            title = "Nuevo mensaje en ficha"
+            message = f"Tienes un mensaje del administrador en la ficha con asunto \"{ticket.asunto}\"."
             action_url = "/trabajador/mensajes/fichas"
         elif recipient.es_administrador or recipient.is_superuser:
-            notif_type = (
-                Notification.Type.ADMIN_MESSAGE_FROM_SPECIALIST
-                if author.es_trabajador
-                else (Notification.Type.ADMIN_MESSAGE_FROM_GENERAL_ADMIN if author.es_admin_principal else Notification.Type.ADMIN_MESSAGE_FROM_ADMIN)
-            )
-            title = "Nueva respuesta en ficha"
+            if author.es_trabajador:
+                notif_type = Notification.Type.ADMIN_MESSAGE_FROM_SPECIALIST
+                title = "Nuevo mensaje en ficha"
+                especialista_nombre = author.nombre_completo or author.username
+                message = f"Tienes un mensaje del especialista {especialista_nombre} en la ficha con asunto \"{ticket.asunto}\"."
+            elif author.es_admin_principal:
+                notif_type = Notification.Type.ADMIN_MESSAGE_FROM_GENERAL_ADMIN
+                title = "Nuevo mensaje en ficha"
+                message = f"Tienes un mensaje del administrador general en la ficha con asunto \"{ticket.asunto}\"."
+            else:
+                notif_type = Notification.Type.ADMIN_MESSAGE_FROM_ADMIN
+                title = "Nuevo mensaje en ficha"
+                admin_nombre = author.nombre_completo or author.username
+                sucursal_nombre = author.sucursal.nombre if author.sucursal else "Sin sucursal"
+                message = f"Tienes un mensaje del administrador {admin_nombre} de la sucursal {sucursal_nombre} en la ficha con asunto \"{ticket.asunto}\"."
             action_url = f"/admin/mensajes/fichas/{ticket.id}"
         else:
             continue
@@ -139,7 +149,7 @@ def _notify_ticket_message(ticket, author, body):
             branch=ticket.sucursal,
             type=notif_type,
             title=title,
-            message=body[:180],
+            message=message,
             action_url=action_url,
             source_event="ticket.message",
             source_entity_type="ticket",

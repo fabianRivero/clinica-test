@@ -413,12 +413,15 @@ class CitasViewSet(viewsets.ViewSet):
         appointment.save()
 
         client_user = appointment.operacion.paciente.usuario
+        procedimiento = procedure_name(appointment.operacion)
+        fecha_cita = appointment.fecha_hora.strftime('%d/%m/%Y')
+        hora_cita = appointment.fecha_hora.strftime('%H:%M')
         create_notification(
             recipient=client_user,
             branch=appointment.sucursal,
             type=Notification.Type.CLIENT_APPOINTMENT_CANCELLED,
             title="Cita cancelada",
-            message="Tu cita fue cancelada por administracion.",
+            message=f"Tu cita de la fecha {fecha_cita}, a la hora {hora_cita}, para el procedimiento {procedimiento} fue cancelada. Puedes verlo en tu registro de citas.",
             action_url="/cliente/reservas",
             source_event="appointment.cancelled",
             source_entity_type="appointment",
