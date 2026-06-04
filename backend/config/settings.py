@@ -150,16 +150,8 @@ if STORAGE_PROVIDER == "supabase":
     SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET")
     if SUPABASE_URL and SUPABASE_KEY and SUPABASE_BUCKET:
         STORAGES["default"] = {
-            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+            "BACKEND": "config.storage_backends.SupabaseStorage",
         }
-        AWS_ACCESS_KEY_ID = SUPABASE_KEY
-        AWS_SECRET_ACCESS_KEY = SUPABASE_KEY
-        AWS_STORAGE_BUCKET_NAME = SUPABASE_BUCKET
-        AWS_S3_ENDPOINT_URL = f"{SUPABASE_URL}/storage/v1/object"
-        AWS_S3_REGION_NAME = "auto"
-        AWS_S3_SIGNATURE_VERSION = "s3v4"
-        AWS_DEFAULT_ACL = None
-        AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=86400"}
 
 elif STORAGE_PROVIDER == "s3":
     AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
