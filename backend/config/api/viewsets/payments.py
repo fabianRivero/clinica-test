@@ -130,7 +130,7 @@ class PagosViewSet(viewsets.ViewSet):
                     "tone": "primary",
                 },
             ],
-            "paymentQrConfig": self._payment_qr_config_item(config, request),
+            "paymentQrConfig": self._payment_qr_config_item(config),
             "payments": [self._payment_item(p) for p in pagos_qs],
             "quotas": [self._admin_quota_item(c) for c in cuotas_qs],
         })
@@ -157,7 +157,7 @@ class PagosViewSet(viewsets.ViewSet):
         config.save()
         return Response({
             "detail": f"QR actualizado. Branch_id usado: {branch.id if branch else 'None'}",
-            "paymentQrConfig": self._payment_qr_config_item(config, request),
+            "paymentQrConfig": self._payment_qr_config_item(config),
         })
 
     @action(detail=True, methods=["post"], url_path="estado")
@@ -293,16 +293,13 @@ class PagosViewSet(viewsets.ViewSet):
     # Helpers
     # -------------------------------------------------------------------------
 
-    def _payment_qr_config_item(self, config, request=None):
+    def _payment_qr_config_item(self, config):
         if not config:
             return {"hasQr": False, "qrImageUrl": "", "instructions": ""}
-        qr_url = config.imagen_qr.url if config.imagen_qr else ""
-        if qr_url and request and not qr_url.startswith("http"):
-            qr_url = request.build_absolute_uri(qr_url)
         return {
             "id": config.pk,
             "hasQr": bool(config.imagen_qr),
-            "qrImageUrl": qr_url,
+            "qrImageUrl": config.imagen_qr.url if config.imagen_qr else "",
             "instructions": config.instrucciones or "",
             "updated_at": config.updated_at.isoformat() if config.updated_at else None,
         }
