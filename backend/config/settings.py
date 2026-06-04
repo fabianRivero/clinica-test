@@ -141,37 +141,12 @@ STORAGES = {
 # ---------------------------------------------------------------------------
 # Storage configuration — choose provider via STORAGE_PROVIDER env var
 # Values: "local" | "supabase" | "s3"
+# Cloud uploads are handled directly in the view (boto3), not via STORAGES.
 # ---------------------------------------------------------------------------
 STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "local")  # default to local dev
 
-if STORAGE_PROVIDER == "supabase":
-    SUPABASE_URL = os.getenv("SUPABASE_URL")
-    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-    SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET")
-    if SUPABASE_URL and SUPABASE_KEY and SUPABASE_BUCKET:
-        STORAGES["default"] = {
-            "BACKEND": "config.storage_backends.SupabaseStorage",
-        }
-
-elif STORAGE_PROVIDER == "s3":
-    AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-    AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-    AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
-    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and AWS_STORAGE_BUCKET_NAME:
-        STORAGES["default"] = {
-            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
-        }
-        AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL")
-        AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "us-east-1")
-        AWS_S3_SIGNATURE_VERSION = "s3v4"
-        AWS_DEFAULT_ACL = None
-        AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=86400"}
-    MEDIA_URL = os.getenv("MEDIA_URL", "/media/")
-
-else:
-    # local filesystem (development)
-    MEDIA_URL = "/media/"
-    MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.Usuario"

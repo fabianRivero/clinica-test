@@ -3,6 +3,8 @@ Payment viewsets for DRF migration.
 Domain 3 of Phase 6.
 """
 
+import os
+
 from django.db.models import Q
 from django.utils import timezone
 
@@ -143,21 +145,83 @@ class PagosViewSet(viewsets.ViewSet):
         branch = get_user_branch(request)
         qr_file = request.FILES.get("qrImage")
         instructions = request.POST.get("instructions", "").strip()
-        logger.warning(f"[QR-UPDATE] user={request.user.username}, is_superuser={request.user.is_superuser}, es_admin_principal={getattr(request.user, 'es_admin_principal', False)}, branch={branch.id if branch else None}, headers={dict(request.headers)}")
-        
+        logger.warning(f"[QR-UPDATE] user={request.user.username}, is_superuser={request.user.is_superuser}, es_admin_principal={getattr(request.user, 'es_admin_principal', False)}, branch={branch.id if branch else None}")
+
         config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
         if not config:
             config = ConfiguracionPagoQR(sucursal=branch)
 
+        storage_provider = os.getenv("STORAGE_PROVIDER", "local")
+
         if qr_file:
-            config.imagen_qr = qr_file
+            if storage_provider in ("supabase", "s3"):
+                # Upload directly to cloud storage
+                import boto3
+                from botocore.config import Config
+                from django.conf import settings
+
+                endpoint_url = None
+                if storage_provider == "supabase":
+                    endpoint_url = f"{os.getenv('SUPABASE_URL')}/storage/v1"
+                    bucket = os.getenv("SUPABASE_BUCKET")
+                    access_key = os.getenv("SUPABASE_KEY")
+                    secret_key = os.getenv("SUPABASE_KEY")
+                else:  # s3
+                    endpoint_url = os.getenv("AWS_S3_ENDPOINT_URL")
+                    bucket = os.getenv("AWS_STORAGE_BUCKET_NAME")
+                    access_key = os.getenv("AWS_ACCESS_KEY_ID")
+                    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+
+                client = boto3.client(
+                    "s3",
+                    endpoint_url=endpoint_url,
+                    aws_access_key_id=access_key,
+                    aws_secret_access_key=secret_key,
+                    region_name="auto",
+                    config=Config(signature_version="s3v4"),
+                )
+
+                # Generate path same as FileField would
+                from django.utils.timezone import now
+                date_path = now().strftime("%Y/%m")
+                filename = f"pagos_qr/{date_path}/{qr_file.name}"
+                file_content = qr_file.read()
+                client.put_object(Bucket=bucket, Key=filename, Body=file_content, ContentType=qr_file.content_type)
+
+                # Build public URL
+                if storage_provider == "supabase":
+                    public_url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/public/{bucket}/{filename}"
+                else:
+                    # S3 without custom endpoint
+                    if endpoint_url:
+                        public_url = f"{endpoint_url.replace('/storage/v1', '')}/{bucket}/{filename}"
+                    else:
+                        public_url = f"https://{bucket}.s3.amazonaws.com/{filename}"
+
+                config.imagen_qr.save(filename, qr_file, save=False)
+            else:
+                # Local: let Django handle it with FileField
+                config.imagen_qr = qr_file
+
         if instructions:
             config.instrucciones = instructions
 
         config.save()
+
+        qr_url = config.imagen_qr.url if config.imagen_qr else ""
+        # For local storage return absolute URI if needed, otherwise use as-is
+        if storage_provider == "local" and qr_url and not qr_url.startswith("http"):
+            qr_url = request.build_absolute_uri(qr_url)
+
         return Response({
             "detail": f"QR actualizado. Branch_id usado: {branch.id if branch else 'None'}",
-            "paymentQrConfig": self._payment_qr_config_item(config),
+            "paymentQrConfig": {
+                "id": config.pk,
+                "hasQr": bool(config.imagen_qr),
+                "qrImageUrl": qr_url,
+                "instructions": config.instrucciones or "",
+                "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+            },
         })
 
     @action(detail=True, methods=["post"], url_path="estado")
