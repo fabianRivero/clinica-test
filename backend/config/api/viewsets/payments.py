@@ -158,47 +158,53 @@ class PagosViewSet(viewsets.ViewSet):
         try:
             if qr_file:
                 if storage_provider in ("supabase", "s3"):
-                    # Upload directly to cloud storage with boto3
-                    import boto3
-                    from botocore.config import Config
                     from django.utils.timezone import now
-
-                    if storage_provider == "supabase":
-                        endpoint_url = f"{os.getenv('SUPABASE_URL')}/storage/v1"
-                        bucket = os.getenv("SUPABASE_BUCKET")
-                        access_key = os.getenv("SUPABASE_KEY")
-                        secret_key = os.getenv("SUPABASE_KEY")
-                    else:  # s3
-                        endpoint_url = os.getenv("AWS_S3_ENDPOINT_URL")
-                        bucket = os.getenv("AWS_STORAGE_BUCKET_NAME")
-                        access_key = os.getenv("AWS_ACCESS_KEY_ID")
-                        secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-
-                    client = boto3.client(
-                        "s3",
-                        endpoint_url=endpoint_url,
-                        aws_access_key_id=access_key,
-                        aws_secret_access_key=secret_key,
-                        region_name="auto",
-                        config=Config(signature_version="s3v4"),
-                    )
+                    import requests
 
                     date_path = now().strftime("%Y/%m")
                     filename = f"pagos_qr/{date_path}/{qr_file.name}"
-                    client.put_object(
-                        Bucket=bucket,
-                        Key=filename,
-                        Body=qr_file.read(),
-                        ContentType=qr_file.content_type,
-                    )
 
                     if storage_provider == "supabase":
-                        public_url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/public/{bucket}/{filename}"
-                    else:
-                        if endpoint_url:
-                            public_url = f"{endpoint_url.replace('/storage/v1', '')}/{bucket}/{filename}"
-                        else:
-                            public_url = f"https://{bucket}.s3.amazonaws.com/{filename}"
+                        supabase_url = os.getenv("SUPABASE_URL")
+                        supabase_key = os.getenv("SUPABASE_KEY")
+                        bucket = os.getenv("SUPABASE_BUCKET")
+                        upload_url = f"{supabase_url}/storage/v1/object/{bucket}/{filename}"
+                        headers = {
+                            "Authorization": f"Bearer {supabase_key}",
+                            "Content-Type": qr_file.content_type,
+                        }
+                        qr_file.open()
+                        response = requests.put(
+                            upload_url,
+                            headers=headers,
+                            data=qr_file.read(),
+                            timeout=30,
+                        )
+                        qr_file.close()
+                        if response.status_code not in (200, 201):
+                            logger.error(f"[QR-UPDATE] Supabase error: {response.status_code} {response.text}")
+                            raise Exception(f"Supabase upload failed: {response.status_code}")
+                        public_url = f"{supabase_url}/storage/v1/object/public/{bucket}/{filename}"
+                    else:  # s3
+                        import boto3
+                        from botocore.config import Config
+                        client = boto3.client(
+                            "s3",
+                            endpoint_url=os.getenv("AWS_S3_ENDPOINT_URL"),
+                            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+                            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+                            region_name=os.getenv("AWS_S3_REGION_NAME", "us-east-1"),
+                            config=Config(signature_version="s3v4"),
+                        )
+                        client.put_object(
+                            Bucket=os.getenv("AWS_STORAGE_BUCKET_NAME"),
+                            Key=filename,
+                            Body=qr_file.read(),
+                            ContentType=qr_file.content_type,
+                        )
+                        endpoint = os.getenv("AWS_S3_ENDPOINT_URL", "")
+                        bucket_name = os.getenv("AWS_STORAGE_BUCKET_NAME")
+                        public_url = f"{endpoint.replace('/storage/v1', '')}/{bucket_name}/{filename}" if endpoint else f"https://{bucket_name}.s3.amazonaws.com/{filename}"
 
                     logger.warning(f"[QR-UPDATE] Uploaded to {storage_provider}: {public_url}")
                     config.imagen_qr.save(filename, qr_file, save=False)
