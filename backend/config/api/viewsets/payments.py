@@ -132,7 +132,7 @@ class PagosViewSet(viewsets.ViewSet):
                     "tone": "primary",
                 },
             ],
-            "paymentQrConfig": self._payment_qr_config_item(config),
+            "paymentQrConfig": self._payment_qr_config_item(config, os.getenv("STORAGE_PROVIDER", "local")),
             "payments": [self._payment_item(p) for p in pagos_qs],
             "quotas": [self._admin_quota_item(c) for c in cuotas_qs],
         })
@@ -207,7 +207,11 @@ class PagosViewSet(viewsets.ViewSet):
                         public_url = f"{endpoint.replace('/storage/v1', '')}/{bucket_name}/{filename}" if endpoint else f"https://{bucket_name}.s3.amazonaws.com/{filename}"
 
                     logger.warning(f"[QR-UPDATE] Uploaded to {storage_provider}: {public_url}")
-                    config.imagen_qr.save(filename, qr_file, save=False)
+
+                    # For cloud storage: set imagen_qr to a "fake" file that stores only the path/URL
+                    # We store the filename in the name field, the actual file is in the cloud
+                    from django.core.files.base import ContentFile
+                    config.imagen_qr.save(filename, ContentFile(b""), save=False)
                 else:
                     config.imagen_qr = qr_file
 
@@ -374,13 +378,27 @@ class PagosViewSet(viewsets.ViewSet):
     # Helpers
     # -------------------------------------------------------------------------
 
-    def _payment_qr_config_item(self, config):
+    def _payment_qr_config_item(self, config, storage_provider=None):
         if not config:
             return {"hasQr": False, "qrImageUrl": "", "instructions": ""}
+        qr_url = ""
+        if config.imagen_qr:
+            if storage_provider in ("supabase", "s3"):
+                # For cloud storage, rebuild public URL from filename
+                name = config.imagen_qr.name
+                if storage_provider == "supabase":
+                    supabase_url = os.getenv("SUPABASE_URL")
+                    bucket = os.getenv("SUPABASE_BUCKET")
+                    if supabase_url and bucket:
+                        qr_url = f"{supabase_url}/storage/v1/object/public/{bucket}/{name}"
+            else:
+                qr_url = config.imagen_qr.url
+                if not qr_url.startswith("http"):
+                    qr_url = ""  # will be built_absolute_uri by caller
         return {
             "id": config.pk,
             "hasQr": bool(config.imagen_qr),
-            "qrImageUrl": config.imagen_qr.url if config.imagen_qr else "",
+            "qrImageUrl": qr_url,
             "instructions": config.instrucciones or "",
             "updated_at": config.updated_at.isoformat() if config.updated_at else None,
         }
