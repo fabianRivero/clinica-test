@@ -5,6 +5,12 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Proxy API calls to Render backend
+[[redirects]]
+  from = "/api/*"
+  to = "https://clinica-test.onrender.com/api/:splat"
+  status = 200
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

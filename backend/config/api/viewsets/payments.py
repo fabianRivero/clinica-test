@@ -213,10 +213,10 @@ class PagosViewSet(viewsets.ViewSet):
 
                     logger.warning(f"[QR-UPDATE] Uploaded to {storage_provider}: {public_url}")
 
-                    # For cloud storage: set imagen_qr to a "fake" file that stores only the path/URL
-                    # We store the filename in the name field, the actual file is in the cloud
+                    # For cloud storage: save only the filename to DB (Django adds upload_to prefix)
+                    # This avoids double-prefix duplication
                     from django.core.files.base import ContentFile
-                    config.imagen_qr.save(supabase_path, ContentFile(b""), save=False)
+                    config.imagen_qr.save(safe_filename, ContentFile(b""), save=False)
                 else:
                     config.imagen_qr = qr_file
 
