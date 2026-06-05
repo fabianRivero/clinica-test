@@ -162,13 +162,18 @@ class PagosViewSet(viewsets.ViewSet):
                     import requests
 
                     date_path = now().strftime("%Y/%m")
-                    filename = f"pagos_qr/{date_path}/{qr_file.name}"
+                    # Strip any existing path from the uploaded filename
+                    # (browsers may send full paths like "pagos_qr/2026/06/file.webp")
+                    import os
+                    safe_filename = os.path.basename(qr_file.name.replace(" ", "_"))
+                    # Full path for Supabase (includes upload_to prefix)
+                    supabase_path = f"pagos_qr/{date_path}/{safe_filename}"
 
                     if storage_provider == "supabase":
                         supabase_url = os.getenv("SUPABASE_URL")
                         supabase_key = os.getenv("SUPABASE_KEY")
                         bucket = os.getenv("SUPABASE_BUCKET")
-                        upload_url = f"{supabase_url}/storage/v1/object/{bucket}/{filename}"
+                        upload_url = f"{supabase_url}/storage/v1/object/{bucket}/{supabase_path}"
                         headers = {
                             "Authorization": f"Bearer {supabase_key}",
                             "Content-Type": qr_file.content_type,
@@ -184,7 +189,7 @@ class PagosViewSet(viewsets.ViewSet):
                         if response.status_code not in (200, 201):
                             logger.error(f"[QR-UPDATE] Supabase error: {response.status_code} {response.text}")
                             raise Exception(f"Supabase upload failed: {response.status_code}")
-                        public_url = f"{supabase_url}/storage/v1/object/public/{bucket}/{filename}"
+                        public_url = f"{supabase_url}/storage/v1/object/public/{bucket}/{supabase_path}"
                     else:  # s3
                         import boto3
                         from botocore.config import Config
@@ -198,20 +203,20 @@ class PagosViewSet(viewsets.ViewSet):
                         )
                         client.put_object(
                             Bucket=os.getenv("AWS_STORAGE_BUCKET_NAME"),
-                            Key=filename,
+                            Key=supabase_path,
                             Body=qr_file.read(),
                             ContentType=qr_file.content_type,
                         )
                         endpoint = os.getenv("AWS_S3_ENDPOINT_URL", "")
                         bucket_name = os.getenv("AWS_STORAGE_BUCKET_NAME")
-                        public_url = f"{endpoint.replace('/storage/v1', '')}/{bucket_name}/{filename}" if endpoint else f"https://{bucket_name}.s3.amazonaws.com/{filename}"
+                        public_url = f"{endpoint.replace('/storage/v1', '')}/{bucket_name}/{supabase_path}" if endpoint else f"https://{bucket_name}.s3.amazonaws.com/{supabase_path}"
 
                     logger.warning(f"[QR-UPDATE] Uploaded to {storage_provider}: {public_url}")
 
                     # For cloud storage: set imagen_qr to a "fake" file that stores only the path/URL
                     # We store the filename in the name field, the actual file is in the cloud
                     from django.core.files.base import ContentFile
-                    config.imagen_qr.save(filename, ContentFile(b""), save=False)
+                    config.imagen_qr.save(supabase_path, ContentFile(b""), save=False)
                 else:
                     config.imagen_qr = qr_file
 
@@ -382,15 +387,24 @@ class PagosViewSet(viewsets.ViewSet):
         if not config:
             return {"hasQr": False, "qrImageUrl": "", "instructions": ""}
         qr_url = ""
-        if config.imagen_qr:
+if config.imagen_qr:
             if storage_provider in ("supabase", "s3"):
-                # For cloud storage, rebuild public URL from filename
+                # For cloud storage, rebuild public URL from filename stored in DB
+                # config.imagen_qr.name already includes the full path (e.g. "pagos_qr/2026/06/file.webp")
                 name = config.imagen_qr.name
                 if storage_provider == "supabase":
                     supabase_url = os.getenv("SUPABASE_URL")
                     bucket = os.getenv("SUPABASE_BUCKET")
                     if supabase_url and bucket:
                         qr_url = f"{supabase_url}/storage/v1/object/public/{bucket}/{name}"
+                elif storage_provider == "s3":
+                    endpoint = os.getenv("AWS_S3_ENDPOINT_URL", "")
+                    bucket_name = os.getenv("AWS_STORAGE_BUCKET_NAME")
+                    if bucket_name:
+                        if endpoint:
+                            qr_url = f"{endpoint.replace('/storage/v1', '')}/{bucket_name}/{name}"
+                        else:
+                            qr_url = f"https://{bucket_name}.s3.amazonaws.com/{name}"
             else:
                 qr_url = config.imagen_qr.url
                 if not qr_url.startswith("http"):
