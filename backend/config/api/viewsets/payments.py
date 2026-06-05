@@ -387,7 +387,7 @@ class PagosViewSet(viewsets.ViewSet):
         if not config:
             return {"hasQr": False, "qrImageUrl": "", "instructions": ""}
         qr_url = ""
-if config.imagen_qr:
+        if config.imagen_qr:
             if storage_provider in ("supabase", "s3"):
                 # For cloud storage, rebuild public URL from filename stored in DB
                 # config.imagen_qr.name already includes the full path (e.g. "pagos_qr/2026/06/file.webp")
