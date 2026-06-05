@@ -6,11 +6,10 @@
   NODE_VERSION = "20"
 
 # Proxy API calls to Render backend
-[[redirects]]
+[[proxy]]
   from = "/api/*"
   to = "https://clinica-test.onrender.com/api/:splat"
   status = 200
-  force = true
 
 [[redirects]]
   from = "/*"
