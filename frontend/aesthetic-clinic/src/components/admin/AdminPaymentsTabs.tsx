@@ -1,9 +1,9 @@
 import { NavLink } from 'react-router-dom'
 
 const tabs = [
-  { to: '/admin/pagos/qr', label: 'Configurar QR' },
-  { to: '/admin/pagos/pendientes', label: 'Pagos' },
-  { to: '/admin/pagos/cuotas', label: 'Todas las cuotas' },
+  { to: '/cms/pagos/qr', label: 'Configurar QR' },
+  { to: '/cms/pagos/pendientes', label: 'Pagos' },
+  { to: '/cms/pagos/cuotas', label: 'Todas las cuotas' },
 ] as const
 
 export function AdminPaymentsTabs() {

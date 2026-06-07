@@ -6,77 +6,77 @@ import { BranchProvider, useBranchContext } from '../providers/BranchProvider'
 import { NOTIFICATIONS_UPDATED_EVENT } from '../services/api/notifications'
 
 const fullNavigation = [
-  { to: '/admin', label: 'Resumen' },
+  { to: '/cms', label: 'Resumen' },
   {
     label: 'Prospectos y clientes',
     children: [
-      { to: '/admin/prospectos', label: 'Prospectos' },
-      { to: '/admin/clientes', label: 'Clientes' },
+      { to: '/cms/prospectos', label: 'Prospectos' },
+      { to: '/cms/clientes', label: 'Clientes' },
     ],
   },
-  { to: '/admin/operaciones', label: 'Operaciones' },
+  { to: '/cms/operaciones', label: 'Operaciones' },
   {
     label: 'Gastos',
     children: [
-      { to: '/admin/gastos/crear', label: 'Crear gastos' },
-      { to: '/admin/gastos/lista', label: 'Lista de gastos' },
+      { to: '/cms/gastos/crear', label: 'Crear gastos' },
+      { to: '/cms/gastos/lista', label: 'Lista de gastos' },
     ],
   },
   {
     label: 'Disponibilidad',
     children: [
-      { to: '/admin/disponibilidad/bloques', label: 'Excepciones de horarios' },
-      { to: '/admin/disponibilidad/gestionar', label: 'Gestionar horarios' },
+      { to: '/cms/disponibilidad/bloques', label: 'Excepciones de horarios' },
+      { to: '/cms/disponibilidad/gestionar', label: 'Gestionar horarios' },
     ],
   },
   {
     label: 'Pagos y cuotas',
     children: [
-      { to: '/admin/pagos/qr', label: 'Configurar QR' },
-      { to: '/admin/pagos/pendientes', label: 'Pagos' },
-      { to: '/admin/pagos/cuotas', label: 'Todas las cuotas' },
+      { to: '/cms/pagos/qr', label: 'Configurar QR' },
+      { to: '/cms/pagos/pendientes', label: 'Pagos' },
+      { to: '/cms/pagos/cuotas', label: 'Todas las cuotas' },
     ],
   },
-  { to: '/admin/notificaciones', label: 'Notificaciones' },
+  { to: '/cms/notificaciones', label: 'Notificaciones' },
   {
     label: 'Gestion de sucursales',
     mainAdminOnly: true,
     children: [
-      { to: '/admin/sucursales/editar', label: 'Editar sucursales' },
-      { to: '/admin/sucursales/crear', label: 'Crear sucursal' },
+      { to: '/cms/sucursales/editar', label: 'Editar sucursales' },
+      { to: '/cms/sucursales/crear', label: 'Crear sucursal' },
     ],
   },
   {
     label: 'Mensajeria',
     children: [
-      { to: '/admin/mensajes/permisos', label: 'Habilitar/Bloquear fichas' },
-      { to: '/admin/mensajes/fichas', label: 'Fichas existentes' },
+      { to: '/cms/mensajes/permisos', label: 'Habilitar/Bloquear fichas' },
+      { to: '/cms/mensajes/fichas', label: 'Fichas existentes' },
     ],
   },
   {
     label: 'Catalogos',
     mainAdminOnly: true,
     children: [
-      { to: '/admin/catalogos/todos-los-servicios', label: 'Todos los servicios' },
-      { to: '/admin/catalogos/procedimientos-esteticos', label: 'Procedimientos estéticos' },
-      { to: '/admin/catalogos/tipos-servicio', label: 'Tipos de servicio' },
-      { to: '/admin/catalogos/especialidades', label: 'Especialidades' },
-      { to: '/admin/catalogos/categorias-gasto', label: 'Categorías de gasto' },
+      { to: '/cms/catalogos/todos-los-servicios', label: 'Todos los servicios' },
+      { to: '/cms/catalogos/procedimientos-esteticos', label: 'Procedimientos estéticos' },
+      { to: '/cms/catalogos/tipos-servicio', label: 'Tipos de servicio' },
+      { to: '/cms/catalogos/especialidades', label: 'Especialidades' },
+      { to: '/cms/catalogos/categorias-gasto', label: 'Categorías de gasto' },
     ],
   },
   {
     label: 'Equipo',
     children: [
-      { to: '/admin/equipo/crear', label: 'Crear especialista' },
-      { to: '/admin/equipo/gestionar', label: 'Gestionar especialistas' },
+      { to: '/cms/equipo/crear', label: 'Crear especialista' },
+      { to: '/cms/equipo/gestionar', label: 'Gestionar especialistas' },
     ],
   },
   {
     label: 'Admins sucursal',
     mainAdminOnly: true,
     children: [
-      { to: '/admin/equipo/admin-sucursal/crear', label: 'Crear admin sucursal' },
-      { to: '/admin/equipo/admin-sucursal/gestionar', label: 'Gestionar admins sucursal' },
+      { to: '/cms/equipo/admin-sucursal/crear', label: 'Crear admin sucursal' },
+      { to: '/cms/equipo/admin-sucursal/gestionar', label: 'Gestionar admins sucursal' },
     ],
   },
 ] as const
@@ -229,7 +229,7 @@ function AdminLayoutInner() {
           </div>
 
           <div className="topbar__right">
-            <NavLink to="/admin/notificaciones" className="button button--ghost button--compact">🔔 {unreadCount}</NavLink>
+            <NavLink to="/cms/notificaciones" className="button button--ghost button--compact">🔔 {unreadCount}</NavLink>
             <div className="profile-chip">
               <div className="profile-chip__meta">
                 <strong>{user?.fullName}</strong>

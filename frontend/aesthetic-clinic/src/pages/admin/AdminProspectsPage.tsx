@@ -372,7 +372,7 @@ export function AdminProspectsPage() {
                             {lead.state === 'Pasajero' ? (
                               <div className="table-actions" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                  <Link className="button button--primary button--compact" to={`/admin/prospectos/${lead.rawId}/convertir`}>
+                                  <Link className="button button--primary button--compact" to={`/cms/prospectos/${lead.rawId}/convertir`}>
                                     Convertir
                                   </Link>
                                   {hasScheduled ? (

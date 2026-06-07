@@ -636,7 +636,7 @@ export function AdminStaffManagePage() {
                     <div className="catalog-admin-card__actions">
                       <Link
                         className="button button--ghost button--compact"
-                        to={`/admin/equipo/crear?editar=${item.rawId}`}
+                        to={`/cms/equipo/crear?editar=${item.rawId}`}
                       >
                         Editar
                       </Link>

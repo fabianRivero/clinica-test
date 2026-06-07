@@ -129,7 +129,7 @@ export function AdminClientDetailPage() {
           { label: 'Volver a clientes', variant: 'ghost', to: '/admin/clientes' },
           ...(data.client.status === 'Inactivo' ? [{
             label: 'Reactivar / Nuevo tratamiento',
-            onClick: () => navigate(`/admin/clientes/${clientId}/reactivar`)
+            onClick: () => navigate(`/cms/clientes/${clientId}/reactivar`)
           }] : []),
           ...(isMainAdmin ? [{
             label: isMigrating ? 'Migrando...' : 'Migrar sucursal',
@@ -161,7 +161,7 @@ export function AdminClientDetailPage() {
               <button
                 className="button"
                 type="button"
-                onClick={() => navigate(`/admin/clientes/${clientId}/reactivar`)}
+                onClick={() => navigate(`/cms/clientes/${clientId}/reactivar`)}
               >
                 Añadir procedimiento
               </button>
@@ -178,7 +178,7 @@ export function AdminClientDetailPage() {
             <button
               className="button button--primary"
               type="button"
-              onClick={() => navigate(`/admin/clientes/${clientId}/reactivar`)}
+              onClick={() => navigate(`/cms/clientes/${clientId}/reactivar`)}
             >
               Reactivar / Nuevo tratamiento
             </button>
