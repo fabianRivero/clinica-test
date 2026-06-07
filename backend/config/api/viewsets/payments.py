@@ -164,7 +164,6 @@ class PagosViewSet(viewsets.ViewSet):
                     date_path = now().strftime("%Y/%m")
                     # Strip any existing path from the uploaded filename
                     # (browsers may send full paths like "pagos_qr/2026/06/file.webp")
-                    import os
                     safe_filename = os.path.basename(qr_file.name.replace(" ", "_"))
                     # Full path for Supabase (includes upload_to prefix)
                     supabase_path = f"pagos_qr/{date_path}/{safe_filename}"
@@ -407,8 +406,8 @@ class PagosViewSet(viewsets.ViewSet):
                             qr_url = f"https://{bucket_name}.s3.amazonaws.com/{name}"
             else:
                 qr_url = config.imagen_qr.url
-                if not qr_url.startswith("http"):
-                    qr_url = ""  # will be built_absolute_uri by caller
+            if not qr_url.startswith("http"):
+                qr_url = self.request.build_absolute_uri(qr_url)
         return {
             "id": config.pk,
             "hasQr": bool(config.imagen_qr),
