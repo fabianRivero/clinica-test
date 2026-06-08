@@ -72,9 +72,7 @@ def auth_me(request):
         user = request.user
         username_new = payload.get("username")
         if username_new is not None and username_new != user.username:
-            from django.contrib.auth.models import User
-
-            if User.objects.filter(username=username_new).exclude(pk=user.pk).exists():
+            if user.__class__.objects.filter(username=username_new).exclude(pk=user.pk).exists():
                 return json_response({"detail": "El nombre de usuario ya esta en uso."}, status=409)
 
         with transaction.atomic():

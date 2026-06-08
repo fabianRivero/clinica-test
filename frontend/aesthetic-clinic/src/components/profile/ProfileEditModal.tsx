@@ -59,6 +59,12 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
     if (form.telefono !== undefined) payload.telefono = form.telefono
     if (form.password) payload.password = form.password
 
+    if (Object.keys(payload).length === 0) {
+      setError('No hay cambios para guardar.')
+      setIsSaving(false)
+      return
+    }
+
     try {
       await updateProfile(payload)
       onClose()
