@@ -236,7 +236,7 @@ export function AdminClientsPage() {
                     {visibleClients.map((client) => (
                       <tr key={client.id}>
                         <td>
-                          <Link className="table-strong-link" to={`/admin/clientes/${client.rawId}`}>
+                          <Link className="table-strong-link" to={`/cms/clientes/${client.rawId}`}>
                             {client.name}
                           </Link>
                         </td>

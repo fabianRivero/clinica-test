@@ -24,7 +24,14 @@ from config.api.serializers.payments import (
     ConfiguracionPagoQRSerializer,
     PaymentStatusUpdateSerializer,
 )
-from config.api_helpers import get_user_branch
+from config.api_helpers import (
+    currency,
+    date_label,
+    datetime_label,
+    full_name,
+    get_user_branch,
+    procedure_name,
+)
 
 
 class PagosViewSet(viewsets.ViewSet):
@@ -250,7 +257,7 @@ class PagosViewSet(viewsets.ViewSet):
             return Response({"detail": f"Error al guardar imagen: {exc}"}, status=500)
 
     @action(detail=True, methods=["post"], url_path="estado")
-    def update_status(self, request, payment_id=None):
+    def update_status(self, request, pk=None):
         """POST /pagos/<int:payment_id>/estado/ — update payment verification status."""
         payment = (
             PagoRealizado.objects.select_related(
@@ -258,7 +265,7 @@ class PagosViewSet(viewsets.ViewSet):
                 "cuota__operacion__servicio_config__proc_estetico",
                 "verificado_por",
             )
-            .filter(pk=payment_id)
+            .filter(pk=pk)
             .first()
         )
         if not payment:
@@ -419,43 +426,25 @@ class PagosViewSet(viewsets.ViewSet):
     def _payment_item(self, payment):
         operacion = payment.cuota.operacion
         paciente = operacion.paciente
+        status_map = {
+            PagoRealizado.EstadoVerificacion.APROBADO: "aprobado",
+            PagoRealizado.EstadoVerificacion.RECHAZADO: "observado",
+            PagoRealizado.EstadoVerificacion.CANCELADO: "cancelado",
+        }
         return {
-            "id": payment.pk,
-            "monto_pagado": str(payment.monto_pagado),
-            "comprobante_url": payment.comprobante_url.url if payment.comprobante_url else None,
-            "estado_verificacion": payment.estado_verificacion,
-            "verificado": payment.verificado,
-            "verificado_por": (
-                f"{payment.verificado_por.primer_nombre} {payment.verificado_por.apellido_paterno}"
-                if payment.verificado_por else None
-            ),
-            "fecha_verificacion": (
-                payment.fecha_verificacion.isoformat() if payment.fecha_verificacion else None
-            ),
-            "detalles_pago": payment.detalles_pago or "",
-            "observacion_verificacion": payment.observacion_verificacion or "",
-            "cuota": {
-                "id": payment.cuota.pk,
-                "nro_cuota": payment.cuota.nro_cuota,
-                "fecha_vencimiento": payment.cuota.fecha_vencimiento.isoformat(),
-                "monto_programado": str(payment.cuota.monto_programado),
-                "estado": payment.cuota.estado,
-            },
-            "operacion": {
-                "id": operacion.pk,
-                "precio_total": str(operacion.precio_total),
-                "paciente": {
-                    "id": paciente.pk,
-                    "nombre": (
-                        f"{paciente.usuario.primer_nombre} {paciente.usuario.apellido_paterno}"
-                        if paciente.usuario else "—"
-                    ),
-                },
-            },
-            "procedimiento": (
-                operacion.servicio_config.proc_estetico.proceso
-                if operacion.servicio_config.proc_estetico else "—"
-            ),
+            "id": f"PAY-{payment.pk:04d}",
+            "rawId": payment.pk,
+            "patient": full_name(paciente.usuario) if paciente.usuario else "—",
+            "operation": procedure_name(operacion),
+            "amount": currency(payment.monto_pagado),
+            "submittedAt": datetime_label(payment.created_at),
+            "bank": "Transferencia",
+            "status": status_map.get(payment.estado_verificacion, "pendiente"),
+            "quota": f"Cuota {payment.cuota.nro_cuota}",
+            "dueDate": date_label(payment.cuota.fecha_vencimiento),
+            "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Sin revisar",
+            "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
+            "note": payment.observacion_verificacion or payment.detalles_pago or "",
         }
 
     def _admin_quota_item(self, cuota):

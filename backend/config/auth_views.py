@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def _dashboard_path(user):
     if user.is_superuser or user.es_administrador:
-        return "/admin"
+        return "/cms"
     if user.es_trabajador:
         return "/trabajador"
     if user.es_cliente:

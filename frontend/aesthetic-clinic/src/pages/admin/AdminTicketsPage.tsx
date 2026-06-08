@@ -376,7 +376,7 @@ export function AdminMessagingTicketsPage() {
                   <td>{t.subject}</td>
                   <td>{t.specialistName}</td>
                   <td>
-                    <Link className="button button--ghost button--compact" to={`/admin/mensajes/${t.id}`}>
+                    <Link className="button button--ghost button--compact" to={`/cms/mensajes/${t.id}`}>
                       Ver mensajes y detalles
                     </Link>
                   </td>

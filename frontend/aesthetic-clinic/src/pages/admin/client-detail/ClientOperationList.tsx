@@ -79,7 +79,7 @@ export function ClientOperationList({
                       <article><span>Citas reservadas</span><strong>{operation.sessions.reserved}</strong></article>
                       <article><span>Citas libres</span><strong>{operation.sessions.available}</strong></article>
                     </div>
-                    <Link className="button button--ghost" to={`/admin/operaciones/${operation.rawId}`}>Ver operación</Link>
+                    <Link className="button button--ghost" to={`/cms/operaciones/${operation.rawId}`}>Ver operación</Link>
                   </article>
                 ))}
               </div>

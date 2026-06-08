@@ -570,7 +570,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
           </tbody>
             </table>
             <div className="_flex-center _mt-sm">
-              <Link className="button button--ghost" to="/admin/sucursales/historial">
+              <Link className="button button--ghost" to="/cms/sucursales/historial">
                 Ver todo el historial
               </Link>
             </div>

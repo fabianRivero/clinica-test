@@ -112,7 +112,7 @@ function App() {
       <Route path="/tablet" element={<TabletKioskPage />} />
 
       <Route element={<RequireRole allowedRoles={['ADMINISTRADOR']} />}>
-        <Route path="/admin" element={<AdminLayout />}>
+        <Route path="/cms" element={<AdminLayout />}>
           <Route index element={<AdminDashboardPage />} />
           <Route path="prospectos" element={<AdminProspectsPage />} />
           <Route path="clientes" element={<AdminClientsPage />} />
@@ -122,27 +122,27 @@ function App() {
           <Route path="prospectos/:prospectId/convertir" element={<AdminProspectConvertPage />} />
           <Route path="operaciones" element={<AdminOperationsPage />} />
           <Route path="operaciones/:operationId" element={<AdminOperationDetailPage />} />
-          <Route path="gastos" element={<Navigate to="/admin/gastos/lista" replace />} />
+          <Route path="gastos" element={<Navigate to="/cms/gastos/lista" replace />} />
           <Route path="gastos/crear" element={<AdminExpenseCreatePage />} />
           <Route path="gastos/lista" element={<AdminExpenseListPage />} />
           <Route
             path="disponibilidad"
-            element={<Navigate to="/admin/disponibilidad/visibles" replace />}
+            element={<Navigate to="/cms/disponibilidad/visibles" replace />}
           />
           <Route path="disponibilidad/visibles" element={<AdminAvailabilityVisiblePage />} />
           <Route path="disponibilidad/bloques" element={<AdminAvailabilityBlocksPage />} />
           <Route path="disponibilidad/gestionar" element={<AdminAvailabilitySchedulesPage />} />
-          <Route path="pagos" element={<Navigate to="/admin/pagos/qr" replace />} />
+          <Route path="pagos" element={<Navigate to="/cms/pagos/qr" replace />} />
           <Route path="pagos/qr" element={<AdminPaymentsPage view="qr" />} />
           <Route path="pagos/pendientes" element={<AdminPaymentsPage view="pendientes" />} />
           <Route path="pagos/cuotas" element={<AdminPaymentsPage view="cuotas" />} />
-          <Route path="mensajes" element={<Navigate to="/admin/mensajes/permisos" replace />} />
+          <Route path="mensajes" element={<Navigate to="/cms/mensajes/permisos" replace />} />
           <Route path="mensajes/permisos" element={<AdminMessagingPermissionsPage />} />
           <Route path="mensajes/fichas" element={<AdminMessagingTicketsPage />} />
           <Route path="mensajes/:ticketId" element={<AdminTicketDetailPage />} />
           <Route
             path="catalogos"
-            element={<Navigate to="/admin/catalogos/todos-los-servicios" replace />}
+            element={<Navigate to="/cms/catalogos/todos-los-servicios" replace />}
           />
           <Route path="catalogos/todos-los-servicios" element={<AdminAllServicesCatalogPage />} />
           <Route path="catalogos/procedimientos-esteticos" element={<AdminProceduresCatalogPage />} />
@@ -150,14 +150,14 @@ function App() {
           <Route path="catalogos/patologias-cutaneas" element={<AdminSkinPathologiesCatalogPage />} />
           <Route path="catalogos/especialidades" element={<AdminSpecialtiesCatalogPage />} />
           <Route path="catalogos/categorias-gasto" element={<AdminExpenseCategoriesCatalogPage />} />
-          <Route path="equipo" element={<Navigate to="/admin/equipo/gestionar" replace />} />
+          <Route path="equipo" element={<Navigate to="/cms/equipo/gestionar" replace />} />
           <Route path="equipo/crear" element={<AdminStaffCreatePage />} />
           <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />
           <Route path="equipo/admin-sucursal/crear" element={<AdminBranchAdminsPage view="create" />} />
           <Route path="equipo/admin-sucursal/gestionar" element={<AdminBranchAdminsPage view="manage" />} />
           <Route path="equipo/admin-sucursal/:userId" element={<AdminBranchAdminDetailPage />} />
           <Route path="notificaciones" element={<NotificationsPage />} />
-          <Route path="sucursales" element={<Navigate to="/admin/sucursales/editar" replace />} />
+          <Route path="sucursales" element={<Navigate to="/cms/sucursales/editar" replace />} />
           <Route path="sucursales/editar" element={<AdminBranchesPage view="edit" />} />
           <Route path="sucursales/historial" element={<AdminBranchHistoryPage />} />
           <Route path="sucursales/crear" element={<AdminBranchesPage view="create" />} />

@@ -138,12 +138,12 @@ export function AdminDashboardPage() {
                         </td>
                         <td className="_font-bold">{p.amount}</td>
                         <td>
-                          <Link to={`/admin/clientes/${p.clientId}`} className="table-strong-link">
+                          <Link to={`/cms/clientes/${p.clientId}`} className="table-strong-link">
                             {p.client}
                           </Link>
                         </td>
                         <td>
-                          <Link to={`/admin/operaciones/${p.operationId}`} className="table-strong-link _font-normal">
+                          <Link to={`/cms/operaciones/${p.operationId}`} className="table-strong-link _font-normal">
                             {p.operation}
                           </Link>
                         </td>
@@ -215,12 +215,12 @@ export function AdminDashboardPage() {
                         </td>
                         <td className="_font-bold">{item.time}</td>
                         <td>
-                          <Link to={`/admin/clientes/${item.clientId}`} className="table-strong-link">
+                          <Link to={`/cms/clientes/${item.clientId}`} className="table-strong-link">
                             {item.patient}
                           </Link>
                         </td>
                         <td>
-                          <Link to={`/admin/operaciones/${item.operationId}`} className="table-strong-link _font-normal">
+                          <Link to={`/cms/operaciones/${item.operationId}`} className="table-strong-link _font-normal">
                             {item.procedure}
                           </Link>
                         </td>

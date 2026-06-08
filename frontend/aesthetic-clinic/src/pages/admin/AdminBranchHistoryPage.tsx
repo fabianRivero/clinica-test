@@ -49,7 +49,7 @@ export function AdminBranchHistoryPage() {
       />
 
       <div className="_flex-start">
-        <Link className="button button--ghost" to="/admin/sucursales/editar">Volver a editar sucursales</Link>
+        <Link className="button button--ghost" to="/cms/sucursales/editar">Volver a editar sucursales</Link>
       </div>
 
       {error ? <p className="error-text">{error}</p> : null}

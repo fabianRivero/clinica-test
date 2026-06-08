@@ -135,7 +135,7 @@ export function AdminOperationsPage() {
                     </dl>
                     <div className="operation-card__actions">
                       {operation.rawId ? (
-                        <Link className="button button--ghost button--compact" to={`/admin/operaciones/${operation.rawId}`}>
+                        <Link className="button button--ghost button--compact" to={`/cms/operaciones/${operation.rawId}`}>
                           Ver detalle
                         </Link>
                       ) : (

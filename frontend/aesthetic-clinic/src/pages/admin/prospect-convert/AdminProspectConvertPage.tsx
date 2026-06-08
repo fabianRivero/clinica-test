@@ -123,7 +123,7 @@ export function AdminProspectConvertPage() {
         actions={[{
           label: isReactivation ? 'Volver a cliente' : 'Volver a prospectos',
           variant: 'ghost',
-          to: isReactivation ? `/admin/clientes/${clientId}` : '/admin/prospectos'
+          to: isReactivation ? `/cms/clientes/${clientId}` : '/cms/prospectos'
         }]}
       />
 

@@ -179,7 +179,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
                     <div className="table-muted">Sucursal: {row.branchName || 'Sin sucursal'}</div>
 
                     <div className="catalog-admin-card__actions">
-                      <button className="button button--ghost button--compact" type="button" onClick={() => navigate(`/admin/equipo/admin-sucursal/${row.id}`)}>Detalles</button>
+                      <button className="button button--ghost button--compact" type="button" onClick={() => navigate(`/cms/equipo/admin-sucursal/${row.id}`)}>Detalles</button>
                     </div>
 
                   </div>
