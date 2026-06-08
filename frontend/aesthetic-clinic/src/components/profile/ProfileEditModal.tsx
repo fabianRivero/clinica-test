@@ -23,24 +23,14 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
 
   useEffect(() => {
     if (isOpen && user) {
-      setForm((prev) => {
-        const next = {
-          username: user.username || '',
-          email: user.email || '',
-          telefono: user.telefono || '',
-          password: '',
-        }
-        if (
-          prev.username === next.username &&
-          prev.email === next.email &&
-          prev.telefono === next.telefono &&
-          prev.password === ''
-        ) {
-          return prev
-        }
-        return next
+      setForm({
+        username: user.username || '',
+        email: user.email || '',
+        telefono: user.telefono || '',
+        password: '',
       })
       setError(null)
+      setIsSaving(false)
     }
   }, [isOpen, user])
 
@@ -74,6 +64,7 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
         message: 'Los cambios se guardaron correctamente.',
         tone: 'success',
       })
+      setIsSaving(false)
       onClose()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'No se pudieron guardar los cambios.'
