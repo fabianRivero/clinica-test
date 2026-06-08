@@ -78,15 +78,12 @@ export async function logoutUser() {
 }
 
 export async function updateProfile(payload: ProfileUpdatePayload) {
-  const csrfToken = await ensureCsrfCookie()
-
   const response = await fetch(`${API_BASE_URL}/api/auth/me/`, {
     method: 'PATCH',
     credentials: 'include',
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
-      'X-CSRFToken': csrfToken,
     },
     body: JSON.stringify(payload),
   })
@@ -104,7 +101,6 @@ export async function updateProfile(payload: ProfileUpdatePayload) {
       parsed && parsed.detail
         ? parsed.detail
         : `La solicitud falló con estado ${response.status}. Respuesta: ${text.slice(0, 200)}`
-    console.error('[updateProfile] HTTP error', response.status, text.slice(0, 300))
     throw new Error(message)
   }
 

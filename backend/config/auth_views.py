@@ -3,7 +3,7 @@ import logging
 
 from django.contrib.auth import authenticate, login as django_login, logout as django_logout
 from django.middleware.csrf import get_token
-from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 from django.db import transaction
 
@@ -49,6 +49,7 @@ def auth_csrf(request):
     return json_response({"detail": "CSRF cookie establecida.", "csrfToken": get_token(request)})
 
 
+@csrf_exempt
 @require_http_methods(["GET", "PATCH"])
 def auth_me(request):
     if not request.user.is_authenticated:
