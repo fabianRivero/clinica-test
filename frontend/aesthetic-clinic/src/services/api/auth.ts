@@ -78,35 +78,36 @@ export async function logoutUser() {
 }
 
 export async function updateProfile(payload: ProfileUpdatePayload) {
-  const response = await fetch(`${API_BASE_URL}/api/auth/me/`, {
-    method: 'PATCH',
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
-
-  const text = await response.text()
-  let parsed: { detail?: string } | null = null
+  let response: Response
   try {
-    parsed = JSON.parse(text)
+    response = await fetch(`${API_BASE_URL}/api/auth/me/`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+  } catch (err) {
+    throw new Error(`Error de red: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  let data: { user?: unknown; detail?: string } | null = null
+  try {
+    data = await response.json()
   } catch {
-    // malformed JSON
+    // ignore JSON parse errors here
   }
 
   if (!response.ok) {
-    const message =
-      parsed && parsed.detail
-        ? parsed.detail
-        : `La solicitud falló con estado ${response.status}. Respuesta: ${text.slice(0, 200)}`
+    const message = data && data.detail ? data.detail : `La solicitud falló con estado ${response.status}`
     throw new Error(message)
   }
 
-  if (!parsed) {
-    throw new Error(`Respuesta inválida del servidor: ${text.slice(0, 200)}`)
+  if (!data || !data.user) {
+    throw new Error(`Respuesta inválida del servidor`)
   }
 
-  return parsed as AuthResponse
+  return data as unknown as AuthResponse
 }

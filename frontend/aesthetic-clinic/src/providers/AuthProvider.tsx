@@ -6,7 +6,7 @@ import {
   useState,
 } from 'react'
 
-import { getSessionUser, loginUser, logoutUser, updateProfile } from '../services/api/auth'
+import { getSessionUser, loginUser, logoutUser, updateProfile as apiUpdateProfile } from '../services/api/auth'
 import type { AuthUser, LoginPayload, ProfileUpdatePayload } from '../types/auth'
 
 type AuthContextValue = {
@@ -66,7 +66,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }
 
   async function updateProfile(payload: ProfileUpdatePayload) {
-    const response = await updateProfile(payload)
+    const response = await apiUpdateProfile(payload)
     setUser(response.user)
     return response.user
   }

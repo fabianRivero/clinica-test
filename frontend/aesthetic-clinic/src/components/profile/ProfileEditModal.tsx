@@ -28,7 +28,6 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
           telefono: user.telefono || '',
           password: '',
         }
-        // Avoid re-setting same values to prevent loops
         if (
           prev.username === next.username &&
           prev.email === next.email &&
@@ -50,6 +49,7 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
+    if (isSaving) return
     setIsSaving(true)
     setError(null)
 
