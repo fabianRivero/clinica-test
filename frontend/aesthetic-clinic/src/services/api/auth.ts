@@ -91,5 +91,26 @@ export async function updateProfile(payload: ProfileUpdatePayload) {
     body: JSON.stringify(payload),
   })
 
-  return parseResponse<AuthResponse>(response)
+  const text = await response.text()
+  let parsed: { detail?: string } | null = null
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    // malformed JSON
+  }
+
+  if (!response.ok) {
+    const message =
+      parsed && parsed.detail
+        ? parsed.detail
+        : `La solicitud falló con estado ${response.status}. Respuesta: ${text.slice(0, 200)}`
+    console.error('[updateProfile] HTTP error', response.status, text.slice(0, 300))
+    throw new Error(message)
+  }
+
+  if (!parsed) {
+    throw new Error(`Respuesta inválida del servidor: ${text.slice(0, 200)}`)
+  }
+
+  return parsed as AuthResponse
 }

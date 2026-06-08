@@ -21,11 +21,23 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
 
   useEffect(() => {
     if (isOpen && user) {
-      setForm({
-        username: user.username || '',
-        email: user.email || '',
-        telefono: user.telefono || '',
-        password: '',
+      setForm((prev) => {
+        const next = {
+          username: user.username || '',
+          email: user.email || '',
+          telefono: user.telefono || '',
+          password: '',
+        }
+        // Avoid re-setting same values to prevent loops
+        if (
+          prev.username === next.username &&
+          prev.email === next.email &&
+          prev.telefono === next.telefono &&
+          prev.password === ''
+        ) {
+          return prev
+        }
+        return next
       })
       setError(null)
     }
