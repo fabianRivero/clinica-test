@@ -237,6 +237,9 @@ function AdminLayoutInner() {
                 <strong>{user?.fullName}</strong>
                 <span>{user?.role || 'ADMINISTRADOR'}</span>
               </div>
+              <button className="button button--ghost button--compact" type="button" onClick={(e) => { e.stopPropagation(); setProfileModalOpen(true) }}>
+                Perfil
+              </button>
               <button className="button button--ghost button--compact" type="button" onClick={(e) => { e.stopPropagation(); void logout() }}>
                 Cerrar sesión
               </button>

@@ -91,6 +91,9 @@ export function ClientLayout() {
                 <strong>{user?.fullName}</strong>
                 <span>{user?.role || 'CLIENTE'}</span>
               </div>
+              <button className="button button--ghost button--compact" type="button" onClick={(e) => { e.stopPropagation(); setProfileModalOpen(true) }}>
+                Perfil
+              </button>
               <button className="button button--ghost button--compact" type="button" onClick={(e) => { e.stopPropagation(); void logout() }}>
                 Cerrar sesión
               </button>
