@@ -1,6 +1,7 @@
 import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react'
 
 import { useAuth } from '../../providers/AuthProvider'
+import { useNotifications } from '../../providers/NotificationProvider'
 import type { ProfileUpdatePayload } from '../../types/auth'
 
 type Props = {
@@ -10,6 +11,7 @@ type Props = {
 
 export function ProfileEditModal({ isOpen, onClose }: Props) {
   const { user, updateProfile } = useAuth()
+  const { showNotification } = useNotifications()
   const [form, setForm] = useState<ProfileUpdatePayload>({
     username: '',
     email: '',
@@ -67,10 +69,19 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
 
     try {
       await updateProfile(payload)
+      showNotification({
+        title: 'Perfil actualizado',
+        message: 'Los cambios se guardaron correctamente.',
+        tone: 'success',
+      })
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudieron guardar los cambios')
-    } finally {
+      const message = err instanceof Error ? err.message : 'No se pudieron guardar los cambios.'
+      showNotification({
+        title: 'Error',
+        message,
+        tone: 'danger',
+      })
       setIsSaving(false)
     }
   }
