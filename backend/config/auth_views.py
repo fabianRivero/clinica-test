@@ -4,7 +4,8 @@ import logging
 from django.contrib.auth import authenticate, login as django_login, logout as django_logout
 from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
+from django.db import transaction
 
 from config.api_helpers import json_response
 
@@ -30,6 +31,7 @@ def _serialize_user(user):
         "username": user.username,
         "fullName": user.nombre_completo or user.username,
         "email": user.email,
+        "telefono": user.telefono or "",
         "role": frontend_role,
         "dashboardPath": _dashboard_path(user),
         "isAdmin": bool(user.is_superuser or user.es_administrador),
@@ -47,10 +49,58 @@ def auth_csrf(request):
     return json_response({"detail": "CSRF cookie establecida.", "csrfToken": get_token(request)})
 
 
-@require_GET
+@require_http_methods(["GET", "PATCH"])
 def auth_me(request):
     if not request.user.is_authenticated:
         return json_response({"detail": "No autenticado."}, status=401)
+
+    if request.method == "PATCH":
+        try:
+            payload = json.loads(request.body.decode("utf-8"))
+        except json.JSONDecodeError:
+            return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+        allowed_fields = {"username", "email", "telefono", "password"}
+        unknown_fields = set(payload.keys()) - allowed_fields
+        if unknown_fields:
+            return json_response(
+                {"detail": f"Campos no validos: {', '.join(sorted(unknown_fields))}."},
+                status=400,
+            )
+
+        user = request.user
+        username_new = payload.get("username")
+        if username_new is not None and username_new != user.username:
+            from django.contrib.auth.models import User
+
+            if User.objects.filter(username=username_new).exclude(pk=user.pk).exists():
+                return json_response({"detail": "El nombre de usuario ya esta en uso."}, status=409)
+
+        with transaction.atomic():
+            if username_new is not None:
+                user.username = username_new
+            if payload.get("email") is not None:
+                user.email = payload.get("email", "")
+            if payload.get("telefono") is not None:
+                user.telefono = payload.get("telefono", "")
+
+                # Sync telefono to Cliente or Especialista
+                if hasattr(user, "cliente"):
+                    user.cliente.telefono = user.telefono
+                    user.cliente.save(update_fields=["telefono"])
+                elif hasattr(user, "especialista"):
+                    user.especialista.telefono = user.telefono
+                    user.especialista.save(update_fields=["telefono"])
+
+            if payload.get("password"):
+                user.set_password(payload["password"])
+                request.session.cycle_key()
+
+            user.save()
+
+        return json_response({"user": _serialize_user(user)})
+
+    # GET
     return json_response({"user": _serialize_user(request.user)})
 
 

@@ -6,8 +6,8 @@ import {
   useState,
 } from 'react'
 
-import { getSessionUser, loginUser, logoutUser } from '../services/api/auth'
-import type { AuthUser, LoginPayload } from '../types/auth'
+import { getSessionUser, loginUser, logoutUser, updateProfile } from '../services/api/auth'
+import type { AuthUser, LoginPayload, ProfileUpdatePayload } from '../types/auth'
 
 type AuthContextValue = {
   user: AuthUser | null
@@ -16,6 +16,7 @@ type AuthContextValue = {
   login: (payload: LoginPayload) => Promise<AuthUser>
   logout: () => Promise<void>
   refreshSession: () => Promise<AuthUser | null>
+  updateProfile: (payload: ProfileUpdatePayload) => Promise<AuthUser>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -64,6 +65,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setUser(null)
   }
 
+  async function updateProfile(payload: ProfileUpdatePayload) {
+    const response = await updateProfile(payload)
+    setUser(response.user)
+    return response.user
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -73,6 +80,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         login,
         logout,
         refreshSession,
+        updateProfile,
       }}
     >
       {children}

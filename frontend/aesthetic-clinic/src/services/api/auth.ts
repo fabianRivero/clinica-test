@@ -1,4 +1,4 @@
-import type { AuthResponse, LoginPayload } from '../../types/auth'
+import type { AuthResponse, LoginPayload, ProfileUpdatePayload } from '../../types/auth'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
 
@@ -75,4 +75,21 @@ export async function logoutUser() {
   })
 
   await parseResponse<{ detail: string }>(response)
+}
+
+export async function updateProfile(payload: ProfileUpdatePayload) {
+  const csrfToken = await ensureCsrfCookie()
+
+  const response = await fetch(`${API_BASE_URL}/api/auth/me/`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrfToken,
+    },
+    body: JSON.stringify(payload),
+  })
+
+  return parseResponse<AuthResponse>(response)
 }

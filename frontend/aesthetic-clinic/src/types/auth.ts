@@ -5,6 +5,7 @@ export type AuthUser = {
   username: string
   fullName: string
   email: string
+  telefono: string
   role: RoleKey
   dashboardPath: string
   isAdmin: boolean
@@ -23,4 +24,11 @@ export type AuthResponse = {
 export type LoginPayload = {
   username: string
   password: string
+}
+
+export type ProfileUpdatePayload = {
+  username?: string
+  email?: string
+  telefono?: string
+  password?: string
 }

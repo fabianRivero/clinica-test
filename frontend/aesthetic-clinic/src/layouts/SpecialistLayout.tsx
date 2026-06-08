@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../providers/AuthProvider'
 import { NOTIFICATIONS_UPDATED_EVENT } from '../services/api/notifications'
+import { ProfileEditModal } from '../components/profile/ProfileEditModal'
 
 const navigation = [
   { to: '/trabajador/agenda', label: 'Agenda semanal' },
@@ -17,6 +18,7 @@ const navigation = [
 
 export function SpecialistLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [profileModalOpen, setProfileModalOpen] = useState(false)
   const { user, logout } = useAuth()
   const [unreadCount, setUnreadCount] = useState(0)
 
@@ -100,17 +102,19 @@ export function SpecialistLayout() {
           </div>
           <div className="topbar__right">
             <NavLink to="/trabajador/notificaciones" className="button button--ghost button--compact">🔔 {unreadCount}</NavLink>
-            <div className="profile-chip profile-chip--client">
+            <div className="profile-chip profile-chip--client" onClick={() => setProfileModalOpen(true)}>
               <div className="profile-chip__meta">
                 <strong>{user?.fullName}</strong>
                 <span>{user?.role || 'TRABAJADOR'}</span>
               </div>
-              <button className="button button--ghost button--compact" type="button" onClick={() => void logout()}>
+              <button className="button button--ghost button--compact" type="button" onClick={(e) => { e.stopPropagation(); void logout() }}>
                 Cerrar sesión
               </button>
             </div>
           </div>
         </header>
+
+        <ProfileEditModal isOpen={profileModalOpen} onClose={() => setProfileModalOpen(false)} />
 
         <Outlet />
       </main>
