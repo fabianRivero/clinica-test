@@ -257,7 +257,7 @@ class PagosViewSet(viewsets.ViewSet):
             return Response({"detail": f"Error al guardar imagen: {exc}"}, status=500)
 
     @action(detail=True, methods=["post"], url_path="estado")
-    def update_status(self, request, payment_id=None):
+    def update_status(self, request, pk=None):
         """POST /pagos/<int:payment_id>/estado/ — update payment verification status."""
         payment = (
             PagoRealizado.objects.select_related(
@@ -265,7 +265,7 @@ class PagosViewSet(viewsets.ViewSet):
                 "cuota__operacion__servicio_config__proc_estetico",
                 "verificado_por",
             )
-            .filter(pk=payment_id)
+            .filter(pk=pk)
             .first()
         )
         if not payment:
