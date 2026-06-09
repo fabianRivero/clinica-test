@@ -1,8 +1,8 @@
 import { NavLink } from 'react-router-dom'
 
 const tabs = [
-  { to: '/admin/prospectos', label: 'Prospectos' },
-  { to: '/admin/clientes', label: 'Clientes' },
+  { to: '/cms/prospectos', label: 'Prospectos' },
+  { to: '/cms/clientes', label: 'Clientes' },
 ] as const
 
 export function AdminRelationshipTabs() {

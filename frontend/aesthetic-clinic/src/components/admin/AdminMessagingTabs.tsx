@@ -1,8 +1,8 @@
 import { NavLink } from 'react-router-dom'
 
 const tabs = [
-  { to: '/admin/mensajes/permisos', label: 'Creación y permiso de fichas' },
-  { to: '/admin/mensajes/fichas', label: 'Fichas existentes' },
+  { to: '/cms/mensajes/permisos', label: 'Creación y permiso de fichas' },
+  { to: '/cms/mensajes/fichas', label: 'Fichas existentes' },
 ] as const
 
 export function AdminMessagingTabs() {

@@ -1,8 +1,8 @@
 import { NavLink } from 'react-router-dom'
 
 const tabs = [
-  { to: '/admin/sucursales/editar', label: 'Editar sucursales' },
-  { to: '/admin/sucursales/crear', label: 'Crear sucursal' },
+  { to: '/cms/sucursales/editar', label: 'Editar sucursales' },
+  { to: '/cms/sucursales/crear', label: 'Crear sucursal' },
 ] as const
 
 export function AdminBranchTabs() {

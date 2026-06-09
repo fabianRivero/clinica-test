@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom'
 
 const tabs = [
-  { to: '/admin/catalogos/todos-los-servicios', label: 'Todos los servicios' },
-  { to: '/admin/catalogos/procedimientos-esteticos', label: 'Procedimientos estéticos' },
-  { to: '/admin/catalogos/tipos-servicio', label: 'Tipos de servicio' },
-  { to: '/admin/catalogos/especialidades', label: 'Especialidades' },
-  { to: '/admin/catalogos/categorias-gasto', label: 'Categorías de gasto' },
+  { to: '/cms/catalogos/todos-los-servicios', label: 'Todos los servicios' },
+  { to: '/cms/catalogos/procedimientos-esteticos', label: 'Procedimientos estéticos' },
+  { to: '/cms/catalogos/tipos-servicio', label: 'Tipos de servicio' },
+  { to: '/cms/catalogos/especialidades', label: 'Especialidades' },
+  { to: '/cms/catalogos/categorias-gasto', label: 'Categorías de gasto' },
 ] as const
 
 export function AdminCatalogTabs() {

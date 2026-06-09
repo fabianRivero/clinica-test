@@ -373,6 +373,12 @@
   border: 1px solid rgba(217, 232, 236, 0.92);
 }
 
+.staff-section-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-4);
+}
+
 .section-tabs__link {
   display: inline-flex;
   align-items: center;
