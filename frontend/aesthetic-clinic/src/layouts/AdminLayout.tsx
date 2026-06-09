@@ -184,7 +184,7 @@ function AdminLayoutInner() {
               <NavLink
                 key={item.to}
                 to={item.to}
-                end={item.to === '/admin'}
+                end={item.to === '/cms'}
                 className={({ isActive }) => `side-nav__link ${isActive ? 'is-active' : ''}`}
                 onClick={() => setSidebarOpen(false)}
               >
