@@ -47,7 +47,7 @@ export function AdminOperationsPage() {
         title="Operaciones"
         description="Vista administrativa de tratamientos vigentes, sesiones pactadas, cuotas y citas asociadas."
         actions={[
-          { label: 'Configurar disponibilidad', variant: 'primary', to: '/admin/disponibilidad' },
+          { label: 'Configurar disponibilidad', variant: 'primary', to: '/cms/disponibilidad' },
         ]}
       />
 

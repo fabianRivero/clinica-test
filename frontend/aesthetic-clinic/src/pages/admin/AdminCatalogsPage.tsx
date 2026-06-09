@@ -365,7 +365,13 @@ function CatalogEditorForm({
   )
 }
 
-function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
+function CatalogPage({
+  catalogKey,
+  showCreateAction = true,
+}: {
+  catalogKey: AdminCatalogKey
+  showCreateAction?: boolean
+}) {
   const loader = useMemo(() => () => getAdminCatalogDetail(catalogKey), [catalogKey])
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
@@ -401,25 +407,37 @@ function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
     }
   }
 
+  const pageActions = showCreateAction
+    ? [
+        {
+          label: editingItem ? 'Cancelar edicion' : pageInfo.createLabel,
+          variant: editingItem ? 'ghost' : 'primary',
+          onClick: () => {
+            if (editingItem) {
+              setEditingItemId(null)
+              return
+            }
+            setEditorVersion((current) => current + 1)
+          },
+        },
+      ]
+    : editingItem
+      ? [
+          {
+            label: 'Cancelar edicion',
+            variant: 'ghost' as const,
+            onClick: () => setEditingItemId(null),
+          },
+        ]
+      : []
+
   return (
     <div className="page-stack">
       <PageHeader
         eyebrow="Configuracion"
         title={pageInfo.title}
         description={pageInfo.description}
-        actions={[
-          {
-            label: editingItem ? 'Cancelar edicion' : pageInfo.createLabel,
-            variant: editingItem ? 'ghost' : 'primary',
-            onClick: () => {
-              if (editingItem) {
-                setEditingItemId(null)
-                return
-              }
-              setEditorVersion((current) => current + 1)
-            },
-          },
-        ]}
+        actions={pageActions}
       />
 
       <AdminCatalogTabs />
@@ -441,7 +459,8 @@ function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
 
       {data ? (
         <>
-          <CatalogEditorForm
+          {showCreateAction || editingItem ? (
+            <CatalogEditorForm
             key={editingItem ? `edit-${editingItem.id}` : `create-${editorVersion}`}
             catalogKey={catalogKey}
             createLabel={pageInfo.createLabel}
@@ -454,6 +473,7 @@ function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
               reload()
             }}
           />
+          ) : null}
 
           <SectionCard
             eyebrow="Catálogo"
@@ -516,15 +536,15 @@ function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
 }
 
 export function AdminProceduresCatalogPage() {
-  return <CatalogPage catalogKey="procedimientos-esteticos" />
+  return <CatalogPage catalogKey="procedimientos-esteticos" showCreateAction={false} />
 }
 
 export function AdminAllServicesCatalogPage() {
-  return <CatalogPage catalogKey="todos-los-servicios" />
+  return <CatalogPage catalogKey="todos-los-servicios" showCreateAction={false} />
 }
 
 export function AdminServiceTypesCatalogPage() {
-  return <CatalogPage catalogKey="tipos-servicio" />
+  return <CatalogPage catalogKey="tipos-servicio" showCreateAction={false} />
 }
 
 export function AdminFormFieldsCatalogPage() {
@@ -536,11 +556,11 @@ export function AdminSkinPathologiesCatalogPage() {
 }
 
 export function AdminSpecialtiesCatalogPage() {
-  return <CatalogPage catalogKey="especialidades" />
+  return <CatalogPage catalogKey="especialidades" showCreateAction={false} />
 }
 
 export function AdminExpenseCategoriesCatalogPage() {
-  return <CatalogPage catalogKey="categorias-gasto" />
+  return <CatalogPage catalogKey="categorias-gasto" showCreateAction={false} />
 }
 
 export function AdminOptionGroupsCatalogPage() {

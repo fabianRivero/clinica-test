@@ -111,7 +111,7 @@ export function AdminClientDetailPage() {
   if (error || !data) {
     return (
       <div className="page-stack">
-        <PageHeader eyebrow="Clientes" title="No pudimos cargar el cliente" description="Revisa la lista e intenta nuevamente." actions={[{ label: 'Volver a clientes', variant: 'ghost', to: '/admin/clientes' }]} />
+        <PageHeader eyebrow="Clientes" title="No pudimos cargar el cliente" description="Revisa la lista e intenta nuevamente." actions={[{ label: 'Volver a clientes', variant: 'ghost', to: '/cms/clientes' }]} />
         <SectionCard title="Cliente no disponible">
           <DataState title="Conexion no disponible" message={error || 'No encontramos el cliente solicitado.'} tone="danger" />
         </SectionCard>
@@ -126,7 +126,7 @@ export function AdminClientDetailPage() {
         title={data.client.name}
         description={`${data.client.status} | ${data.client.phone} | Último análisis: ${data.client.lastAnalysis}`}
         actions={[
-          { label: 'Volver a clientes', variant: 'ghost', to: '/admin/clientes' },
+          { label: 'Volver a clientes', variant: 'ghost', to: '/cms/clientes' },
           ...(data.client.status === 'Inactivo' ? [{
             label: 'Reactivar / Nuevo tratamiento',
             onClick: () => navigate(`/cms/clientes/${clientId}/reactivar`)

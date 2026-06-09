@@ -77,7 +77,7 @@ export function AdminProspectConvertPage() {
           eyebrow="Conversion de prospecto"
           title="Preparando proceso de conversion"
           description="Estamos cargando el prospecto, el borrador guardado y la configuración clínica necesaria."
-          actions={[{ label: 'Volver a prospectos', variant: 'ghost', to: '/admin/prospectos' }]}
+          actions={[{ label: 'Volver a prospectos', variant: 'ghost', to: '/cms/prospectos' }]}
         />
         <SectionCard title="Cargando conversion">
           <DataState title="Sincronizando información" message="Consultando el borrador y los catálogos relacionados." />
@@ -93,7 +93,7 @@ export function AdminProspectConvertPage() {
           eyebrow="Conversion de prospecto"
           title="No pudimos iniciar la conversion"
           description="Este flujo solo funciona para prospectos pasajeros que aun no fueron convertidos."
-          actions={[{ label: 'Volver a prospectos', variant: 'ghost', to: '/admin/prospectos' }]}
+          actions={[{ label: 'Volver a prospectos', variant: 'ghost', to: '/cms/prospectos' }]}
         />
         <SectionCard title="Conversion no disponible">
           <DataState title="No disponible" message={error || 'No encontramos datos suficientes para continuar.'} tone="danger" />

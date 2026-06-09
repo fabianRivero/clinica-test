@@ -132,7 +132,7 @@ export function AdminProspectCreatePage() {
         eyebrow="Nuevo prospecto"
         title="Registrar prospecto"
         description="Crea un registro interno para una persona interesada en los servicios de la clínica. Se registran nombre y apellidos por separado; solo primer nombre y apellido paterno son obligatorios."
-        actions={[{ label: 'Volver a prospectos', variant: 'ghost', to: '/admin/prospectos' }]}
+        actions={[{ label: 'Volver a prospectos', variant: 'ghost', to: '/cms/prospectos' }]}
       />
 
       <SectionCard

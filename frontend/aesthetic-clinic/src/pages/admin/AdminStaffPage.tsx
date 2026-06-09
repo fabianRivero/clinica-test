@@ -424,11 +424,6 @@ export function AdminStaffCreatePage() {
     <StaffPageShell
       title={editingStaffMember ? `Editar: ${editingStaffMember.specialist}` : 'Crear especialista'}
       description="Crea nuevas cuentas de especialista o actualiza sus datos y especialidades."
-      actions={[
-        editingStaffMember
-          ? { label: 'Cancelar edicion', variant: 'ghost', onClick: clearEditing }
-          : { label: 'Ir a gestion', variant: 'ghost', to: '/admin/equipo/gestionar' },
-      ]}
     >
       {isLoading && !data ? (
         <SectionCard title="Cargando equipo">
@@ -542,7 +537,6 @@ export function AdminStaffManagePage() {
     <StaffPageShell
       title="Gestionar especialistas"
       description="Revisa la carga operativa del equipo y administra especialistas ya registrados."
-      actions={[{ label: 'Crear especialista', to: '/admin/equipo/crear', variant: 'primary' }]}
     >
       {isLoading && !data ? (
         <SectionCard title="Cargando equipo">
