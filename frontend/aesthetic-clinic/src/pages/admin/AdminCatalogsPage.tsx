@@ -411,7 +411,7 @@ function CatalogPage({
     ? [
         {
           label: editingItem ? 'Cancelar edicion' : pageInfo.createLabel,
-          variant: editingItem ? 'ghost' : 'primary',
+          variant: (editingItem ? 'ghost' : 'primary') as 'ghost' | 'primary',
           onClick: () => {
             if (editingItem) {
               setEditingItemId(null)
