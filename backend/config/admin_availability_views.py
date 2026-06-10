@@ -17,7 +17,7 @@ from operations.models import (
     DiaSemana,
 )
 from staff.models import Especialista
-from operations.scheduling import get_concurrency, get_specialists_present
+from operations.scheduling import get_concurrency, get_concurrency_detail, get_specialists_present
 
 
 def _specialists_for_branch(branch):
@@ -326,9 +326,22 @@ def admin_check_concurrency(request):
     try:
         from datetime import timedelta
         data = json.loads(request.body)
+        
+        # Validar campos requeridos
+        if "sucursal_id" not in data:
+            return json_response({"detail": "Falta sucursal_id"}, status=400)
+        if "fecha" not in data:
+            return json_response({"detail": "Falta fecha"}, status=400)
+        if "hora_inicio" not in data:
+            return json_response({"detail": "Falta hora_inicio"}, status=400)
+        
         sucursal_id = data["sucursal_id"]
-        fecha = datetime.strptime(data["fecha"], "%Y-%m-%d").date()
-        hora_inicio = datetime.strptime(data["hora_inicio"], "%H:%M").time()
+        if not sucursal_id:
+            return json_response({"detail": "sucursal_id no puede ser null o vacío"}, status=400)
+        
+        fecha = datetime.strptime(data["fecha"][:10], "%Y-%m-%d").date()
+        hora_str = data["hora_inicio"][:5]
+        hora_inicio = datetime.strptime(hora_str, "%H:%M").time()
         
         # Calcular ventana de 1 hora antes y 1 hora despues para la concurrencia
         dt_inicio = datetime.combine(fecha, hora_inicio)
@@ -338,8 +351,18 @@ def admin_check_concurrency(request):
         hora_ventana_inicio = dt_ventana_inicio.time()
         hora_ventana_fin = dt_ventana_fin.time()
 
-        # Concurrencia en la ventana de 2 horas ( -1h a +1h )
-        concurrency = get_concurrency(sucursal_id, fecha, hora_ventana_inicio, hora_ventana_fin)
+        # Concurrencia detallada en la ventana de 2 horas ( -1h a +1h )
+        appointments_raw = get_concurrency_detail(sucursal_id, fecha, hora_ventana_inicio, hora_ventana_fin)
+        appointments = [
+            {
+                "cliente_nombre": row["cliente_nombre"],
+                "tratamiento_nombre": row["tratamiento_nombre"],
+                "hora": row["hora"].strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "tipo": row["tipo"],
+            }
+            for row in appointments_raw
+        ]
+        concurrency = len(appointments)
         
         # Especialistas presentes en el momento exacto (hora_inicio)
         presentes = get_specialists_present(sucursal_id, fecha, hora_inicio, hora_inicio)
@@ -355,6 +378,7 @@ def admin_check_concurrency(request):
             
         return json_response({
             "concurrency": concurrency, 
+            "appointments": appointments,
             "presentes": especialistas,
             "hora_inicio": hora_ventana_inicio.strftime("%H:%M"),
             "hora_fin": hora_ventana_fin.strftime("%H:%M"),

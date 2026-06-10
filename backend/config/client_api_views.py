@@ -371,7 +371,7 @@ def _payment_qr_config_item(config):
     }
 
 
-def _appointment_item(cita):
+def _appointment_item(cita, appointment_index=None, total_appointments=None):
     can_manage = cita.estado == CitaMedica.Estado.PROGRAMADA
 
     verification_status_map = {
@@ -391,6 +391,9 @@ def _appointment_item(cita):
         verification_method = "qr"
     elif cita.metodo_confirmacion == CitaMedica.MetodoConfirmacion.MANUAL:
         verification_method = "manual"
+    zona = ", ".join(
+        [value for value in [cita.operacion.zona_general, cita.operacion.zona_especifica] if value]
+    ) or "Sin zona registrada"
     return {
         "id": f"CIT-{cita.pk:04d}",
         "rawId": cita.pk,
@@ -412,6 +415,9 @@ def _appointment_item(cita):
         and cita.operacion.paciente.huella_biometrica.activo
         and cita.operacion.paciente.huella_biometrica.proveedor == "MOCK"
         else "",
+        "zona": zona,
+        "appointmentIndex": appointment_index,
+        "totalAppointments": total_appointments,
     }
 
 
@@ -780,7 +786,7 @@ def client_upload_payment_receipt(request, quota_id):
                     f"del procedimiento {procedimiento} con ID {operacion_id}. "
                     f"El monto de la cuota de pago es: Bs {monto_cuota}."
                 ),
-                action_url="/admin/pagos",
+                action_url="/cms/pagos",
                 source_event="payment.pending_submission",
                 source_entity_type="payment",
                 source_entity_id=payment.id,
@@ -852,6 +858,9 @@ def client_tablet_current_appointment(request):
     mark_expired_programmed_appointments_as_no_show()
     now = timezone.now()
     today = timezone.localdate()
+    mode = (request.GET.get("mode") or "ONLINE").upper()
+    is_offline = mode == "OFFLINE"
+
     appointments_qs = (
         CitaMedica.objects.filter(
             operacion__paciente=request.cliente,
@@ -860,20 +869,55 @@ def client_tablet_current_appointment(request):
         .select_related("operacion__servicio_config__tipo_servicio", "operacion__servicio_config__proc_estetico")
         .order_by("fecha_hora")
     )
-    today_appointments = appointments_qs.filter(
+
+    # Online: solo pendientes de verificacion. Offline: programadas + pendientes de verificacion.
+    if is_offline:
+        today_appointments = appointments_qs.filter(
             estado__in=[
-                CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
                 CitaMedica.Estado.PROGRAMADA,
+                CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
             ],
             fecha_hora__date=today,
         )
+    else:
+        today_appointments = appointments_qs.filter(
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
+            fecha_hora__date=today,
+        )
+
     current = today_appointments.first()
-    pending_count = appointments_qs.filter(
-        estado__in=[CitaMedica.Estado.PROGRAMADA, CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION],
-        fecha_hora__gte=now,
-    ).count()
+
+    if is_offline:
+        pending_count = appointments_qs.filter(
+            estado__in=[CitaMedica.Estado.PROGRAMADA, CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION],
+            fecha_hora__gte=now,
+        ).count()
+    else:
+        pending_count = appointments_qs.filter(
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
+            fecha_hora__gte=now,
+        ).count()
     procedure_options = []
     operation_map = {}
+    # Precompute total appointments and index per operation (exclude cancelled/no-show)
+    operation_indices = {}
+    valid_states = [
+        CitaMedica.Estado.PROGRAMADA,
+        CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
+        CitaMedica.Estado.CONFIRMADA,
+    ]
+    for cita in today_appointments:
+        op = cita.operacion
+        if not op or op.estado != Operacion.Estado.EN_PROCESO:
+            continue
+        if op.id not in operation_indices:
+            valid_citas = op.citas_medicas.filter(
+                estado__in=valid_states
+            ).order_by("fecha_hora")
+            total = valid_citas.count()
+            indices = {c.pk: i + 1 for i, c in enumerate(valid_citas)}
+            operation_indices[op.id] = (total, indices)
+
     for cita in today_appointments:
         operation = cita.operacion
         if not operation or operation.estado != Operacion.Estado.EN_PROCESO:
@@ -883,7 +927,11 @@ def client_tablet_current_appointment(request):
                 "operation": _operation_item(operation),
                 "appointments": [],
             }
-        operation_map[operation.id]["appointments"].append(_appointment_item(cita))
+        total, indices = operation_indices[operation.id]
+        appointment_index = indices.get(cita.pk, 1)
+        operation_map[operation.id]["appointments"].append(
+            _appointment_item(cita, appointment_index, total)
+        )
     procedure_options = list(operation_map.values())
 
     return json_response(

@@ -115,13 +115,11 @@ class Operacion(TimeStampedModel):
             return "Solo los tratamientos en proceso pueden reservar nuevas citas."
         if self.tiene_reserva_programada:
             return (
-                "Ya tienes una cita programada para este tratamiento. Debes completarla "
-                "o reprogramarla antes de reservar la siguiente sesión."
+                "Puedes confirmar la cita programada para darla por realizada satisfactoriamente."
             )
         if self.tiene_cierre_pendiente:
             return (
-                "Tu cita anterior aún no se cerró por completo. Espera a que quede "
-                "realizada y confirmada antes de reservar la siguiente sesión."
+                "Puedes confirmar la cita programada para darla  por realizada satisfactoriamente."
             )
         if self.sesiones_disponibles <= 0:
             return "Tu tratamiento ya no tiene sesiones disponibles para nuevas reservas."

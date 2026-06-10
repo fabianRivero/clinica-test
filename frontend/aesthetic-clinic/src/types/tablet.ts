@@ -24,6 +24,8 @@ export interface TabletAppointmentItem {
   operation: string
   dateTime: string
   status: string
+  appointmentIndex?: number
+  totalAppointments?: number
 }
 
 export interface TabletProcedureOption {

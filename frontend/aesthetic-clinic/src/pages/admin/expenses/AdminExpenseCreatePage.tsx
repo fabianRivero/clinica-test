@@ -82,7 +82,7 @@ export function AdminExpenseCreatePage() {
       })
       resetForm()
       reload()
-      navigate('/admin/gastos/lista')
+      navigate('/cms/gastos/lista')
     } catch (requestError) {
       const errorWithFields = requestError as Error & { fieldErrors?: Record<string, string> }
       setSubmitError(errorWithFields.message || 'No se pudo guardar el gasto.')

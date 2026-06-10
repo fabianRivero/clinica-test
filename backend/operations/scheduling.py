@@ -1,6 +1,6 @@
 from datetime import datetime, time
-from django.db.models import Q, Value, CharField
-from django.db.models.functions import Coalesce
+from django.db.models import Q, Value, CharField, F, Case, When
+from django.db.models.functions import Coalesce, Concat
 from django.utils import timezone
 from operations.models import (
     AgendaExcepcionEspecialista,
@@ -133,12 +133,18 @@ def get_concurrency_detail(sucursal_id, fecha, hora_inicio, hora_fin):
         fecha_hora__lt=end_dt,
         estado__in=BLOCKING_RESERVATION_STATES
     ).values(
-        cliente_nombre=Coalesce(
-            'operacion__cliente__nombre',
-            Value('Cliente no registrado'),
+        cliente_nombre=Case(
+            When(operacion__paciente__usuario__primer_nombre__isnull=False,
+                 then=Concat(
+                     F('operacion__paciente__usuario__primer_nombre'),
+                     Value(' '),
+                     F('operacion__paciente__usuario__apellido_paterno'),
+                 )),
+            default=Value('Cliente no registrado'),
+            output_field=CharField(),
         ),
-        tratamiento_nombre='operacion__tratamiento__nombre',
-        hora='fecha_hora',
+        tratamiento_nombre=F('operacion__servicio_config__proc_estetico__proceso'),
+        hora=F('fecha_hora'),
         tipo=Value('CitasMedicas', output_field=CharField()),
     )
 
@@ -148,9 +154,9 @@ def get_concurrency_detail(sucursal_id, fecha, hora_inicio, hora_fin):
         fecha_hora__lt=end_dt,
         estado=CitaProspecto.Estado.PROGRAMADA
     ).values(
-        cliente_nombre='prospecto__nombre',
-        tratamiento_nombre='tratamiento__nombre',
-        hora='fecha_hora',
+        cliente_nombre=F('prospecto__primer_nombre'),
+        tratamiento_nombre=F('servicio_config__proc_estetico__proceso'),
+        hora=F('fecha_hora'),
         tipo=Value('CitasProspectos', output_field=CharField()),
     )
 
@@ -160,13 +166,26 @@ def get_concurrency_detail(sucursal_id, fecha, hora_inicio, hora_fin):
         fecha_hora__lt=end_dt,
         estado=CitaClienteLibre.Estado.PROGRAMADA
     ).values(
-        cliente_nombre=Value('Cliente no registrado', output_field=CharField()),
-        tratamiento_nombre='tratamiento__nombre',
-        hora='fecha_hora',
+        cliente_nombre=Case(
+            When(cliente__usuario__primer_nombre__isnull=False,
+                 then=Concat(
+                     F('cliente__usuario__primer_nombre'),
+                     Value(' '),
+                     F('cliente__usuario__apellido_paterno'),
+                 )),
+            default=Value('Cliente no registrado'),
+            output_field=CharField(),
+        ),
+        tratamiento_nombre=F('servicio_config__proc_estetico__proceso'),
+        hora=F('fecha_hora'),
         tipo=Value('CitasClientesLibres', output_field=CharField()),
     )
 
-    return citas_medicas_qs.union(citas_prospecto_qs, citas_libre_qs).order_by('hora')
+    # Execute queries and combine in Python to avoid SQLite ORDER BY limitation in UNION
+    result = list(citas_medicas_qs) + list(citas_prospecto_qs) + list(citas_libre_qs)
+    # Sort by hora (datetime field)
+    result.sort(key=lambda x: x['hora'])
+    return result
 
 def get_specialists_present(sucursal_id, fecha, hora_inicio, hora_fin):
     """

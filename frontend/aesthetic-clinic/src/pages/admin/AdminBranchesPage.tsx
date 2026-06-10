@@ -834,7 +834,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
                     setStep2Submitted(false)
                     setNewBranch({ nombre: '', ciudad: '', direccion: '' })
                     setWizardTablet({ nombre: '', clave: '' })
-                    navigate('/admin/sucursales/editar')
+                    navigate('/cms/sucursales/editar')
                   }}
                 >
                   Continuar

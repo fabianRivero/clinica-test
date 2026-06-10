@@ -80,8 +80,26 @@ export function ClientReservationSection({
             <p className="_mb-sm">
               <strong>Citas simultáneas de 1 hora antes a 1 hora después ({concurrencyInfo.hora_inicio} a {concurrencyInfo.hora_fin}):</strong> {concurrencyInfo.concurrency}
             </p>
+
+            {concurrencyInfo.appointments && concurrencyInfo.appointments.length > 0 ? (
+              <div style={{ marginTop: '0.75rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--color-border)' }}>
+                <ul style={{ fontSize: '0.82rem', color: 'var(--color-text-soft)', paddingLeft: '1.2rem', margin: 0 }}>
+                  {concurrencyInfo.appointments.map((apt, idx) => (
+                    <li key={idx} style={{ marginBottom: '0.3rem' }}>
+                      <span style={{ fontWeight: 500 }}>{apt.cliente_nombre ?? 'Cliente no registrado'}</span>
+                      {' — '}
+                      {apt.tratamiento_nombre ?? 'Sin tratamiento'}
+                      {' — '}
+                      {new Date(apt.hora).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p style={{ fontSize: '0.85rem', color: 'var(--color-text-soft)', marginTop: '0.5rem' }}>Sin citas simultáneas</p>
+            )}
             <p className="_mb-sm">
-              <strong>Especialistas en turno {concurrencyInfo.hora_seleccionada}:</strong> {concurrencyInfo.presentes.length > 0 ? concurrencyInfo.presentes.map(p => p.usuario__primer_nombre).join(', ') : 'Ninguno registrado'}
+              <strong>Especialistas en turno {concurrencyInfo.hora_seleccionada}:</strong> {concurrencyInfo.presentes.length > 0 ? concurrencyInfo.presentes.map(p => `${p.usuario__primer_nombre} ${p.usuario__apellido_paterno}`).join(', ') : 'Ninguno registrado'}
             </p>
             {concurrencyInfo.concurrency >= concurrencyInfo.presentes.length && concurrencyInfo.presentes.length > 0 && (
               <p className="_text-danger _mt-sm _font-bold">

@@ -572,7 +572,7 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
         tone: 'success',
         duration: 6000,
       })
-      navigate(isReactivation ? `/admin/clientes/${clientId}` : '/admin/prospectos', {
+      navigate(isReactivation ? `/cms/clientes/${clientId}` : '/cms/prospectos', {
         replace: true,
       })
     } catch (requestError) {
@@ -614,7 +614,7 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
         message: 'El borrador de conversion fue cancelado correctamente.',
         tone: 'info',
       })
-      navigate(isReactivation ? `/admin/clientes/${clientId}` : '/admin/prospectos', {
+      navigate(isReactivation ? `/cms/clientes/${clientId}` : '/cms/prospectos', {
         replace: true,
       })
     } catch (requestError) {

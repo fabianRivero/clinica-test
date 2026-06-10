@@ -73,6 +73,8 @@ export function useClientDetail(clientId: string) {
   const [visiblePaymentsCount, setVisiblePaymentsCount] = useState(5)
   const [visibleSessionsCount, setVisibleSessionsCount] = useState(5)
   const [visibleOperationsCount, setVisibleOperationsCount] = useState(5)
+  const [sessionStatusFilter, setSessionStatusFilter] = useState('')
+  const [sessionProcedureFilter, setSessionProcedureFilter] = useState('')
 
   // Month navigation function with year wrap logic
   const changeAppointmentMonth = (direction: -1 | 1) => {
@@ -120,15 +122,31 @@ export function useClientDetail(clientId: string) {
   const hasMorePayments = visiblePaymentsCount < (data?.payments?.length ?? 0)
   const hasLessPayments = visiblePaymentsCount > 5
 
-  // Sessions pagination
-  const visibleSessions = (data?.sessions ?? []).slice(0, visibleSessionsCount)
-  const hasMoreSessions = visibleSessionsCount < (data?.sessions?.length ?? 0)
-  const hasLessSessions = visibleSessionsCount > 5
+  // Sessions filtering
+  const sessionStatuses = useMemo(
+    () => (data ? Array.from(new Set(data.sessions.map((session) => session.status))) : []),
+    [data],
+  )
+  const sessionProcedures = useMemo(
+    () => (data ? Array.from(new Set(data.sessions.map((session) => session.operation))) : []),
+    [data],
+  )
+  const filteredSessions = useMemo(
+    () =>
+      data
+        ? data.sessions.filter((session) => {
+            const statusMatch = sessionStatusFilter ? session.status === sessionStatusFilter : true
+            const procedureMatch = sessionProcedureFilter ? session.operation === sessionProcedureFilter : true
+            return statusMatch && procedureMatch
+          })
+        : [],
+    [data, sessionStatusFilter, sessionProcedureFilter],
+  )
 
-  // Operations pagination
-  const visibleOperations = (data?.operations ?? []).slice(0, visibleOperationsCount)
-  const hasMoreOperations = visibleOperationsCount < (data?.operations?.length ?? 0)
-  const hasLessOperations = visibleOperationsCount > 5
+  // Sessions pagination
+  const visibleSessions = filteredSessions.slice(0, visibleSessionsCount)
+  const hasMoreSessions = visibleSessionsCount < filteredSessions.length
+  const hasLessSessions = visibleSessionsCount > 5
 
   const reservableOperations = useMemo(
     () => data?.operations.filter((operation: any) => operation.status === 'En proceso') ?? [],
@@ -308,7 +326,7 @@ export function useClientDetail(clientId: string) {
     }
   }
 
-  async function handleRescheduleAppointment() {
+  async function handleRescheduleAppointment(onSuccess?: () => void) {
     if (!rescheduleAppointmentId || !rescheduleCheck) return
     setAppointmentActionId(rescheduleAppointmentId)
     try {
@@ -321,6 +339,7 @@ export function useClientDetail(clientId: string) {
       setRescheduleTime('')
       setRescheduleCheck(null)
       reload()
+      onSuccess?.()
     } catch (requestError) {
       showNotification({
         title: 'No se pudo reprogramar',
@@ -533,12 +552,25 @@ export function useClientDetail(clientId: string) {
   }
 
   // Computed values that depend on data
-  const operationStatuses = data ? Array.from(new Set(data.operations.map((operation) => operation.status))) : []
-  const filteredOperations = data
-    ? data.operations.filter((operation) =>
-        operationStatusFilter ? operation.status === operationStatusFilter : true,
-      )
-    : []
+  const operationStatuses = useMemo(
+    () => (data ? Array.from(new Set(data.operations.map((operation) => operation.status))) : []),
+    [data],
+  )
+  const filteredOperations = useMemo(
+    () =>
+      data
+        ? data.operations.filter((operation) =>
+            operationStatusFilter ? operation.status === operationStatusFilter : true,
+          )
+        : [],
+    [data, operationStatusFilter],
+  )
+
+  // Operations pagination
+  const visibleOperations = filteredOperations.slice(0, visibleOperationsCount)
+  const hasMoreOperations = visibleOperationsCount < filteredOperations.length
+  const hasLessOperations = visibleOperationsCount > 5
+
   const pendingQuotaProcedures = data ? Array.from(new Set(data.pendingQuotas.map((quota) => quota.operation))) : []
   const filteredPendingQuotas = data
     ? data.pendingQuotas.filter((quota) =>
@@ -664,6 +696,13 @@ export function useClientDetail(clientId: string) {
     setVisibleSessionsCount,
     hasMoreSessions,
     hasLessSessions,
+    sessionStatusFilter,
+    setSessionStatusFilter,
+    sessionStatuses,
+    sessionProcedureFilter,
+    setSessionProcedureFilter,
+    sessionProcedures,
+    filteredSessions,
 
     // Operations pagination
     visibleOperations,

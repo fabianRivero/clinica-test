@@ -118,7 +118,7 @@ export function TabletKioskPage() {
       }
 
       await tabletClientLogin(clientUsername, clientPassword)
-      const data = await tabletCurrentAppointment()
+      const data = await tabletCurrentAppointment(isOfflineMode ? 'OFFLINE' : 'ONLINE')
       setSummary(data)
       await saveTabletSnapshot(data)
       await trySyncOfflineQueue()
@@ -227,7 +227,11 @@ export function TabletKioskPage() {
               <article key={option.operation.rawId} className="auth-highlight _mb-sm">
                 <strong>{option.operation.procedure}</strong>
                 <p>{option.operation.reserveMessage}</p>
-                <p>Citas hoy: {option.appointments.map((a) => `${a.dateTime} (${a.status})`).join(' · ')}</p>
+                <p>{option.appointments.map((a) => {
+                        const idx = a.appointmentIndex
+                        const total = a.totalAppointments
+                        return total ? `Cita ${idx} de ${total}: ${a.dateTime} (${a.status})` : `${a.dateTime} (${a.status})`
+                      }).join(' · ')}</p>
                 <button className="button" disabled={loading} onClick={() => handleConfirm(option.operation.rawId)}>
                   {loading ? 'Confirmando...' : 'Confirmar cita de este procedimiento'}
                 </button>

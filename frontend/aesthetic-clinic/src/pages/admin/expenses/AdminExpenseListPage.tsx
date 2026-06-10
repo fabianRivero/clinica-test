@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import * as XLSX from 'xlsx'
 
 import { DataState } from '../../../components/admin/DataState'
 import { PageHeader } from '../../../components/admin/PageHeader'
@@ -57,6 +58,23 @@ export function AdminExpenseListPage() {
     setYear(nextYear)
     setMonth(nextMonth)
   }
+
+  const exportToExcel = useCallback(() => {
+    if (!data) return
+    const sheetData = data.expenses.map((expense) => ({
+      Fecha: expense.dateLabel,
+      Categoría: expense.category,
+      Concepto: expense.concept,
+      'Unidades x Unitario': `${expense.units} x Bs ${expense.unitCost}`,
+      Proveedor: expense.provider || 'Sin proveedor',
+      Total: expense.totalLabel,
+      Factura: expense.invoiceUrl ? 'Sí' : 'Sin factura',
+    }))
+    const ws = XLSX.utils.json_to_sheet(sheetData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, viewedMonthLabel)
+    XLSX.writeFile(wb, `gastos_${month}_${year}.xlsx`)
+  }, [data, month, year, viewedMonthLabel])
 
   const categorySummary = useMemo(() => {
     if (!data) return []
@@ -134,6 +152,11 @@ export function AdminExpenseListPage() {
                   <h3 style={{ cursor: 'pointer' }}>{viewedMonthLabel}</h3>
                 </div>
                 <button className="button button--ghost" type="button" onClick={() => changeMonth(1)}>→</button>
+                {data && data.expenses.length > 0 && (
+                  <button className="button button--ghost" style={{ minWidth: '4.5rem', minHeight: '2.6rem', padding: '0 0.75rem' }} type="button" onClick={exportToExcel} title="Descargar Excel">
+                    ↓ Excel
+                  </button>
+                )}
               </div>
             }
           >
@@ -162,7 +185,7 @@ export function AdminExpenseListPage() {
                         <td>{expense.invoiceUrl ? <a href={expense.invoiceUrl} rel="noreferrer" target="_blank">Ver factura</a> : 'Sin factura'}</td>
                         <td>
                           <div className="table-actions">
-                            <button className="button button--ghost button--sm" type="button" onClick={() => navigate('/admin/gastos/crear', { state: { expense } })}>Editar</button>
+                            <button className="button button--ghost button--sm" type="button" onClick={() => navigate('/cms/gastos/crear', { state: { expense } })}>Editar</button>
                             <button className="button button--ghost button--sm" disabled={deletingId === expense.rawId} type="button" onClick={() => handleDelete(expense)}>Eliminar</button>
                           </div>
                         </td>

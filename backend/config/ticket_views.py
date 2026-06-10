@@ -140,7 +140,7 @@ def _notify_ticket_message(ticket, author, body):
                 admin_nombre = author.nombre_completo or author.username
                 sucursal_nombre = author.sucursal.nombre if author.sucursal else "Sin sucursal"
                 message = f"Tienes un mensaje del administrador {admin_nombre} de la sucursal {sucursal_nombre} en la ficha con asunto \"{ticket.asunto}\"."
-            action_url = f"/admin/mensajes/fichas/{ticket.id}"
+            action_url = f"/cms/mensajes/fichas/{ticket.id}"
         else:
             continue
 

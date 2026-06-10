@@ -54,12 +54,6 @@ class CuotaPlanPagoSerializer(serializers.ModelSerializer):
         ]
 
     def get_paciente_nombre(self, obj):
-        if obj.operacion and obj.operacion.paciente:
-            u = obj.operacion.paciente.usuario
-            return f"{u.primer_nombre} {u.apellido_paterno}"
-        return "—"
-
-    def get_paciente_nombre(self, obj):
         if obj.operacion and obj.operacion.paciente and obj.operacion.paciente.usuario:
             u = obj.operacion.paciente.usuario
             return f"{u.primer_nombre} {u.apellido_paterno}"

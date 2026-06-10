@@ -452,27 +452,17 @@ class PagosViewSet(viewsets.ViewSet):
         paciente = operacion.paciente
         return {
             "id": cuota.pk,
-            "nro_cuota": cuota.nro_cuota,
-            "fecha_vencimiento": cuota.fecha_vencimiento.isoformat(),
-            "monto_programado": str(cuota.monto_programado),
-            "estado": cuota.estado,
-            "operacion": {
-                "id": operacion.pk,
-                "precio_total": str(operacion.precio_total),
-                "paciente": {
-                    "id": paciente.pk,
-                    "nombre": (
-                        f"{paciente.usuario.primer_nombre} {paciente.usuario.apellido_paterno}"
-                        if paciente.usuario else "—"
-                    ),
-                },
-            },
-            "procedimiento": (
+            "patient": (
+                f"{paciente.usuario.primer_nombre} {paciente.usuario.apellido_paterno}"
+                if paciente.usuario else "—"
+            ),
+            "operation": (
                 operacion.servicio_config.proc_estetico.proceso
                 if operacion.servicio_config.proc_estetico else "—"
             ),
-            "pagos": [
-                {"id": p.pk, "monto": str(p.monto_pagado), "estado": p.estado_verificacion}
-                for p in cuota.pagos_realizados.all()
-            ],
+            "quotaNumber": cuota.nro_cuota,
+            "amount": str(cuota.monto_programado),
+            "dueDate": cuota.fecha_vencimiento.isoformat(),
+            "status": cuota.estado,
+            "paymentsCount": cuota.pagos_realizados.count(),
         }

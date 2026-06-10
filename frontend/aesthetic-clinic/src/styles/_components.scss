@@ -1689,6 +1689,13 @@
   }
 }
 
+.capacity-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+}
+
 .wizard-summary {
   display: grid;
   gap: var(--spacing-4);

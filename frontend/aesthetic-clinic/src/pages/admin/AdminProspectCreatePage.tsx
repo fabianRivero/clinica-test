@@ -108,7 +108,7 @@ export function AdminProspectCreatePage() {
         message: response.detail,
         tone: 'success',
       })
-      navigate('/admin/prospectos', {
+      navigate('/cms/prospectos', {
         replace: true,
       })
     } catch (error) {
@@ -237,7 +237,7 @@ export function AdminProspectCreatePage() {
           ) : null}
 
           <div className="form-actions field--full">
-            <button className="button button--ghost" onClick={() => navigate('/admin/prospectos')} type="button">
+            <button className="button button--ghost" onClick={() => navigate('/cms/prospectos')} type="button">
               Cancelar
             </button>
             <button className="button" disabled={isSubmitting} type="submit">

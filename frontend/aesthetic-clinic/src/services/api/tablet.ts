@@ -15,8 +15,8 @@ export function tabletClientLogin(username: string, password: string) {
   return postJson<TabletClientLoginResponse>('/api/client/tablet/client/login/', { username, password })
 }
 
-export function tabletCurrentAppointment() {
-  return requestJsonNoBranch<TabletCurrentAppointmentResponse>('/api/client/tablet/cita-actual/')
+export function tabletCurrentAppointment(mode: 'ONLINE' | 'OFFLINE' = 'ONLINE') {
+  return requestJsonNoBranch<TabletCurrentAppointmentResponse>(`/api/client/tablet/cita-actual/?mode=${mode}`)
 }
 
 export function tabletConfirmProcedure(operationId: number) {

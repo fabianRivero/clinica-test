@@ -12,6 +12,7 @@ import { ClientFreeMedicalAppointmentSection } from './ClientFreeMedicalAppointm
 import { ClientPaymentSection } from './ClientPaymentSection'
 import { ClientOperationList } from './ClientOperationList'
 import { ClientProfileModal } from './ClientProfileModal'
+import { RescheduleModal } from './RescheduleModal'
 
 export function AdminClientDetailPage() {
   const { clientId = '' } = useParams()
@@ -87,6 +88,31 @@ export function AdminClientDetailPage() {
     setVisibleSessionsCount,
     hasMoreSessions,
     hasLessSessions,
+    sessionStatusFilter,
+    setSessionStatusFilter,
+    sessionStatuses,
+    sessionProcedureFilter,
+    setSessionProcedureFilter,
+    sessionProcedures,
+    filteredSessions,
+
+    // Appointment actions
+    appointmentActionId,
+    handleCancelAppointment,
+    handleMarkPendingBiometric,
+    handleConfirmBiometric,
+    handleCancelFromVerification,
+    handleCheckRescheduleAvailability,
+    handleRescheduleAppointment,
+    rescheduleAppointmentId,
+    setRescheduleAppointmentId,
+    rescheduleDate,
+    setRescheduleDate,
+    rescheduleTime,
+    setRescheduleTime,
+    rescheduleCheck,
+    setRescheduleCheck,
+    isCheckingReschedule,
 
     // Operations pagination
     visibleOperations,
@@ -96,6 +122,22 @@ export function AdminClientDetailPage() {
   } = useClientDetail(clientId)
 
   const [profileModalOpen, setProfileModalOpen] = useState(false)
+  const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
+  const [selectedSession, setSelectedSession] = useState<any>(null)
+
+  function handleOpenReschedule(session: any) {
+    setSelectedSession(session)
+    setRescheduleAppointmentId(session.rawId)
+    setRescheduleModalOpen(true)
+  }
+
+  function handleCloseReschedule() {
+    setRescheduleModalOpen(false)
+    setSelectedSession(null)
+    setRescheduleDate('')
+    setRescheduleTime('')
+    setRescheduleCheck(null)
+  }
 
   if (isLoading && !data) {
     return (
@@ -216,22 +258,99 @@ export function AdminClientDetailPage() {
         handleReserveFreeMedicalAppointment={handleReserveFreeMedicalAppointment}
       />
 
-      <SectionCard eyebrow="Sesiones" title="Sesiones realizadas" description="Citas confirmadas con verificación registrada.">
+      <SectionCard eyebrow="Sesiones" title="Sesiones realizadas" description="Todas las sesiones del cliente.">
         {data.sessions.length ? (
           <>
+            <div className="_flex _gap-sm _mb-sm">
+              <label className="field">
+                <span>Estado</span>
+                <select className="input" value={sessionStatusFilter} onChange={(e) => setSessionStatusFilter(e.target.value)}>
+                  <option value="">Todos</option>
+                  {sessionStatuses.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Procedimiento</span>
+                <select className="input" value={sessionProcedureFilter} onChange={(e) => setSessionProcedureFilter(e.target.value)}>
+                  <option value="">Todos</option>
+                  {sessionProcedures.map((proc) => (
+                    <option key={proc} value={proc}>{proc}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <div className="capacity-list">
               {visibleSessions.map((session: any) => (
                 <article className="capacity-item" key={session.id}>
                   <div className="capacity-item__header">
-                    <div><strong>{session.operation}</strong><p>{session.dateTime} | {session.specialist}</p></div>
+                    <div><strong>{session.operation}</strong><p>{session.dateTime} | {session.specialist}</p><p className="table-muted">{session.zona}</p></div>
                     <StatusBadge tone={session.statusTone}>{session.status}</StatusBadge>
+                  </div>
+                  <div className="capacity-item__actions">
+                    {session.canMarkPendingBiometric ? (
+                      <button
+                        className="button button--ghost button--compact"
+                        disabled={appointmentActionId !== null}
+                        type="button"
+                        onClick={() => void handleMarkPendingBiometric(session.rawId)}
+                      >
+                        {appointmentActionId === session.rawId ? 'Actualizando...' : 'Cambiar a pendiente de verificación'}
+                      </button>
+                    ) : null}
+                    {session.canManage ? (
+                      <button
+                        className="button button--ghost button--compact"
+                        disabled={appointmentActionId !== null}
+                        type="button"
+                        onClick={() => void handleCancelAppointment(session.rawId)}
+                      >
+                        Cancelar reserva
+                      </button>
+                    ) : null}
+                    {session.canConfirmBiometric ? (
+                      <button
+                        className="button button--ghost button--compact"
+                        disabled={appointmentActionId !== null}
+                        type="button"
+                        onClick={() => void handleConfirmBiometric(session.rawId, session.biometricMockTemplate)}
+                      >
+                        {appointmentActionId === session.rawId ? 'Validando...' : 'Confirmar huella mock'}
+                      </button>
+                    ) : null}
+                    {session.canCancelFromVerification ? (
+                      <button
+                        className="button button--ghost button--compact"
+                        disabled={appointmentActionId !== null}
+                        type="button"
+                        onClick={() => void handleCancelFromVerification(session.rawId)}
+                      >
+                        Cancelar
+                      </button>
+                    ) : null}
+                    {['Programada', 'No asistio'].includes(session.status) ? (
+                      <button
+                        className="button button--ghost button--compact"
+                        disabled={appointmentActionId !== null}
+                        type="button"
+                        onClick={() => handleOpenReschedule(session)}
+                      >
+                        Reprogramar
+                      </button>
+                    ) : null}
+                    {!session.canManage && !session.canMarkPendingBiometric && !session.canConfirmBiometric && !session.canCancelFromVerification && !['Programada', 'No asistio'].includes(session.status) ? (
+                      <span className="table-muted">Sin cambios</span>
+                    ) : null}
                   </div>
                 </article>
               ))}
             </div>
-            {data.sessions.length > 5 && (
+            {filteredSessions.length === 0 && data.sessions.length > 0 ? (
+              <DataState title="Sin resultados" message="No hay sesiones para los filtros seleccionados." />
+            ) : filteredSessions.length > 5 ? (
               <div className="_flex-between _mt-md">
-                <span>Mostrando {visibleSessionsCount} de {data.sessions.length} sesiones</span>
+                <span>Mostrando {visibleSessionsCount} de {filteredSessions.length} sesiones</span>
                 <div>
                   {hasLessSessions && (
                     <button type="button" className="button button--ghost" onClick={() => setVisibleSessionsCount(c => c - 5)}>Ver menos</button>
@@ -241,9 +360,9 @@ export function AdminClientDetailPage() {
                   )}
                 </div>
               </div>
-            )}
+            ) : null}
           </>
-        ) : <DataState title="Sin sesiones realizadas" message="Todavía no hay sesiones confirmadas con verificación." />}
+        ) : <DataState title="Sin sesiones" message="No hay sesiones registradas para este cliente." />}
       </SectionCard>
 
       <ClientPaymentSection
@@ -286,6 +405,21 @@ export function AdminClientDetailPage() {
         clientId={clientId}
         isOpen={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
+      />
+
+      <RescheduleModal
+        isOpen={rescheduleModalOpen}
+        onClose={handleCloseReschedule}
+        session={selectedSession}
+        rescheduleDate={rescheduleDate}
+        setRescheduleDate={setRescheduleDate}
+        rescheduleTime={rescheduleTime}
+        setRescheduleTime={setRescheduleTime}
+        concurrencyInfo={rescheduleCheck}
+        isChecking={isCheckingReschedule}
+        onCheckAvailability={handleCheckRescheduleAvailability}
+        onConfirm={() => handleRescheduleAppointment(() => setRescheduleModalOpen(false))}
+        isBookingKey={appointmentActionId ? 'reprogramming' : null}
       />
     </div>
   )

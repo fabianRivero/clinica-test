@@ -161,7 +161,7 @@ export function AdminOperationDetailPage() {
           eyebrow="Detalle de operación"
           title="Cargando tratamiento"
           description="Estamos recuperando la información clínica, financiera y documental de la operación."
-          actions={[{ label: 'Volver a operaciones', variant: 'ghost', to: '/admin/operaciones' }]}
+          actions={[{ label: 'Volver a operaciones', variant: 'ghost', to: '/cms/operaciones' }]}
         />
         <SectionCard title="Cargando detalle">
           <DataState
@@ -180,7 +180,7 @@ export function AdminOperationDetailPage() {
           eyebrow="Detalle de operación"
           title="No pudimos cargar la operación"
           description="Puede que la operación no exista o que la conexión no esté disponible."
-          actions={[{ label: 'Volver a operaciones', variant: 'ghost', to: '/admin/operaciones' }]}
+          actions={[{ label: 'Volver a operaciones', variant: 'ghost', to: '/cms/operaciones' }]}
         />
         <SectionCard title="Detalle no disponible">
           <DataState
@@ -202,7 +202,7 @@ export function AdminOperationDetailPage() {
         eyebrow="Detalle de operación"
         title={`${operation.procedure} · ${operation.patient}`}
         description="Aquí puedes revisar la ficha clínica, el documento escaneado, las cuotas y el seguimiento de citas."
-        actions={[{ label: 'Volver a operaciones', variant: 'ghost', to: '/admin/operaciones' }]}
+        actions={[{ label: 'Volver a operaciones', variant: 'ghost', to: '/cms/operaciones' }]}
       />
 
       <SectionCard

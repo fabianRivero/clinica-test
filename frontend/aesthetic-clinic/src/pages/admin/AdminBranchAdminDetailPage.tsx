@@ -36,7 +36,7 @@ export function AdminBranchAdminDetailPage() {
     setError(null)
     try {
       await updateAdminBranchAdmin(Number(userId), form)
-      navigate('/admin/equipo/admin-sucursal/gestionar')
+      navigate('/cms/equipo/admin-sucursal/gestionar')
     } catch (e) { setError(e instanceof Error ? e.message : 'No se pudo guardar') } finally { setSaving(false) }
   }
 

@@ -731,8 +731,8 @@ def _admin_client_detail(cliente):
             metric(
                 "admin-client-sessions",
                 "Sesiones realizadas",
-                len(completed_sessions),
-                "Confirmadas con biometría",
+                len(appointments),
+                "Todas las sesiones",
                 "success",
             ),
             metric(
@@ -755,7 +755,10 @@ def _admin_client_detail(cliente):
             *[_client_appointment_item(cita) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
             *[_free_client_appointment_item(cita) for cita in sorted(free_appointments, key=lambda item: item.fecha_hora)],
         ],
-        "sessions": [_client_appointment_item(cita) for cita in sorted(completed_sessions, key=lambda item: item.fecha_hora)],
+        "sessions": [
+            *[_client_appointment_item(cita) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
+            *[_free_client_appointment_item(cita) for cita in sorted(free_appointments, key=lambda item: item.fecha_hora)],
+        ],
         "payments": [_client_payment_item(payment) for payment in sorted(payments, key=lambda item: item.created_at, reverse=True)],
         "pendingQuotas": [_client_quota_item(cuota) for cuota in sorted(pending_quotas, key=lambda item: (item.fecha_vencimiento, item.nro_cuota))],
     }
