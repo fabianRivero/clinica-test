@@ -104,7 +104,6 @@ export function AdminClientDetailPage() {
     handleCancelFromVerification,
     handleCheckRescheduleAvailability,
     handleRescheduleAppointment,
-    rescheduleAppointmentId,
     setRescheduleAppointmentId,
     rescheduleDate,
     setRescheduleDate,

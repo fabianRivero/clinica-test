@@ -1,3 +1,5 @@
+import type { AdminConcurrencyCheckResponse } from '../../../types/admin'
+
 interface RescheduleModalProps {
   isOpen: boolean
   onClose: () => void
