@@ -56,64 +56,72 @@ cd "/media/fabianrivero/disco-d/proyecto C"
 
 ## Metodo Manual
 
-Si el script automatico falla, podes hacer el deploy manualmente:
+Si el script automatico falla, podes hacer el deploy manualmente desde la consola del droplet:
 
-### Paso 1: Conectar al Droplet
+### Paso 1: Pull de Cambios
 
 ```bash
-ssh root@tu-droplet-ip
 cd /var/www/clinic
+sudo -u www-data GIT_SSH_COMMAND="ssh -i /var/www/.ssh/github_deploy -o UserKnownHostsFile=/var/www/.ssh/known_hosts" git pull origin main
 ```
 
-### Paso 2: Pull de Cambios
+### Paso 2: Dependencias Python
 
 ```bash
-sudo -u www-data git pull origin main
-```
-
-### Paso 3: Dependencias Python
-
-```bash
-cd backend
+cd /var/www/clinic/backend
 sudo -u www-data env/bin/pip install -q -r requirements.txt
-cd ..
 ```
 
-### Paso 4: Build Frontend
+### Paso 3: Build Frontend
 
 ```bash
-cd frontend/aesthetic-clinic
+cd /var/www/clinic/frontend/aesthetic-clinic
 sudo -u www-data npm install
 sudo -u www-data npm run build
-cd ../..
 ```
 
-### Paso 5: Migraciones
+### Paso 4: Migraciones
 
 ```bash
-sudo -u www-data env/bin/python backend/manage.py migrate --noinput
+sudo -u www-data /var/www/clinic/backend/env/bin/python /var/www/clinic/backend/manage.py migrate --noinput
 ```
 
-### Paso 6: Static Files
+### Paso 5: Static Files
 
 ```bash
-sudo -u www-data env/bin/python backend/manage.py collectstatic --noinput
+sudo -u www-data /var/www/clinic/backend/env/bin/python /var/www/clinic/backend/manage.py collectstatic --noinput
 ```
 
-### Paso 7: Reiniciar Gunicorn
+### Paso 6: Reiniciar Gunicorn
 
 ```bash
 sudo systemctl restart gunicorn
 ```
 
-### Paso 8: Verificar
+### Paso 7: Verificar
 
 ```bash
 # Ver estado
 sudo systemctl status gunicorn
 
 # Probar sitio
-curl -I https://tu-dominio.com
+curl -I https://reactproject.site
+```
+
+---
+
+### Comando Unico (copiar y pegar todo junto)
+
+```bash
+cd /var/www/clinic && \
+sudo -u www-data GIT_SSH_COMMAND="ssh -i /var/www/.ssh/github_deploy -o UserKnownHostsFile=/var/www/.ssh/known_hosts" git pull origin main && \
+cd backend && sudo -u www-data env/bin/pip install -q -r requirements.txt && \
+cd ../frontend/aesthetic-clinic && sudo -u www-data npm install && sudo -u www-data npm run build && \
+cd ../.. && \
+sudo -u www-data /var/www/clinic/backend/env/bin/python /var/www/clinic/backend/manage.py migrate --noinput && \
+sudo -u www-data /var/www/clinic/backend/env/bin/python /var/www/clinic/backend/manage.py collectstatic --noinput && \
+sudo systemctl restart gunicorn && \
+curl -I https://reactproject.site
 ```
 
 ---
@@ -163,10 +171,10 @@ sudo -u www-data npm run build
 
 ```bash
 # Ver migraciones pendientes
-sudo -u www-data env/bin/python backend/manage.py showmigrations
+sudo -u www-data /var/www/clinic/backend/env/bin/python /var/www/clinic/backend/manage.py showmigrations
 
 # Hacer migrate manualmente
-sudo -u www-data env/bin/python backend/manage.py migrate
+sudo -u www-data /var/www/clinic/backend/env/bin/python /var/www/clinic/backend/manage.py migrate
 ```
 
 ---
@@ -219,12 +227,10 @@ Si el deploy rompe algo y necesitas volver atras:
 ```bash
 # En el droplet
 cd /var/www/clinic
-sudo -u www-data git log --oneline -5 # Ver commits recientes
+sudo -u www-data GIT_SSH_COMMAND="ssh -i /var/www/.ssh/github_deploy -o UserKnownHostsFile=/var/www/.ssh/known_hosts" git log --oneline -5
 
 # Volver a un commit anterior
-sudo -u www-data git revert HEAD~1    # Revertir ultimo commit
-# O
-sudo -u www-data git checkout<commit-hash-anterior>
+sudo -u www-data GIT_SSH_COMMAND="ssh -i /var/www/.ssh/github_deploy -o UserKnownHostsFile=/var/www/.ssh/known_hosts" git revert HEAD~1
 
 # Reiniciar
 sudo systemctl restart gunicorn

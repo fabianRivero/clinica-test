@@ -327,6 +327,136 @@ sudo tail -f /var/log/nginx/error.log
 
 ---
 
+## Cambiar Contrasenas
+
+### 1. Cambiar Contrasena de PostgreSQL
+
+```bash
+# Conectar a PostgreSQL como postgres
+sudo -u postgres psql
+
+# Cambiar contrasena del usuario
+ALTER USER admin_general WITH PASSWORD 'nueva_contrasena_segura';
+
+# Salir de psql
+\q
+
+# Actualizar .env
+sed -i "s/DJANGO_DB_PASSWORD=.*/DJANGO_DB_PASSWORD=nueva_contrasena_segura/" /var/www/clinic/backend/.env
+
+# Reiniciar Gunicorn para aplicar cambios
+sudo systemctl restart gunicorn
+```
+
+### 2. Cambiar Contrasena del Admin Django
+
+```bash
+cd /var/www/clinic/backend
+
+# Opcion A: Usando Django shell
+sudo -u www-data env/bin/python manage.py shell << 'EOF'
+from accounts.models import Usuario
+user = Usuario.objects.get(username='admin.general')
+user.set_password('nueva_contrasena_segura')
+user.save()
+print(f"Contrasena de {user.username} cambiada exitosamente")
+EOF
+
+# Opcion B: Usando createsuperuser (si no existe, lo crea)
+sudo -u www-data env/bin/python manage.py changepassword admin.general
+```
+
+### 3. Cambiar Contrasena del Tablet Kiosko
+
+```bash
+cd /var/www/clinic/backend
+
+sudo -u www-data env/bin/python manage.py shell << 'EOF'
+from operations.models import TabletKiosko
+kiosko = TabletKiosko.objects.get(codigo='KIOSKO-PRINCIPAL')
+kiosko.set_clave('nueva_clave_segura')
+kiosko.save()
+print(f"Clave de {kiosko.codigo} cambiada exitosamente")
+EOF
+```
+
+### 4. Cambiar DJANGO_SECRET_KEY
+
+**Importante:** Cambiar la SECRET_KEY invalida todas las sesiones activas y tokens existentes. Los usuarios deberan login de nuevo.
+
+```bash
+# Generar una nueva key
+python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+
+# Actualizar .env con la nueva key
+sed -i 's/DJANGO_SECRET_KEY=.*/DJANGO_SECRET_KEY=tu_nueva_key_aqui/' /var/www/clinic/backend/.env
+
+# Reiniciar Gunicorn
+sudo systemctl restart gunicorn
+```
+
+###5. Cambiar Contrasena de Root del Droplet
+
+**Desde DigitalOcean (metodo recomendado):**
+
+1. Ir a DigitalOcean -> Droplet -> Access -> Console
+2. Hacer click en "Reset Root Password"
+3. Recibiras un email con la nueva contrasena temporal
+4. En la consola, login con root y la contrasena temporal
+5. Te pedira cambiar la contrasena inmediatamente
+
+**Desde la consola (si ya tienes acceso):**
+
+```bash
+passwd root
+# Te pedira la contrasena actual y luego la nueva
+```
+
+### 6. Agregar SSH Key para Acceso sin Contrasena
+
+```bash
+# En tu maquina local, generar SSH key (si no tienes)
+ssh-keygen -t ed25519 -C "tu-email@ejemplo.com"
+
+# Copiar la clave publica al droplet
+ssh-copy-id root@tu-droplet-ip
+
+# Probar que funciona
+ssh root@tu-droplet-ip
+```
+
+### 7. Configurar SSH sin Contrasena desde el Droplet a GitHub
+
+```bash
+# En el droplet, generar SSH key para GitHub
+ssh-keygen -t ed25519 -C "droplet@tu-dominio.com" -f /var/www/.ssh/github_deploy
+
+# Copiar la clave publica
+cat /var/www/.ssh/github_deploy.pub
+# Agregarla en GitHub -> Settings -> Deploy Keys
+
+# Configurar SSH para usar esta key
+mkdir -p /var/www/.ssh
+chown www-data:www-data /var/www/.ssh
+chmod 700 /var/www/.ssh
+cp /var/www/.ssh/github_deploy /var/www/.ssh/
+chown www-data:www-data /var/www/.ssh/github_deploy
+chmod 600 /var/www/.ssh/github_deploy
+
+cat > /var/www/.ssh/config << 'EOF'
+Host github.com
+    IdentityFile /var/www/.ssh/github_deploy
+    UserKnownHostsFile /var/www/.ssh/known_hosts
+EOF
+chown www-data:www-data /var/www/.ssh/config
+chmod 600 /var/www/.ssh/config
+
+# Probar conexion
+sudo -u www-data GIT_SSH_COMMAND="ssh -i /var/www/.ssh/github_deploy" git pull origin main
+```
+
+---
+
 ## Estructura del Proyecto en el Droplet
 
 ```
