@@ -208,7 +208,6 @@ export function AdminProspectsPage() {
   }
 
   async function handleMarkAppointmentAsCompleted(appointmentId: number, prospectId?: number) {
-    console.log('DEBUG')
     const confirmed = await confirm({
       title: 'Marcar cita como realizada',
       message: '¿Deseas marcar esta cita como realizada?',

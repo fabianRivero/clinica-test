@@ -101,9 +101,6 @@ class PagosViewSet(viewsets.ViewSet):
         if branch:
             cuotas_qs = cuotas_qs.filter(operacion__paciente__sucursal_registro=branch).distinct()
 
-        import logging
-        logger = logging.getLogger('billing')
-        logger.warning(f"[QR-GET] branch={branch.id if branch else None}, headers={dict(request.headers)}")
         config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
 
         config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
@@ -153,8 +150,6 @@ class PagosViewSet(viewsets.ViewSet):
         branch = get_user_branch(request)
         qr_file = request.FILES.get("qrImage")
         instructions = request.POST.get("instructions", "").strip()
-        logger.warning(f"[QR-UPDATE] user={request.user.username}, is_superuser={request.user.is_superuser}, es_admin_principal={getattr(request.user, 'es_admin_principal', False)}, branch={branch.id if branch else None}")
-
         config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
         if not config:
             config = ConfiguracionPagoQR(sucursal=branch)
@@ -216,8 +211,6 @@ class PagosViewSet(viewsets.ViewSet):
                         endpoint = os.getenv("AWS_S3_ENDPOINT_URL", "")
                         bucket_name = os.getenv("AWS_STORAGE_BUCKET_NAME")
                         public_url = f"{endpoint.replace('/storage/v1', '')}/{bucket_name}/{supabase_path}" if endpoint else f"https://{bucket_name}.s3.amazonaws.com/{supabase_path}"
-
-                    logger.warning(f"[QR-UPDATE] Uploaded to {storage_provider}: {public_url}")
 
                     # For cloud storage: save only the filename to DB (Django adds upload_to prefix)
                     # This avoids double-prefix duplication

@@ -124,9 +124,6 @@ class ProspectoConversionViewSet(viewsets.ViewSet):
             return Response({"detail": error}, status=400)
 
         payload = _admin_conversion_detail(draft)
-        logger.warning(
-            "[PREFILL] response(prospect) draft_id=%s",
-            getattr(draft, "id", None),
         )
         return Response(payload)
 

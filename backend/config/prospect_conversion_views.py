@@ -410,7 +410,7 @@ def _serialize_draft(draft):
     if draft.cliente and is_empty_medical_data:
         default_medical_data = _build_initial_client_medical_data(draft.cliente)
     else:
-        logger.warning("[PREFILL] skipping historical prefill")
+        pass  # no historical prefill needed
 
     saved_medical_data = dict(draft.datos_ficha or {})
     if is_empty_medical_data:
