@@ -17,7 +17,7 @@ from config.api.viewsets.clientes import (
 )
 
 # ClientesViewSet router
-clientes_router = DefaultRouter(trailing_slash=False)
+clientes_router = DefaultRouter(trailing_slash=True)
 clientes_router.register(r"clientes", ClientesViewSet, basename="admin-cliente")
 
 # OperacionesViewSet router (operation reservations)

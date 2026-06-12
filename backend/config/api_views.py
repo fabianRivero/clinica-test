@@ -2380,10 +2380,7 @@ def admin_prospectos(request):
         ).order_by("usuario__primer_nombre", "usuario__apellido_paterno")
     )
     if branch:
-        clientes_qs = clientes_qs.filter(
-            Q(sucursal_registro=branch)
-            | Q(operaciones__citas_medicas__sucursal=branch)
-        ).distinct()
+        clientes_qs = clientes_qs.filter(sucursal_registro=branch)
 
     data = {
         "metrics": [

@@ -29,7 +29,6 @@ from config.api_views import (
     admin_cliente_detalle,
     admin_cliente_free_medical_availability,
     admin_cliente_inactivate,
-    admin_cliente_migrar,
     admin_cliente_reservation_availability,
     admin_confirm_appointment_biometric,
     admin_mark_appointment_pending_biometric,
@@ -153,11 +152,6 @@ urlpatterns = [
         "clientes/<int:client_id>/inactivar/",
         admin_cliente_inactivate,
         name="admin-client-inactivate-api",
-    ),
-    path(
-        "clientes/<int:client_id>/migrar/",
-        admin_cliente_migrar,
-        name="admin-client-migrar-api",
     ),
     path(
         "clientes/<int:client_id>/operaciones/<int:operation_id>/disponibilidad/",
@@ -369,5 +363,5 @@ urlpatterns = [
         name="admin-equipo-change-branch-api",
     ),
     path("", include(free_medical_router.urls)),
-    path("clientes/", include(clientes_router.urls)),
+    path("", include(clientes_router.urls)),
 ]

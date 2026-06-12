@@ -250,10 +250,10 @@ class ClientesViewSet(viewsets.ViewSet):
     - POST /clientes/<int:client_id>/migrar/    → migrate client to different branch
     """
 
-    # Search is public (no AdminRequired)
-    # permission_classes = []  # No permission for search
 
-    @action(detail=False, url_path="buscar-global")
+    permission_classes = [AdminRequired]
+
+    @action(detail=False, url_path="buscar-global", permission_classes=[])
     def buscar_global(self, request):
         """
         GET /clientes/buscar-global/?q=<query>
@@ -387,6 +387,7 @@ class ClientesViewSet(viewsets.ViewSet):
             ),
             "client": _client_item(cliente),
         })
+
 
     @action(detail=True, methods=["post"], url_path="migrar")
     def migrar(self, request, pk=None):
