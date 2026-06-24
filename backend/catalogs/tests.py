@@ -142,3 +142,58 @@ class CatalogDetailFilterTests(TestCase):
     def test_unauthenticated_request_returns_401(self):
         response = Client().get(URL_TEMPLATES["tipos-servicio"], {"q": "consulta"})
         self.assertEqual(response.status_code, 401)
+
+    # --- metrics MUST reflect the unfiltered catalog (regression for
+    #     todos-los-servicios bug where the metrics block was re-assigned
+    #     from the filtered queryset, contradicting the spec).
+
+    def test_metrics_reflect_unfiltered_catalog(self):
+        # 'estét' only matches the inactive "Estética facial"; combined with
+        # active=true, items is empty — but metrics MUST still report 2 total.
+        response = self.client.get(
+            URL_TEMPLATES["tipos-servicio"],
+            {"q": "estét", "active": "true"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["items"]), 0)
+        metrics = {m["id"]: m for m in payload["metrics"]}
+        self.assertEqual(metrics["catalog-active"]["value"], "1")
+        self.assertEqual(metrics["catalog-inactive"]["value"], "1")
+        self.assertEqual(metrics["catalog-total"]["value"], "2")
+
+    def test_active_filter_on_todos_los_servicios(self):
+        # Build a second ServicioConfig using a different tipo_servicio and
+        # no proc_estetico, marked inactive, to exercise the active filter
+        # on the most complex catalog branch.
+        ts_otro = TipoServicio.objects.create(tipo="Consulta de control", activo=True)
+        servicio_inactivo = ServicioConfig.objects.create(
+            tipo_servicio=ts_otro,
+            proc_estetico=None,
+            precio_base=50,
+            activo=False,
+        )
+
+        url = URL_TEMPLATES["todos-los-servicios"]
+
+        # active=false returns only the inactive service.
+        response_false = self.client.get(url, {"active": "false"})
+        self.assertEqual(response_false.status_code, 200)
+        ids_false = self._ids(response_false)
+        self.assertIn(servicio_inactivo.pk, ids_false)
+        self.assertNotIn(self.servicio.pk, ids_false)
+
+        # active=true returns only the active service.
+        response_true = self.client.get(url, {"active": "true"})
+        self.assertEqual(response_true.status_code, 200)
+        ids_true = self._ids(response_true)
+        self.assertIn(self.servicio.pk, ids_true)
+        self.assertNotIn(servicio_inactivo.pk, ids_true)
+
+        # Metrics on the active=true call must still report the unfiltered
+        # totals (2 total, 1 active, 1 inactive) — locking in the spec
+        # contract for this branch.
+        metrics = {m["id"]: m for m in response_true.json()["metrics"]}
+        self.assertEqual(metrics["catalog-active"]["value"], "1")
+        self.assertEqual(metrics["catalog-inactive"]["value"], "1")
+        self.assertEqual(metrics["catalog-total"]["value"], "2")

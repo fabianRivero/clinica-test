@@ -1104,8 +1104,6 @@ def _catalog_page_data(catalog_key, q="", active="all"):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
         return {
             "catalog": {
                 "key": catalog_key,
