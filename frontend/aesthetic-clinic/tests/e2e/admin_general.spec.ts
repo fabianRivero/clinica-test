@@ -120,3 +120,159 @@ test.describe('Test 1 y 3: Admin General - Cliente y Especialista', () => {
     await expect(page.locator('text=Especialista creado')).toBeVisible();
   });
 });
+
+test.describe('Catalog list: search + active filter + create', () => {
+  test.beforeEach(async ({ page, context }) => {
+    await context.clearCookies();
+    await page.goto('/login');
+    await page.fill('input[name="username"]', ADMIN_USER);
+    await page.fill('input[name="password"]', ADMIN_PASS);
+    await page.click('button[type="submit"]');
+    await expect(page).toHaveURL(/\/(admin|cms)/);
+  });
+
+  test('tipos-servicio: search, filter and deactivate flow', async ({ page }) => {
+    const uniqueTitle = `Tipo Test ${Date.now()}`;
+    const searchNeedle = uniqueTitle.split(' ')[1];
+
+    await page.goto('/cms/catalogos/tipos-servicio');
+
+    // The header Create button and the form submit button share the same label,
+    // so we scope to <header> for the reveal click and to <form> for the submit.
+    await page.locator('header').getByRole('button', { name: 'Crear tipo de servicio' }).click();
+
+    await page.fill('#catalog-field-name', uniqueTitle);
+    await page.locator('form').getByRole('button', { name: 'Crear tipo de servicio' }).click();
+    await expect(page.locator('text=Registro creado')).toBeVisible();
+
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', searchNeedle);
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', '');
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
+    const card = page.locator('.catalog-admin-card', { hasText: uniqueTitle });
+    await card.getByRole('button', { name: 'Desactivar' }).click();
+    await expect(page.locator('text=Registro desactivado')).toBeVisible();
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'false');
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toHaveCount(0);
+  });
+
+  test('especialidades: search, filter and deactivate flow', async ({ page }) => {
+    const uniqueTitle = `Espec Test ${Date.now()}`;
+    const searchNeedle = uniqueTitle.split(' ')[1];
+
+    await page.goto('/cms/catalogos/especialidades');
+    await page.locator('header').getByRole('button', { name: 'Crear especialidad' }).click();
+    await page.fill('#catalog-field-name', uniqueTitle);
+    await page.locator('form').getByRole('button', { name: 'Crear especialidad' }).click();
+    await expect(page.locator('text=Registro creado')).toBeVisible();
+
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', searchNeedle);
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', '');
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
+    const card = page.locator('.catalog-admin-card', { hasText: uniqueTitle });
+    await card.getByRole('button', { name: 'Desactivar' }).click();
+    await expect(page.locator('text=Registro desactivado')).toBeVisible();
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'false');
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toHaveCount(0);
+  });
+
+  test('categorias-gasto: search, filter and deactivate flow', async ({ page }) => {
+    const uniqueTitle = `Cat Test ${Date.now()}`;
+    const searchNeedle = uniqueTitle.split(' ')[1];
+
+    await page.goto('/cms/catalogos/categorias-gasto');
+    await page.locator('header').getByRole('button', { name: 'Crear categoria' }).click();
+    await page.fill('#catalog-field-name', uniqueTitle);
+    await page.locator('form').getByRole('button', { name: 'Crear categoria' }).click();
+    await expect(page.locator('text=Registro creado')).toBeVisible();
+
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', searchNeedle);
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', '');
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
+    const card = page.locator('.catalog-admin-card', { hasText: uniqueTitle });
+    await card.getByRole('button', { name: 'Desactivar' }).click();
+    await expect(page.locator('text=Registro desactivado')).toBeVisible();
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'false');
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toHaveCount(0);
+  });
+
+  test('procedimientos-esteticos: search, filter and deactivate flow', async ({ page }) => {
+    const uniqueTitle = `Proc Test ${Date.now()}`;
+    const searchNeedle = uniqueTitle.split(' ')[1];
+
+    await page.goto('/cms/catalogos/procedimientos-esteticos');
+    await page.locator('header').getByRole('button', { name: 'Crear procedimiento' }).click();
+    await page.selectOption('#catalog-field-procedureTypeId', { index: 1 });
+    await page.fill('#catalog-field-name', uniqueTitle);
+    await page.locator('form').getByRole('button', { name: 'Crear procedimiento' }).click();
+    await expect(page.locator('text=Registro creado')).toBeVisible();
+
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', searchNeedle);
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', '');
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
+    const card = page.locator('.catalog-admin-card', { hasText: uniqueTitle });
+    await card.getByRole('button', { name: 'Desactivar' }).click();
+    await expect(page.locator('text=Registro desactivado')).toBeVisible();
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'false');
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toHaveCount(0);
+  });
+
+  test('todos-los-servicios: create, deactivate and filter flow', async ({ page }) => {
+    await page.goto('/cms/catalogos/todos-los-servicios');
+    await page.locator('header').getByRole('button', { name: 'Crear servicio' }).click();
+    await page.selectOption('#catalog-field-serviceTypeId', { index: 1 });
+    await page.fill('#catalog-field-basePrice', '100');
+    await page.locator('form').getByRole('button', { name: 'Crear servicio' }).click();
+    await expect(page.locator('text=Registro creado')).toBeVisible();
+
+    await expect(page.locator('.catalog-admin-card').first()).toBeVisible();
+
+    const cards = page.locator('.catalog-admin-card');
+    const count = await cards.count();
+    for (let i = 0; i < count; i++) {
+      const target = cards.nth(i);
+      const deactivateBtn = target.getByRole('button', { name: 'Desactivar' });
+      if (await deactivateBtn.isVisible()) {
+        await deactivateBtn.click();
+        await expect(page.locator('text=Registro desactivado').first()).toBeVisible();
+      }
+    }
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'false');
+    await expect(page.locator('.catalog-admin-card').first()).toBeVisible();
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
+    await expect(page.locator('.catalog-admin-card')).toHaveCount(0);
+  });
+});
