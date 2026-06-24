@@ -1053,7 +1053,7 @@ def _catalog_summary_descriptor():
     ]
 
 
-def _catalog_page_data(catalog_key):
+def _catalog_page_data(catalog_key, q="", active="all"):
     catalog_key = _catalog_key_to_slug(catalog_key)
 
     if catalog_key == "todos-los-servicios":
@@ -1064,6 +1064,8 @@ def _catalog_page_data(catalog_key):
                 "proc_estetico__tipo_p_estetico",
             ).order_by("tipo_servicio__tipo", "proc_estetico__proceso", "pk")
         )
+        active_count = queryset.filter(activo=True).count()
+        total_count = queryset.count()
         items = [
             _catalog_entry(
                 item.pk,
@@ -3985,8 +3987,15 @@ def admin_catalogos(request):
 @require_GET
 @admin_required
 def admin_catalogo_detalle(request, catalog_key):
+    q = request.GET.get("q", "")
+    active = request.GET.get("active", "all")
+    if active not in ("true", "false", "all"):
+        return json_response(
+            {"detail": "El parametro active solo acepta true, false o all."},
+            status=400,
+        )
     try:
-        data = _catalog_page_data(catalog_key)
+        data = _catalog_page_data(catalog_key, q=q, active=active)
     except KeyError:
         return json_response({"detail": "El catalogo solicitado no existe."}, status=404)
     return json_response(data)
