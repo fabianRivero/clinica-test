@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useDebounce } from '../../hooks/useDebounce'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
   createAdminCatalogItem,
@@ -19,6 +20,14 @@ import type {
   AdminCatalogFormValue,
   AdminCatalogKey,
 } from '../../types/admin'
+
+const IN_SCOPE_CATALOGS: ReadonlySet<AdminCatalogKey> = new Set([
+  'todos-los-servicios',
+  'procedimientos-esteticos',
+  'tipos-servicio',
+  'especialidades',
+  'categorias-gasto',
+])
 
 const catalogFallbackInfo: Record<
   AdminCatalogKey,
@@ -365,14 +374,19 @@ function CatalogEditorForm({
   )
 }
 
-function CatalogPage({
-  catalogKey,
-  showCreateAction = true,
-}: {
-  catalogKey: AdminCatalogKey
-  showCreateAction?: boolean
-}) {
-  const loader = useMemo(() => () => getAdminCatalogDetail(catalogKey), [catalogKey])
+function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeFilter, setActiveFilter] = useState<'all' | 'true' | 'false'>('all')
+  const debouncedQuery = useDebounce(searchQuery, 300)
+
+  const loader = useMemo(
+    () => () =>
+      getAdminCatalogDetail(catalogKey, {
+        q: debouncedQuery,
+        active: activeFilter,
+      }),
+    [catalogKey, debouncedQuery, activeFilter],
+  )
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
   const [editingItemId, setEditingItemId] = useState<number | null>(null)
@@ -407,29 +421,19 @@ function CatalogPage({
     }
   }
 
-  const pageActions = showCreateAction
-    ? [
-        {
-          label: editingItem ? 'Cancelar edicion' : pageInfo.createLabel,
-          variant: (editingItem ? 'ghost' : 'primary') as 'ghost' | 'primary',
-          onClick: () => {
-            if (editingItem) {
-              setEditingItemId(null)
-              return
-            }
-            setEditorVersion((current) => current + 1)
-          },
-        },
-      ]
-    : editingItem
-      ? [
-          {
-            label: 'Cancelar edicion',
-            variant: 'ghost' as const,
-            onClick: () => setEditingItemId(null),
-          },
-        ]
-      : []
+  const pageActions = [
+    {
+      label: editingItem ? 'Cancelar edicion' : pageInfo.createLabel,
+      variant: (editingItem ? 'ghost' : 'primary') as 'ghost' | 'primary',
+      onClick: () => {
+        if (editingItem) {
+          setEditingItemId(null)
+          return
+        }
+        setEditorVersion((current) => current + 1)
+      },
+    },
+  ]
 
   return (
     <div className="page-stack">
@@ -459,8 +463,7 @@ function CatalogPage({
 
       {data ? (
         <>
-          {showCreateAction || editingItem ? (
-            <CatalogEditorForm
+          <CatalogEditorForm
             key={editingItem ? `edit-${editingItem.id}` : `create-${editorVersion}`}
             catalogKey={catalogKey}
             createLabel={pageInfo.createLabel}
@@ -473,13 +476,34 @@ function CatalogPage({
               reload()
             }}
           />
-          ) : null}
 
           <SectionCard
             eyebrow="Catálogo"
             title={`Registros de ${pageInfo.title.toLowerCase()}`}
             description="Edita, desactiva o reactiva registros segun la necesidad operativa."
           >
+            {IN_SCOPE_CATALOGS.has(catalogKey) ? (
+              <div className="catalog-admin-toolbar">
+                <input
+                  aria-label="Buscar registros"
+                  className="input"
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Buscar por titulo..."
+                  type="search"
+                  value={searchQuery}
+                />
+                <select
+                  aria-label="Filtrar por estado"
+                  className="input"
+                  onChange={(event) => setActiveFilter(event.target.value as 'all' | 'true' | 'false')}
+                  value={activeFilter}
+                >
+                  <option value="all">Todos</option>
+                  <option value="true">Activos</option>
+                  <option value="false">Inactivos</option>
+                </select>
+              </div>
+            ) : null}
             {data.items.length ? (
               <div className="catalog-admin-list">
                 {data.items.map((item) => (
@@ -524,8 +548,8 @@ function CatalogPage({
               </div>
             ) : (
               <DataState
-                title="Sin registros todavia"
-                message="Este catálogo aun no tiene elementos creados en la base conectada."
+                title="Sin registros"
+                message="Este catálogo aun no tiene elementos que coincidan con el filtro actual."
               />
             )}
           </SectionCard>
@@ -536,15 +560,15 @@ function CatalogPage({
 }
 
 export function AdminProceduresCatalogPage() {
-  return <CatalogPage catalogKey="procedimientos-esteticos" showCreateAction={false} />
+  return <CatalogPage catalogKey="procedimientos-esteticos" />
 }
 
 export function AdminAllServicesCatalogPage() {
-  return <CatalogPage catalogKey="todos-los-servicios" showCreateAction={false} />
+  return <CatalogPage catalogKey="todos-los-servicios" />
 }
 
 export function AdminServiceTypesCatalogPage() {
-  return <CatalogPage catalogKey="tipos-servicio" showCreateAction={false} />
+  return <CatalogPage catalogKey="tipos-servicio" />
 }
 
 export function AdminFormFieldsCatalogPage() {
@@ -556,11 +580,11 @@ export function AdminSkinPathologiesCatalogPage() {
 }
 
 export function AdminSpecialtiesCatalogPage() {
-  return <CatalogPage catalogKey="especialidades" showCreateAction={false} />
+  return <CatalogPage catalogKey="especialidades" />
 }
 
 export function AdminExpenseCategoriesCatalogPage() {
-  return <CatalogPage catalogKey="categorias-gasto" showCreateAction={false} />
+  return <CatalogPage catalogKey="categorias-gasto" />
 }
 
 export function AdminOptionGroupsCatalogPage() {
