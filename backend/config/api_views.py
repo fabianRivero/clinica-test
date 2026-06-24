@@ -8,7 +8,7 @@ from functools import wraps
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db import models
-from django.db.models import Prefetch, Q
+from django.db.models import Max, Prefetch, Q
 from django.contrib.sessions.models import Session
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -1333,7 +1333,6 @@ def _catalog_page_data(catalog_key, q="", active="all"):
             "fields": [
                 _catalog_field("name", "Tipo de procedimiento", "text", required=True, placeholder="Ej. Laser"),
                 _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas"),
-                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
             ],
             "items": items,
         }
@@ -1734,17 +1733,15 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         return obj
 
     if catalog_key == "tipos-procedimiento":
-        orden_value = int_value("order", minimum=0)
         if instance is None:
+            max_orden = ProcEsteticosTipo.objects.aggregate(Max('orden'))['orden__max'] or 0
             return ProcEsteticosTipo(
                 tipo=text_value("name"),
                 descripcion=text_value("description"),
-                orden=orden_value if orden_value is not None else 0,
+                orden=max_orden + 1,
             )
         instance.tipo = text_value("name")
         instance.descripcion = text_value("description")
-        if orden_value is not None:
-            instance.orden = orden_value
         return instance
 
     if catalog_key == "campos-ficha":

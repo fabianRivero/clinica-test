@@ -1,3 +1,5 @@
+import json
+
 from django.test import Client, TestCase
 
 from accounts.models import Rol, Usuario
@@ -260,3 +262,39 @@ class CatalogDetailFilterTests(TestCase):
         self.assertEqual(metrics["catalog-active"]["value"], "3")
         self.assertEqual(metrics["catalog-inactive"]["value"], "1")
         self.assertEqual(metrics["catalog-total"]["value"], "4")
+
+    # --- tipos-procedimiento create/update orden auto-assignment ---
+    # The form no longer exposes `order`; the backend computes orden = max+1 on
+    # create and leaves it untouched on update.
+
+    def test_create_tipo_procedimiento_auto_assigns_orden_plus_one(self):
+        # Pre-existing fixtures cover orden=0..3 (the four created in
+        # setUpTestData with default orden=0). Add two with explicit values
+        # to exercise the "max + 1" path against a known starting point.
+        ProcEsteticosTipo.objects.filter(pk=self.ptipo.pk).update(orden=5)
+        ProcEsteticosTipo.objects.filter(pk=self.tipo_proc_laser.pk).update(orden=10)
+
+        url = URL_TEMPLATES["tipos-procedimiento"] + "crear/"
+        response = self.client.post(
+            url,
+            data=json.dumps({"name": "Nuevo tipo"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        created = ProcEsteticosTipo.objects.get(tipo="Nuevo tipo")
+        self.assertEqual(created.orden, 11)
+
+    def test_update_tipo_procedimiento_does_not_change_orden(self):
+        target = ProcEsteticosTipo.objects.create(tipo="Orden fijo", orden=7)
+
+        url = URL_TEMPLATES["tipos-procedimiento"] + f"{target.pk}/actualizar/"
+        response = self.client.post(
+            url,
+            data=json.dumps({"name": "Renombrado", "description": "nueva desc"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200)
+        target.refresh_from_db()
+        self.assertEqual(target.tipo, "Renombrado")
+        self.assertEqual(target.descripcion, "nueva desc")
+        self.assertEqual(target.orden, 7)
