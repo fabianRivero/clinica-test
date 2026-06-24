@@ -347,7 +347,7 @@ export function getAdminCatalogDetail(
   params: AdminCatalogListParams = {},
 ) {
   const query = new URLSearchParams()
-  if (params.q) query.set('q', params.q)
+  if (params.q && params.q.trim()) query.set('q', params.q.trim())
   if (params.active && params.active !== 'all') query.set('active', params.active)
   const search = query.toString()
   return requestJson<AdminCatalogDetailResponse>(

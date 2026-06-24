@@ -250,23 +250,53 @@ test.describe('Catalog list: search + active filter + create', () => {
 
   test('todos-los-servicios: create, deactivate and filter flow', async ({ page }) => {
     await page.goto('/cms/catalogos/todos-los-servicios');
+
+    // Before creating anything, switching to "Inactivos" should show the empty
+    // state (no inactive items exist yet) — covers WARNING #6 (Sin registros copy).
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'false');
+    await expect(page.locator('text=Sin registros')).toBeVisible();
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'all');
+
     await page.locator('header').getByRole('button', { name: 'Crear servicio' }).click();
     await page.selectOption('#catalog-field-serviceTypeId', { index: 1 });
+    // Capture the label of the selected Tipo de servicio so we can search by it.
+    const serviceTypeLabel = await page
+      .locator('#catalog-field-serviceTypeId option')
+      .nth(1)
+      .textContent();
+    expect(serviceTypeLabel).toBeTruthy();
+    const searchNeedle = (serviceTypeLabel ?? '').trim().split(' ')[0];
     await page.fill('#catalog-field-basePrice', '100');
     await page.locator('form').getByRole('button', { name: 'Crear servicio' }).click();
     await expect(page.locator('text=Registro creado')).toBeVisible();
 
     await expect(page.locator('.catalog-admin-card').first()).toBeVisible();
 
-    const cards = page.locator('.catalog-admin-card');
-    const count = await cards.count();
-    for (let i = 0; i < count; i++) {
-      const target = cards.nth(i);
-      const deactivateBtn = target.getByRole('button', { name: 'Desactivar' });
-      if (await deactivateBtn.isVisible()) {
-        await deactivateBtn.click();
-        await expect(page.locator('text=Registro desactivado').first()).toBeVisible();
+    // Search by a substring of the selected Tipo de servicio — the new card should
+    // remain visible (covers WARNING #5: search must be exercised on this catalog).
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', searchNeedle);
+    await expect(page.locator('.catalog-admin-card').first()).toBeVisible();
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', '');
+
+    // Deactivate every visible card using a while-loop that is robust to the
+    // list refetch + re-render triggered by the toggle. The previous
+    // for-loop captured `count` upfront and then iterated by position, which
+    // skipped every other item after the first reload (covers CRITICAL #1).
+    // A fresh locator is built on every iteration so it always targets the
+    // current first "Desactivar" button after each reload.
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const deactivateBtn = page.getByRole('button', { name: 'Desactivar' }).first();
+      const isVisible = await deactivateBtn
+        .isVisible({ timeout: 1000 })
+        .catch(() => false);
+      if (!isVisible) {
+        break;
       }
+      await deactivateBtn.click({ force: true });
+      await expect(page.locator('text=Registro desactivado').first()).toBeVisible();
+      // Give the post-toggle refetch a moment to settle so the next iteration
+      // does not race with an in-flight re-render.
+      await page.waitForLoadState('networkidle');
     }
 
     await page.selectOption('select[aria-label="Filtrar por estado"]', 'false');

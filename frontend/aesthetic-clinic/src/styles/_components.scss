@@ -1597,9 +1597,9 @@
 
 .catalog-admin-toolbar {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--spacing-2);
   align-items: center;
-  margin-bottom: 0.75rem;
+  margin-bottom: var(--spacing-3);
   flex-wrap: wrap;
 
   > .input[type="search"] {
