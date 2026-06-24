@@ -1053,17 +1053,28 @@ def _catalog_summary_descriptor():
     ]
 
 
-def _catalog_page_data(catalog_key):
+def _catalog_page_data(catalog_key, q="", active="all"):
     catalog_key = _catalog_key_to_slug(catalog_key)
 
     if catalog_key == "todos-los-servicios":
-        queryset = (
-            ServicioConfig.objects.select_related(
-                "tipo_servicio",
-                "proc_estetico",
-                "proc_estetico__tipo_p_estetico",
-            ).order_by("tipo_servicio__tipo", "proc_estetico__proceso", "pk")
+        unfiltered = ServicioConfig.objects.all()
+        base_queryset = unfiltered.select_related(
+            "tipo_servicio",
+            "proc_estetico",
+            "proc_estetico__tipo_p_estetico",
         )
+        if q:
+            base_queryset = base_queryset.filter(
+                Q(tipo_servicio__tipo__icontains=q) | Q(proc_estetico__proceso__icontains=q)
+            )
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("tipo_servicio__tipo", "proc_estetico__proceso", "pk")
+        # Metrics always reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         items = [
             _catalog_entry(
                 item.pk,
@@ -1093,8 +1104,6 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1151,7 +1160,15 @@ def _catalog_page_data(catalog_key):
         }
 
     if catalog_key == "procedimientos-esteticos":
-        queryset = ProcEstetico.objects.select_related("tipo_p_estetico").order_by("orden", "proceso")
+        unfiltered = ProcEstetico.objects.all()
+        base_queryset = unfiltered.select_related("tipo_p_estetico")
+        if q:
+            base_queryset = base_queryset.filter(proceso__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "proceso")
         items = [
             _catalog_entry(
                 item.pk,
@@ -1173,8 +1190,9 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1207,7 +1225,15 @@ def _catalog_page_data(catalog_key):
         }
 
     if catalog_key == "tipos-servicio":
-        queryset = TipoServicio.objects.order_by("orden", "tipo")
+        unfiltered = TipoServicio.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(tipo__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "tipo")
         items = [
             _catalog_entry(
                 item.pk,
@@ -1228,8 +1254,9 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1394,7 +1421,15 @@ def _catalog_page_data(catalog_key):
         }
 
     if catalog_key == "especialidades":
-        queryset = Especialidad.objects.order_by("orden", "nombre")
+        unfiltered = Especialidad.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(nombre__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "nombre")
         items = [
             _catalog_entry(
                 item.pk,
@@ -1417,8 +1452,9 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1485,7 +1521,22 @@ def _catalog_page_data(catalog_key):
         }
 
     if catalog_key == "categorias-gasto":
-        queryset = _expense_categories_queryset()
+        unfiltered = CategoriaGasto.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(nombre__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by(
+            models.Case(
+                models.When(nombre__iexact="Otros", then=0),
+                default=1,
+                output_field=models.IntegerField(),
+            ),
+            "nombre",
+        )
         items = [
             _catalog_entry(
                 item.pk,
@@ -1503,8 +1554,9 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -3985,8 +4037,15 @@ def admin_catalogos(request):
 @require_GET
 @admin_required
 def admin_catalogo_detalle(request, catalog_key):
+    q = request.GET.get("q", "")
+    active = request.GET.get("active", "all")
+    if active not in ("true", "false", "all"):
+        return json_response(
+            {"detail": "El parametro active solo acepta true, false o all."},
+            status=400,
+        )
     try:
-        data = _catalog_page_data(catalog_key)
+        data = _catalog_page_data(catalog_key, q=q, active=active)
     except KeyError:
         return json_response({"detail": "El catalogo solicitado no existe."}, status=404)
     return json_response(data)
