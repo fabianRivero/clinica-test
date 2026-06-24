@@ -447,6 +447,7 @@ export type AdminCatalogKey =
   | 'todos-los-servicios'
   | 'procedimientos-esteticos'
   | 'tipos-servicio'
+  | 'tipos-procedimiento'
   | 'campos-ficha'
   | 'patologias-cutaneas'
   | 'especialidades'
