@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useDebounce } from '../../hooks/useDebounce'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
   createAdminCatalogItem,
@@ -372,7 +373,18 @@ function CatalogPage({
   catalogKey: AdminCatalogKey
   showCreateAction?: boolean
 }) {
-  const loader = useMemo(() => () => getAdminCatalogDetail(catalogKey), [catalogKey])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeFilter, setActiveFilter] = useState<'all' | 'true' | 'false'>('all')
+  const debouncedQuery = useDebounce(searchQuery, 300)
+
+  const loader = useMemo(
+    () => () =>
+      getAdminCatalogDetail(catalogKey, {
+        q: debouncedQuery,
+        active: activeFilter,
+      }),
+    [catalogKey, debouncedQuery, activeFilter],
+  )
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
   const [editingItemId, setEditingItemId] = useState<number | null>(null)
@@ -480,6 +492,26 @@ function CatalogPage({
             title={`Registros de ${pageInfo.title.toLowerCase()}`}
             description="Edita, desactiva o reactiva registros segun la necesidad operativa."
           >
+            <div className="catalog-admin-toolbar">
+              <input
+                aria-label="Buscar registros"
+                className="input"
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Buscar por titulo..."
+                type="search"
+                value={searchQuery}
+              />
+              <select
+                aria-label="Filtrar por estado"
+                className="input"
+                onChange={(event) => setActiveFilter(event.target.value as 'all' | 'true' | 'false')}
+                value={activeFilter}
+              >
+                <option value="all">Todos</option>
+                <option value="true">Activos</option>
+                <option value="false">Inactivos</option>
+              </select>
+            </div>
             {data.items.length ? (
               <div className="catalog-admin-list">
                 {data.items.map((item) => (
@@ -524,8 +556,8 @@ function CatalogPage({
               </div>
             ) : (
               <DataState
-                title="Sin registros todavia"
-                message="Este catálogo aun no tiene elementos creados en la base conectada."
+                title="Sin registros"
+                message="Este catálogo aun no tiene elementos que coincidan con el filtro actual."
               />
             )}
           </SectionCard>

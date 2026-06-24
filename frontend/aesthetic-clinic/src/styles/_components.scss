@@ -1595,6 +1595,23 @@
   gap: var(--spacing-4);
 }
 
+.catalog-admin-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+
+  > .input[type="search"] {
+    flex: 1 1 14rem;
+    min-width: 12rem;
+  }
+
+  > .input:not([type="search"]) {
+    flex: 0 1 12rem;
+  }
+}
+
 .catalog-admin-card {
   display: grid;
   gap: var(--spacing-4);
