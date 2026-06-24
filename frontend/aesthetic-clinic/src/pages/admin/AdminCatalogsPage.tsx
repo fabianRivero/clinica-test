@@ -21,14 +21,6 @@ import type {
   AdminCatalogKey,
 } from '../../types/admin'
 
-const IN_SCOPE_CATALOGS: ReadonlySet<AdminCatalogKey> = new Set([
-  'todos-los-servicios',
-  'procedimientos-esteticos',
-  'tipos-servicio',
-  'especialidades',
-  'categorias-gasto',
-])
-
 const catalogFallbackInfo: Record<
   AdminCatalogKey,
   { title: string; description: string; createLabel: string }
@@ -482,28 +474,26 @@ function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
             title={`Registros de ${pageInfo.title.toLowerCase()}`}
             description="Edita, desactiva o reactiva registros segun la necesidad operativa."
           >
-            {IN_SCOPE_CATALOGS.has(catalogKey) ? (
-              <div className="catalog-admin-toolbar">
-                <input
-                  aria-label="Buscar registros"
-                  className="input"
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Buscar por titulo..."
-                  type="search"
-                  value={searchQuery}
-                />
-                <select
-                  aria-label="Filtrar por estado"
-                  className="input"
-                  onChange={(event) => setActiveFilter(event.target.value as 'all' | 'true' | 'false')}
-                  value={activeFilter}
-                >
-                  <option value="all">Todos</option>
-                  <option value="true">Activos</option>
-                  <option value="false">Inactivos</option>
-                </select>
-              </div>
-            ) : null}
+            <div className="catalog-admin-toolbar">
+              <input
+                aria-label="Buscar registros"
+                className="input"
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Buscar por titulo..."
+                type="search"
+                value={searchQuery}
+              />
+              <select
+                aria-label="Filtrar por estado"
+                className="input"
+                onChange={(event) => setActiveFilter(event.target.value as 'all' | 'true' | 'false')}
+                value={activeFilter}
+              >
+                <option value="all">Todos</option>
+                <option value="true">Activos</option>
+                <option value="false">Inactivos</option>
+              </select>
+            </div>
             {data.items.length ? (
               <div className="catalog-admin-list">
                 {data.items.map((item) => (

@@ -5,6 +5,8 @@ import { ClientLayout } from './layouts/ClientLayout'
 import {
   AdminAllServicesCatalogPage,
   AdminExpenseCategoriesCatalogPage,
+  AdminFormFieldsCatalogPage,
+  AdminOptionGroupsCatalogPage,
   AdminProceduresCatalogPage,
   AdminServiceTypesCatalogPage,
   AdminSkinPathologiesCatalogPage,
@@ -150,6 +152,8 @@ function App() {
           <Route path="catalogos/patologias-cutaneas" element={<AdminSkinPathologiesCatalogPage />} />
           <Route path="catalogos/especialidades" element={<AdminSpecialtiesCatalogPage />} />
           <Route path="catalogos/categorias-gasto" element={<AdminExpenseCategoriesCatalogPage />} />
+          <Route path="catalogos/campos-ficha" element={<AdminFormFieldsCatalogPage />} />
+          <Route path="catalogos/grupos-opciones" element={<AdminOptionGroupsCatalogPage />} />
           <Route path="equipo" element={<Navigate to="/cms/equipo/gestionar" replace />} />
           <Route path="equipo/crear" element={<AdminStaffCreatePage />} />
           <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />

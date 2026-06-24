@@ -6,6 +6,9 @@ const tabs = [
   { to: '/cms/catalogos/tipos-servicio', label: 'Tipos de servicio' },
   { to: '/cms/catalogos/especialidades', label: 'Especialidades' },
   { to: '/cms/catalogos/categorias-gasto', label: 'Categorías de gasto' },
+  { to: '/cms/catalogos/campos-ficha', label: 'Campos de ficha' },
+  { to: '/cms/catalogos/patologias-cutaneas', label: 'Patologías cutaneas' },
+  { to: '/cms/catalogos/grupos-opciones', label: 'Grupos de opciones' },
 ] as const
 
 export function AdminCatalogTabs() {
