@@ -366,13 +366,7 @@ function CatalogEditorForm({
   )
 }
 
-function CatalogPage({
-  catalogKey,
-  showCreateAction = true,
-}: {
-  catalogKey: AdminCatalogKey
-  showCreateAction?: boolean
-}) {
+function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<'all' | 'true' | 'false'>('all')
   const debouncedQuery = useDebounce(searchQuery, 300)
@@ -419,29 +413,19 @@ function CatalogPage({
     }
   }
 
-  const pageActions = showCreateAction
-    ? [
-        {
-          label: editingItem ? 'Cancelar edicion' : pageInfo.createLabel,
-          variant: (editingItem ? 'ghost' : 'primary') as 'ghost' | 'primary',
-          onClick: () => {
-            if (editingItem) {
-              setEditingItemId(null)
-              return
-            }
-            setEditorVersion((current) => current + 1)
-          },
-        },
-      ]
-    : editingItem
-      ? [
-          {
-            label: 'Cancelar edicion',
-            variant: 'ghost' as const,
-            onClick: () => setEditingItemId(null),
-          },
-        ]
-      : []
+  const pageActions = [
+    {
+      label: editingItem ? 'Cancelar edicion' : pageInfo.createLabel,
+      variant: (editingItem ? 'ghost' : 'primary') as 'ghost' | 'primary',
+      onClick: () => {
+        if (editingItem) {
+          setEditingItemId(null)
+          return
+        }
+        setEditorVersion((current) => current + 1)
+      },
+    },
+  ]
 
   return (
     <div className="page-stack">
@@ -471,8 +455,7 @@ function CatalogPage({
 
       {data ? (
         <>
-          {showCreateAction || editingItem ? (
-            <CatalogEditorForm
+          <CatalogEditorForm
             key={editingItem ? `edit-${editingItem.id}` : `create-${editorVersion}`}
             catalogKey={catalogKey}
             createLabel={pageInfo.createLabel}
@@ -485,7 +468,6 @@ function CatalogPage({
               reload()
             }}
           />
-          ) : null}
 
           <SectionCard
             eyebrow="Catálogo"
@@ -568,15 +550,15 @@ function CatalogPage({
 }
 
 export function AdminProceduresCatalogPage() {
-  return <CatalogPage catalogKey="procedimientos-esteticos" showCreateAction={false} />
+  return <CatalogPage catalogKey="procedimientos-esteticos" />
 }
 
 export function AdminAllServicesCatalogPage() {
-  return <CatalogPage catalogKey="todos-los-servicios" showCreateAction={false} />
+  return <CatalogPage catalogKey="todos-los-servicios" />
 }
 
 export function AdminServiceTypesCatalogPage() {
-  return <CatalogPage catalogKey="tipos-servicio" showCreateAction={false} />
+  return <CatalogPage catalogKey="tipos-servicio" />
 }
 
 export function AdminFormFieldsCatalogPage() {
@@ -588,11 +570,11 @@ export function AdminSkinPathologiesCatalogPage() {
 }
 
 export function AdminSpecialtiesCatalogPage() {
-  return <CatalogPage catalogKey="especialidades" showCreateAction={false} />
+  return <CatalogPage catalogKey="especialidades" />
 }
 
 export function AdminExpenseCategoriesCatalogPage() {
-  return <CatalogPage catalogKey="categorias-gasto" showCreateAction={false} />
+  return <CatalogPage catalogKey="categorias-gasto" />
 }
 
 export function AdminOptionGroupsCatalogPage() {
