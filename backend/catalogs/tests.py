@@ -10,6 +10,7 @@ URL_TEMPLATES = {
     "todos-los-servicios": "/api/admin/catalogos/todos-los-servicios/",
     "procedimientos-esteticos": "/api/admin/catalogos/procedimientos-esteticos/",
     "tipos-servicio": "/api/admin/catalogos/tipos-servicio/",
+    "tipos-procedimiento": "/api/admin/catalogos/tipos-procedimiento/",
     "especialidades": "/api/admin/catalogos/especialidades/",
     "categorias-gasto": "/api/admin/catalogos/categorias-gasto/",
 }
@@ -35,6 +36,9 @@ class CatalogDetailFilterTests(TestCase):
         cls.ts_estetica = TipoServicio.objects.create(tipo="Estética facial", activo=False)
 
         cls.ptipo = ProcEsteticosTipo.objects.create(tipo="Laser")
+        cls.tipo_proc_laser = ProcEsteticosTipo.objects.create(tipo="Laser diodo", activo=True)
+        cls.tipo_proc_inactivo = ProcEsteticosTipo.objects.create(tipo="Peeling inactivo", activo=False)
+        cls.tipo_proc_unique = ProcEsteticosTipo.objects.create(tipo="TestLaser", activo=True)
         cls.pe_botox = ProcEstetico.objects.create(
             tipo_p_estetico=cls.ptipo, proceso="Aplicación de botox", activo=True
         )
@@ -197,3 +201,62 @@ class CatalogDetailFilterTests(TestCase):
         self.assertEqual(metrics["catalog-active"]["value"], "1")
         self.assertEqual(metrics["catalog-inactive"]["value"], "1")
         self.assertEqual(metrics["catalog-total"]["value"], "2")
+
+    # --- tipos-procedimiento catalog (added in manage-procedure-types-catalog) ---
+
+    def test_search_tipos_procedimiento_filters_by_tipo(self):
+        response = self.client.get(URL_TEMPLATES["tipos-procedimiento"], {"q": "TestLaser"})
+        self.assertEqual(self._ids(response), [self.tipo_proc_unique.pk])
+
+    def test_active_true_and_false_and_all_on_tipos_procedimiento(self):
+        url = URL_TEMPLATES["tipos-procedimiento"]
+        # ptipo defaults to activo=True via the model, so active=true includes it
+        # along with the two explicitly active fixtures.
+        self.assertEqual(
+            sorted(self._ids(self.client.get(url, {"active": "true"}))),
+            sorted([self.ptipo.pk, self.tipo_proc_laser.pk, self.tipo_proc_unique.pk]),
+        )
+        self.assertEqual(
+            self._ids(self.client.get(url, {"active": "false"})),
+            [self.tipo_proc_inactivo.pk],
+        )
+        expected = sorted(
+            [
+                self.ptipo.pk,
+                self.tipo_proc_laser.pk,
+                self.tipo_proc_unique.pk,
+                self.tipo_proc_inactivo.pk,
+            ]
+        )
+        self.assertEqual(
+            sorted(self._ids(self.client.get(url, {"active": "all"}))),
+            expected,
+        )
+
+    def test_combined_q_and_active_on_tipos_procedimiento(self):
+        url = URL_TEMPLATES["tipos-procedimiento"]
+        # 'TestLaser' matches only the active fixture, so active=false drops it.
+        response = self.client.get(url, {"q": "TestLaser", "active": "false"})
+        self.assertEqual(self._ids(response), [])
+
+    def test_invalid_active_param_returns_400_for_tipos_procedimiento(self):
+        response = self.client.get(
+            URL_TEMPLATES["tipos-procedimiento"], {"active": "invalid"}
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("active", response.json()["detail"].lower())
+
+    def test_metrics_reflect_unfiltered_catalog_for_tipos_procedimiento(self):
+        # Search that returns 0 items but metrics MUST still report full totals.
+        response = self.client.get(
+            URL_TEMPLATES["tipos-procedimiento"],
+            {"q": "zzz_no_match"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["items"]), 0)
+        metrics = {m["id"]: m for m in payload["metrics"]}
+        # Four fixtures: ptipo + Laser diodo + TestLaser are active; Peeling inactivo is not.
+        self.assertEqual(metrics["catalog-active"]["value"], "3")
+        self.assertEqual(metrics["catalog-inactive"]["value"], "1")
+        self.assertEqual(metrics["catalog-total"]["value"], "4")
