@@ -1734,15 +1734,17 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         return obj
 
     if catalog_key == "tipos-procedimiento":
+        orden_value = int_value("order", minimum=0)
         if instance is None:
             return ProcEsteticosTipo(
                 tipo=text_value("name"),
                 descripcion=text_value("description"),
-                orden=int_value("order", minimum=0),
+                orden=orden_value if orden_value is not None else 0,
             )
         instance.tipo = text_value("name")
         instance.descripcion = text_value("description")
-        instance.orden = int_value("order", minimum=0)
+        if orden_value is not None:
+            instance.orden = orden_value
         return instance
 
     if catalog_key == "campos-ficha":

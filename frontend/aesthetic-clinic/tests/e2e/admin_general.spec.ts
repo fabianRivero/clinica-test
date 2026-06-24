@@ -305,4 +305,39 @@ test.describe('Catalog list: search + active filter + create', () => {
     await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
     await expect(page.locator('.catalog-admin-card')).toHaveCount(0);
   });
+
+  test('tipos-procedimiento: search, filter and deactivate flow', async ({ page }) => {
+    await page.goto('/cms/catalogos/tipos-procedimiento');
+
+    // Before creating anything, switching to "Inactivos" should show the empty
+    // state — covers the empty-state copy requirement from the spec.
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'false');
+    await expect(page.locator('text=Sin registros')).toBeVisible();
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'all');
+
+    const uniqueTitle = `TipoProc Test ${Date.now()}`;
+    const searchNeedle = uniqueTitle.split(' ')[1];
+
+    await page.locator('header').getByRole('button', { name: 'Crear tipo de procedimiento' }).click();
+    await page.fill('#catalog-field-name', uniqueTitle);
+    await page.locator('form').getByRole('button', { name: 'Crear tipo de procedimiento' }).click();
+    await expect(page.locator('text=Registro creado')).toBeVisible();
+
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', searchNeedle);
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.fill('input[type="search"][aria-label="Buscar registros"]', '');
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
+    const card = page.locator('.catalog-admin-card', { hasText: uniqueTitle });
+    await card.getByRole('button', { name: 'Desactivar' }).click();
+    await expect(page.locator('text=Registro desactivado')).toBeVisible();
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'false');
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toBeVisible();
+
+    await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
+    await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toHaveCount(0);
+  });
 });
