@@ -519,7 +519,7 @@ def _serialize_medical_config(service_config):
         ],
     }
 
-    if not service_config or not service_config.proc_estetico_id:
+    if service_config is None:
         return {
             "procedureId": None,
             "procedureName": "",
@@ -527,15 +527,26 @@ def _serialize_medical_config(service_config):
             **shared_config,
         }
 
-    sections = (
-        FichaSeccion.objects.filter(proc_estetico=service_config.proc_estetico, activo=True)
-        .prefetch_related("campos__grupo_opciones__opciones")
-        .order_by("orden", "nombre")
-    )
+    if service_config.sector_id is not None:
+        sections = (
+            FichaSeccion.objects
+            .filter(sector=service_config.sector_id, activo=True)
+            .prefetch_related("campos__grupo_opciones__opciones")
+            .order_by("orden", "nombre")
+        )
+    elif service_config.proc_estetico_id is not None:
+        sections = (
+            FichaSeccion.objects
+            .filter(proc_estetico=service_config.proc_estetico_id, activo=True)
+            .prefetch_related("campos__grupo_opciones__opciones")
+            .order_by("orden", "nombre")
+        )
+    else:
+        sections = []
 
     return {
         "procedureId": service_config.proc_estetico_id,
-        "procedureName": service_config.proc_estetico.proceso,
+        "procedureName": service_config.proc_estetico.proceso if service_config.proc_estetico else "",
         "sections": [
             {
                 "id": section.id,
@@ -965,17 +976,31 @@ def _validate_medical_step(payload, service_config):
     valid_field_ids = set()
     valid_option_ids = {}
     fields_by_id = {}
-    if service_config and service_config.proc_estetico_id:
-        for field in (
-            FichaCampo.objects.filter(seccion__proc_estetico=service_config.proc_estetico, activo=True)
-            .select_related("grupo_opciones")
-            .prefetch_related("grupo_opciones__opciones")
-        ):
-            valid_field_ids.add(field.id)
-            fields_by_id[field.id] = field
-            valid_option_ids[field.id] = set(
-                field.grupo_opciones.opciones.filter(activo=True).values_list("id", flat=True)
-            ) if field.grupo_opciones_id else set()
+    if service_config and service_config.sector_id:
+        campos_qs = FichaCampo.objects.filter(
+            seccion__sector=service_config.sector_id,
+            seccion__activo=True,
+            activo=True,
+        )
+    elif service_config and service_config.proc_estetico_id:
+        campos_qs = FichaCampo.objects.filter(
+            seccion__proc_estetico=service_config.proc_estetico_id,
+            seccion__activo=True,
+            activo=True,
+        )
+    else:
+        campos_qs = FichaCampo.objects.none()
+
+    for field in (
+        campos_qs
+        .select_related("grupo_opciones")
+        .prefetch_related("grupo_opciones__opciones")
+    ):
+        valid_field_ids.add(field.id)
+        fields_by_id[field.id] = field
+        valid_option_ids[field.id] = set(
+            field.grupo_opciones.opciones.filter(activo=True).values_list("id", flat=True)
+        ) if field.grupo_opciones_id else set()
 
     field_responses_validated = {}
     for raw_field_id, item in field_responses.items():
