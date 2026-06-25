@@ -1338,9 +1338,18 @@ def _catalog_page_data(catalog_key, q="", active="all"):
         }
 
     if catalog_key == "campos-ficha":
-        queryset = (
-            FichaCampo.objects.select_related("seccion__proc_estetico", "grupo_opciones")
-            .order_by("seccion__proc_estetico__proceso", "seccion__orden", "orden", "etiqueta")
+        unfiltered = FichaCampo.objects.all()
+        base_queryset = unfiltered.select_related("seccion__proc_estetico", "grupo_opciones")
+        if q:
+            base_queryset = base_queryset.filter(
+                Q(etiqueta__icontains=q) | Q(codigo__icontains=q)
+            )
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by(
+            "seccion__proc_estetico__proceso", "seccion__orden", "orden", "etiqueta"
         )
         items = [
             _catalog_entry(
@@ -1373,8 +1382,9 @@ def _catalog_page_data(catalog_key, q="", active="all"):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1441,7 +1451,15 @@ def _catalog_page_data(catalog_key, q="", active="all"):
         }
 
     if catalog_key == "patologias-cutaneas":
-        queryset = PatologiaCutanea.objects.order_by("orden", "nombre")
+        unfiltered = PatologiaCutanea.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(nombre__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "nombre")
         items = [
             _catalog_entry(
                 item.pk,
@@ -1458,8 +1476,9 @@ def _catalog_page_data(catalog_key, q="", active="all"):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1537,7 +1556,17 @@ def _catalog_page_data(catalog_key, q="", active="all"):
         }
 
     if catalog_key == "grupos-opciones":
-        queryset = GrupoOpciones.objects.prefetch_related("opciones").order_by("nombre")
+        unfiltered = GrupoOpciones.objects.all()
+        base_queryset = unfiltered.prefetch_related("opciones")
+        if q:
+            base_queryset = base_queryset.filter(
+                Q(nombre__icontains=q) | Q(codigo__icontains=q)
+            )
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("nombre")
         items = [
             _catalog_entry(
                 item.pk,
@@ -1557,8 +1586,9 @@ def _catalog_page_data(catalog_key, q="", active="all"):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,

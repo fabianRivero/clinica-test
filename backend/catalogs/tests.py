@@ -4,7 +4,15 @@ from django.test import Client, TestCase
 
 from accounts.models import Rol, Usuario
 from billing.models import CategoriaGasto
-from catalogs.models import ProcEstetico, ProcEsteticosTipo, ServicioConfig, TipoServicio
+from catalogs.models import (
+    GrupoOpciones,
+    PatologiaCutanea,
+    ProcEstetico,
+    ProcEsteticosTipo,
+    ServicioConfig,
+    TipoServicio,
+)
+from clinical.models import FichaCampo, FichaSeccion
 from staff.models import Especialidad
 
 
@@ -15,6 +23,9 @@ URL_TEMPLATES = {
     "tipos-procedimiento": "/api/admin/catalogos/tipos-procedimiento/",
     "especialidades": "/api/admin/catalogos/especialidades/",
     "categorias-gasto": "/api/admin/catalogos/categorias-gasto/",
+    "campos-ficha": "/api/admin/catalogos/campos-ficha/",
+    "patologias-cutaneas": "/api/admin/catalogos/patologias-cutaneas/",
+    "grupos-opciones": "/api/admin/catalogos/grupos-opciones/",
 }
 
 
@@ -67,6 +78,36 @@ class CatalogDetailFilterTests(TestCase):
         )
         cls.cat_otros = CategoriaGasto.objects.create(
             nombre="Otros gastos", activo=False
+        )
+
+        cls.seccion = FichaSeccion.objects.create(
+            proc_estetico=cls.pe_botox, codigo="BOTOX_SEC", nombre="Antecedentes"
+        )
+        cls.campo_activo = FichaCampo.objects.create(
+            seccion=cls.seccion,
+            codigo="BOTOX_SI",
+            etiqueta="Aplicación reciente de botox",
+            tipo_campo="SELECCION",
+            activo=True,
+        )
+        cls.campo_inactivo = FichaCampo.objects.create(
+            seccion=cls.seccion,
+            codigo="BOTOX_NO",
+            etiqueta="Sin aplicación de botox",
+            tipo_campo="SELECCION",
+            activo=False,
+        )
+
+        cls.patologia = PatologiaCutanea.objects.create(nombre="Rosácea", activo=True)
+        cls.patologia_inactiva = PatologiaCutanea.objects.create(
+            nombre="Dermatitis inactiva", activo=False
+        )
+
+        cls.grupo = GrupoOpciones.objects.create(
+            codigo="FUMADOR_SI_NO", nombre="Fumador", activo=True
+        )
+        cls.grupo_inactivo = GrupoOpciones.objects.create(
+            codigo="ANTECEDENTE", nombre="Antecedente", activo=False
         )
 
     def setUp(self):
@@ -204,7 +245,7 @@ class CatalogDetailFilterTests(TestCase):
         self.assertEqual(metrics["catalog-inactive"]["value"], "1")
         self.assertEqual(metrics["catalog-total"]["value"], "2")
 
-    # --- tipos-procedimiento catalog (added in manage-procedure-types-catalog) ---
+# --- tipos-procedimiento catalog (added in manage-procedure-types-catalog) ---
 
     def test_search_tipos_procedimiento_filters_by_tipo(self):
         response = self.client.get(URL_TEMPLATES["tipos-procedimiento"], {"q": "TestLaser"})
@@ -298,3 +339,101 @@ class CatalogDetailFilterTests(TestCase):
         self.assertEqual(target.tipo, "Renombrado")
         self.assertEqual(target.descripcion, "nueva desc")
         self.assertEqual(target.orden, 7)
+
+    # --- Phase 2: extend ?q= and ?active= to the 3 previously-excluded catalogs
+    #     (campos-ficha, patologias-cutaneas, grupos-opciones).
+
+    def test_search_and_active_on_campos_ficha(self):
+        url = URL_TEMPLATES["campos-ficha"]
+        # Search by etiqueta (visible label). "reciente" is unique to the active row.
+        self.assertEqual(
+            self._ids(self.client.get(url, {"q": "reciente"})),
+            [self.campo_activo.pk],
+        )
+        # active=true drops the inactive field.
+        self.assertEqual(
+            self._ids(self.client.get(url, {"active": "true"})),
+            [self.campo_activo.pk],
+        )
+        # active=false returns the inactive field only.
+        self.assertEqual(
+            self._ids(self.client.get(url, {"active": "false"})),
+            [self.campo_inactivo.pk],
+        )
+        # Combined: "botox" matches both via the label, but active=true keeps one.
+        ids = self._ids(self.client.get(url, {"q": "botox", "active": "true"}))
+        self.assertEqual(ids, [self.campo_activo.pk])
+
+    def test_search_campos_ficha_by_codigo(self):
+        # The search Q also covers the internal `codigo` field, not just `etiqueta`.
+        url = URL_TEMPLATES["campos-ficha"]
+        self.assertEqual(
+            self._ids(self.client.get(url, {"q": "BOTOX_NO"})),
+            [self.campo_inactivo.pk],
+        )
+
+    def test_search_and_active_on_patologias_cutaneas(self):
+        url = URL_TEMPLATES["patologias-cutaneas"]
+        # Search by nombre.
+        self.assertEqual(
+            self._ids(self.client.get(url, {"q": "ros"})),
+            [self.patologia.pk],
+        )
+        # active=true / false.
+        self.assertEqual(
+            self._ids(self.client.get(url, {"active": "true"})),
+            [self.patologia.pk],
+        )
+        self.assertEqual(
+            self._ids(self.client.get(url, {"active": "false"})),
+            [self.patologia_inactiva.pk],
+        )
+        # Combined: 'derm' matches the inactive one, active=true drops it.
+        self.assertEqual(
+            self._ids(self.client.get(url, {"q": "derm", "active": "true"})),
+            [],
+        )
+
+    def test_search_and_active_on_grupos_opciones(self):
+        url = URL_TEMPLATES["grupos-opciones"]
+        # Search by nombre.
+        self.assertEqual(
+            self._ids(self.client.get(url, {"q": "Fumad"})),
+            [self.grupo.pk],
+        )
+        # active=true / false.
+        self.assertEqual(
+            self._ids(self.client.get(url, {"active": "true"})),
+            [self.grupo.pk],
+        )
+        self.assertEqual(
+            self._ids(self.client.get(url, {"active": "false"})),
+            [self.grupo_inactivo.pk],
+        )
+        # Combined: 'ante' matches the inactive one, active=true drops it.
+        self.assertEqual(
+            self._ids(self.client.get(url, {"q": "ante", "active": "true"})),
+            [],
+        )
+
+    def test_search_grupos_opciones_by_codigo(self):
+        # The search Q also covers the `codigo` field, not just `nombre`.
+        url = URL_TEMPLATES["grupos-opciones"]
+        self.assertEqual(
+            self._ids(self.client.get(url, {"q": "FUMADOR_SI_NO"})),
+            [self.grupo.pk],
+        )
+
+    def test_metrics_reflect_unfiltered_catalog_on_newly_supported_catalogs(self):
+        # When ?q= returns no rows on a newly-supported catalog, the metrics
+        # block MUST still report the unfiltered totals (matches the existing
+        # contract from the 5 in-scope catalogs).
+        url = URL_TEMPLATES["patologias-cutaneas"]
+        response = self.client.get(url, {"q": "zzz_no_match_zzz", "active": "true"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["items"]), 0)
+        metrics = {m["id"]: m for m in payload["metrics"]}
+        self.assertEqual(metrics["catalog-active"]["value"], "1")
+        self.assertEqual(metrics["catalog-inactive"]["value"], "1")
+        self.assertEqual(metrics["catalog-total"]["value"], "2")
