@@ -5,6 +5,7 @@ import { ClientLayout } from './layouts/ClientLayout'
 import {
   AdminAllServicesCatalogPage,
   AdminExpenseCategoriesCatalogPage,
+  AdminProcedureTypesCatalogPage,
   AdminProceduresCatalogPage,
   AdminServiceTypesCatalogPage,
   AdminSkinPathologiesCatalogPage,
@@ -147,6 +148,7 @@ function App() {
           <Route path="catalogos/todos-los-servicios" element={<AdminAllServicesCatalogPage />} />
           <Route path="catalogos/procedimientos-esteticos" element={<AdminProceduresCatalogPage />} />
           <Route path="catalogos/tipos-servicio" element={<AdminServiceTypesCatalogPage />} />
+          <Route path="catalogos/tipos-procedimiento" element={<AdminProcedureTypesCatalogPage />} />
           <Route path="catalogos/patologias-cutaneas" element={<AdminSkinPathologiesCatalogPage />} />
           <Route path="catalogos/especialidades" element={<AdminSpecialtiesCatalogPage />} />
           <Route path="catalogos/categorias-gasto" element={<AdminExpenseCategoriesCatalogPage />} />

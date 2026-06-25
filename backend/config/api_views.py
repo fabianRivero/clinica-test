@@ -8,7 +8,7 @@ from functools import wraps
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db import models
-from django.db.models import Prefetch, Q
+from django.db.models import Max, Prefetch, Q
 from django.contrib.sessions.models import Session
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -998,6 +998,7 @@ def _catalog_key_to_slug(catalog_key):
         "todos-los-servicios",
         "procedimientos-esteticos",
         "tipos-servicio",
+        "tipos-procedimiento",
         "campos-ficha",
         "patologias-cutaneas",
         "especialidades",
@@ -1024,6 +1025,11 @@ def _catalog_summary_descriptor():
             "key": "tipos-servicio",
             "title": "Tipos de servicio",
             "description": "Categorias comerciales utilizadas al crear configuraciones de servicio y operaciones.",
+        },
+        {
+            "key": "tipos-procedimiento",
+            "title": "Tipos de procedimiento",
+            "description": "Tipos de procedimiento estético disponibles para asociar a los procedimientos.",
         },
         {
             "key": "campos-ficha",
@@ -1273,6 +1279,60 @@ def _catalog_page_data(catalog_key, q="", active="all"):
             "fields": [
                 _catalog_field("name", "Tipo de servicio", "text", required=True, placeholder="Ej. Cita de consulta"),
                 _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas del tipo de servicio"),
+            ],
+            "items": items,
+        }
+
+    if catalog_key == "tipos-procedimiento":
+        unfiltered = ProcEsteticosTipo.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(tipo__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "tipo")
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.tipo,
+                "Tipo de procedimiento estetico",
+                item.activo,
+                [
+                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {
+                        "label": "Procedimientos vinculados",
+                        "value": str(item.procedimientos.count()),
+                    },
+                ],
+                {
+                    "name": item.tipo,
+                    "description": item.descripcion,
+                    "order": item.orden,
+                },
+            )
+            for item in queryset
+        ]
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Tipos de procedimiento",
+                "description": "Administra los tipos de procedimiento estetico disponibles para asociar a los procedimientos.",
+                "createLabel": "Crear tipo de procedimiento",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{ProcEstetico.objects.filter(activo=True).count()} procedimiento(s) activo(s)",
+            ),
+            "fields": [
+                _catalog_field("name", "Tipo de procedimiento", "text", required=True, placeholder="Ej. Laser"),
+                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas"),
             ],
             "items": items,
         }
@@ -1672,6 +1732,18 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         obj.descripcion = text_value("description")
         return obj
 
+    if catalog_key == "tipos-procedimiento":
+        if instance is None:
+            max_orden = ProcEsteticosTipo.objects.aggregate(Max('orden'))['orden__max'] or 0
+            return ProcEsteticosTipo(
+                tipo=text_value("name"),
+                descripcion=text_value("description"),
+                orden=max_orden + 1,
+            )
+        instance.tipo = text_value("name")
+        instance.descripcion = text_value("description")
+        return instance
+
     if catalog_key == "campos-ficha":
         section_id = int_value("sectionId", required=True, minimum=1)
         code = text_value("code")
@@ -1770,6 +1842,7 @@ def _catalog_get_instance(catalog_key, item_id):
         "todos-los-servicios": ServicioConfig,
         "procedimientos-esteticos": ProcEstetico,
         "tipos-servicio": TipoServicio,
+        "tipos-procedimiento": ProcEsteticosTipo,
         "campos-ficha": FichaCampo,
         "patologias-cutaneas": PatologiaCutanea,
         "especialidades": Especialidad,

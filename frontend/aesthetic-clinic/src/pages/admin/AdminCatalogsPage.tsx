@@ -25,6 +25,7 @@ const IN_SCOPE_CATALOGS: ReadonlySet<AdminCatalogKey> = new Set([
   'todos-los-servicios',
   'procedimientos-esteticos',
   'tipos-servicio',
+  'tipos-procedimiento',
   'especialidades',
   'categorias-gasto',
 ])
@@ -50,6 +51,12 @@ const catalogFallbackInfo: Record<
     description:
       'Administra las categorías comerciales visibles al registrar operaciones y configuraciones de servicio.',
     createLabel: 'Crear tipo de servicio',
+  },
+  'tipos-procedimiento': {
+    title: 'Tipos de procedimiento',
+    description:
+      'Administra los tipos de procedimiento estetico disponibles para asociar a los procedimientos.',
+    createLabel: 'Crear tipo de procedimiento',
   },
   'campos-ficha': {
     title: 'Campos de ficha',
@@ -569,6 +576,10 @@ export function AdminAllServicesCatalogPage() {
 
 export function AdminServiceTypesCatalogPage() {
   return <CatalogPage catalogKey="tipos-servicio" />
+}
+
+export function AdminProcedureTypesCatalogPage() {
+  return <CatalogPage catalogKey="tipos-procedimiento" />
 }
 
 export function AdminFormFieldsCatalogPage() {
