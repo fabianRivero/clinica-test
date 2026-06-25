@@ -31,6 +31,7 @@ from catalogs.models import (
     PatologiaCutanea,
     ProcEstetico,
     ProcEsteticosTipo,
+    Sector,
     ServicioConfig,
     Sucursal,
     TipoServicio,
@@ -1004,6 +1005,7 @@ def _catalog_key_to_slug(catalog_key):
         "especialidades",
         "grupos-opciones",
         "categorias-gasto",
+        "sectores",
     }:
         return catalog_key
     raise KeyError(catalog_key)
@@ -1055,6 +1057,11 @@ def _catalog_summary_descriptor():
             "key": "categorias-gasto",
             "title": "Categorías de gasto",
             "description": "Categorías administrativas usadas al registrar gastos de sucursal.",
+        },
+        {
+            "key": "sectores",
+            "title": "Sectores",
+            "description": "Sectores especializados que agrupan secciones de ficha clínica por ámbito (depilación, manchas, tatuajes).",
         },
     ]
 
@@ -1667,6 +1674,67 @@ def _catalog_page_data(catalog_key, q="", active="all"):
             "items": items,
         }
 
+    if catalog_key == "sectores":
+        unfiltered = Sector.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(
+                Q(nombre__icontains=q) | Q(codigo__icontains=q)
+            )
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "nombre")
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.nombre,
+                item.codigo,
+                item.activo,
+                [
+                    {"label": "Código", "value": item.codigo},
+                    {"label": "Orden", "value": str(item.orden)},
+                    {"label": "Descripción", "value": item.descripcion or "Sin descripción"},
+                    {
+                        "label": "Servicios vinculados",
+                        "value": str(item.servicios_config.count()),
+                    },
+                ],
+                {
+                    "code": item.codigo,
+                    "name": item.nombre,
+                    "description": item.descripcion,
+                    "order": item.orden,
+                },
+            )
+            for item in queryset
+        ]
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Sectores",
+                "description": "Administra los sectores especializados que agrupan secciones de ficha clínica por ámbito.",
+                "createLabel": "Crear sector",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{ServicioConfig.objects.exclude(sector__isnull=True).count()} configuracion(es) de servicio vinculadas",
+            ),
+            "fields": [
+                _catalog_field("code", "Código", "text", required=True, placeholder="Ej. DEP"),
+                _catalog_field("name", "Nombre", "text", required=True, placeholder="Ej. Depilación"),
+                _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas del sector"),
+                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
+            ],
+            "items": items,
+        }
+
     raise KeyError(catalog_key)
 
 
@@ -1863,6 +1931,23 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         obj.descripcion = text_value("description")
         return obj
 
+    if catalog_key == "sectores":
+        code = text_value("code")
+        name = text_value("name")
+        if not code:
+            errors["code"] = "El código del sector es obligatorio."
+        if not name:
+            errors["name"] = "El nombre del sector es obligatorio."
+        order = int_value("order", minimum=0, allow_empty=True)
+        if errors:
+            raise ValidationError(errors)
+        obj = instance or Sector()
+        obj.codigo = code
+        obj.nombre = name
+        obj.descripcion = text_value("description")
+        obj.orden = order or 0
+        return obj
+
     raise KeyError(catalog_key)
 
 
@@ -1878,6 +1963,7 @@ def _catalog_get_instance(catalog_key, item_id):
         "especialidades": Especialidad,
         "grupos-opciones": GrupoOpciones,
         "categorias-gasto": CategoriaGasto,
+        "sectores": Sector,
     }
     return model_map[catalog_key].objects.filter(pk=item_id).first()
 
@@ -4131,6 +4217,12 @@ def admin_catalogos(request):
                 "Categorias de gasto",
                 CategoriaGasto.objects.filter(activo=True).count(),
                 "Clasificación administrativa para gastos por sucursal",
+            ),
+            _catalog_item(
+                "sectores",
+                "Sectores",
+                Sector.objects.filter(activo=True).count(),
+                "Sectores especializados para agrupar secciones de ficha clínica",
             ),
         ],
     }

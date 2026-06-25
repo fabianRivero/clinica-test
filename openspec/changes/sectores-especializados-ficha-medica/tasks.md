@@ -102,6 +102,16 @@
 
 ### Phase 5: Admin Catalog Tab
 
+#### 5.0 [x] Register `sectores` in the admin catalog API
+- **Files**: `backend/config/api_views.py`
+- **Action**: Add `sectores` as a sixth catalog to `_catalog_key_to_slug`, `_catalog_summary_descriptor`, `_catalog_page_data`, `_catalog_parse_payload`, `_catalog_get_instance`, and `admin_catalogos` summary list. Title field is `nombre`; payload exposes `code`, `name`, `description`, `order`.
+- **Acceptance**: `GET /api/admin/catalogos/sectores/` returns the 3 seeded sectors; `?active=true`, `?q=` and CRUD endpoints work; `python manage.py check` passes; `python manage.py test tests.test_admin_catalog_sectores` passes.
+
+#### 5.0a [x] Tests for the `sectores` admin catalog API
+- **Files**: `backend/tests/test_admin_catalog_sectores.py`
+- **Action**: New file covering list (with seed), `?active=true/false/all`, `?q=` matching both `nombre` and `codigo`, create with valid payload, validation on missing `code`/`name`, duplicate `codigo`/`nombre` rejection (case-insensitive, via `full_clean`), update, toggle, and model-level constraints.
+- **Acceptance**: all tests pass; baseline tests (unrelated pre-existing failures) remain at their original count.
+
 #### 5.1 Add `'sectores'` to `catalogFallbackInfo`
 - **Files**: `frontend/aesthetic-clinic/src/pages/admin/AdminCatalogsPage.tsx`
 - **Action**: Register fallback metadata for the sixth catalog (`title`, `subtitle`, `emptyMessage`, `columns`).
