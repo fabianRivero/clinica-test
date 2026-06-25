@@ -28,34 +28,34 @@
 
 ### Phase 1: Models
 
-#### 1.1 Create `Sector` model
+#### 1.1 [x] Create `Sector` model
 - **Files**: `backend/catalogs/models.py`
 - **Action**: Add `Sector(CatalogoEditableModel)` with `codigo` (max 20), `nombre` (max 120), unique constraints case-insensitive on both, `db_table = "catalogs_sector"`.
 - **Acceptance**: `python manage.py check` passes; model registered; admin shows it.
 
-#### 1.2 Add nullable `sector` FK to `ServicioConfig`
+#### 1.2 [x] Add nullable `sector` FK to `ServicioConfig`
 - **Files**: `backend/catalogs/models.py`
 - **Action**: Add `sector = models.ForeignKey(Sector, null=True, blank=True, on_delete=SET_NULL)`.
 - **Acceptance**: existing services unaffected (nullable).
 
-#### 1.3 Add nullable `sector` FK to `FichaSeccion` (preserve `proc_estetico`)
+#### 1.3 [x] Add nullable `sector` FK to `FichaSeccion` (preserve `proc_estetico`)
 - **Files**: `backend/clinical/models.py`
 - **Action**: Add `sector = models.ForeignKey("catalogs.Sector", null=True, blank=True, on_delete=SET_NULL)`. Keep existing `proc_estetico` FK.
 - **Acceptance**: no migration error; both FKs coexist.
 
-#### 1.4 Register `Sector` in Django admin
+#### 1.4 [x] Register `Sector` in Django admin
 - **Files**: `backend/catalogs/admin.py`
 - **Action**: `admin.site.register(Sector, SectorAdmin)` with `list_display = ("nombre", "codigo", "activo", "orden")` and search on `nombre`/`codigo`.
 - **Acceptance**: sector appears at `/admin/catalogs/sector/`.
 
 ### Phase 2: Migrations
 
-#### 2.1 Schema migration
+#### 2.1 [x] Schema migration
 - **Command**: `python manage.py makemigrations catalogs clinical`
 - **Files**: `backend/catalogs/migrations/00XX_add_sector_models.py`, `backend/clinical/migrations/00XX_add_sector_fk.py`
 - **Acceptance**: `python manage.py migrate --plan` shows the new migration; applying it on a copy of the prod DB succeeds without data loss.
 
-#### 2.2 Data migration: create Sector seeds and reassign FichaSeccion
+#### 2.2 [x] Data migration: create Sector seeds and reassign FichaSeccion
 - **Files**: new migration `backend/catalogs/migrations/00XY_seed_sectores.py` or extend `seed_pdf_baseline.py` (pick one and justify).
 - **Action**: Create 3 records:
   - `codigo="DEP"`, `nombre="Depilación"`
@@ -64,35 +64,35 @@
 - **Action**: For each `FichaSeccion` whose `proc_estetico.codigo` is `PUNTO_D` (depilación definitiva or tratamiento de manchas per A3), set `sector=DEP`. For `PUNTO_E` (borrado tatuajes), set `sector=TAT`.
 - **Acceptance**: post-migration query returns 3 Sectores and correct reassignment.
 
-#### 2.3 Update `seed_pdf_baseline.py` for new installs
+#### 2.3 [x] Update `seed_pdf_baseline.py` for new installs (modification applied locally; file is gitignored by repo convention — see Risks)
 - **Files**: `backend/accounts/management/commands/seed_pdf_baseline.py`
 - **Action**: Same Sector creation + FichaSeccion reassignment so fresh seeds work without needing the data migration.
 - **Acceptance**: Running `python manage.py seed_pdf_baseline` on an empty DB produces 3 Sectores and correctly assigned FichaSeccion records.
 
 ### Phase 3: Filter Logic
 
-#### 3.1 Branch `_serialize_medical_config` on sector
+#### 3.1 [x] Branch `_serialize_medical_config` on sector (also updated `_validate_medical_step` field-validity lookup for consistency)
 - **Files**: `backend/config/prospect_conversion_views.py` (~line 490)
 - **Action**: If `service_config.sector_id` is not None → filter `FichaSeccion.objects.filter(sector=..., activo=True)`. Else if `proc_estetico_id` is not None → legacy filter. Else → empty list.
 - **Acceptance**: existing tests pass; manual test: prospect for "Depilación día de la madre" with sector=DEP sees same form as "Depilación definitiva".
 
 ### Phase 4: Backend Tests
 
-#### 4.1 `test_sector_crud.py`
+#### 4.1 [x] `test_sector_crud.py`
 - **Files**: `backend/tests/test_sector_crud.py`
 - **Covers**: create, list (with `?active=true`), update, toggle; duplicate nombre rejected; duplicate codigo rejected (case-insensitive).
 
-#### 4.2 `test_medical_form_by_sector.py` (star test)
+#### 4.2 [x] `test_medical_form_by_sector.py` (star test)
 - **Files**: `backend/tests/test_medical_form_by_sector.py`
 - **Covers**: 
   - Two `ServicioConfig` instances both with `sector=DEP` → `_serialize_medical_config` returns same section set.
   - New `ServicioConfig` named "Depilación día de la madre" with `sector=DEP` returns identical sections to existing "Depilación definitiva".
 
-#### 4.3 Extend `test_prospect_conversion.py`
+#### 4.3 [x] Extend `test_prospect_conversion.py` (file did not exist — created new)
 - **Files**: `backend/tests/test_prospect_conversion.py`
 - **Covers**: service with `sector=null` and `proc_estetico=null` (e.g., Cita médica) returns empty sections in step 3.
 
-#### 4.4 Run full backend test suite
+#### 4.4 [x] Run full backend test suite (29 tests run; 4 pre-existing failures in `operations.AppointmentNoShowSyncTests` unrelated to this change — see Risks)
 - **Command**: `python manage.py test`
 - **Acceptance**: all tests pass including new ones; coverage of new files >80% (informational, no enforced threshold).
 
