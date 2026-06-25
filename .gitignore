@@ -78,3 +78,6 @@ write_test.txt
 # Playwright output (regenerated on every test run)
 frontend/aesthetic-clinic/playwright-report/
 frontend/aesthetic-clinic/test-results/
+
+# ATL skill registry and cache (project-local, not for version control)
+.atl/
