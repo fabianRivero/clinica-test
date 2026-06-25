@@ -13,11 +13,20 @@ from catalogs.models import (
     ProcEstetico,
     ProcEsteticosTipo,
     ProductoAlergia,
+    Sector,
     ServicioConfig,
     TipoAlergia,
     TipoPiel,
     TipoServicio,
 )
+
+
+@admin.register(Sector)
+class SectorAdmin(admin.ModelAdmin):
+    list_display = ("nombre", "codigo", "activo", "orden")
+    list_filter = ("activo",)
+    search_fields = ("nombre", "codigo")
+    ordering = ("orden", "nombre")
 
 
 for model in (
