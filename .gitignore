@@ -74,3 +74,7 @@ backend/accounts/management/commands/seed_branch_test_scenarios.py
 *.tmp
 *.bak
 write_test.txt
+
+# Playwright output (regenerated on every test run)
+frontend/aesthetic-clinic/playwright-report/
+frontend/aesthetic-clinic/test-results/
