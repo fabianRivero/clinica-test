@@ -454,6 +454,7 @@ export type AdminCatalogKey =
   | 'grupos-opciones'
   | 'categorias-gasto'
   | 'sectores'
+  | 'secciones-ficha'
 
 export type AdminCatalogFormValue = string | number | boolean | null
 

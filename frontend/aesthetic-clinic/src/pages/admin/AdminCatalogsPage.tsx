@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent, type JSX } from 'react'
 
 import { AdminCatalogTabs } from '../../components/admin/AdminCatalogTabs'
 import { DataState } from '../../components/admin/DataState'
@@ -81,6 +81,12 @@ const catalogFallbackInfo: Record<
     description:
       'Agrupa secciones de ficha clínica por ámbito para que múltiples servicios reutilicen el mismo formulario médico.',
     createLabel: 'Crear sector',
+  },
+  'secciones-ficha': {
+    title: 'Secciones de ficha',
+    description:
+      'Agrupa campos de ficha clínica por sector o procedimiento estético.',
+    createLabel: 'Crear sección de ficha',
   },
 }
 
@@ -286,6 +292,9 @@ function CatalogEditorForm({
   createLabel,
   onCancelEditing,
   onSaved,
+  omittedFieldNames,
+  onFormStateChange,
+  renderAboveSubmit,
 }: {
   catalogKey: AdminCatalogKey
   fields: AdminCatalogFieldDefinition[]
@@ -293,6 +302,9 @@ function CatalogEditorForm({
   createLabel: string
   onCancelEditing: () => void
   onSaved: () => void
+  omittedFieldNames?: ReadonlySet<string>
+  onFormStateChange?: (state: Record<string, AdminCatalogFormValue>) => void
+  renderAboveSubmit?: (state: Record<string, AdminCatalogFormValue>) => JSX.Element | null
 }) {
   const { showNotification } = useNotifications()
   const [formState, setFormState] = useState<Record<string, AdminCatalogFormValue>>(() =>
@@ -307,10 +319,14 @@ function CatalogEditorForm({
     catalogKey === 'todos-los-servicios' ? evaluateServiceSectorWarning(formState) : null
 
   function handleFieldChange(fieldName: string, nextValue: AdminCatalogFormValue) {
-    setFormState((current) => ({
-      ...current,
-      [fieldName]: nextValue,
-    }))
+    setFormState((current) => {
+      const nextState = {
+        ...current,
+        [fieldName]: nextValue,
+      }
+      onFormStateChange?.(nextState)
+      return nextState
+    })
     setFieldErrors((current) => {
       if (!current[fieldName]) {
         return current
@@ -383,15 +399,22 @@ function CatalogEditorForm({
       description="Guarda cambios sobre este catálogo sin salir de la pantalla."
     >
       <form className="form-grid" onSubmit={(event) => void handleSubmit(event)}>
-        {fields.map((field) => (
-          <CatalogFormField
-            key={field.name}
-            error={fieldErrors[field.name]}
-            field={field}
-            value={formState[field.name] ?? (field.inputType === 'checkbox' ? false : '')}
-            onChange={handleFieldChange}
-          />
-        ))}
+        {fields.map((field) => {
+          if (omittedFieldNames?.has(field.name)) {
+            return null
+          }
+          return (
+            <CatalogFormField
+              key={field.name}
+              error={fieldErrors[field.name]}
+              field={field}
+              value={formState[field.name] ?? (field.inputType === 'checkbox' ? false : '')}
+              onChange={handleFieldChange}
+            />
+          )
+        })}
+
+        {renderAboveSubmit ? renderAboveSubmit(formState) : null}
 
         {submitError ? <div className="form-error field--full">{submitError}</div> : null}
 
@@ -420,7 +443,17 @@ function CatalogEditorForm({
   )
 }
 
-function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
+function CatalogPage({
+  catalogKey,
+  omittedFieldNames,
+  onFormStateChange,
+  renderAboveSubmit,
+}: {
+  catalogKey: AdminCatalogKey
+  omittedFieldNames?: ReadonlySet<string>
+  onFormStateChange?: (state: Record<string, AdminCatalogFormValue>) => void
+  renderAboveSubmit?: (state: Record<string, AdminCatalogFormValue>) => JSX.Element | null
+}) {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<'all' | 'true' | 'false'>('all')
   const debouncedQuery = useDebounce(searchQuery, 300)
@@ -515,6 +548,9 @@ function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
             createLabel={pageInfo.createLabel}
             editingItem={editingItem}
             fields={data.fields}
+            omittedFieldNames={omittedFieldNames}
+            onFormStateChange={onFormStateChange}
+            renderAboveSubmit={renderAboveSubmit}
             onCancelEditing={() => setEditingItemId(null)}
             onSaved={() => {
               setEditingItemId(null)
@@ -620,7 +656,7 @@ export function AdminProcedureTypesCatalogPage() {
 }
 
 export function AdminFormFieldsCatalogPage() {
-  return <CatalogPage catalogKey="campos-ficha" />
+  return <CamposFichaConditionalCatalogPage />
 }
 
 export function AdminSkinPathologiesCatalogPage() {
@@ -641,4 +677,61 @@ export function AdminOptionGroupsCatalogPage() {
 
 export function AdminSectorsCatalogPage() {
   return <CatalogPage catalogKey="sectores" />
+}
+
+export function AdminSeccionesFichaCatalogPage() {
+  return <CatalogPage catalogKey="secciones-ficha" />
+}
+
+/**
+ * Catalog page for `campos-ficha` with type-conditional UI.
+ *
+ * Implements spec REQ-9 from `medical-form-field-editor-enhancements`:
+ *   - Hides `isMultiple` and `allowsDetail` when `fieldType` is not
+ *     SELECCION or MULTISELECCION.
+ *   - Renders an inline hint explaining why those fields are hidden.
+ *
+ * REQ-10 (edit-time type incompatibility warning) is intentionally
+ * deferred — surfacing it cleanly requires the wrapper to know the
+ * original fieldType at edit time, which would require lifting more
+ * state out of the generic `CatalogPage`. The UX hint above is
+ * sufficient for the primary visibility requirement.
+ */
+function CamposFichaConditionalCatalogPage() {
+  const [formState, setFormState] = useState<Record<string, AdminCatalogFormValue>>({})
+
+  const fieldType = formState.fieldType
+  const isSelectionType = fieldType === 'SELECCION' || fieldType === 'MULTISELECCION'
+
+  const omittedFieldNames = useMemo(() => {
+    if (isSelectionType) {
+      return undefined
+    }
+    return new Set(['isMultiple', 'allowsDetail'])
+  }, [isSelectionType])
+
+  const renderAboveSubmit = (state: Record<string, AdminCatalogFormValue>) => {
+    const next = state.fieldType
+    if (!next || next === 'SELECCION' || next === 'MULTISELECCION') {
+      return null
+    }
+    return (
+      <p
+        className="field--full field__hint"
+        data-testid="campos-ficha-non-selection-hint"
+      >
+        Los campos "Permite multiples respuestas" y "Permite detalle adicional"
+        solo aplican a tipos de selección.
+      </p>
+    )
+  }
+
+  return (
+    <CatalogPage
+      catalogKey="campos-ficha"
+      omittedFieldNames={omittedFieldNames}
+      onFormStateChange={setFormState}
+      renderAboveSubmit={renderAboveSubmit}
+    />
+  )
 }
