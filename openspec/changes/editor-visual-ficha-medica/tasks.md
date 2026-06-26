@@ -26,41 +26,41 @@
 
 ### Phase 1: Catalog `secciones-ficha` (Backend)
 
-#### 1.1 Add `secciones-ficha` to `_catalog_key_to_slug` set
+#### 1.1 [x] Add `secciones-ficha` to `_catalog_key_to_slug` set
 - **File**: `backend/config/api_views.py`
 - **Action**: Add `'secciones-ficha'` to the slug set.
 - **Acceptance**: `python manage.py check` passes.
 
-#### 1.2 Add `secciones-ficha` to `_catalog_summary_descriptor`
+#### 1.2 [x] Add `secciones-ficha` to `_catalog_summary_descriptor`
 - **File**: `backend/config/api_views.py`
 - **Action**: Add descriptor with title=Secciones, subtitle field=codigo.
 - **Acceptance**: endpoint `GET /api/admin/catalogos/sectores/` still works (no regression).
 
-#### 1.3 Add `secciones-ficha` block to `_catalog_page_data`
+#### 1.3 [x] Add `secciones-ficha` block to `_catalog_page_data`
 - **File**: `backend/config/api_views.py`
 - **Action**: Implement list with filters: `?active`, `?q=`, `?sector=<id>`, `?proc_estetico=<id>`. Search combines `codigo__icontains` + `nombre__icontains`. Order by `orden`, `nombre`. Prefetch `sector`, `proc_estetico`.
 - **Acceptance**: `GET /api/admin/catalogos/secciones-ficha/?active=true` returns active only.
 
-#### 1.4 Add `secciones-ficha` to `_catalog_parse_payload`
+#### 1.4 [x] Add `secciones-ficha` to `_catalog_parse_payload`
 - **File**: `backend/config/api_views.py`
 - **Action**: Parse `nombre`, `codigo`, `sectorId` (optional), `procEsteticoId` (optional), `orden`, `activo`. Validate at-least-one of sector/proc_estetico. Validate uniqueness per `(proc_estetico, codigo)`.
 - **Acceptance**: POST with both null bindings returns 400 with "Debe asignar al menos un sector o procedimiento estético.".
 
-#### 1.5 Add `secciones-ficha` to `_catalog_get_instance` model_map
+#### 1.5 [x] Add `secciones-ficha` to `_catalog_get_instance` model_map
 - **File**: `backend/config/api_views.py`
 - **Action**: Map `'secciones-ficha' → FichaSeccion`.
 - **Acceptance**: GET single endpoint `/api/admin/catalogos/secciones-ficha/<id>/` works.
 
 ### Phase 2: Validation in `campos-ficha` (Backend)
 
-#### 2.1 Add `grupo_opciones` required check for SELECCION/MULTISELECCION
+#### 2.1 [x] Add `grupo_opciones` required check for SELECCION/MULTISELECCION
 - **File**: `backend/config/api_views.py` (en `_catalog_parse_payload` para `campos-ficha`)
 - **Action**: After parsing, if `tipo_campo in {SELECCION, MULTISELECCION}` and `grupoOpcionesId` is None → return 400.
 - **Acceptance**: POST campos-ficha with tipo=SELECCION and no grupo_opciones returns 400.
 
 ### Phase 3: Backend Tests
 
-#### 3.1 `test_secciones_ficha_crud.py`
+#### 3.1 [x] `test_secciones_ficha_crud.py`
 - **File**: `backend/tests/test_secciones_ficha_crud.py`
 - **Covers**:
   - Create section with sector only.
@@ -75,7 +75,7 @@
   - Toggle activo.
   - Update.
 
-#### 3.2 `test_campos_ficha_validation.py`
+#### 3.2 [x] `test_campos_ficha_validation.py`
 - **File**: `backend/tests/test_campos_ficha_validation.py`
 - **Covers**:
   - SELECCION without grupo_opciones → 400.
@@ -84,7 +84,7 @@
   - MULTISELECCION with grupo_opciones → 201.
   - TEXTO/NUMERO/FECHA/BOOLEANO without grupo_opciones → 201 (still works).
 
-#### 3.3 Run full backend test suite
+#### 3.3 [x] Run full backend test suite
 - **Command**: `python manage.py test`
 - **Acceptance**: PR 1 tests pass; pre-existing failures unchanged.
 
