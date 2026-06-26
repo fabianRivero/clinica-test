@@ -1998,6 +1998,13 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
             errors["label"] = "La etiqueta visible es obligatoria."
         if field_type not in {choice for choice, _ in FichaCampo.TipoCampo.choices}:
             errors["fieldType"] = "Selecciona un tipo de campo válido."
+        if (
+            field_type in {FichaCampo.TipoCampo.SELECCION, FichaCampo.TipoCampo.MULTISELECCION}
+            and not option_group_id
+        ):
+            errors["optionGroupId"] = (
+                "El grupo de opciones es obligatorio para campos de selección."
+            )
         if errors:
             raise ValidationError(errors)
 
