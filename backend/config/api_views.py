@@ -1006,6 +1006,7 @@ def _catalog_key_to_slug(catalog_key):
         "grupos-opciones",
         "categorias-gasto",
         "sectores",
+        "secciones-ficha",
     }:
         return catalog_key
     raise KeyError(catalog_key)
