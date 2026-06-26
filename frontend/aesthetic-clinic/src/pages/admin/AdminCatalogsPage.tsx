@@ -82,6 +82,12 @@ const catalogFallbackInfo: Record<
       'Agrupa secciones de ficha clínica por ámbito para que múltiples servicios reutilicen el mismo formulario médico.',
     createLabel: 'Crear sector',
   },
+  'secciones-ficha': {
+    title: 'Secciones de ficha',
+    description:
+      'Agrupa campos de ficha clínica por sector o procedimiento estético.',
+    createLabel: 'Crear sección de ficha',
+  },
 }
 
 /**
@@ -641,4 +647,8 @@ export function AdminOptionGroupsCatalogPage() {
 
 export function AdminSectorsCatalogPage() {
   return <CatalogPage catalogKey="sectores" />
+}
+
+export function AdminSeccionesFichaCatalogPage() {
+  return <CatalogPage catalogKey="secciones-ficha" />
 }
