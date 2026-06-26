@@ -1072,7 +1072,7 @@ def _catalog_summary_descriptor():
     ]
 
 
-def _catalog_page_data(catalog_key, q="", active="all"):
+def _catalog_page_data(catalog_key, q="", active="all", **filters):
     catalog_key = _catalog_key_to_slug(catalog_key)
 
     if catalog_key == "todos-los-servicios":
@@ -1761,6 +1761,109 @@ def _catalog_page_data(catalog_key, q="", active="all"):
                 _catalog_field("code", "Código", "text", required=True, placeholder="Ej. DEP"),
                 _catalog_field("name", "Nombre", "text", required=True, placeholder="Ej. Depilación"),
                 _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas del sector"),
+                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
+            ],
+            "items": items,
+        }
+
+    if catalog_key == "secciones-ficha":
+        unfiltered = FichaSeccion.objects.all()
+        base_queryset = unfiltered.select_related("sector", "proc_estetico")
+
+        if q:
+            base_queryset = base_queryset.filter(
+                Q(codigo__icontains=q) | Q(nombre__icontains=q)
+            )
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+
+        sector_filter = filters.get("sector_id")
+        if sector_filter:
+            try:
+                base_queryset = base_queryset.filter(sector_id=int(sector_filter))
+            except (TypeError, ValueError):
+                pass
+        proc_filter = filters.get("proc_estetico_id")
+        if proc_filter:
+            try:
+                base_queryset = base_queryset.filter(proc_estetico_id=int(proc_filter))
+            except (TypeError, ValueError):
+                pass
+
+        queryset = base_queryset.order_by("orden", "nombre")
+
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.nombre,
+                item.codigo,
+                item.activo,
+                [
+                    {"label": "Código", "value": item.codigo},
+                    {"label": "Orden", "value": str(item.orden)},
+                    {
+                        "label": "Sector",
+                        "value": item.sector.nombre if item.sector else "Sin sector",
+                    },
+                    {
+                        "label": "Procedimiento estético",
+                        "value": item.proc_estetico.proceso if item.proc_estetico else "Sin procedimiento",
+                    },
+                ],
+                {
+                    "name": item.nombre,
+                    "code": item.codigo,
+                    "sectorId": item.sector_id,
+                    "procEsteticoId": item.proc_estetico_id,
+                    "order": item.orden,
+                },
+            )
+            for item in queryset
+        ]
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Secciones de ficha",
+                "description": "Administra las secciones que agrupan campos de ficha clínica por sector o procedimiento estético.",
+                "createLabel": "Crear sección de ficha",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{FichaSeccion.objects.exclude(sector__isnull=True).count()} seccion(es) vinculada(s) a un sector",
+            ),
+            "fields": [
+                _catalog_field("name", "Nombre", "text", required=True, placeholder="Ej. Antecedentes"),
+                _catalog_field("code", "Código", "text", required=True, placeholder="Ej. ANTECEDENTES"),
+                _catalog_field(
+                    "sectorId",
+                    "Sector",
+                    "select",
+                    value_type="number",
+                    allow_empty=True,
+                    options=[
+                        _catalog_option(sector.pk, sector.nombre, secondary_label=sector.codigo)
+                        for sector in Sector.objects.filter(activo=True).order_by("orden", "nombre")
+                    ],
+                    hint="Opcional si se asigna un procedimiento estético.",
+                ),
+                _catalog_field(
+                    "procEsteticoId",
+                    "Procedimiento estético",
+                    "select",
+                    value_type="number",
+                    allow_empty=True,
+                    options=[
+                        _catalog_option(proc.pk, proc.proceso)
+                        for proc in ProcEstetico.objects.filter(activo=True).order_by("proceso")
+                    ],
+                    hint="Opcional si se asigna un sector.",
+                ),
                 _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
             ],
             "items": items,
@@ -4278,8 +4381,16 @@ def admin_catalogo_detalle(request, catalog_key):
             {"detail": "El parametro active solo acepta true, false o all."},
             status=400,
         )
+    sector_id = request.GET.get("sector", "")
+    proc_estetico_id = request.GET.get("proc_estetico", "")
     try:
-        data = _catalog_page_data(catalog_key, q=q, active=active)
+        data = _catalog_page_data(
+            catalog_key,
+            q=q,
+            active=active,
+            sector_id=sector_id,
+            proc_estetico_id=proc_estetico_id,
+        )
     except KeyError:
         return json_response({"detail": "El catalogo solicitado no existe."}, status=404)
     return json_response(data)
