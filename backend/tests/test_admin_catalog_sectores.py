@@ -12,6 +12,7 @@ stay independent of the seed and can run in any order.
 import json
 
 from django.db import IntegrityError, transaction
+from django.db.models import Max
 from django.test import TestCase
 
 from accounts.models import Rol, Usuario
@@ -193,6 +194,7 @@ class SectoresCatalogApiTests(TestCase):
             "order": 5,
             "active": True,
         }
+        baseline_max = Sector.objects.aggregate(Max("orden"))["orden__max"] or 0
 
         response = self._post("/api/admin/catalogos/sectores/crear/", payload)
 
@@ -205,7 +207,8 @@ class SectoresCatalogApiTests(TestCase):
         self.assertEqual(created.codigo, payload["code"])
         self.assertEqual(created.nombre, payload["name"])
         self.assertEqual(created.descripcion, payload["description"])
-        self.assertEqual(created.orden, 5)
+        # orden is auto-assigned on create; payload's `order` is ignored
+        self.assertEqual(created.orden, baseline_max + 1)
         self.assertTrue(created.activo)
 
     def test_create_sector_without_codigo_returns_400(self):
@@ -287,6 +290,7 @@ class SectoresCatalogApiTests(TestCase):
     # ------------------------------------------------------------------
     def test_update_sector_persists_changes(self):
         sector = self._create_unique_sector()
+        original_orden = sector.orden
 
         self.client.force_login(self.admin_general)
         response = self._post(
@@ -302,7 +306,8 @@ class SectoresCatalogApiTests(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         sector.refresh_from_db()
         self.assertEqual(sector.descripcion, "Descripcion actualizada")
-        self.assertEqual(sector.orden, 9)
+        # orden is not exposed in the form; updates must preserve the existing value
+        self.assertEqual(sector.orden, original_orden)
         self.assertTrue(sector.nombre.endswith("(editado)"))
 
     # ------------------------------------------------------------------
@@ -340,6 +345,44 @@ class SectoresCatalogApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_create_sector_auto_assigns_orden_plus_one(self):
+        baseline_max = Sector.objects.aggregate(Max("orden"))["orden__max"] or 0
+
+        self.client.force_login(self.admin_general)
+        suffix = self._unique_suffix()
+        response = self._post(
+            "/api/admin/catalogos/sectores/crear/",
+            {
+                "code": f"auto-{suffix}".lower(),
+                "name": f"Auto Orden {suffix}",
+                "description": "Sector creado sin enviar orden",
+            },
+        )
+
+        self.assertEqual(response.status_code, 201, response.content)
+        new_sector = Sector.objects.get(codigo=f"auto-{suffix}".lower())
+        self.assertEqual(new_sector.orden, baseline_max + 1)
+
+    def test_update_sector_does_not_change_orden(self):
+        sector = self._create_unique_sector()
+        sector.orden = 7
+        sector.save(update_fields=["orden"])
+        original_orden = sector.orden
+
+        self.client.force_login(self.admin_general)
+        response = self._post(
+            f"/api/admin/catalogos/sectores/{sector.pk}/actualizar/",
+            {
+                "code": sector.codigo,
+                "name": f"{sector.nombre} (renombrado)",
+                "description": sector.descripcion or "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        sector.refresh_from_db()
+        self.assertEqual(sector.orden, original_orden)
 
 
 class SectoresModelConstraintsTests(TestCase):

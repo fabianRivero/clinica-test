@@ -1761,7 +1761,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                 _catalog_field("code", "Código", "text", required=True, placeholder="Ej. DEP"),
                 _catalog_field("name", "Nombre", "text", required=True, placeholder="Ej. Depilación"),
                 _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas del sector"),
-                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
             ],
             "items": items,
         }
@@ -2087,14 +2086,18 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
             errors["code"] = "El código del sector es obligatorio."
         if not name:
             errors["name"] = "El nombre del sector es obligatorio."
-        order = int_value("order", minimum=0, allow_empty=True)
         if errors:
             raise ValidationError(errors)
         obj = instance or Sector()
         obj.codigo = code
         obj.nombre = name
         obj.descripcion = text_value("description")
-        obj.orden = order or 0
+        if instance is None:
+            # Auto-assign orden on create: append after the current max so new
+            # entries land at the end without manual numbering. On update we
+            # leave the existing orden untouched to preserve manual reorders.
+            max_orden = Sector.objects.aggregate(Max("orden"))["orden__max"] or 0
+            obj.orden = max_orden + 1
         return obj
 
     if catalog_key == "secciones-ficha":
