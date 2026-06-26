@@ -60,9 +60,11 @@ const fullNavigation = [
     children: [
       { to: '/cms/catalogos/todos-los-servicios', label: 'Todos los servicios' },
       { to: '/cms/catalogos/procedimientos-esteticos', label: 'Procedimientos estéticos' },
+      { to: '/cms/catalogos/tipos-procedimiento', label: 'Tipos de procedimiento' },
       { to: '/cms/catalogos/tipos-servicio', label: 'Tipos de servicio' },
       { to: '/cms/catalogos/especialidades', label: 'Especialidades' },
       { to: '/cms/catalogos/categorias-gasto', label: 'Categorías de gasto' },
+      { to: '/cms/catalogos/sectores', label: 'Sectores' },
     ],
   },
   {

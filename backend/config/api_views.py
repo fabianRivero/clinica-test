@@ -8,7 +8,7 @@ from functools import wraps
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db import models
-from django.db.models import Prefetch, Q
+from django.db.models import Max, Prefetch, Q
 from django.contrib.sessions.models import Session
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -31,6 +31,7 @@ from catalogs.models import (
     PatologiaCutanea,
     ProcEstetico,
     ProcEsteticosTipo,
+    Sector,
     ServicioConfig,
     Sucursal,
     TipoServicio,
@@ -998,11 +999,13 @@ def _catalog_key_to_slug(catalog_key):
         "todos-los-servicios",
         "procedimientos-esteticos",
         "tipos-servicio",
+        "tipos-procedimiento",
         "campos-ficha",
         "patologias-cutaneas",
         "especialidades",
         "grupos-opciones",
         "categorias-gasto",
+        "sectores",
     }:
         return catalog_key
     raise KeyError(catalog_key)
@@ -1024,6 +1027,11 @@ def _catalog_summary_descriptor():
             "key": "tipos-servicio",
             "title": "Tipos de servicio",
             "description": "Categorias comerciales utilizadas al crear configuraciones de servicio y operaciones.",
+        },
+        {
+            "key": "tipos-procedimiento",
+            "title": "Tipos de procedimiento",
+            "description": "Tipos de procedimiento estético disponibles para asociar a los procedimientos.",
         },
         {
             "key": "campos-ficha",
@@ -1050,20 +1058,37 @@ def _catalog_summary_descriptor():
             "title": "Categorías de gasto",
             "description": "Categorías administrativas usadas al registrar gastos de sucursal.",
         },
+        {
+            "key": "sectores",
+            "title": "Sectores",
+            "description": "Sectores especializados que agrupan secciones de ficha clínica por ámbito (depilación, manchas, tatuajes).",
+        },
     ]
 
 
-def _catalog_page_data(catalog_key):
+def _catalog_page_data(catalog_key, q="", active="all"):
     catalog_key = _catalog_key_to_slug(catalog_key)
 
     if catalog_key == "todos-los-servicios":
-        queryset = (
-            ServicioConfig.objects.select_related(
-                "tipo_servicio",
-                "proc_estetico",
-                "proc_estetico__tipo_p_estetico",
-            ).order_by("tipo_servicio__tipo", "proc_estetico__proceso", "pk")
+        unfiltered = ServicioConfig.objects.all()
+        base_queryset = unfiltered.select_related(
+            "tipo_servicio",
+            "proc_estetico",
+            "proc_estetico__tipo_p_estetico",
+            "sector",
         )
+        if q:
+            base_queryset = base_queryset.filter(
+                Q(tipo_servicio__tipo__icontains=q) | Q(proc_estetico__proceso__icontains=q)
+            )
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("tipo_servicio__tipo", "proc_estetico__proceso", "pk")
+        # Metrics always reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         items = [
             _catalog_entry(
                 item.pk,
@@ -1081,6 +1106,10 @@ def _catalog_page_data(catalog_key):
                         "value": item.proc_estetico.tipo_p_estetico.tipo if item.proc_estetico else "No aplica",
                     },
                     {
+                        "label": "Sector",
+                        "value": item.sector.nombre if item.sector else "Sin sector",
+                    },
+                    {
                         "label": "Operaciones vinculadas",
                         "value": str(item.operaciones.count()),
                     },
@@ -1089,12 +1118,11 @@ def _catalog_page_data(catalog_key):
                     "serviceTypeId": item.tipo_servicio_id,
                     "procedureId": item.proc_estetico_id,
                     "basePrice": str(item.precio_base),
+                    "sectorId": item.sector_id,
                 },
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1139,6 +1167,25 @@ def _catalog_page_data(catalog_key):
                     hint="Deja este campo vacío para servicios generales como la cita de consulta.",
                 ),
                 _catalog_field(
+                    "sectorId",
+                    "Sector de ficha médica",
+                    "select",
+                    value_type="number",
+                    allow_empty=True,
+                    options=[
+                        _catalog_option(
+                            sector.pk,
+                            sector.nombre,
+                            secondary_label=sector.codigo,
+                        )
+                        for sector in Sector.objects.filter(activo=True).order_by("orden", "nombre")
+                    ],
+                    hint=(
+                        "Sin sector: el servicio no mostrará ficha médica en la conversión."
+                        " Si elegiste un procedimiento estético, asegúrate de asignar un sector."
+                    ),
+                ),
+                _catalog_field(
                     "basePrice",
                     "Precio base",
                     "number",
@@ -1151,7 +1198,15 @@ def _catalog_page_data(catalog_key):
         }
 
     if catalog_key == "procedimientos-esteticos":
-        queryset = ProcEstetico.objects.select_related("tipo_p_estetico").order_by("orden", "proceso")
+        unfiltered = ProcEstetico.objects.all()
+        base_queryset = unfiltered.select_related("tipo_p_estetico")
+        if q:
+            base_queryset = base_queryset.filter(proceso__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "proceso")
         items = [
             _catalog_entry(
                 item.pk,
@@ -1173,8 +1228,9 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1207,7 +1263,15 @@ def _catalog_page_data(catalog_key):
         }
 
     if catalog_key == "tipos-servicio":
-        queryset = TipoServicio.objects.order_by("orden", "tipo")
+        unfiltered = TipoServicio.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(tipo__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "tipo")
         items = [
             _catalog_entry(
                 item.pk,
@@ -1228,8 +1292,9 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1250,10 +1315,73 @@ def _catalog_page_data(catalog_key):
             "items": items,
         }
 
+    if catalog_key == "tipos-procedimiento":
+        unfiltered = ProcEsteticosTipo.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(tipo__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "tipo")
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.tipo,
+                "Tipo de procedimiento estetico",
+                item.activo,
+                [
+                    {"label": "Descripcion", "value": item.descripcion or "Sin descripcion"},
+                    {
+                        "label": "Procedimientos vinculados",
+                        "value": str(item.procedimientos.count()),
+                    },
+                ],
+                {
+                    "name": item.tipo,
+                    "description": item.descripcion,
+                    "order": item.orden,
+                },
+            )
+            for item in queryset
+        ]
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Tipos de procedimiento",
+                "description": "Administra los tipos de procedimiento estetico disponibles para asociar a los procedimientos.",
+                "createLabel": "Crear tipo de procedimiento",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{ProcEstetico.objects.filter(activo=True).count()} procedimiento(s) activo(s)",
+            ),
+            "fields": [
+                _catalog_field("name", "Tipo de procedimiento", "text", required=True, placeholder="Ej. Laser"),
+                _catalog_field("description", "Descripcion", "textarea", placeholder="Notas internas"),
+            ],
+            "items": items,
+        }
+
     if catalog_key == "campos-ficha":
-        queryset = (
-            FichaCampo.objects.select_related("seccion__proc_estetico", "grupo_opciones")
-            .order_by("seccion__proc_estetico__proceso", "seccion__orden", "orden", "etiqueta")
+        unfiltered = FichaCampo.objects.all()
+        base_queryset = unfiltered.select_related("seccion__proc_estetico", "grupo_opciones")
+        if q:
+            base_queryset = base_queryset.filter(
+                Q(etiqueta__icontains=q) | Q(codigo__icontains=q)
+            )
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by(
+            "seccion__proc_estetico__proceso", "seccion__orden", "orden", "etiqueta"
         )
         items = [
             _catalog_entry(
@@ -1286,8 +1414,9 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1354,7 +1483,15 @@ def _catalog_page_data(catalog_key):
         }
 
     if catalog_key == "patologias-cutaneas":
-        queryset = PatologiaCutanea.objects.order_by("orden", "nombre")
+        unfiltered = PatologiaCutanea.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(nombre__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "nombre")
         items = [
             _catalog_entry(
                 item.pk,
@@ -1371,8 +1508,9 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1394,7 +1532,15 @@ def _catalog_page_data(catalog_key):
         }
 
     if catalog_key == "especialidades":
-        queryset = Especialidad.objects.order_by("orden", "nombre")
+        unfiltered = Especialidad.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(nombre__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "nombre")
         items = [
             _catalog_entry(
                 item.pk,
@@ -1417,8 +1563,9 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1441,7 +1588,17 @@ def _catalog_page_data(catalog_key):
         }
 
     if catalog_key == "grupos-opciones":
-        queryset = GrupoOpciones.objects.prefetch_related("opciones").order_by("nombre")
+        unfiltered = GrupoOpciones.objects.all()
+        base_queryset = unfiltered.prefetch_related("opciones")
+        if q:
+            base_queryset = base_queryset.filter(
+                Q(nombre__icontains=q) | Q(codigo__icontains=q)
+            )
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("nombre")
         items = [
             _catalog_entry(
                 item.pk,
@@ -1461,8 +1618,9 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1485,7 +1643,22 @@ def _catalog_page_data(catalog_key):
         }
 
     if catalog_key == "categorias-gasto":
-        queryset = _expense_categories_queryset()
+        unfiltered = CategoriaGasto.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(nombre__icontains=q)
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by(
+            models.Case(
+                models.When(nombre__iexact="Otros", then=0),
+                default=1,
+                output_field=models.IntegerField(),
+            ),
+            "nombre",
+        )
         items = [
             _catalog_entry(
                 item.pk,
@@ -1503,8 +1676,9 @@ def _catalog_page_data(catalog_key):
             )
             for item in queryset
         ]
-        active_count = queryset.filter(activo=True).count()
-        total_count = queryset.count()
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
         return {
             "catalog": {
                 "key": catalog_key,
@@ -1521,6 +1695,67 @@ def _catalog_page_data(catalog_key):
             "fields": [
                 _catalog_field("name", "Categoría", "text", required=True, placeholder="Ej. Insumos"),
                 _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas o alcance"),
+            ],
+            "items": items,
+        }
+
+    if catalog_key == "sectores":
+        unfiltered = Sector.objects.all()
+        base_queryset = unfiltered
+        if q:
+            base_queryset = base_queryset.filter(
+                Q(nombre__icontains=q) | Q(codigo__icontains=q)
+            )
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+        queryset = base_queryset.order_by("orden", "nombre")
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.nombre,
+                item.codigo,
+                item.activo,
+                [
+                    {"label": "Código", "value": item.codigo},
+                    {"label": "Orden", "value": str(item.orden)},
+                    {"label": "Descripción", "value": item.descripcion or "Sin descripción"},
+                    {
+                        "label": "Servicios vinculados",
+                        "value": str(item.servicios_config.count()),
+                    },
+                ],
+                {
+                    "code": item.codigo,
+                    "name": item.nombre,
+                    "description": item.descripcion,
+                    "order": item.orden,
+                },
+            )
+            for item in queryset
+        ]
+        # Metrics reflect the unfiltered catalog so the header shows real totals.
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Sectores",
+                "description": "Administra los sectores especializados que agrupan secciones de ficha clínica por ámbito.",
+                "createLabel": "Crear sector",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{ServicioConfig.objects.exclude(sector__isnull=True).count()} configuracion(es) de servicio vinculadas",
+            ),
+            "fields": [
+                _catalog_field("code", "Código", "text", required=True, placeholder="Ej. DEP"),
+                _catalog_field("name", "Nombre", "text", required=True, placeholder="Ej. Depilación"),
+                _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas del sector"),
+                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
             ],
             "items": items,
         }
@@ -1573,6 +1808,7 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
     if catalog_key == "todos-los-servicios":
         service_type_id = int_value("serviceTypeId", required=True, minimum=1)
         procedure_id = int_value("procedureId", minimum=1, allow_empty=True)
+        sector_id = int_value("sectorId", minimum=1, allow_empty=True)
         base_price = decimal_value("basePrice", required=True)
         if errors:
             raise ValidationError(errors)
@@ -1587,9 +1823,16 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
             if not procedure:
                 raise ValidationError({"procedureId": "Selecciona un procedimiento válido."})
 
+        sector = None
+        if sector_id:
+            sector = Sector.objects.filter(pk=sector_id).first()
+            if not sector:
+                raise ValidationError({"sectorId": "Selecciona un sector válido."})
+
         obj = instance or ServicioConfig()
         obj.tipo_servicio = service_type
         obj.proc_estetico = procedure
+        obj.sector = sector
         obj.precio_base = base_price
         return obj
 
@@ -1619,6 +1862,18 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         obj.tipo = name
         obj.descripcion = text_value("description")
         return obj
+
+    if catalog_key == "tipos-procedimiento":
+        if instance is None:
+            max_orden = ProcEsteticosTipo.objects.aggregate(Max('orden'))['orden__max'] or 0
+            return ProcEsteticosTipo(
+                tipo=text_value("name"),
+                descripcion=text_value("description"),
+                orden=max_orden + 1,
+            )
+        instance.tipo = text_value("name")
+        instance.descripcion = text_value("description")
+        return instance
 
     if catalog_key == "campos-ficha":
         section_id = int_value("sectionId", required=True, minimum=1)
@@ -1709,6 +1964,23 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         obj.descripcion = text_value("description")
         return obj
 
+    if catalog_key == "sectores":
+        code = text_value("code")
+        name = text_value("name")
+        if not code:
+            errors["code"] = "El código del sector es obligatorio."
+        if not name:
+            errors["name"] = "El nombre del sector es obligatorio."
+        order = int_value("order", minimum=0, allow_empty=True)
+        if errors:
+            raise ValidationError(errors)
+        obj = instance or Sector()
+        obj.codigo = code
+        obj.nombre = name
+        obj.descripcion = text_value("description")
+        obj.orden = order or 0
+        return obj
+
     raise KeyError(catalog_key)
 
 
@@ -1718,11 +1990,13 @@ def _catalog_get_instance(catalog_key, item_id):
         "todos-los-servicios": ServicioConfig,
         "procedimientos-esteticos": ProcEstetico,
         "tipos-servicio": TipoServicio,
+        "tipos-procedimiento": ProcEsteticosTipo,
         "campos-ficha": FichaCampo,
         "patologias-cutaneas": PatologiaCutanea,
         "especialidades": Especialidad,
         "grupos-opciones": GrupoOpciones,
         "categorias-gasto": CategoriaGasto,
+        "sectores": Sector,
     }
     return model_map[catalog_key].objects.filter(pk=item_id).first()
 
@@ -3977,6 +4251,12 @@ def admin_catalogos(request):
                 CategoriaGasto.objects.filter(activo=True).count(),
                 "Clasificación administrativa para gastos por sucursal",
             ),
+            _catalog_item(
+                "sectores",
+                "Sectores",
+                Sector.objects.filter(activo=True).count(),
+                "Sectores especializados para agrupar secciones de ficha clínica",
+            ),
         ],
     }
     return json_response(data)
@@ -3985,8 +4265,15 @@ def admin_catalogos(request):
 @require_GET
 @admin_required
 def admin_catalogo_detalle(request, catalog_key):
+    q = request.GET.get("q", "")
+    active = request.GET.get("active", "all")
+    if active not in ("true", "false", "all"):
+        return json_response(
+            {"detail": "El parametro active solo acepta true, false o all."},
+            status=400,
+        )
     try:
-        data = _catalog_page_data(catalog_key)
+        data = _catalog_page_data(catalog_key, q=q, active=active)
     except KeyError:
         return json_response({"detail": "El catalogo solicitado no existe."}, status=404)
     return json_response(data)

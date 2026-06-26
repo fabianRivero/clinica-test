@@ -337,8 +337,22 @@ export function getAdminCatalogs() {
   return requestJson<CatalogsResponse>('/api/admin/catalogos/')
 }
 
-export function getAdminCatalogDetail(catalogKey: AdminCatalogKey) {
-  return requestJson<AdminCatalogDetailResponse>(`/api/admin/catalogos/${catalogKey}/`)
+export type AdminCatalogListParams = {
+  q?: string
+  active?: 'true' | 'false' | 'all'
+}
+
+export function getAdminCatalogDetail(
+  catalogKey: AdminCatalogKey,
+  params: AdminCatalogListParams = {},
+) {
+  const query = new URLSearchParams()
+  if (params.q && params.q.trim()) query.set('q', params.q.trim())
+  if (params.active && params.active !== 'all') query.set('active', params.active)
+  const search = query.toString()
+  return requestJson<AdminCatalogDetailResponse>(
+    `/api/admin/catalogos/${catalogKey}/${search ? `?${search}` : ''}`,
+  )
 }
 
 export function createAdminCatalogItem(

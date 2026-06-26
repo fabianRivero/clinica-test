@@ -538,6 +538,15 @@
   border: 1px solid rgba(200, 95, 100, 0.2);
 }
 
+.form-warning {
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 248, 230, 0.92), rgba(255, 252, 245, 0.92));
+  color: var(--color-warning-dark, #c4872d);
+  border: 1px solid rgba(196, 135, 45, 0.25);
+  font-weight: 500;
+}
+
 .table-card {
   overflow-x: auto;
 
@@ -1593,6 +1602,23 @@
 .catalog-admin-list {
   display: grid;
   gap: var(--spacing-4);
+}
+
+.catalog-admin-toolbar {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: center;
+  margin-bottom: var(--spacing-3);
+  flex-wrap: wrap;
+
+  > .input[type="search"] {
+    flex: 1 1 14rem;
+    min-width: 12rem;
+  }
+
+  > .input:not([type="search"]) {
+    flex: 0 1 12rem;
+  }
 }
 
 .catalog-admin-card {

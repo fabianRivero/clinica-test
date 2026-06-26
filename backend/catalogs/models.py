@@ -1,5 +1,6 @@
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models.functions import Lower
 
 from common.models import CatalogoEditableModel, TimeStampedModel
 
@@ -30,6 +31,32 @@ class TipoServicio(CatalogoEditableModel):
 
     def __str__(self):
         return self.tipo
+
+
+class Sector(CatalogoEditableModel):
+    """Grouping entity used to assign medical form sections to services
+    independently of the procedure identity.
+    """
+
+    codigo = models.CharField(max_length=20)
+    nombre = models.CharField(max_length=120)
+
+    class Meta:
+        db_table = "catalogs_sector"
+        ordering = ("orden", "nombre")
+        constraints = [
+            models.UniqueConstraint(
+                Lower("codigo"),
+                name="uniq_sector_codigo_ci",
+            ),
+            models.UniqueConstraint(
+                Lower("nombre"),
+                name="uniq_sector_nombre_ci",
+            ),
+        ]
+
+    def __str__(self):
+        return self.nombre
 
 
 class ProcEsteticosTipo(CatalogoEditableModel):
@@ -74,6 +101,13 @@ class ServicioConfig(TimeStampedModel):
     proc_estetico = models.ForeignKey(
         "catalogs.ProcEstetico",
         on_delete=models.PROTECT,
+        related_name="servicios_config",
+        null=True,
+        blank=True,
+    )
+    sector = models.ForeignKey(
+        "catalogs.Sector",
+        on_delete=models.SET_NULL,
         related_name="servicios_config",
         null=True,
         blank=True,

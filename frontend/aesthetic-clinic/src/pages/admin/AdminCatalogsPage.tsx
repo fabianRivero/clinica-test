@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useDebounce } from '../../hooks/useDebounce'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
   createAdminCatalogItem,
@@ -42,6 +43,12 @@ const catalogFallbackInfo: Record<
       'Administra las categorías comerciales visibles al registrar operaciones y configuraciones de servicio.',
     createLabel: 'Crear tipo de servicio',
   },
+  'tipos-procedimiento': {
+    title: 'Tipos de procedimiento',
+    description:
+      'Administra los tipos de procedimiento estetico disponibles para asociar a los procedimientos.',
+    createLabel: 'Crear tipo de procedimiento',
+  },
   'campos-ficha': {
     title: 'Campos de ficha',
     description:
@@ -69,6 +76,44 @@ const catalogFallbackInfo: Record<
       'Agrupa respuestas reutilizables para campos de seleccion y otros formularios configurables.',
     createLabel: 'Crear grupo de opciones',
   },
+  sectores: {
+    title: 'Sectores',
+    description:
+      'Agrupa secciones de ficha clínica por ámbito para que múltiples servicios reutilicen el mismo formulario médico.',
+    createLabel: 'Crear sector',
+  },
+}
+
+/**
+ * H2: evaluate whether the service create/edit form should display an inline
+ * warning when a procedure is selected but no sector is assigned.
+ *
+ * The rule: show a warning ONLY when both `procedureId` and `sectorId` exist
+ * in the form state AND `procedureId` is non-empty AND `sectorId` is empty.
+ * This avoids forcing the warning on "Cita médica" style services that have
+ * no procedure at all.
+ */
+function evaluateServiceSectorWarning(
+  formState: Record<string, AdminCatalogFormValue>,
+): string | null {
+  const rawProcedureId = formState.procedureId
+  const rawSectorId = formState.sectorId
+
+  const hasProcedure =
+    rawProcedureId !== '' &&
+    rawProcedureId !== null &&
+    typeof rawProcedureId !== 'undefined'
+
+  const sectorIsEmpty =
+    rawSectorId === '' ||
+    rawSectorId === null ||
+    typeof rawSectorId === 'undefined'
+
+  if (hasProcedure && sectorIsEmpty) {
+    return 'Este servicio tiene procedimiento estético pero no tiene sector asignado. No mostrará ficha médica en la conversión. ¿Estás seguro?'
+  }
+
+  return null
 }
 
 function buildEmptyForm(fields: AdminCatalogFieldDefinition[]) {
@@ -257,6 +302,10 @@ function CatalogEditorForm({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // H2: inline warning only applies to the service catalog (todos-los-servicios).
+  const inlineWarning =
+    catalogKey === 'todos-los-servicios' ? evaluateServiceSectorWarning(formState) : null
+
   function handleFieldChange(fieldName: string, nextValue: AdminCatalogFormValue) {
     setFormState((current) => ({
       ...current,
@@ -346,6 +395,12 @@ function CatalogEditorForm({
 
         {submitError ? <div className="form-error field--full">{submitError}</div> : null}
 
+        {inlineWarning ? (
+          <div className="form-warning field--full" data-testid="service-sector-warning">
+            {inlineWarning}
+          </div>
+        ) : null}
+
         <div className="form-actions field--full">
           {editingItem ? (
             <button className="button button--ghost" type="button" onClick={handleCancel}>
@@ -365,14 +420,19 @@ function CatalogEditorForm({
   )
 }
 
-function CatalogPage({
-  catalogKey,
-  showCreateAction = true,
-}: {
-  catalogKey: AdminCatalogKey
-  showCreateAction?: boolean
-}) {
-  const loader = useMemo(() => () => getAdminCatalogDetail(catalogKey), [catalogKey])
+function CatalogPage({ catalogKey }: { catalogKey: AdminCatalogKey }) {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeFilter, setActiveFilter] = useState<'all' | 'true' | 'false'>('all')
+  const debouncedQuery = useDebounce(searchQuery, 300)
+
+  const loader = useMemo(
+    () => () =>
+      getAdminCatalogDetail(catalogKey, {
+        q: debouncedQuery,
+        active: activeFilter,
+      }),
+    [catalogKey, debouncedQuery, activeFilter],
+  )
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
   const [editingItemId, setEditingItemId] = useState<number | null>(null)
@@ -407,29 +467,19 @@ function CatalogPage({
     }
   }
 
-  const pageActions = showCreateAction
-    ? [
-        {
-          label: editingItem ? 'Cancelar edicion' : pageInfo.createLabel,
-          variant: (editingItem ? 'ghost' : 'primary') as 'ghost' | 'primary',
-          onClick: () => {
-            if (editingItem) {
-              setEditingItemId(null)
-              return
-            }
-            setEditorVersion((current) => current + 1)
-          },
-        },
-      ]
-    : editingItem
-      ? [
-          {
-            label: 'Cancelar edicion',
-            variant: 'ghost' as const,
-            onClick: () => setEditingItemId(null),
-          },
-        ]
-      : []
+  const pageActions = [
+    {
+      label: editingItem ? 'Cancelar edicion' : pageInfo.createLabel,
+      variant: (editingItem ? 'ghost' : 'primary') as 'ghost' | 'primary',
+      onClick: () => {
+        if (editingItem) {
+          setEditingItemId(null)
+          return
+        }
+        setEditorVersion((current) => current + 1)
+      },
+    },
+  ]
 
   return (
     <div className="page-stack">
@@ -459,8 +509,7 @@ function CatalogPage({
 
       {data ? (
         <>
-          {showCreateAction || editingItem ? (
-            <CatalogEditorForm
+          <CatalogEditorForm
             key={editingItem ? `edit-${editingItem.id}` : `create-${editorVersion}`}
             catalogKey={catalogKey}
             createLabel={pageInfo.createLabel}
@@ -473,13 +522,32 @@ function CatalogPage({
               reload()
             }}
           />
-          ) : null}
 
           <SectionCard
             eyebrow="Catálogo"
             title={`Registros de ${pageInfo.title.toLowerCase()}`}
             description="Edita, desactiva o reactiva registros segun la necesidad operativa."
           >
+            <div className="catalog-admin-toolbar">
+              <input
+                aria-label="Buscar registros"
+                className="input"
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Buscar por titulo..."
+                type="search"
+                value={searchQuery}
+              />
+              <select
+                aria-label="Filtrar por estado"
+                className="input"
+                onChange={(event) => setActiveFilter(event.target.value as 'all' | 'true' | 'false')}
+                value={activeFilter}
+              >
+                <option value="all">Todos</option>
+                <option value="true">Activos</option>
+                <option value="false">Inactivos</option>
+              </select>
+            </div>
             {data.items.length ? (
               <div className="catalog-admin-list">
                 {data.items.map((item) => (
@@ -524,8 +592,8 @@ function CatalogPage({
               </div>
             ) : (
               <DataState
-                title="Sin registros todavia"
-                message="Este catálogo aun no tiene elementos creados en la base conectada."
+                title="Sin registros"
+                message="Este catálogo aun no tiene elementos que coincidan con el filtro actual."
               />
             )}
           </SectionCard>
@@ -536,15 +604,19 @@ function CatalogPage({
 }
 
 export function AdminProceduresCatalogPage() {
-  return <CatalogPage catalogKey="procedimientos-esteticos" showCreateAction={false} />
+  return <CatalogPage catalogKey="procedimientos-esteticos" />
 }
 
 export function AdminAllServicesCatalogPage() {
-  return <CatalogPage catalogKey="todos-los-servicios" showCreateAction={false} />
+  return <CatalogPage catalogKey="todos-los-servicios" />
 }
 
 export function AdminServiceTypesCatalogPage() {
-  return <CatalogPage catalogKey="tipos-servicio" showCreateAction={false} />
+  return <CatalogPage catalogKey="tipos-servicio" />
+}
+
+export function AdminProcedureTypesCatalogPage() {
+  return <CatalogPage catalogKey="tipos-procedimiento" />
 }
 
 export function AdminFormFieldsCatalogPage() {
@@ -556,13 +628,17 @@ export function AdminSkinPathologiesCatalogPage() {
 }
 
 export function AdminSpecialtiesCatalogPage() {
-  return <CatalogPage catalogKey="especialidades" showCreateAction={false} />
+  return <CatalogPage catalogKey="especialidades" />
 }
 
 export function AdminExpenseCategoriesCatalogPage() {
-  return <CatalogPage catalogKey="categorias-gasto" showCreateAction={false} />
+  return <CatalogPage catalogKey="categorias-gasto" />
 }
 
 export function AdminOptionGroupsCatalogPage() {
   return <CatalogPage catalogKey="grupos-opciones" />
+}
+
+export function AdminSectorsCatalogPage() {
+  return <CatalogPage catalogKey="sectores" />
 }

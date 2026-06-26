@@ -447,11 +447,13 @@ export type AdminCatalogKey =
   | 'todos-los-servicios'
   | 'procedimientos-esteticos'
   | 'tipos-servicio'
+  | 'tipos-procedimiento'
   | 'campos-ficha'
   | 'patologias-cutaneas'
   | 'especialidades'
   | 'grupos-opciones'
   | 'categorias-gasto'
+  | 'sectores'
 
 export type AdminCatalogFormValue = string | number | boolean | null
 
