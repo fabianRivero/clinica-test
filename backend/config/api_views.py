@@ -4415,6 +4415,12 @@ def admin_catalogos(request):
                 Sector.objects.filter(activo=True).count(),
                 "Sectores especializados para agrupar secciones de ficha clínica",
             ),
+            _catalog_item(
+                "secciones-ficha",
+                "Secciones",
+                FichaSeccion.objects.filter(activo=True).count(),
+                "Secciones de ficha clínica que se pueden asociar a sectores y procedimientos",
+            ),
         ],
     }
     return json_response(data)
