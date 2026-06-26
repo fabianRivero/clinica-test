@@ -1064,6 +1064,11 @@ def _catalog_summary_descriptor():
             "title": "Sectores",
             "description": "Sectores especializados que agrupan secciones de ficha clínica por ámbito (depilación, manchas, tatuajes).",
         },
+        {
+            "key": "secciones-ficha",
+            "title": "Secciones de ficha",
+            "description": "Secciones de ficha clínica que agrupan campos configurables por sector o procedimiento estético.",
+        },
     ]
 
 
