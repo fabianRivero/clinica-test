@@ -112,35 +112,43 @@
 - **Action**: New file covering list (with seed), `?active=true/false/all`, `?q=` matching both `nombre` and `codigo`, create with valid payload, validation on missing `code`/`name`, duplicate `codigo`/`nombre` rejection (case-insensitive, via `full_clean`), update, toggle, and model-level constraints.
 - **Acceptance**: all tests pass; baseline tests (unrelated pre-existing failures) remain at their original count.
 
-#### 5.1 Add `'sectores'` to `catalogFallbackInfo`
+#### 5.1 [x] Add `'sectores'` to `catalogFallbackInfo`
 - **Files**: `frontend/aesthetic-clinic/src/pages/admin/AdminCatalogsPage.tsx`
 - **Action**: Register fallback metadata for the sixth catalog (`title`, `subtitle`, `emptyMessage`, `columns`).
 
-#### 5.2 Verify tab appears in `AdminCatalogsPage`
+#### 5.2 [x] Verify tab appears in `AdminCatalogsPage`
 - **Acceptance**: visiting `/admin/catalogos?tab=sectores` shows the CRUD interface with create form (codigo, nombre, descripcion, activo, orden).
 
-#### 5.3 Verify CRUD operations work end-to-end
-- **Acceptance**: creating a Sector via UI persists; toggling active works; list reflects changes.
+#### 5.3 [x] Verify CRUD operations work end-to-end
+- **Acceptance**: creating a Sector via UI persists; toggling active works; list reflects changes. Covered by E2E `cms-catalogos-sectores.spec.ts`.
 
 ### Phase 6: Service Form Dropdown
 
-#### 6.1 Add sector dropdown to ServicioConfig create/edit form
-- **Files**: `frontend/aesthetic-clinic/src/pages/cms/catalogos/todos-los-servicios/` (or wherever the service form lives — locate via grep)
-- **Action**: Fetch `GET /api/admin/catalogos/sectores/?active=true`; render dropdown with empty option; persist on submit.
-- **Acceptance**: selecting a sector and saving persists `ServicioConfig.sector_id`.
+#### 6.1 [x] Add sector dropdown to ServicioConfig create/edit form
+- **Files**: `frontend/aesthetic-clinic/src/pages/admin/AdminCatalogsPage.tsx`, `backend/config/api_views.py`
+- **Action**: Backend exposes `sectorId` as a new `select` field in the `todos-los-servicios` catalog page data, populated from `Sector.objects.filter(activo=True)`; the frontend's generic `CatalogFormField` renders it as a dropdown with an empty option. `_catalog_parse_payload` reads `sectorId` (nullable) and assigns `obj.sector` on `ServicioConfig`. The items list also surfaces the assigned sector as a metadata row.
+- **Acceptance**: selecting a sector and saving persists `ServicioConfig.sector_id`. Covered by E2E `cms-servicios-sector-dropdown.spec.ts`.
 
-#### 6.2 Smoke test: create "Depilación día de la madre" with sector DEP
-- **Acceptance**: new service visible in list with sector assigned; prospect conversion step 3 for that service shows same sections as "Depilación definitiva".
+#### 6.2 [x] Smoke test: create "Depilación día de la madre" with sector DEP
+- **Acceptance**: new service visible in list with sector assigned; prospect conversion step 3 for that service shows same sections as "Depilación definitiva". Covered by E2E `cms-servicios-sector-dropdown.spec.ts` (sector persistence) and pre-existing backend tests for the filter.
+
+#### 6.3 [x] Inline warning when procedure is set and sector is empty (H2)
+- **Files**: `frontend/aesthetic-clinic/src/pages/admin/AdminCatalogsPage.tsx`, `frontend/aesthetic-clinic/src/styles/_components.scss`
+- **Action**: Added `evaluateServiceSectorWarning` pure helper and a new `.form-warning` SCSS class. The `CatalogEditorForm` renders the warning inline (non-blocking) when `procedureId` is non-empty and `sectorId` is empty for the `todos-los-servicios` catalog. The save button remains active.
+- **Acceptance**: warning appears when procedure is set and sector is empty; warning is hidden when either procedure is empty or sector is set. Covered by E2E `cms-servicios-sector-dropdown.spec.ts`.
+
+#### 6.4 [x] Smoke test manual (superseded by E2E)
+- E2E coverage replaces the manual smoke step for this PR.
 
 ### Phase 7: E2E Tests
 
-#### 7.1 `cms-catalogos-sectores.spec.ts`
-- **Files**: `frontend/tests/e2e/cms-catalogos-sectores.spec.ts`
-- **Covers**: tab visible at `/admin/catalogos?tab=sectores`; create a sector; toggle active; delete (if supported by the pattern).
+#### 7.1 [x] `cms-catalogos-sectores.spec.ts`
+- **Files**: `frontend/aesthetic-clinic/tests/e2e/cms-catalogos-sectores.spec.ts`
+- **Covers**: tab visible at `/cms/catalogos/sectores`; create a sector; toggle active; deactivate and reactivate; tab link present in catalog navigation.
 
-#### 7.2 `cms-servicios-sector-dropdown.spec.ts`
-- **Files**: `frontend/tests/e2e/cms-servicios-sector-dropdown.spec.ts`
-- **Covers**: dropdown visible in service create/edit form; can select a sector; can save with sector=null.
+#### 7.2 [x] `cms-servicios-sector-dropdown.spec.ts`
+- **Files**: `frontend/aesthetic-clinic/tests/e2e/cms-servicios-sector-dropdown.spec.ts`
+- **Covers**: dropdown visible in service create/edit form; dropdown lists seeded active sectors; selecting a sector persists on submit; H2 warning appears when procedure is set and sector is empty; no warning when both are empty (Cita medica case).
 
 ### Phase 8: Verification
 

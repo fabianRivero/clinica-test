@@ -538,6 +538,15 @@
   border: 1px solid rgba(200, 95, 100, 0.2);
 }
 
+.form-warning {
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 248, 230, 0.92), rgba(255, 252, 245, 0.92));
+  color: var(--color-warning-dark, #c4872d);
+  border: 1px solid rgba(196, 135, 45, 0.25);
+  font-weight: 500;
+}
+
 .table-card {
   overflow-x: auto;
 

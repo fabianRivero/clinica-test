@@ -9,6 +9,7 @@ import {
   AdminOptionGroupsCatalogPage,
   AdminProcedureTypesCatalogPage,
   AdminProceduresCatalogPage,
+  AdminSectorsCatalogPage,
   AdminServiceTypesCatalogPage,
   AdminSkinPathologiesCatalogPage,
   AdminSpecialtiesCatalogPage,
@@ -156,6 +157,7 @@ function App() {
           <Route path="catalogos/categorias-gasto" element={<AdminExpenseCategoriesCatalogPage />} />
           <Route path="catalogos/campos-ficha" element={<AdminFormFieldsCatalogPage />} />
           <Route path="catalogos/grupos-opciones" element={<AdminOptionGroupsCatalogPage />} />
+          <Route path="catalogos/sectores" element={<AdminSectorsCatalogPage />} />
           <Route path="equipo" element={<Navigate to="/cms/equipo/gestionar" replace />} />
           <Route path="equipo/crear" element={<AdminStaffCreatePage />} />
           <Route path="equipo/gestionar" element={<AdminStaffManagePage />} />

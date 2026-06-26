@@ -453,6 +453,7 @@ export type AdminCatalogKey =
   | 'especialidades'
   | 'grupos-opciones'
   | 'categorias-gasto'
+  | 'sectores'
 
 export type AdminCatalogFormValue = string | number | boolean | null
 
