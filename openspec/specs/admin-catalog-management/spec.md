@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The admin catalog management capability enables admin users to list, search, filter by active state, create, update, and toggle entries across five admin catalogs at `/cms/catalogos/`. The five in-scope catalogs share the same API contract and UI pattern; only the title field name differs per catalog.
+The admin catalog management capability enables admin users to list, search, filter by active state, create, update, and toggle entries across six admin catalogs at `/cms/catalogos/`. The six in-scope catalogs share the same API contract and UI pattern; only the title field name differs per catalog.
 
 ## Title Field Per Catalog
 
@@ -13,6 +13,7 @@ The admin catalog management capability enables admin users to list, search, fil
 | `tipos-servicio` | `tipo` |
 | `especialidades` | `nombre` |
 | `categorias-gasto` | `nombre` |
+| `sectores` | `nombre` |
 
 ## Requirements
 
@@ -123,3 +124,30 @@ The system MUST leave the existing create (`admin_catalogo_crear`), update (`adm
 - GIVEN an authenticated admin user viewing an active catalog item
 - WHEN they toggle it to inactive
 - THEN the item's `activo` state is updated and the list refreshes
+
+### Requirement: Sixth Catalog: Sectores
+
+The system SHALL extend `admin-catalog-management` to include `sectores` as a sixth catalog accessible at `/api/admin/catalogos/sectores/`, following the identical API contract as the five existing catalogs (sucusales, ciudades, especialidades, tipos-servicio, categorias-gasto).
+
+The `sectores` catalog title field SHALL be `nombre`. All other fields (`codigo`, `descripcion`, `activo`, `orden`) and behaviors (filtering, search, toggle, CRUD) MUST match the established catalog contract.
+
+#### Scenario: Sectores catalog list follows same contract
+
+- GIVEN an authenticated admin user
+- WHEN they call `GET /api/admin/catalogos/sectores/`
+- THEN the response structure matches the other catalogs (ordered by `orden`, includes both active and inactive)
+- AND `GET /api/admin/catalogos/sectores/?active=true` returns only active sectors
+- AND `GET /api/admin/catalogos/sectores/?q=dep` returns sectors where `nombre` icontains "dep"
+
+#### Scenario: Sectores catalog create follows same contract
+
+- GIVEN an authenticated admin user
+- WHEN they call `POST /api/admin/catalogos/sectores/` with `nombre`, `codigo`, `descripcion`, `activo`, `orden`
+- THEN the sector is created and persisted following the same validation rules as other catalogs
+
+#### Scenario: Sector dropdown appears in service form
+
+- GIVEN an authenticated admin user on the service create/edit form at `/cms/catalogos/todos-los-servicios/`
+- WHEN the page loads
+- THEN a sector dropdown is displayed populated with active sectors from `/api/admin/catalogos/sectores/?active=true`
+- AND the dropdown allows the admin to select a sector or leave it empty (null)
