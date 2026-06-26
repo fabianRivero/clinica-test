@@ -2147,6 +2147,7 @@ def _catalog_get_instance(catalog_key, item_id):
         "grupos-opciones": GrupoOpciones,
         "categorias-gasto": CategoriaGasto,
         "sectores": Sector,
+        "secciones-ficha": FichaSeccion,
     }
     return model_map[catalog_key].objects.filter(pk=item_id).first()
 
