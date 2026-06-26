@@ -1075,6 +1075,7 @@ def _catalog_page_data(catalog_key, q="", active="all"):
             "tipo_servicio",
             "proc_estetico",
             "proc_estetico__tipo_p_estetico",
+            "sector",
         )
         if q:
             base_queryset = base_queryset.filter(
@@ -1105,6 +1106,10 @@ def _catalog_page_data(catalog_key, q="", active="all"):
                         "value": item.proc_estetico.tipo_p_estetico.tipo if item.proc_estetico else "No aplica",
                     },
                     {
+                        "label": "Sector",
+                        "value": item.sector.nombre if item.sector else "Sin sector",
+                    },
+                    {
                         "label": "Operaciones vinculadas",
                         "value": str(item.operaciones.count()),
                     },
@@ -1113,6 +1118,7 @@ def _catalog_page_data(catalog_key, q="", active="all"):
                     "serviceTypeId": item.tipo_servicio_id,
                     "procedureId": item.proc_estetico_id,
                     "basePrice": str(item.precio_base),
+                    "sectorId": item.sector_id,
                 },
             )
             for item in queryset
@@ -1159,6 +1165,25 @@ def _catalog_page_data(catalog_key, q="", active="all"):
                         .order_by("tipo_p_estetico__tipo", "orden", "proceso")
                     ],
                     hint="Deja este campo vacío para servicios generales como la cita de consulta.",
+                ),
+                _catalog_field(
+                    "sectorId",
+                    "Sector de ficha médica",
+                    "select",
+                    value_type="number",
+                    allow_empty=True,
+                    options=[
+                        _catalog_option(
+                            sector.pk,
+                            sector.nombre,
+                            secondary_label=sector.codigo,
+                        )
+                        for sector in Sector.objects.filter(activo=True).order_by("orden", "nombre")
+                    ],
+                    hint=(
+                        "Sin sector: el servicio no mostrará ficha médica en la conversión."
+                        " Si elegiste un procedimiento estético, asegúrate de asignar un sector."
+                    ),
                 ),
                 _catalog_field(
                     "basePrice",
@@ -1783,6 +1808,7 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
     if catalog_key == "todos-los-servicios":
         service_type_id = int_value("serviceTypeId", required=True, minimum=1)
         procedure_id = int_value("procedureId", minimum=1, allow_empty=True)
+        sector_id = int_value("sectorId", minimum=1, allow_empty=True)
         base_price = decimal_value("basePrice", required=True)
         if errors:
             raise ValidationError(errors)
@@ -1797,9 +1823,16 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
             if not procedure:
                 raise ValidationError({"procedureId": "Selecciona un procedimiento válido."})
 
+        sector = None
+        if sector_id:
+            sector = Sector.objects.filter(pk=sector_id).first()
+            if not sector:
+                raise ValidationError({"sectorId": "Selecciona un sector válido."})
+
         obj = instance or ServicioConfig()
         obj.tipo_servicio = service_type
         obj.proc_estetico = procedure
+        obj.sector = sector
         obj.precio_base = base_price
         return obj
 
