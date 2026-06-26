@@ -76,6 +76,44 @@ const catalogFallbackInfo: Record<
       'Agrupa respuestas reutilizables para campos de seleccion y otros formularios configurables.',
     createLabel: 'Crear grupo de opciones',
   },
+  sectores: {
+    title: 'Sectores',
+    description:
+      'Agrupa secciones de ficha clínica por ámbito para que múltiples servicios reutilicen el mismo formulario médico.',
+    createLabel: 'Crear sector',
+  },
+}
+
+/**
+ * H2: evaluate whether the service create/edit form should display an inline
+ * warning when a procedure is selected but no sector is assigned.
+ *
+ * The rule: show a warning ONLY when both `procedureId` and `sectorId` exist
+ * in the form state AND `procedureId` is non-empty AND `sectorId` is empty.
+ * This avoids forcing the warning on "Cita médica" style services that have
+ * no procedure at all.
+ */
+function evaluateServiceSectorWarning(
+  formState: Record<string, AdminCatalogFormValue>,
+): string | null {
+  const rawProcedureId = formState.procedureId
+  const rawSectorId = formState.sectorId
+
+  const hasProcedure =
+    rawProcedureId !== '' &&
+    rawProcedureId !== null &&
+    typeof rawProcedureId !== 'undefined'
+
+  const sectorIsEmpty =
+    rawSectorId === '' ||
+    rawSectorId === null ||
+    typeof rawSectorId === 'undefined'
+
+  if (hasProcedure && sectorIsEmpty) {
+    return 'Este servicio tiene procedimiento estético pero no tiene sector asignado. No mostrará ficha médica en la conversión. ¿Estás seguro?'
+  }
+
+  return null
 }
 
 function buildEmptyForm(fields: AdminCatalogFieldDefinition[]) {
@@ -264,6 +302,10 @@ function CatalogEditorForm({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // H2: inline warning only applies to the service catalog (todos-los-servicios).
+  const inlineWarning =
+    catalogKey === 'todos-los-servicios' ? evaluateServiceSectorWarning(formState) : null
+
   function handleFieldChange(fieldName: string, nextValue: AdminCatalogFormValue) {
     setFormState((current) => ({
       ...current,
@@ -352,6 +394,12 @@ function CatalogEditorForm({
         ))}
 
         {submitError ? <div className="form-error field--full">{submitError}</div> : null}
+
+        {inlineWarning ? (
+          <div className="form-warning field--full" data-testid="service-sector-warning">
+            {inlineWarning}
+          </div>
+        ) : null}
 
         <div className="form-actions field--full">
           {editingItem ? (
@@ -589,4 +637,8 @@ export function AdminExpenseCategoriesCatalogPage() {
 
 export function AdminOptionGroupsCatalogPage() {
   return <CatalogPage catalogKey="grupos-opciones" />
+}
+
+export function AdminSectorsCatalogPage() {
+  return <CatalogPage catalogKey="sectores" />
 }
