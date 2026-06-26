@@ -214,6 +214,15 @@ class FichaSeccion(TimeStampedModel):
         "catalogs.ProcEstetico",
         on_delete=models.CASCADE,
         related_name="secciones_ficha",
+        null=True,
+        blank=True,
+    )
+    sector = models.ForeignKey(
+        "catalogs.Sector",
+        on_delete=models.SET_NULL,
+        related_name="ficha_secciones",
+        null=True,
+        blank=True,
     )
     codigo = models.CharField(max_length=80)
     nombre = models.CharField(max_length=120)
@@ -231,7 +240,8 @@ class FichaSeccion(TimeStampedModel):
         ]
 
     def __str__(self):
-        return f"{self.proc_estetico} - {self.nombre}"
+        scope = self.proc_estetico or self.sector
+        return f"{scope} - {self.nombre}"
 
 
 class FichaCampo(TimeStampedModel):
