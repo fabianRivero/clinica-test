@@ -1006,6 +1006,7 @@ def _catalog_key_to_slug(catalog_key):
         "grupos-opciones",
         "categorias-gasto",
         "sectores",
+        "secciones-ficha",
     }:
         return catalog_key
     raise KeyError(catalog_key)
@@ -1063,10 +1064,15 @@ def _catalog_summary_descriptor():
             "title": "Sectores",
             "description": "Sectores especializados que agrupan secciones de ficha clínica por ámbito (depilación, manchas, tatuajes).",
         },
+        {
+            "key": "secciones-ficha",
+            "title": "Secciones de ficha",
+            "description": "Secciones de ficha clínica que agrupan campos configurables por sector o procedimiento estético.",
+        },
     ]
 
 
-def _catalog_page_data(catalog_key, q="", active="all"):
+def _catalog_page_data(catalog_key, q="", active="all", **filters):
     catalog_key = _catalog_key_to_slug(catalog_key)
 
     if catalog_key == "todos-los-servicios":
@@ -1760,6 +1766,109 @@ def _catalog_page_data(catalog_key, q="", active="all"):
             "items": items,
         }
 
+    if catalog_key == "secciones-ficha":
+        unfiltered = FichaSeccion.objects.all()
+        base_queryset = unfiltered.select_related("sector", "proc_estetico")
+
+        if q:
+            base_queryset = base_queryset.filter(
+                Q(codigo__icontains=q) | Q(nombre__icontains=q)
+            )
+        if active == "true":
+            base_queryset = base_queryset.filter(activo=True)
+        elif active == "false":
+            base_queryset = base_queryset.filter(activo=False)
+
+        sector_filter = filters.get("sector_id")
+        if sector_filter:
+            try:
+                base_queryset = base_queryset.filter(sector_id=int(sector_filter))
+            except (TypeError, ValueError):
+                pass
+        proc_filter = filters.get("proc_estetico_id")
+        if proc_filter:
+            try:
+                base_queryset = base_queryset.filter(proc_estetico_id=int(proc_filter))
+            except (TypeError, ValueError):
+                pass
+
+        queryset = base_queryset.order_by("orden", "nombre")
+
+        items = [
+            _catalog_entry(
+                item.pk,
+                item.nombre,
+                item.codigo,
+                item.activo,
+                [
+                    {"label": "Código", "value": item.codigo},
+                    {"label": "Orden", "value": str(item.orden)},
+                    {
+                        "label": "Sector",
+                        "value": item.sector.nombre if item.sector else "Sin sector",
+                    },
+                    {
+                        "label": "Procedimiento estético",
+                        "value": item.proc_estetico.proceso if item.proc_estetico else "Sin procedimiento",
+                    },
+                ],
+                {
+                    "name": item.nombre,
+                    "code": item.codigo,
+                    "sectorId": item.sector_id,
+                    "procEsteticoId": item.proc_estetico_id,
+                    "order": item.orden,
+                },
+            )
+            for item in queryset
+        ]
+        active_count = unfiltered.filter(activo=True).count()
+        total_count = unfiltered.count()
+        return {
+            "catalog": {
+                "key": catalog_key,
+                "title": "Secciones de ficha",
+                "description": "Administra las secciones que agrupan campos de ficha clínica por sector o procedimiento estético.",
+                "createLabel": "Crear sección de ficha",
+            },
+            "metrics": _catalog_metric_set(
+                active_count,
+                total_count - active_count,
+                total_count,
+                f"{FichaSeccion.objects.exclude(sector__isnull=True).count()} seccion(es) vinculada(s) a un sector",
+            ),
+            "fields": [
+                _catalog_field("name", "Nombre", "text", required=True, placeholder="Ej. Antecedentes"),
+                _catalog_field("code", "Código", "text", required=True, placeholder="Ej. ANTECEDENTES"),
+                _catalog_field(
+                    "sectorId",
+                    "Sector",
+                    "select",
+                    value_type="number",
+                    allow_empty=True,
+                    options=[
+                        _catalog_option(sector.pk, sector.nombre, secondary_label=sector.codigo)
+                        for sector in Sector.objects.filter(activo=True).order_by("orden", "nombre")
+                    ],
+                    hint="Opcional si se asigna un procedimiento estético.",
+                ),
+                _catalog_field(
+                    "procEsteticoId",
+                    "Procedimiento estético",
+                    "select",
+                    value_type="number",
+                    allow_empty=True,
+                    options=[
+                        _catalog_option(proc.pk, proc.proceso)
+                        for proc in ProcEstetico.objects.filter(activo=True).order_by("proceso")
+                    ],
+                    hint="Opcional si se asigna un sector.",
+                ),
+                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
+            ],
+            "items": items,
+        }
+
     raise KeyError(catalog_key)
 
 
@@ -1889,6 +1998,13 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
             errors["label"] = "La etiqueta visible es obligatoria."
         if field_type not in {choice for choice, _ in FichaCampo.TipoCampo.choices}:
             errors["fieldType"] = "Selecciona un tipo de campo válido."
+        if (
+            field_type in {FichaCampo.TipoCampo.SELECCION, FichaCampo.TipoCampo.MULTISELECCION}
+            and not option_group_id
+        ):
+            errors["optionGroupId"] = (
+                "El grupo de opciones es obligatorio para campos de selección."
+            )
         if errors:
             raise ValidationError(errors)
 
@@ -1981,6 +2097,47 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         obj.orden = order or 0
         return obj
 
+    if catalog_key == "secciones-ficha":
+        name = text_value("name")
+        code = text_value("code")
+        sector_id = int_value("sectorId", minimum=1, allow_empty=True)
+        proc_estetico_id = int_value("procEsteticoId", minimum=1, allow_empty=True)
+        order = int_value("order", minimum=0, allow_empty=True)
+
+        if not code:
+            errors["code"] = "El código de la sección es obligatorio."
+        if not name:
+            errors["name"] = "El nombre de la sección es obligatorio."
+        if not sector_id and not proc_estetico_id:
+            errors["_general"] = (
+                "Debes asignar al menos un sector o un procedimiento estético a la sección."
+            )
+        if errors:
+            raise ValidationError(errors)
+
+        sector = Sector.objects.filter(pk=sector_id).first() if sector_id else None
+        proc = ProcEstetico.objects.filter(pk=proc_estetico_id).first() if proc_estetico_id else None
+
+        # Friendly pre-check for UniqueConstraint(proc_estetico, codigo).
+        # The DB constraint is enforced as a fallback via IntegrityError
+        # handling in admin_catalogo_crear/admin_catalogo_actualizar, but
+        # raising ValidationError here gives a clearer 400 message.
+        uniqueness_qs = FichaSeccion.objects.filter(proc_estetico=proc, codigo=code)
+        if instance is not None:
+            uniqueness_qs = uniqueness_qs.exclude(pk=instance.pk)
+        if uniqueness_qs.exists():
+            raise ValidationError(
+                {"code": "Ya existe una sección con ese código para este procedimiento estético."}
+            )
+
+        obj = instance or FichaSeccion()
+        obj.nombre = name
+        obj.codigo = code
+        obj.sector = sector
+        obj.proc_estetico = proc
+        obj.orden = order or 0
+        return obj
+
     raise KeyError(catalog_key)
 
 
@@ -1997,6 +2154,7 @@ def _catalog_get_instance(catalog_key, item_id):
         "grupos-opciones": GrupoOpciones,
         "categorias-gasto": CategoriaGasto,
         "sectores": Sector,
+        "secciones-ficha": FichaSeccion,
     }
     return model_map[catalog_key].objects.filter(pk=item_id).first()
 
@@ -4257,6 +4415,12 @@ def admin_catalogos(request):
                 Sector.objects.filter(activo=True).count(),
                 "Sectores especializados para agrupar secciones de ficha clínica",
             ),
+            _catalog_item(
+                "secciones-ficha",
+                "Secciones",
+                FichaSeccion.objects.filter(activo=True).count(),
+                "Secciones de ficha clínica que se pueden asociar a sectores y procedimientos",
+            ),
         ],
     }
     return json_response(data)
@@ -4272,8 +4436,16 @@ def admin_catalogo_detalle(request, catalog_key):
             {"detail": "El parametro active solo acepta true, false o all."},
             status=400,
         )
+    sector_id = request.GET.get("sector", "")
+    proc_estetico_id = request.GET.get("proc_estetico", "")
     try:
-        data = _catalog_page_data(catalog_key, q=q, active=active)
+        data = _catalog_page_data(
+            catalog_key,
+            q=q,
+            active=active,
+            sector_id=sector_id,
+            proc_estetico_id=proc_estetico_id,
+        )
     except KeyError:
         return json_response({"detail": "El catalogo solicitado no existe."}, status=404)
     return json_response(data)
