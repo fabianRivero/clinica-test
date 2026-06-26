@@ -2090,6 +2090,47 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         obj.orden = order or 0
         return obj
 
+    if catalog_key == "secciones-ficha":
+        name = text_value("name")
+        code = text_value("code")
+        sector_id = int_value("sectorId", minimum=1, allow_empty=True)
+        proc_estetico_id = int_value("procEsteticoId", minimum=1, allow_empty=True)
+        order = int_value("order", minimum=0, allow_empty=True)
+
+        if not code:
+            errors["code"] = "El código de la sección es obligatorio."
+        if not name:
+            errors["name"] = "El nombre de la sección es obligatorio."
+        if not sector_id and not proc_estetico_id:
+            errors["_general"] = (
+                "Debes asignar al menos un sector o un procedimiento estético a la sección."
+            )
+        if errors:
+            raise ValidationError(errors)
+
+        sector = Sector.objects.filter(pk=sector_id).first() if sector_id else None
+        proc = ProcEstetico.objects.filter(pk=proc_estetico_id).first() if proc_estetico_id else None
+
+        # Friendly pre-check for UniqueConstraint(proc_estetico, codigo).
+        # The DB constraint is enforced as a fallback via IntegrityError
+        # handling in admin_catalogo_crear/admin_catalogo_actualizar, but
+        # raising ValidationError here gives a clearer 400 message.
+        uniqueness_qs = FichaSeccion.objects.filter(proc_estetico=proc, codigo=code)
+        if instance is not None:
+            uniqueness_qs = uniqueness_qs.exclude(pk=instance.pk)
+        if uniqueness_qs.exists():
+            raise ValidationError(
+                {"code": "Ya existe una sección con ese código para este procedimiento estético."}
+            )
+
+        obj = instance or FichaSeccion()
+        obj.nombre = name
+        obj.codigo = code
+        obj.sector = sector
+        obj.proc_estetico = proc
+        obj.orden = order or 0
+        return obj
+
     raise KeyError(catalog_key)
 
 
