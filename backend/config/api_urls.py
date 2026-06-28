@@ -33,6 +33,11 @@ from config.api_views import (
     admin_confirm_appointment_biometric,
     admin_mark_appointment_pending_biometric,
     admin_catalogos,
+    admin_grupo_opciones_opciones_list,
+    admin_grupo_opciones_opciones_crear,
+    admin_grupo_opciones_opciones_crear_multiples,
+    admin_grupo_opciones_opciones_actualizar,
+    admin_grupo_opciones_opciones_estado,
     admin_crear_especialista,
     admin_crear_prospecto,
     admin_cancel_prospect_medical_appointment,
@@ -339,6 +344,34 @@ urlpatterns = [
         "catalogos/<slug:catalog_key>/<int:item_id>/estado/",
         admin_catalogo_estado,
         name="admin-catalogo-state-api",
+    ),
+    # Nested OpcionCatalogo endpoints under grupos-opciones — used by the
+    # option management modal in the admin catalog page. Routes are added
+    # next to the generic catalog routes for discoverability.
+    path(
+        "catalogos/grupos-opciones/<int:grupo_id>/opciones/",
+        admin_grupo_opciones_opciones_list,
+        name="admin-grupo-opciones-opciones-list-api",
+    ),
+    path(
+        "catalogos/grupos-opciones/<int:grupo_id>/opciones/crear/",
+        admin_grupo_opciones_opciones_crear,
+        name="admin-grupo-opciones-opciones-crear-api",
+    ),
+    path(
+        "catalogos/grupos-opciones/<int:grupo_id>/opciones/crear-multiples/",
+        admin_grupo_opciones_opciones_crear_multiples,
+        name="admin-grupo-opciones-opciones-crear-multiples-api",
+    ),
+    path(
+        "catalogos/grupos-opciones/<int:grupo_id>/opciones/<int:opcion_id>/actualizar/",
+        admin_grupo_opciones_opciones_actualizar,
+        name="admin-grupo-opciones-opciones-actualizar-api",
+    ),
+    path(
+        "catalogos/grupos-opciones/<int:grupo_id>/opciones/<int:opcion_id>/estado/",
+        admin_grupo_opciones_opciones_estado,
+        name="admin-grupo-opciones-opciones-estado-api",
     ),
     path("equipo/", admin_equipo, name="admin-equipo-api"),
     path("equipo/admins-sucursal/", admin_branch_admins_list, name="admin-branch-admins-list-api"),
