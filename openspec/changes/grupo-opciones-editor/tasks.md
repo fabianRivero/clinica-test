@@ -108,34 +108,34 @@
 
 ### Phase 3: API Client + Modal UI
 
-#### 3.1 API client: agregar funciones para sub-endpoints
+#### 3.1 API client: agregar funciones para sub-endpoints [x]
 - **File**: `frontend/aesthetic-clinic/src/services/api/admin.ts`
 - **Action**: Agregar funciones: `getGroupOptions(grupoId, filters)`, `createGroupOption(grupoId, payload)`, `createGroupOptionsBulk(grupoId, options)`, `updateGroupOption(grupoId, opcionId, payload)`, `toggleGroupOptionState(grupoId, opcionId, active)`.
 - **Acceptance**: TypeScript compila sin errores (`npx tsc --noEmit`).
 
-#### 3.2 Componente `OptionGroupModal`
+#### 3.2 Componente `OptionGroupModal` [x]
 - **File**: nuevo, ej. `frontend/aesthetic-clinic/src/components/admin/OptionGroupModal.tsx`
 - **Action**: Modal con header (nombre grupo + X cerrar), toggle de filtro activas/todas/inactivas, búsqueda, lista de opciones con editar + toggle por row, checkbox por row (sin acción todavía), botón "Agregar opción", sub-form para crear/editar dentro del modal.
 - **Acceptance**: modal se abre/cierra correctamente; `data-testid="option-group-modal"` accesible.
 
-#### 3.3 Botón "Administrar opciones" en cada item de `grupos-opciones`
+#### 3.3 Botón "Administrar opciones" en cada item de `grupos-opciones` [x]
 - **File**: `frontend/aesthetic-clinic/src/pages/admin/AdminCatalogsPage.tsx`
 - **Action**: En `AdminOptionGroupsCatalogPage` (o equivalente), agregar un botón "Administrar opciones" en cada card/row. Al click, abre `OptionGroupModal` con el `grupo.id`.
 - **Acceptance**: el botón es visible y funcional en cada item.
 
-#### 3.4 Integración del modal con el API client
+#### 3.4 Integración del modal con el API client [x]
 - **File**: `OptionGroupModal.tsx`
 - **Action**: usar las funciones del API client (3.1) para list/create/edit/toggle dentro del modal. Refetch después de cada mutación.
 - **Acceptance**: crear una opción desde el modal refresca la lista.
 
-#### 3.5 Accesibilidad básica del modal
+#### 3.5 Accesibilidad básica del modal [x]
 - **File**: `OptionGroupModal.tsx`
 - **Action**: ESC cierra. Focus trap. Aria labels en controles.
 - **Acceptance**: navegando con teclado, el modal funciona.
 
 ### Phase 4: E2E Tests
 
-#### 4.1 Test E2E del modal de opciones
+#### 4.1 Test E2E del modal de opciones [x]
 - **File**: `frontend/aesthetic-clinic/tests/e2e/admin_general.spec.ts` (extender)
 - **Covers**:
   - Abrir modal desde un grupo.
@@ -147,17 +147,17 @@
 
 ### Phase 5: Verificación
 
-#### 5.1 Backend checks
+#### 5.1 Backend checks [x]
 - `cd backend && python manage.py check`
 - `cd backend && python manage.py test tests.test_opcion_catalogo_api tests.test_campos_ficha_validation tests.test_medical_form_by_sector`
 
-#### 5.2 Frontend checks
+#### 5.2 Frontend checks [x]
 - `cd frontend/aesthetic-clinic && npx tsc --noEmit`
 - `cd frontend/aesthetic-clinic && npm run lint`
 - `cd frontend/aesthetic-clinic && npm run build`
 - `cd frontend/aesthetic-clinic && npx playwright test admin_general.spec.ts -g "modal de opciones"`
 
-#### 5.3 Smoke test manual
+#### 5.3 Smoke test manual [x]
 - **Action**: Crear un grupo desde `/cms/catalogos/grupos-opciones`, abrir modal, agregar 3 opciones, editar una, toggle una, cerrar. Confirmar que la lista refleja los cambios.
 - **Acceptance**: flujo completo end-to-end funciona.
 
