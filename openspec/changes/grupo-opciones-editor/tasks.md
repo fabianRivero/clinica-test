@@ -24,39 +24,39 @@
 
 ### Phase 1: Sub-endpoints `OpcionCatalogo` (Backend)
 
-#### 1.1 Register nested URL routes
+#### 1.1 Register nested URL routes [x]
 - **File**: `backend/config/api_urls.py` (o equivalente donde se registran las rutas admin)
 - **Action**: Agregar las 5 rutas nested para `grupos-opciones/<int:grupo_id>/opciones/`.
 - **Acceptance**: las rutas están registradas y Django check pasa.
 
-#### 1.2 Handler GET (list con filtros)
+#### 1.2 Handler GET (list con filtros) [x]
 - **File**: `backend/config/api_views.py`
 - **Action**: Handler para `GET /api/admin/catalogos/grupos-opciones/<grupo_id>/opciones/`. Filtros: `?active=true|false|all`, `?q=` (busca codigo + nombre + valor). Verifica que grupo exista (404 si no). Devuelve shape `{"items": [...]}`.
 - **Acceptance**: GET con filtros válidos retorna 200 + items correctos; GET a grupo inexistente retorna 404.
 
-#### 1.3 Handler POST crear (single)
+#### 1.3 Handler POST crear (single) [x]
 - **File**: `backend/config/api_views.py`
 - **Action**: Handler para `POST .../opciones/crear/`. Payload: `codigo`, `nombre`, `valor`, `orden` (opcional, auto-asigna max+1), `activo`. Validación: required fields + duplicate codigo en grupo + grupo existe. Devuelve shape `{"detail": "...", "item": {...}}`.
 - **Acceptance**: POST válido retorna 201; duplicate retorna 400 con mensaje claro; grupo inexistente retorna 404.
 
-#### 1.4 Handler POST crear-multiples (bulk)
+#### 1.4 Handler POST crear-multiples (bulk) [x]
 - **File**: `backend/config/api_views.py`
 - **Action**: Handler para `POST .../opciones/crear-multiples/`. Payload: `{"options": [{codigo, nombre, valor, orden, activo}, ...]}`. Wrap en `transaction.atomic()`. Valida cada item; si alguna falla, rollback todas.
 - **Acceptance**: bulk válido retorna 201 con todas las opciones creadas; bulk con un item inválido retorna 400 y NINGUNA se crea.
 
-#### 1.5 Handler POST actualizar
+#### 1.5 Handler POST actualizar [x]
 - **File**: `backend/config/api_views.py`
 - **Action**: Handler para `POST .../opciones/<opcion_id>/actualizar/`. Payload: `nombre`, `valor`, `orden`, `activo`. Valida opcion existe.
 - **Acceptance**: PUT válido retorna 200 con item actualizado; opción inexistente retorna 404.
 
-#### 1.6 Handler POST estado (toggle)
+#### 1.6 Handler POST estado (toggle) [x]
 - **File**: `backend/config/api_views.py`
 - **Action**: Handler para `POST .../opciones/<opcion_id>/estado/`. Payload: `{"active": true|false}`. Setea `activo`.
 - **Acceptance**: toggle válido retorna 200; opción inexistente retorna 404.
 
 ### Phase 2: Tests (Backend)
 
-#### 2.1 Tests de list
+#### 2.1 Tests de list [x]
 - **File**: `backend/tests/test_opcion_catalogo_api.py` (nuevo)
 - **Covers**:
   - List vacío para grupo sin opciones.
@@ -66,7 +66,7 @@
   - List filtrado por `?q=`.
   - List a grupo inexistente → 404.
 
-#### 2.2 Tests de create (single)
+#### 2.2 Tests de create (single) [x]
 - **File**: mismo `backend/tests/test_opcion_catalogo_api.py`
 - **Covers**:
   - Create válido.
@@ -77,7 +77,7 @@
   - Create con `orden` auto-asignado.
   - Create con grupo inexistente → 404.
 
-#### 2.3 Tests de create-multiples (bulk)
+#### 2.3 Tests de create-multiples (bulk) [x]
 - **File**: mismo
 - **Covers**:
   - Bulk válido con 3 opciones.
@@ -85,7 +85,7 @@
   - Bulk con un item con campo faltante → 400 y rollback.
   - Bulk con grupo inexistente → 404.
 
-#### 2.4 Tests de update y toggle
+#### 2.4 Tests de update y toggle [x]
 - **File**: mismo
 - **Covers**:
   - Update válido.
@@ -93,12 +93,12 @@
   - Toggle activo true → false.
   - Toggle opción inexistente → 404.
 
-#### 2.5 Test de integración con serialización downstream
+#### 2.5 Test de integración con serialización downstream [x]
 - **File**: mismo o nuevo
 - **Covers**:
   - Opción inactiva NO aparece en `_serialize_medical_config` del campo que la usa.
 
-#### 2.6 Run full backend test suite
+#### 2.6 Run full backend test suite [x]
 - **Command**: `cd backend && python manage.py test`
 - **Acceptance**: tests nuevos pasan; tests preexistentes no se rompen.
 
