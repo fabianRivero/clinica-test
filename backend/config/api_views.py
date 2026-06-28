@@ -5444,3 +5444,422 @@ def admin_branch_admin_audit_logs(request):
         for log in logs[:200]
     ]
     return json_response({"items": items, "total": len(items)})
+
+
+# ---------------------------------------------------------------------------
+# Nested OpcionCatalogo endpoints under grupos-opciones
+# ---------------------------------------------------------------------------
+# These endpoints power the option-management modal in the admin catalog
+# page. An `OpcionCatalogo` cannot exist without a parent `GrupoOpciones`
+# (CASCADE FK), so the parent id is encoded in the URL. Bulk create uses
+# `transaction.atomic()` for all-or-nothing semantics (see ADR-2 in
+# `openspec/changes/grupo-opciones-editor/design.md`).
+
+
+def _serialize_opcion(opcion):
+    """Return the JSON shape consumed by the option modal in the admin UI."""
+    return {
+        "id": opcion.id,
+        "codigo": opcion.codigo,
+        "nombre": opcion.nombre,
+        "valor": opcion.valor,
+        "orden": opcion.orden,
+        "activo": opcion.activo,
+        "grupoId": opcion.grupo_id,
+    }
+
+
+@require_GET
+@admin_required
+def admin_grupo_opciones_opciones_list(request, grupo_id):
+    """List `OpcionCatalogo` entries for a group, with active + search filters."""
+    grupo = GrupoOpciones.objects.filter(pk=grupo_id).first()
+    if not grupo:
+        return json_response(
+            {"detail": "No encontramos el grupo de opciones solicitado."}, status=404
+        )
+
+    active = request.GET.get("active", "all")
+    if active not in ("true", "false", "all"):
+        return json_response(
+            {"detail": "El parametro active solo acepta true, false o all."},
+            status=400,
+        )
+
+    queryset = OpcionCatalogo.objects.filter(grupo_id=grupo_id)
+    if active == "true":
+        queryset = queryset.filter(activo=True)
+    elif active == "false":
+        queryset = queryset.filter(activo=False)
+
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        queryset = queryset.filter(
+            Q(codigo__icontains=q) | Q(nombre__icontains=q) | Q(valor__icontains=q)
+        )
+
+    queryset = queryset.order_by("orden", "nombre")
+    items = [_serialize_opcion(opcion) for opcion in queryset]
+    return json_response({"items": items})
+
+
+def _validate_opcion_payload(payload, *, grupo_id, instance=None, allow_codigo=True):
+    """Validate the payload for create/update of an `OpcionCatalogo`.
+
+    Returns a tuple `(data, errors)`. `data` is the cleaned dict ready to be
+    applied to an instance; `errors` maps field names to human-readable
+    messages and is empty when validation succeeds.
+    """
+    errors = {}
+
+    def _text(field):
+        value = payload.get(field)
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    codigo = _text("codigo") if allow_codigo else (instance.codigo if instance else "")
+    nombre = _text("nombre")
+    valor = _text("valor")
+
+    if allow_codigo and not codigo:
+        errors["codigo"] = "El codigo es obligatorio."
+    if not nombre:
+        errors["nombre"] = "El nombre es obligatorio."
+    if not valor:
+        errors["valor"] = "El valor es obligatorio."
+
+    orden_value = payload.get("orden")
+    orden = None
+    if orden_value is not None and orden_value != "":
+        try:
+            orden = int(orden_value)
+            if orden < 0:
+                errors["orden"] = "El orden no puede ser negativo."
+        except (TypeError, ValueError):
+            errors["orden"] = "El orden debe ser un numero entero."
+
+    activo = payload.get("activo")
+    if activo is not None and not isinstance(activo, bool):
+        errors["activo"] = "El campo activo debe ser verdadero o falso."
+
+    data = {
+        "codigo": codigo,
+        "nombre": nombre,
+        "valor": valor,
+        "orden": orden,
+        "activo": activo if isinstance(activo, bool) else (instance.activo if instance else True),
+    }
+    return data, errors
+
+
+@require_POST
+@_admin_principal_required
+def admin_grupo_opciones_opciones_crear(request, grupo_id):
+    """Create a single `OpcionCatalogo` under a group."""
+    grupo = GrupoOpciones.objects.filter(pk=grupo_id).first()
+    if not grupo:
+        return json_response(
+            {"detail": "No encontramos el grupo de opciones solicitado."}, status=404
+        )
+
+    payload = load_payload(request)
+    if payload is None:
+        return json_response(
+            {"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400
+        )
+
+    data, errors = _validate_opcion_payload(payload, grupo_id=grupo_id)
+    if errors:
+        return json_response(
+            {"detail": "Hay errores en el formulario.", "errors": errors}, status=400
+        )
+
+    # Uniqueness pre-check on (grupo, codigo). The DB-level constraint is the
+    # source of truth; this surfaces a clean 400 message before the INSERT.
+    duplicate_qs = OpcionCatalogo.objects.filter(grupo_id=grupo_id, codigo=data["codigo"])
+    if duplicate_qs.exists():
+        return json_response(
+            {
+                "detail": "Ya existe una opcion con ese codigo en el grupo.",
+                "errors": {"codigo": "Ya existe una opcion con ese codigo en el grupo."},
+            },
+            status=400,
+        )
+
+    # Auto-assign `orden` to the next slot when the caller does not supply one.
+    if data["orden"] is None:
+        max_orden = (
+            OpcionCatalogo.objects.filter(grupo_id=grupo_id).aggregate(Max("orden"))["orden__max"]
+            or 0
+        )
+        orden = max_orden + 1
+    else:
+        orden = data["orden"]
+
+    try:
+        opcion = OpcionCatalogo.objects.create(
+            grupo_id=grupo_id,
+            codigo=data["codigo"],
+            nombre=data["nombre"],
+            valor=data["valor"],
+            orden=orden,
+            activo=data["activo"],
+        )
+    except IntegrityError:
+        return json_response(
+            {"detail": "Ya existe una opcion con ese codigo en el grupo."},
+            status=400,
+        )
+
+    return json_response(
+        {
+            "detail": "Opcion creada correctamente.",
+            "item": _serialize_opcion(opcion),
+        },
+        status=201,
+    )
+
+
+@require_POST
+@_admin_principal_required
+def admin_grupo_opciones_opciones_crear_multiples(request, grupo_id):
+    """Bulk-create `OpcionCatalogo` entries under a group.
+
+    Wrapped in `transaction.atomic()` — any failure rolls back the entire
+    batch so the modal list always reflects what the backend has.
+    """
+    grupo = GrupoOpciones.objects.filter(pk=grupo_id).first()
+    if not grupo:
+        return json_response(
+            {"detail": "No encontramos el grupo de opciones solicitado."}, status=404
+        )
+
+    payload = load_payload(request)
+    if payload is None:
+        return json_response(
+            {"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400
+        )
+
+    raw_options = payload.get("options")
+    if not isinstance(raw_options, list) or not raw_options:
+        return json_response(
+            {
+                "detail": "Debes enviar una lista de opciones bajo la clave 'options'.",
+                "errors": {"options": "La lista de opciones es obligatoria."},
+            },
+            status=400,
+        )
+
+    # Validate every entry up-front so we can report a clean 400 instead of
+    # surfacing a half-applied batch after the atomic block.
+    cleaned = []
+    aggregated_errors = {}
+    seen_codigos = set()
+    for index, raw in enumerate(raw_options):
+        if not isinstance(raw, dict):
+            aggregated_errors[f"options.{index}"] = "El elemento debe ser un objeto."
+            continue
+        data, errors = _validate_opcion_payload(raw, grupo_id=grupo_id)
+        if errors:
+            for key, message in errors.items():
+                aggregated_errors[f"options.{index}.{key}"] = message
+            continue
+        if data["codigo"] in seen_codigos:
+            aggregated_errors[f"options.{index}.codigo"] = (
+                "Codigo duplicado dentro de la solicitud."
+            )
+            continue
+        seen_codigos.add(data["codigo"])
+        cleaned.append((index, data))
+
+    if aggregated_errors:
+        return json_response(
+            {
+                "detail": "Hay errores en el formulario.",
+                "errors": aggregated_errors,
+            },
+            status=400,
+        )
+
+    # Reject if any codigo already exists in the database for this group.
+    existing_codigos = set(
+        OpcionCatalogo.objects.filter(
+            grupo_id=grupo_id, codigo__in=[data["codigo"] for _, data in cleaned]
+        ).values_list("codigo", flat=True)
+    )
+    if existing_codigos:
+        for index, data in cleaned:
+            if data["codigo"] in existing_codigos:
+                aggregated_errors[f"options.{index}.codigo"] = (
+                    "Ya existe una opcion con ese codigo en el grupo."
+                )
+        return json_response(
+            {
+                "detail": "Hay errores en el formulario.",
+                "errors": aggregated_errors,
+            },
+            status=400,
+        )
+
+    # Compute the next available orden once so the whole batch is appended
+    # after existing entries, even if some options omit `orden`.
+    max_orden = (
+        OpcionCatalogo.objects.filter(grupo_id=grupo_id).aggregate(Max("orden"))["orden__max"]
+        or 0
+    )
+
+    created_items = []
+    try:
+        with transaction.atomic():
+            running_orden = max_orden
+            for _, data in cleaned:
+                if data["orden"] is None:
+                    running_orden += 1
+                    orden = running_orden
+                else:
+                    orden = data["orden"]
+                opcion = OpcionCatalogo.objects.create(
+                    grupo_id=grupo_id,
+                    codigo=data["codigo"],
+                    nombre=data["nombre"],
+                    valor=data["valor"],
+                    orden=orden,
+                    activo=data["activo"],
+                )
+                created_items.append(_serialize_opcion(opcion))
+    except IntegrityError:
+        return json_response(
+            {"detail": "No se pudieron crear las opciones. Intenta nuevamente."},
+            status=400,
+        )
+
+    return json_response(
+        {
+            "detail": "Opciones creadas correctamente.",
+            "items": created_items,
+        },
+        status=201,
+    )
+
+
+@require_POST
+@_admin_principal_required
+def admin_grupo_opciones_opciones_actualizar(request, grupo_id, opcion_id):
+    """Partial update of an existing `OpcionCatalogo`.
+
+    The frontend modal never changes `codigo`, so we lock it via the validator
+    and let the caller update only `nombre`, `valor`, `orden`, `activo`.
+    """
+    grupo = GrupoOpciones.objects.filter(pk=grupo_id).first()
+    if not grupo:
+        return json_response(
+            {"detail": "No encontramos el grupo de opciones solicitado."}, status=404
+        )
+
+    opcion = OpcionCatalogo.objects.filter(pk=opcion_id, grupo_id=grupo_id).first()
+    if not opcion:
+        return json_response(
+            {"detail": "No encontramos la opcion solicitada."}, status=404
+        )
+
+    payload = load_payload(request)
+    if payload is None:
+        return json_response(
+            {"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400
+        )
+
+    # Partial update: only fields present in the payload are validated.
+    partial_payload = {}
+    errors = {}
+
+    if "nombre" in payload:
+        nombre = str(payload.get("nombre") or "").strip()
+        if not nombre:
+            errors["nombre"] = "El nombre es obligatorio."
+        else:
+            partial_payload["nombre"] = nombre
+
+    if "valor" in payload:
+        valor = str(payload.get("valor") or "").strip()
+        if not valor:
+            errors["valor"] = "El valor es obligatorio."
+        else:
+            partial_payload["valor"] = valor
+
+    if "orden" in payload:
+        raw_orden = payload.get("orden")
+        if raw_orden is None or raw_orden == "":
+            errors["orden"] = "El orden no puede estar vacio."
+        else:
+            try:
+                orden = int(raw_orden)
+                if orden < 0:
+                    errors["orden"] = "El orden no puede ser negativo."
+                else:
+                    partial_payload["orden"] = orden
+            except (TypeError, ValueError):
+                errors["orden"] = "El orden debe ser un numero entero."
+
+    if "activo" in payload:
+        activo = payload.get("activo")
+        if not isinstance(activo, bool):
+            errors["activo"] = "El campo activo debe ser verdadero o falso."
+        else:
+            partial_payload["activo"] = activo
+
+    if errors:
+        return json_response(
+            {"detail": "Hay errores en el formulario.", "errors": errors}, status=400
+        )
+
+    for field, value in partial_payload.items():
+        setattr(opcion, field, value)
+    opcion.save()
+
+    return json_response(
+        {
+            "detail": "Opcion actualizada correctamente.",
+            "item": _serialize_opcion(opcion),
+        }
+    )
+
+
+@require_POST
+@_admin_principal_required
+def admin_grupo_opciones_opciones_estado(request, grupo_id, opcion_id):
+    """Toggle the `activo` flag (soft-delete) of an `OpcionCatalogo`."""
+    grupo = GrupoOpciones.objects.filter(pk=grupo_id).first()
+    if not grupo:
+        return json_response(
+            {"detail": "No encontramos el grupo de opciones solicitado."}, status=404
+        )
+
+    opcion = OpcionCatalogo.objects.filter(pk=opcion_id, grupo_id=grupo_id).first()
+    if not opcion:
+        return json_response(
+            {"detail": "No encontramos la opcion solicitada."}, status=404
+        )
+
+    payload = load_payload(request)
+    if payload is None:
+        return json_response(
+            {"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400
+        )
+
+    active = payload.get("active")
+    if not isinstance(active, bool):
+        return json_response(
+            {"detail": "Debes indicar si la opcion queda activa o inactiva."},
+            status=400,
+        )
+
+    opcion.activo = active
+    opcion.save(update_fields=["activo", "updated_at"])
+
+    return json_response(
+        {
+            "detail": "Estado actualizado correctamente.",
+            "item": _serialize_opcion(opcion),
+        }
+    )

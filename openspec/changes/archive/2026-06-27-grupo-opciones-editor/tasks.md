@@ -24,39 +24,39 @@
 
 ### Phase 1: Sub-endpoints `OpcionCatalogo` (Backend)
 
-#### 1.1 Register nested URL routes
+#### 1.1 Register nested URL routes [x]
 - **File**: `backend/config/api_urls.py` (o equivalente donde se registran las rutas admin)
 - **Action**: Agregar las 5 rutas nested para `grupos-opciones/<int:grupo_id>/opciones/`.
 - **Acceptance**: las rutas están registradas y Django check pasa.
 
-#### 1.2 Handler GET (list con filtros)
+#### 1.2 Handler GET (list con filtros) [x]
 - **File**: `backend/config/api_views.py`
 - **Action**: Handler para `GET /api/admin/catalogos/grupos-opciones/<grupo_id>/opciones/`. Filtros: `?active=true|false|all`, `?q=` (busca codigo + nombre + valor). Verifica que grupo exista (404 si no). Devuelve shape `{"items": [...]}`.
 - **Acceptance**: GET con filtros válidos retorna 200 + items correctos; GET a grupo inexistente retorna 404.
 
-#### 1.3 Handler POST crear (single)
+#### 1.3 Handler POST crear (single) [x]
 - **File**: `backend/config/api_views.py`
 - **Action**: Handler para `POST .../opciones/crear/`. Payload: `codigo`, `nombre`, `valor`, `orden` (opcional, auto-asigna max+1), `activo`. Validación: required fields + duplicate codigo en grupo + grupo existe. Devuelve shape `{"detail": "...", "item": {...}}`.
 - **Acceptance**: POST válido retorna 201; duplicate retorna 400 con mensaje claro; grupo inexistente retorna 404.
 
-#### 1.4 Handler POST crear-multiples (bulk)
+#### 1.4 Handler POST crear-multiples (bulk) [x]
 - **File**: `backend/config/api_views.py`
 - **Action**: Handler para `POST .../opciones/crear-multiples/`. Payload: `{"options": [{codigo, nombre, valor, orden, activo}, ...]}`. Wrap en `transaction.atomic()`. Valida cada item; si alguna falla, rollback todas.
 - **Acceptance**: bulk válido retorna 201 con todas las opciones creadas; bulk con un item inválido retorna 400 y NINGUNA se crea.
 
-#### 1.5 Handler POST actualizar
+#### 1.5 Handler POST actualizar [x]
 - **File**: `backend/config/api_views.py`
 - **Action**: Handler para `POST .../opciones/<opcion_id>/actualizar/`. Payload: `nombre`, `valor`, `orden`, `activo`. Valida opcion existe.
 - **Acceptance**: PUT válido retorna 200 con item actualizado; opción inexistente retorna 404.
 
-#### 1.6 Handler POST estado (toggle)
+#### 1.6 Handler POST estado (toggle) [x]
 - **File**: `backend/config/api_views.py`
 - **Action**: Handler para `POST .../opciones/<opcion_id>/estado/`. Payload: `{"active": true|false}`. Setea `activo`.
 - **Acceptance**: toggle válido retorna 200; opción inexistente retorna 404.
 
 ### Phase 2: Tests (Backend)
 
-#### 2.1 Tests de list
+#### 2.1 Tests de list [x]
 - **File**: `backend/tests/test_opcion_catalogo_api.py` (nuevo)
 - **Covers**:
   - List vacío para grupo sin opciones.
@@ -66,7 +66,7 @@
   - List filtrado por `?q=`.
   - List a grupo inexistente → 404.
 
-#### 2.2 Tests de create (single)
+#### 2.2 Tests de create (single) [x]
 - **File**: mismo `backend/tests/test_opcion_catalogo_api.py`
 - **Covers**:
   - Create válido.
@@ -77,7 +77,7 @@
   - Create con `orden` auto-asignado.
   - Create con grupo inexistente → 404.
 
-#### 2.3 Tests de create-multiples (bulk)
+#### 2.3 Tests de create-multiples (bulk) [x]
 - **File**: mismo
 - **Covers**:
   - Bulk válido con 3 opciones.
@@ -85,7 +85,7 @@
   - Bulk con un item con campo faltante → 400 y rollback.
   - Bulk con grupo inexistente → 404.
 
-#### 2.4 Tests de update y toggle
+#### 2.4 Tests de update y toggle [x]
 - **File**: mismo
 - **Covers**:
   - Update válido.
@@ -93,12 +93,12 @@
   - Toggle activo true → false.
   - Toggle opción inexistente → 404.
 
-#### 2.5 Test de integración con serialización downstream
+#### 2.5 Test de integración con serialización downstream [x]
 - **File**: mismo o nuevo
 - **Covers**:
   - Opción inactiva NO aparece en `_serialize_medical_config` del campo que la usa.
 
-#### 2.6 Run full backend test suite
+#### 2.6 Run full backend test suite [x]
 - **Command**: `cd backend && python manage.py test`
 - **Acceptance**: tests nuevos pasan; tests preexistentes no se rompen.
 
@@ -108,34 +108,34 @@
 
 ### Phase 3: API Client + Modal UI
 
-#### 3.1 API client: agregar funciones para sub-endpoints
+#### 3.1 API client: agregar funciones para sub-endpoints [x]
 - **File**: `frontend/aesthetic-clinic/src/services/api/admin.ts`
 - **Action**: Agregar funciones: `getGroupOptions(grupoId, filters)`, `createGroupOption(grupoId, payload)`, `createGroupOptionsBulk(grupoId, options)`, `updateGroupOption(grupoId, opcionId, payload)`, `toggleGroupOptionState(grupoId, opcionId, active)`.
 - **Acceptance**: TypeScript compila sin errores (`npx tsc --noEmit`).
 
-#### 3.2 Componente `OptionGroupModal`
+#### 3.2 Componente `OptionGroupModal` [x]
 - **File**: nuevo, ej. `frontend/aesthetic-clinic/src/components/admin/OptionGroupModal.tsx`
 - **Action**: Modal con header (nombre grupo + X cerrar), toggle de filtro activas/todas/inactivas, búsqueda, lista de opciones con editar + toggle por row, checkbox por row (sin acción todavía), botón "Agregar opción", sub-form para crear/editar dentro del modal.
 - **Acceptance**: modal se abre/cierra correctamente; `data-testid="option-group-modal"` accesible.
 
-#### 3.3 Botón "Administrar opciones" en cada item de `grupos-opciones`
+#### 3.3 Botón "Administrar opciones" en cada item de `grupos-opciones` [x]
 - **File**: `frontend/aesthetic-clinic/src/pages/admin/AdminCatalogsPage.tsx`
 - **Action**: En `AdminOptionGroupsCatalogPage` (o equivalente), agregar un botón "Administrar opciones" en cada card/row. Al click, abre `OptionGroupModal` con el `grupo.id`.
 - **Acceptance**: el botón es visible y funcional en cada item.
 
-#### 3.4 Integración del modal con el API client
+#### 3.4 Integración del modal con el API client [x]
 - **File**: `OptionGroupModal.tsx`
 - **Action**: usar las funciones del API client (3.1) para list/create/edit/toggle dentro del modal. Refetch después de cada mutación.
 - **Acceptance**: crear una opción desde el modal refresca la lista.
 
-#### 3.5 Accesibilidad básica del modal
+#### 3.5 Accesibilidad básica del modal [x]
 - **File**: `OptionGroupModal.tsx`
 - **Action**: ESC cierra. Focus trap. Aria labels en controles.
 - **Acceptance**: navegando con teclado, el modal funciona.
 
 ### Phase 4: E2E Tests
 
-#### 4.1 Test E2E del modal de opciones
+#### 4.1 Test E2E del modal de opciones [x]
 - **File**: `frontend/aesthetic-clinic/tests/e2e/admin_general.spec.ts` (extender)
 - **Covers**:
   - Abrir modal desde un grupo.
@@ -147,17 +147,17 @@
 
 ### Phase 5: Verificación
 
-#### 5.1 Backend checks
+#### 5.1 Backend checks [x]
 - `cd backend && python manage.py check`
 - `cd backend && python manage.py test tests.test_opcion_catalogo_api tests.test_campos_ficha_validation tests.test_medical_form_by_sector`
 
-#### 5.2 Frontend checks
+#### 5.2 Frontend checks [x]
 - `cd frontend/aesthetic-clinic && npx tsc --noEmit`
 - `cd frontend/aesthetic-clinic && npm run lint`
 - `cd frontend/aesthetic-clinic && npm run build`
 - `cd frontend/aesthetic-clinic && npx playwright test admin_general.spec.ts -g "modal de opciones"`
 
-#### 5.3 Smoke test manual
+#### 5.3 Smoke test manual [x]
 - **Action**: Crear un grupo desde `/cms/catalogos/grupos-opciones`, abrir modal, agregar 3 opciones, editar una, toggle una, cerrar. Confirmar que la lista refleja los cambios.
 - **Acceptance**: flujo completo end-to-end funciona.
 

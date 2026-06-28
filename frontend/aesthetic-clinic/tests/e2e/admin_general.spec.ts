@@ -438,4 +438,61 @@ test.describe('Catalog list: search + active filter + create', () => {
     await page.selectOption('select[aria-label="Filtrar por estado"]', 'true');
     await expect(page.locator('.catalog-admin-card', { hasText: uniqueTitle })).toHaveCount(0);
   });
+
+  test('OptionGroupModal: open, create, edit, toggle, close', async ({ page }) => {
+    const uniqueTitle = `Grupo Modal ${Date.now()}`;
+    const uniqueCode = `MODAL_${Date.now()}`;
+    const optionCodigo = `OP_${Date.now()}`;
+    const optionNombre = 'Opcion de prueba';
+    const optionNombreEditado = 'Opcion editada';
+
+    // 1. Seed a group via the existing catalog form.
+    await page.goto('/cms/catalogos/grupos-opciones');
+    await page.locator('header').getByRole('button', { name: 'Crear grupo de opciones' }).click();
+    await page.fill('#catalog-field-code', uniqueCode);
+    await page.fill('#catalog-field-name', uniqueTitle);
+    await page.locator('form').getByRole('button', { name: 'Crear grupo de opciones' }).click();
+    await expect(page.locator('text=Registro creado')).toBeVisible();
+
+    const groupCard = page.locator('.catalog-admin-card', { hasText: uniqueTitle });
+    await expect(groupCard).toBeVisible();
+
+    // 2. Open the modal from the group card via its manage-options testid.
+    const manageButton = groupCard.locator('[data-testid^="manage-options-"]');
+    await manageButton.click();
+
+    const modal = page.getByTestId('option-group-modal');
+    await expect(modal).toBeVisible();
+    await expect(modal.getByRole('heading', { name: uniqueTitle })).toBeVisible();
+
+    // 3. Create a new option through the inline form.
+    await page.getByTestId('add-option-button').click();
+    await modal.locator('input[aria-label="Codigo de la opcion"]').fill(optionCodigo);
+    await modal.locator('input[aria-label="Nombre de la opcion"]').fill(optionNombre);
+    await modal.locator('input[aria-label="Valor de la opcion"]').fill('valor-prueba');
+    await page.getByTestId('save-option-button').click();
+    await expect(page.locator('text=Opcion creada')).toBeVisible();
+
+    // 4. The new option should appear in the list (locate by row testid pattern).
+    const newRow = modal.locator('[data-testid^="option-row-"]', { hasText: optionNombre });
+    await expect(newRow).toBeVisible();
+
+    // 5. Edit the option.
+    await newRow.getByRole('button', { name: `Editar opcion ${optionNombre}` }).click();
+    const editForm = page.getByTestId('edit-option-form');
+    await expect(editForm).toBeVisible();
+    await editForm.locator('input[aria-label="Nombre de la opcion"]').fill(optionNombreEditado);
+    await page.getByTestId('save-option-button').click();
+    await expect(page.locator('text=Opcion actualizada')).toBeVisible();
+
+    // 6. Toggle the option to inactive.
+    const editedRow = modal.locator('[data-testid^="option-row-"]', { hasText: optionNombreEditado });
+    await editedRow.getByRole('button', { name: `Desactivar opcion ${optionNombreEditado}` }).click();
+    await expect(page.locator('text=Opcion desactivada')).toBeVisible();
+
+    // 7. Close the modal with ESC.
+    await modal.locator('input[aria-label="Buscar opciones por codigo, nombre o valor"]').focus();
+    await page.keyboard.press('Escape');
+    await expect(modal).toBeHidden();
+  });
 });
