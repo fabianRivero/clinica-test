@@ -333,6 +333,116 @@ export function deleteAdminExpense(expenseId: number) {
   )
 }
 
+// --- Nested `OpcionCatalogo` endpoints under `grupos-opciones` ---
+// Powers the option-management modal in the admin catalog page. Mirrors the
+// backend response shape in `_serialize_opcion` (`backend/config/api_views.py`).
+
+export type GroupOptionItem = {
+  id: number
+  codigo: string
+  nombre: string
+  valor: string
+  orden: number
+  activo: boolean
+  grupoId: number
+}
+
+export type GroupOptionListResponse = {
+  items: GroupOptionItem[]
+}
+
+export type GroupOptionMutationResponse = {
+  detail: string
+  item: GroupOptionItem
+}
+
+export type GroupOptionBulkMutationResponse = {
+  detail: string
+  items: GroupOptionItem[]
+}
+
+export type GroupOptionCreatePayload = {
+  codigo: string
+  nombre: string
+  valor: string
+  orden?: number | null
+  activo?: boolean
+}
+
+export type GroupOptionUpdatePayload = {
+  nombre?: string
+  valor?: string
+  orden?: number | null
+  activo?: boolean
+}
+
+export type GroupOptionTogglePayload = {
+  active: boolean
+}
+
+export type GetGroupOptionsParams = {
+  active?: 'true' | 'false' | 'all'
+  q?: string
+}
+
+function buildGroupOptionsQuery(grupoId: number, params: GetGroupOptionsParams = {}) {
+  const query = new URLSearchParams()
+  if (params.active && params.active !== 'all') {
+    query.set('active', params.active)
+  }
+  if (params.q && params.q.trim()) {
+    query.set('q', params.q.trim())
+  }
+  const search = query.toString()
+  return `/api/admin/catalogos/grupos-opciones/${grupoId}/opciones/${search ? `?${search}` : ''}`
+}
+
+export function getGroupOptions(grupoId: number, params: GetGroupOptionsParams = {}) {
+  return requestJson<GroupOptionListResponse>(buildGroupOptionsQuery(grupoId, params))
+}
+
+export function createGroupOption(
+  grupoId: number,
+  payload: GroupOptionCreatePayload,
+) {
+  return requestJsonWithBody<GroupOptionMutationResponse>(
+    `/api/admin/catalogos/grupos-opciones/${grupoId}/opciones/crear/`,
+    payload,
+  )
+}
+
+export function createGroupOptionsBulk(
+  grupoId: number,
+  options: GroupOptionCreatePayload[],
+) {
+  return requestJsonWithBody<GroupOptionBulkMutationResponse>(
+    `/api/admin/catalogos/grupos-opciones/${grupoId}/opciones/crear-multiples/`,
+    { options },
+  )
+}
+
+export function updateGroupOption(
+  grupoId: number,
+  opcionId: number,
+  payload: GroupOptionUpdatePayload,
+) {
+  return requestJsonWithBody<GroupOptionMutationResponse>(
+    `/api/admin/catalogos/grupos-opciones/${grupoId}/opciones/${opcionId}/actualizar/`,
+    payload,
+  )
+}
+
+export function toggleGroupOptionState(
+  grupoId: number,
+  opcionId: number,
+  active: boolean,
+) {
+  return requestJsonWithBody<GroupOptionMutationResponse>(
+    `/api/admin/catalogos/grupos-opciones/${grupoId}/opciones/${opcionId}/estado/`,
+    { active } satisfies GroupOptionTogglePayload,
+  )
+}
+
 export function getAdminCatalogs() {
   return requestJson<CatalogsResponse>('/api/admin/catalogos/')
 }
