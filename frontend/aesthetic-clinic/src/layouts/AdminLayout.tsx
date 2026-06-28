@@ -55,19 +55,6 @@ const fullNavigation = [
     ],
   },
   {
-    label: 'Catalogos',
-    mainAdminOnly: true,
-    children: [
-      { to: '/cms/catalogos/todos-los-servicios', label: 'Todos los servicios' },
-      { to: '/cms/catalogos/procedimientos-esteticos', label: 'Procedimientos estéticos' },
-      { to: '/cms/catalogos/tipos-procedimiento', label: 'Tipos de procedimiento' },
-      { to: '/cms/catalogos/tipos-servicio', label: 'Tipos de servicio' },
-      { to: '/cms/catalogos/especialidades', label: 'Especialidades' },
-      { to: '/cms/catalogos/categorias-gasto', label: 'Categorías de gasto' },
-      { to: '/cms/catalogos/sectores', label: 'Sectores' },
-    ],
-  },
-  {
     label: 'Equipo',
     children: [
       { to: '/cms/equipo/crear', label: 'Crear especialista' },
@@ -80,6 +67,23 @@ const fullNavigation = [
     children: [
       { to: '/cms/equipo/admin-sucursal/crear', label: 'Crear admin sucursal' },
       { to: '/cms/equipo/admin-sucursal/gestionar', label: 'Gestionar admins sucursal' },
+    ],
+  },
+    {
+    label: 'Catalogos',
+    mainAdminOnly: true,
+    children: [
+      { to: '/cms/catalogos/todos-los-servicios', label: 'Todos los servicios' },
+      { to: '/cms/catalogos/especialidades', label: 'Especialidades' },
+      { to: '/cms/catalogos/categorias-gasto', label: 'Categorías de gasto' },
+      { to: '/cms/catalogos/patologias-cutaneas', label: 'Patologías cutáneas' },
+      { to: '/cms/catalogos/tipos-servicio', label: 'Tipos de servicio' },
+      { to: '/cms/catalogos/tipos-procedimiento', label: 'Tipos de procedimiento' },
+      { to: '/cms/catalogos/secciones-ficha', label: 'Secciones de ficha' },
+      { to: '/cms/catalogos/campos-ficha', label: 'Campos de ficha' },
+      { to: '/cms/catalogos/grupos-opciones', label: 'Grupos de opciones' },
+      { to: '/cms/catalogos/procedimientos-esteticos', label: 'Procedimientos estéticos' },
+      { to: '/cms/catalogos/sectores', label: 'Sectores' },
     ],
   },
 ] as const

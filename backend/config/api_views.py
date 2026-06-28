@@ -1837,8 +1837,8 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                 f"{FichaSeccion.objects.exclude(sector__isnull=True).count()} seccion(es) vinculada(s) a un sector",
             ),
             "fields": [
-                _catalog_field("name", "Nombre", "text", required=True, placeholder="Ej. Antecedentes"),
-                _catalog_field("code", "Código", "text", required=True, placeholder="Ej. ANTECEDENTES"),
+                _catalog_field("name", "Nombre", "text", required=True, placeholder="Ej. Plástica"),
+                _catalog_field("code", "Código", "text", required=True, placeholder="Ej. PLASTICA"),
                 _catalog_field(
                     "sectorId",
                     "Sector",
