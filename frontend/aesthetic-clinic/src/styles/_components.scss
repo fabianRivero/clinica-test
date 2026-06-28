@@ -1703,6 +1703,217 @@
   }
 }
 
+/* Option Group Modal — manages `OpcionCatalogo` entries for a group */
+.option-group-modal {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: var(--spacing-4);
+}
+
+.option-group-modal__content {
+  width: min(100%, 56rem);
+  max-height: min(90vh, 56rem);
+}
+
+.option-group-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+
+  .option-group-modal__eyebrow {
+    color: var(--color-text-soft);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .option-group-modal__title {
+    margin: 0.2rem 0 0;
+    font-size: 1.4rem;
+  }
+
+  .option-group-modal__subtitle {
+    margin: 0.2rem 0 0;
+    color: var(--color-text-soft);
+    font-size: 0.88rem;
+
+    code {
+      font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+      background: rgba(217, 232, 236, 0.45);
+      padding: 0 0.35rem;
+      border-radius: 6px;
+    }
+  }
+}
+
+.option-group-modal__close {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: var(--color-surface-alt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  color: var(--color-text-soft);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+  }
+}
+
+.option-group-modal__body {
+  display: grid;
+  gap: var(--spacing-4);
+}
+
+.option-group-modal__filters {
+  display: grid;
+  gap: var(--spacing-3);
+
+  @include respond(md) {
+    grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
+    align-items: end;
+  }
+}
+
+.option-group-modal__list-status {
+  color: var(--color-text-soft);
+  font-size: 0.88rem;
+  min-height: 1.2rem;
+}
+
+.option-group-modal__error {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.option-group-modal__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--spacing-3);
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.option-group-modal__row {
+  display: grid;
+  gap: var(--spacing-3);
+  padding: var(--spacing-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(217, 232, 236, 0.9);
+  background: rgba(255, 255, 255, 0.95);
+
+  @include respond(md) {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+  }
+}
+
+.option-group-modal__select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2);
+  border-radius: 8px;
+  background: var(--color-surface-alt);
+  cursor: pointer;
+}
+
+.option-group-modal__row-content {
+  display: grid;
+  gap: var(--spacing-2);
+}
+
+.option-group-modal__row-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+
+  strong {
+    font-size: 1rem;
+  }
+}
+
+.option-group-modal__row-meta {
+  display: grid;
+  gap: var(--spacing-2);
+  margin: 0;
+
+  @include respond(sm) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  div {
+    padding: 0.6rem 0.8rem;
+    border-radius: 8px;
+    background: rgba(250, 252, 252, 0.95);
+    border: 1px solid rgba(217, 232, 236, 0.85);
+  }
+
+  dt {
+    margin-bottom: 0.15rem;
+    color: var(--color-text-soft);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  dd {
+    margin: 0;
+    font-size: 0.9rem;
+
+    code {
+      font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+    }
+  }
+}
+
+.option-group-modal__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+}
+
+.option-group-modal__form {
+  padding: var(--spacing-4);
+  border-radius: var(--radius-sm);
+  background: rgba(250, 252, 252, 0.85);
+  border: 1px solid rgba(217, 232, 236, 0.85);
+  display: grid;
+  gap: var(--spacing-3);
+}
+
+.option-group-modal__form-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.option-group-modal__footer {
+  padding: var(--spacing-4) var(--spacing-5);
+  border-top: 1px solid var(--color-surface-alt);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.option-group-modal__footer-hint {
+  color: var(--color-text-soft);
+  font-size: 0.88rem;
+}
+
 .capacity-item__header {
   display: flex;
   flex-direction: column;

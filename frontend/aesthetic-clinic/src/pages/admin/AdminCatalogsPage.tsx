@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent, type JSX } from 'react'
 
 import { AdminCatalogTabs } from '../../components/admin/AdminCatalogTabs'
 import { DataState } from '../../components/admin/DataState'
+import { OptionGroupModal } from '../../components/admin/OptionGroupModal'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
@@ -448,11 +449,13 @@ function CatalogPage({
   omittedFieldNames,
   onFormStateChange,
   renderAboveSubmit,
+  renderCardExtraActions,
 }: {
   catalogKey: AdminCatalogKey
   omittedFieldNames?: ReadonlySet<string>
   onFormStateChange?: (state: Record<string, AdminCatalogFormValue>) => void
   renderAboveSubmit?: (state: Record<string, AdminCatalogFormValue>) => JSX.Element | null
+  renderCardExtraActions?: (item: AdminCatalogEntry) => JSX.Element | null
 }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<'all' | 'true' | 'false'>('all')
@@ -622,6 +625,7 @@ function CatalogPage({
                       >
                         {item.active ? 'Desactivar' : 'Activar'}
                       </button>
+                      {renderCardExtraActions ? renderCardExtraActions(item) : null}
                     </div>
                   </article>
                 ))}
@@ -672,7 +676,46 @@ export function AdminExpenseCategoriesCatalogPage() {
 }
 
 export function AdminOptionGroupsCatalogPage() {
-  return <CatalogPage catalogKey="grupos-opciones" />
+  const [optionsModalGrupo, setOptionsModalGrupo] = useState<
+    { id: number; nombre: string; codigo: string } | null
+  >(null)
+
+  const renderCardExtraActions = (item: AdminCatalogEntry) => {
+    const codigo = typeof item.values.code === 'string' ? item.values.code : ''
+    return (
+      <button
+        aria-label={`Administrar opciones de ${item.title}`}
+        className="button button--compact"
+        data-testid={`manage-options-${item.id}`}
+        type="button"
+        onClick={() =>
+          setOptionsModalGrupo({
+            id: item.id,
+            nombre: item.title,
+            codigo,
+          })
+        }
+      >
+        Administrar opciones
+      </button>
+    )
+  }
+
+  return (
+    <>
+      <CatalogPage
+        catalogKey="grupos-opciones"
+        renderCardExtraActions={renderCardExtraActions}
+      />
+      {optionsModalGrupo ? (
+        <OptionGroupModal
+          grupo={optionsModalGrupo}
+          open
+          onClose={() => setOptionsModalGrupo(null)}
+        />
+      ) : null}
+    </>
+  )
 }
 
 export function AdminSectorsCatalogPage() {
