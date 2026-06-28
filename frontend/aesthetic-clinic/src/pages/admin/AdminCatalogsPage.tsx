@@ -31,11 +31,20 @@ const catalogFallbackInfo: Record<
       'Administra cada servicio disponible con su precio base y el procedimiento estético asociado.',
     createLabel: 'Crear servicio',
   },
-  'procedimientos-esteticos': {
-    title: 'Procedimientos estéticos',
-    description:
-      'Gestiona procedimientos específicos que luego puedes vincular a servicios y fichas clínicas.',
-    createLabel: 'Crear procedimiento',
+  especialidades: {
+    title: 'Especialidades',
+    description: 'Define las especialidades que puede tener el equipo operativo y médico.',
+    createLabel: 'Crear especialidad',
+  },
+  'categorias-gasto': {
+    title: 'Categorías de gasto',
+    description: 'Define las categorías usadas para clasificar gastos de cada sucursal.',
+    createLabel: 'Crear categoría',
+  },
+  'patologias-cutaneas': {
+    title: 'Patologías cutaneas',
+    description: 'Mantiene actualizado el catálogo de patologías usadas en el análisis estético.',
+    createLabel: 'Crear patología cutanea',
   },
   'tipos-servicio': {
     title: 'Tipos de servicio',
@@ -49,26 +58,17 @@ const catalogFallbackInfo: Record<
       'Administra los tipos de procedimiento estetico disponibles para asociar a los procedimientos.',
     createLabel: 'Crear tipo de procedimiento',
   },
+  'secciones-ficha': {
+    title: 'Secciones de ficha',
+    description:
+      'Agrupa campos de ficha clínica por sector o procedimiento estético.',
+    createLabel: 'Crear sección de ficha',
+  },
   'campos-ficha': {
     title: 'Campos de ficha',
     description:
       'Configura preguntas y respuestas visibles en las fichas clínicas por procedimiento.',
     createLabel: 'Crear campo de ficha',
-  },
-  'patologias-cutaneas': {
-    title: 'Patologías cutaneas',
-    description: 'Mantiene actualizado el catálogo de patologías usadas en el análisis estético.',
-    createLabel: 'Crear patología cutanea',
-  },
-  especialidades: {
-    title: 'Especialidades',
-    description: 'Define las especialidades que puede tener el equipo operativo y médico.',
-    createLabel: 'Crear especialidad',
-  },
-  'categorias-gasto': {
-    title: 'Categorías de gasto',
-    description: 'Define las categorías usadas para clasificar gastos de cada sucursal.',
-    createLabel: 'Crear categoría',
   },
   'grupos-opciones': {
     title: 'Grupos de opciones',
@@ -76,17 +76,17 @@ const catalogFallbackInfo: Record<
       'Agrupa respuestas reutilizables para campos de seleccion y otros formularios configurables.',
     createLabel: 'Crear grupo de opciones',
   },
+  'procedimientos-esteticos': {
+    title: 'Procedimientos estéticos',
+    description:
+      'Gestiona procedimientos específicos que luego puedes vincular a servicios y fichas clínicas.',
+    createLabel: 'Crear procedimiento',
+  },
   sectores: {
     title: 'Sectores',
     description:
       'Agrupa secciones de ficha clínica por ámbito para que múltiples servicios reutilicen el mismo formulario médico.',
     createLabel: 'Crear sector',
-  },
-  'secciones-ficha': {
-    title: 'Secciones de ficha',
-    description:
-      'Agrupa campos de ficha clínica por sector o procedimiento estético.',
-    createLabel: 'Crear sección de ficha',
   },
 }
 
