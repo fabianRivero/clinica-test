@@ -21,11 +21,15 @@ export function useApiResource<T>(loader: () => Promise<T>) {
   useEffect(() => {
     let cancelled = false
 
-    setState({
-      data: null,
+    setState((prev) => ({
+      // Keep the previous data visible while the next page loads so the
+      // catalog list does not flash a loading skeleton (which causes the
+      // browser to scroll the page back to the top because the list height
+      // collapses momentarily). keepPreviousData pattern.
+      data: prev.data,
       isLoading: true,
       error: null,
-    })
+    }))
 
     loader()
       .then((data) => {
