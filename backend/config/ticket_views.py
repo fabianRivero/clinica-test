@@ -385,13 +385,27 @@ def admin_ticket_open_permission(request):
         return json_response({"detail": "No se pudo determinar sucursal."}, status=400)
 
     admin_user_id = payload.get("adminUserId")
-    if request.user.es_admin_principal and admin_user_id:
+    if admin_user_id:
+        # Only admin principal can toggle admin users. Branch admins cannot
+        # disable other admins (even admins of their own branch) because admins
+        # can also create fichas; only the general admin should control that.
+        if not request.user.es_admin_principal:
+            return json_response(
+                {"detail": "Solo el administrador general puede modificar permisos de otros administradores."},
+                status=403,
+            )
         admin_user = get_object_or_404(Usuario, pk=int(admin_user_id), rol__rol="ADMIN_SUCURSAL")
         admin_user.is_active = enabled
         admin_user.save(update_fields=["is_active", "updated_at"])
         return json_response({"detail": "Permiso actualizado.", "enabled": enabled, "adminUserId": admin_user.id})
 
-    if request.user.es_admin_principal and payload.get("target") == "branch_admins":
+    if payload.get("target") == "branch_admins":
+        # Same restriction as above: only admin principal.
+        if not request.user.es_admin_principal:
+            return json_response(
+                {"detail": "Solo el administrador general puede modificar permisos de administradores."},
+                status=403,
+            )
         Usuario.objects.filter(rol__rol="ADMIN_SUCURSAL").update(is_active=enabled)
         return json_response({"detail": "Permisos actualizados para administradores de sucursal.", "enabled": enabled})
 
