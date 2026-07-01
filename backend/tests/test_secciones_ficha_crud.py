@@ -14,6 +14,7 @@ any order.
 import json
 
 from django.db import IntegrityError, transaction
+from django.db.models import Max
 from django.test import TestCase
 
 from accounts.models import Rol, Usuario
@@ -234,9 +235,9 @@ class SeccionesFichaCatalogApiTests(TestCase):
             "name": "Solo sector",
             "code": codigo,
             "sectorId": self.dep_sector.pk,
-            "order": 1,
             "active": True,
         }
+        baseline_max = FichaSeccion.objects.aggregate(Max("orden"))["orden__max"] or 0
 
         response = self._post("/api/admin/catalogos/secciones-ficha/crear/", payload)
 
@@ -251,7 +252,8 @@ class SeccionesFichaCatalogApiTests(TestCase):
         self.assertIsNone(created.proc_estetico_id)
         self.assertEqual(created.codigo, codigo)
         self.assertEqual(created.nombre, "Solo sector")
-        self.assertEqual(created.orden, 1)
+        # orden is auto-assigned on create; payload no longer carries `order`
+        self.assertEqual(created.orden, baseline_max + 1)
         self.assertTrue(created.activo)
 
     def test_create_section_with_proc_only_returns_201(self):
@@ -261,9 +263,9 @@ class SeccionesFichaCatalogApiTests(TestCase):
             "name": "Solo procedimiento",
             "code": codigo,
             "procEsteticoId": self.proc_a.pk,
-            "order": 1,
             "active": True,
         }
+        baseline_max = FichaSeccion.objects.aggregate(Max("orden"))["orden__max"] or 0
 
         response = self._post("/api/admin/catalogos/secciones-ficha/crear/", payload)
 
@@ -275,6 +277,8 @@ class SeccionesFichaCatalogApiTests(TestCase):
         created = FichaSeccion.objects.get(pk=body["item"]["id"])
         self.assertIsNone(created.sector_id)
         self.assertEqual(created.proc_estetico_id, self.proc_a.pk)
+        # orden is auto-assigned on create; payload no longer carries `order`
+        self.assertEqual(created.orden, baseline_max + 1)
 
     def test_create_section_with_both_bindings_returns_201(self):
         self.client.force_login(self.admin_general)
@@ -284,9 +288,9 @@ class SeccionesFichaCatalogApiTests(TestCase):
             "code": codigo,
             "sectorId": self.dep_sector.pk,
             "procEsteticoId": self.proc_a.pk,
-            "order": 1,
             "active": True,
         }
+        baseline_max = FichaSeccion.objects.aggregate(Max("orden"))["orden__max"] or 0
 
         response = self._post("/api/admin/catalogos/secciones-ficha/crear/", payload)
 
@@ -298,13 +302,14 @@ class SeccionesFichaCatalogApiTests(TestCase):
         created = FichaSeccion.objects.get(pk=body["item"]["id"])
         self.assertEqual(created.sector_id, self.dep_sector.pk)
         self.assertEqual(created.proc_estetico_id, self.proc_a.pk)
+        # orden is auto-assigned on create; payload no longer carries `order`
+        self.assertEqual(created.orden, baseline_max + 1)
 
     def test_create_section_without_bindings_returns_400(self):
         self.client.force_login(self.admin_general)
         payload = {
             "name": "Huerfano",
             "code": self._unique_codigo(),
-            "order": 1,
             "active": True,
         }
 
@@ -326,7 +331,6 @@ class SeccionesFichaCatalogApiTests(TestCase):
                 "name": "Original",
                 "code": codigo,
                 "procEsteticoId": self.proc_a.pk,
-                "order": 1,
                 "active": True,
             },
         )
@@ -338,7 +342,6 @@ class SeccionesFichaCatalogApiTests(TestCase):
                 "name": "Duplicado",
                 "code": codigo,
                 "procEsteticoId": self.proc_a.pk,
-                "order": 2,
                 "active": True,
             },
         )
@@ -359,7 +362,6 @@ class SeccionesFichaCatalogApiTests(TestCase):
                 "name": "En proc A",
                 "code": codigo,
                 "procEsteticoId": self.proc_a.pk,
-                "order": 1,
                 "active": True,
             },
         )
@@ -373,7 +375,6 @@ class SeccionesFichaCatalogApiTests(TestCase):
                 "name": "En proc B",
                 "code": codigo,
                 "procEsteticoId": self.proc_b.pk,
-                "order": 1,
                 "active": True,
             },
         )
@@ -440,7 +441,35 @@ class SeccionesFichaCatalogApiTests(TestCase):
         section.refresh_from_db()
         self.assertEqual(section.nombre, "Editado")
         self.assertEqual(section.sector_id, self.tat_sector.pk)
-        self.assertEqual(section.orden, 9)
+        # orden is not exposed in the form; updates must preserve the existing value
+        self.assertEqual(section.orden, 1)
+
+    def test_update_with_order_9_preserves_orden(self):
+        section = FichaSeccion.objects.create(
+            nombre="Original",
+            codigo=self._unique_codigo(),
+            sector=self.dep_sector,
+            orden=3,
+        )
+
+        self.client.force_login(self.admin_general)
+        response = self._post(
+            f"/api/admin/catalogos/secciones-ficha/{section.pk}/actualizar/",
+            {
+                "name": "Renombrado",
+                "code": section.codigo,
+                "sectorId": self.tat_sector.pk,
+                "order": 9,
+                "active": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        section.refresh_from_db()
+        # The payload's `order: 9` must be ignored; existing orden=3 preserved.
+        self.assertEqual(section.orden, 3)
+        self.assertEqual(section.nombre, "Renombrado")
+        self.assertEqual(section.sector_id, self.tat_sector.pk)
 
     def test_update_section_can_swap_proc_estetico(self):
         section = FichaSeccion.objects.create(
@@ -456,7 +485,6 @@ class SeccionesFichaCatalogApiTests(TestCase):
                 "name": "Editado",
                 "code": section.codigo,
                 "procEsteticoId": self.proc_b.pk,
-                "order": 1,
                 "active": True,
             },
         )

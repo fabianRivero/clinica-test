@@ -1402,7 +1402,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                         "label": "Grupo de opciones",
                         "value": item.grupo_opciones.nombre if item.grupo_opciones else "Sin grupo",
                     },
-                    {"label": "Orden", "value": str(item.orden)},
                     {"label": "Requerido", "value": "Si" if item.requerido else "No"},
                     {"label": "Detalle", "value": "Permitido" if item.permite_detalle else "No"},
                 ],
@@ -1415,7 +1414,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                     "isMultiple": item.es_multiple,
                     "allowsDetail": item.permite_detalle,
                     "required": item.requerido,
-                    "order": item.orden,
                 },
             )
             for item in queryset
@@ -1480,7 +1478,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                     ],
                     hint="Solo aplica a campos de seleccion.",
                 ),
-                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
                 _catalog_field("isMultiple", "Permite multiples respuestas", "checkbox", value_type="boolean"),
                 _catalog_field("allowsDetail", "Permite detalle adicional", "checkbox", value_type="boolean"),
                 _catalog_field("required", "Campo obligatorio", "checkbox", value_type="boolean"),
@@ -1554,7 +1551,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                 "Especialidad del equipo",
                 item.activo,
                 [
-                    {"label": "Orden", "value": str(item.orden)},
                     {"label": "Descripción", "value": item.descripcion or "Sin descripción"},
                     {
                         "label": "Especialistas vinculados",
@@ -1564,7 +1560,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                 {
                     "name": item.nombre,
                     "description": item.descripcion,
-                    "order": item.orden,
                 },
             )
             for item in queryset
@@ -1588,7 +1583,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
             "fields": [
                 _catalog_field("name", "Especialidad", "text", required=True, placeholder="Ej. Laser terapéutico"),
                 _catalog_field("description", "Descripción", "textarea", placeholder="Notas internas sobre la especialidad"),
-                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
             ],
             "items": items,
         }
@@ -1725,7 +1719,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                 item.activo,
                 [
                     {"label": "Código", "value": item.codigo},
-                    {"label": "Orden", "value": str(item.orden)},
                     {"label": "Descripción", "value": item.descripcion or "Sin descripción"},
                     {
                         "label": "Servicios vinculados",
@@ -1736,7 +1729,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                     "code": item.codigo,
                     "name": item.nombre,
                     "description": item.descripcion,
-                    "order": item.orden,
                 },
             )
             for item in queryset
@@ -1801,7 +1793,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                 item.activo,
                 [
                     {"label": "Código", "value": item.codigo},
-                    {"label": "Orden", "value": str(item.orden)},
                     {
                         "label": "Sector",
                         "value": item.sector.nombre if item.sector else "Sin sector",
@@ -1816,7 +1807,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                     "code": item.codigo,
                     "sectorId": item.sector_id,
                     "procEsteticoId": item.proc_estetico_id,
-                    "order": item.orden,
                 },
             )
             for item in queryset
@@ -1863,7 +1853,6 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
                     ],
                     hint="Opcional si se asigna un sector.",
                 ),
-                _catalog_field("order", "Orden", "number", value_type="number", min_value=0),
             ],
             "items": items,
         }
@@ -1989,7 +1978,10 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         label = text_value("label")
         field_type = text_value("fieldType")
         option_group_id = int_value("optionGroupId", minimum=1, allow_empty=True)
-        order = int_value("order", minimum=0, allow_empty=True)
+        # `order` is intentionally read (for forward-compat parsing) but never
+        # assigned — the server auto-assigns orden on create and preserves the
+        # existing value on update.
+        _ = int_value("order", minimum=0, allow_empty=True)
 
         if not code:
             errors["code"] = "El código interno es obligatorio."
@@ -2026,7 +2018,9 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         obj.es_multiple = bool_value("isMultiple")
         obj.permite_detalle = bool_value("allowsDetail")
         obj.requerido = bool_value("required")
-        obj.orden = order or 0
+        if instance is None:
+            max_orden = FichaCampo.objects.aggregate(Max("orden"))["orden__max"] or 0
+            obj.orden = max_orden + 1
         return obj
 
     if catalog_key == "patologias-cutaneas":
@@ -2044,13 +2038,18 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         name = text_value("name")
         if not name:
             errors["name"] = "El nombre de la especialidad es obligatorio."
-        order = int_value("order", minimum=0, allow_empty=True)
+        # `order` is intentionally read (for forward-compat parsing) but never
+        # assigned — the server auto-assigns orden on create and preserves the
+        # existing value on update.
+        _ = int_value("order", minimum=0, allow_empty=True)
         if errors:
             raise ValidationError(errors)
         obj = instance or Especialidad()
         obj.nombre = name
         obj.descripcion = text_value("description")
-        obj.orden = order or 0
+        if instance is None:
+            max_orden = Especialidad.objects.aggregate(Max("orden"))["orden__max"] or 0
+            obj.orden = max_orden + 1
         return obj
 
     if catalog_key == "grupos-opciones":
@@ -2105,7 +2104,10 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         code = text_value("code")
         sector_id = int_value("sectorId", minimum=1, allow_empty=True)
         proc_estetico_id = int_value("procEsteticoId", minimum=1, allow_empty=True)
-        order = int_value("order", minimum=0, allow_empty=True)
+        # `order` is intentionally read (for forward-compat parsing) but never
+        # assigned — the server auto-assigns orden on create and preserves the
+        # existing value on update.
+        _ = int_value("order", minimum=0, allow_empty=True)
 
         if not code:
             errors["code"] = "El código de la sección es obligatorio."
@@ -2138,7 +2140,9 @@ def _catalog_parse_payload(catalog_key, payload, instance=None):
         obj.codigo = code
         obj.sector = sector
         obj.proc_estetico = proc
-        obj.orden = order or 0
+        if instance is None:
+            max_orden = FichaSeccion.objects.aggregate(Max("orden"))["orden__max"] or 0
+            obj.orden = max_orden + 1
         return obj
 
     raise KeyError(catalog_key)

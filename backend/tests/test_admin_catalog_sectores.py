@@ -106,8 +106,14 @@ class SectoresCatalogApiTests(TestCase):
         sample = data["items"][0]
         for key in ("id", "title", "subtitle", "active", "metadata", "values"):
             self.assertIn(key, sample)
-        for key in ("code", "name", "description", "order"):
+        for key in ("code", "name", "description"):
             self.assertIn(key, sample["values"])
+        # `order` is server-managed and no longer exposed in the list payload
+        self.assertNotIn("order", sample["values"])
+        self.assertNotIn(
+            "Orden",
+            [entry.get("label") for entry in sample["metadata"]],
+        )
 
     def test_list_active_true_returns_only_active_sectors(self):
         inactive = self._create_unique_sector(activo=False)
