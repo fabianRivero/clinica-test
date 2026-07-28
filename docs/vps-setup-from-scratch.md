@@ -838,6 +838,14 @@ sudo systemctl restart gunicorn
 
 ---
 
+## Historial de cambios de esta guía
+
+| Commit | Qué cambió |
+|---|---|
+| `7b107bc` | Creación de la guía. Reemplaza `droplet-setup-from-scratch.md` y `droplet-deploy-updates.md`. Agrega guía VPS genérica, comando `seed_client_baseline`, `.env.example`, `deploy.sh.example`, spec OpenSpec y 13 tests. |
+
+Si la guía quedó desactualizada respecto al código, este es el bloque a actualizar. Buscá la sección correspondiente en la tabla de arriba y en el diff del commit.
+
 ## Próximos pasos para producción real
 
 Esta guía deja el sistema funcionando, pero para un cliente final **se recomienda**:
