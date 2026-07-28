@@ -587,37 +587,55 @@ sudo journalctl -u gunicorn --no-pager -n 50
 
 Una vez que el VPS está corriendo, mantener el sistema actualizado es automático con `scripts/deploy.sh`.
 
-Copiá `scripts/deploy.sh.example` a `scripts/deploy.sh`, editá las variables y dale permisos:
+**La primera vez**, copiá la plantilla y dale permisos. El script te va a preguntar los datos del VPS y los guarda en `scripts/.deploy-config` (gitignored) para no volver a preguntarlos:
 
 ```bash
 cp scripts/deploy.sh.example scripts/deploy.sh
-nano scripts/deploy.sh
 chmod +x scripts/deploy.sh
-```
-
-Variables a setear:
-
-```bash
-VPS_HOST="<VPS_IP>"
-VPS_USER="deploy"
-PROJECT_PATH="/var/www/clinica"
-DOMAIN="tu-dominio.com"
-```
-
-Luego:
-
-```bash
 ./scripts/deploy.sh
 ```
 
-El script:
+Te va a pedir (con defaults entre corchetes):
+
+```
+IP o hostname del VPS []: <VPS_IP>
+Path del proyecto en el VPS [/var/www/clinica]: <enter>
+Usuario SSH en el VPS [deploy]: <enter>
+Dominio principal (sin https://) []: tu-dominio.com
+Rama a desplegar [main]: <enter>
+URL del repo (para validar el remote) []: <enter>
+```
+
+Después de la primera corrida, los valores quedan en `scripts/.deploy-config` y no se vuelven a preguntar. Para cambiar uno:
+
+```bash
+nano scripts/.deploy-config
+```
+
+O borrá el archivo y volvé a correr el script.
+
+**Variables que podés querer editar** (todas opcionales, todas con default razonable):
+
+| Variable | Default | Cuándo cambiarla |
+|---|---|---|
+| `VPS_HOST` | (vacío, obligatorio) | Primera vez. Luego queda guardada. |
+| `VPS_USER` | `deploy` | Si creaste otro usuario SSH. |
+| `PROJECT_PATH` | `/var/www/clinica` | Si instalaste en otro path. |
+| `DOMAIN` | (vacío) | Para que el script verifique HTTP 200 al final. |
+| `GIT_BRANCH` | `main` | Si deployás desde otra rama. |
+| `GIT_REPO` | (vacío) | Si querés que valide que el remote coincida. |
+
+**Modo no-interactivo** (para CI o scripts automatizados): si `scripts/.deploy-config` ya existe con todos los valores, el script no pregunta nada.
+
+**Lo que hace el deploy:**
+
 1. Hace `git pull` en el VPS.
 2. Actualiza dependencias Python.
-3. Reconstruye el frontend.
+3. Reconstruye el frontend (`npm ci` + `npm run build`).
 4. Aplica migraciones.
 5. Recolecta estáticos.
 6. Reinicia Gunicorn.
-7. Verifica que el sitio responda.
+7. Verifica Nginx y (si hay dominio) hace un `curl` al sitio.
 
 ---
 
@@ -812,7 +830,7 @@ sudo systemctl restart gunicorn
 | Gunicorn service | `/etc/systemd/system/gunicorn.service` | Daemon auto-inicio |
 | Backup script | `/usr/local/bin/clinica-backup.sh` | Dump diario de PostgreSQL |
 | Cron backups | `crontab -e` | Programa el backup a las 03:00 |
-| `deploy.sh` | `scripts/deploy.sh` (local) | Deploy automático desde máquina local |
+| `deploy.sh` | `scripts/deploy.sh` (local) | Deploy automático desde máquina local (la primera vez pregunta los datos y los guarda en `scripts/.deploy-config`) |
 
 ---
 

@@ -1,0 +1,192 @@
+#!/bin/bash
+# ============================================
+# Deploy script — Clínica Estética
+# Genérico para cualquier VPS Linux
+# ============================================
+#
+# Uso:
+#   1. Copiá este archivo: cp scripts/deploy.sh.example scripts/deploy.sh
+#   2. La primera vez te pregunta los datos del VPS y los guarda en
+#      scripts/.deploy-config (no se commitea).
+#   3. Ejecutá: ./scripts/deploy.sh
+#
+# El script se conecta por SSH al VPS, baja los últimos cambios de Git,
+# instala dependencias, aplica migraciones, reconstruye el frontend y
+# reinicia Gunicorn.
+
+set -e
+
+# ============================================
+# CONFIGURACIÓN — la primera vez se piden al usuario
+# ============================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="$SCRIPT_DIR/.deploy-config"
+
+# Cargar config guardada si existe
+if [ -f "$CONFIG_FILE" ]; then
+    # shellcheck disable=SC1090
+    source "$CONFIG_FILE"
+fi
+
+# Defaults (se usan si la config no tiene el valor)
+VPS_USER="${VPS_USER:-deploy}"
+PROJECT_PATH="${PROJECT_PATH:-/var/www/clinica}"
+GIT_BRANCH="${GIT_BRANCH:-main}"
+
+# ============================================
+# HELPERS
+# ============================================
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_step()  { echo -e "${GREEN}[STEP]${NC} $1"; }
+log_error()  { echo -e "${RED}[ERROR]${NC} $1"; }
+log_warn()   { echo -e "${YELLOW}[WARN]${NC} $1"; }
+
+# ask_once VAR "Pregunta" [default]
+# Si VAR está vacío, pregunta al usuario. Lo que responda queda en la config.
+ask_once() {
+    local var_name="$1"
+    local prompt="$2"
+    local default="$3"
+    local current_value="${!var_name}"
+
+    # Si ya hay valor, usarlo
+    if [ -n "$current_value" ]; then
+        return 0
+    fi
+
+    # Si hay default y estamos en un terminal no interactivo, usarlo
+    if [ -n "$default" ] && [ ! -t 0 ]; then
+        printf -v "$var_name" "%s" "$default"
+        eval "$var_name=\"$default\""
+        save_config
+        return 0
+    fi
+
+    # Preguntar al usuario
+    local answer
+    if [ -n "$default" ]; then
+        read -rp "$prompt [$default]: " answer
+    else
+        read -rp "$prompt: " answer
+    fi
+
+    answer="${answer:-$default}"
+
+    if [ -z "$answer" ]; then
+        log_error "El campo '$var_name' es obligatorio."
+        exit 1
+    fi
+
+    eval "$var_name=\"\$answer\""
+    save_config
+}
+
+save_config() {
+    cat > "$CONFIG_FILE" <<EOF
+# Generado por deploy.sh — no editar a mano
+VPS_HOST="$VPS_HOST"
+VPS_USER="$VPS_USER"
+PROJECT_PATH="$PROJECT_PATH"
+DOMAIN="$DOMAIN"
+GIT_BRANCH="$GIT_BRANCH"
+GIT_REPO="$GIT_REPO"
+EOF
+    chmod 600 "$CONFIG_FILE"
+}
+
+# ============================================
+# PEDIR VALORES FALTANTES
+# ============================================
+ask_once VPS_HOST "IP o hostname del VPS" ""
+ask_once PROJECT_PATH "Path del proyecto en el VPS" "/var/www/clinica"
+ask_once VPS_USER "Usuario SSH en el VPS" "deploy"
+ask_once DOMAIN "Dominio principal (sin https://)" ""
+ask_once GIT_BRANCH "Rama a desplegar" "main"
+ask_once GIT_REPO "URL del repo (para validar el remote)" ""
+
+# ============================================
+# VALIDACIONES
+# ============================================
+if [ ! -f ".git/config" ]; then
+    log_error "No estás en un repositorio git. Ejecutá el script desde la raíz del proyecto."
+    exit 1
+fi
+
+if [ -n "$GIT_REPO" ]; then
+    CURRENT_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
+    if [ "$CURRENT_REMOTE" != "$GIT_REPO" ]; then
+        log_warn "El remote 'origin' no coincide con GIT_REPO"
+        echo "  Esperado: $GIT_REPO"
+        echo "  Actual:   $CURRENT_REMOTE"
+        read -rp "¿Continuar de todos modos? (s/n): " -n 1
+        echo
+        if [[ ! $REPLY =~ ^[Ss]$ ]]; then
+            exit 1
+        fi
+    fi
+fi
+
+# ============================================
+# DEPLOY
+# ============================================
+log_step "Iniciando deploy a $VPS_USER@$VPS_HOST (rama: $GIT_BRANCH)..."
+
+ssh "$VPS_USER@$VPS_HOST" << SSHEOF
+set -e
+
+PROJECT_PATH="$PROJECT_PATH"
+GIT_BRANCH="$GIT_BRANCH"
+
+echo "=== 1. Pull últimos cambios ==="
+cd "\$PROJECT_PATH"
+sudo -u www-data git pull origin "\$GIT_BRANCH"
+
+echo "=== 2. Dependencias Python ==="
+cd backend
+sudo -u www-data env/bin/pip install -q -r requirements.txt
+cd ..
+
+echo "=== 3. Build frontend ==="
+cd frontend/aesthetic-clinic
+sudo -u www-data npm ci
+sudo -u www-data npm run build
+cd ../..
+
+echo "=== 4. Migraciones ==="
+sudo -u www-data "\$PROJECT_PATH/backend/env/bin/python" "\$PROJECT_PATH/backend/manage.py" migrate --noinput
+
+echo "=== 5. Static files ==="
+sudo -u www-data "\$PROJECT_PATH/backend/env/bin/python" "\$PROJECT_PATH/backend/manage.py" collectstatic --noinput
+
+echo "=== 6. Reiniciar Gunicorn ==="
+sudo systemctl restart gunicorn
+sleep 2
+
+echo "=== 7. Verificar Nginx ==="
+sudo nginx -t
+
+echo ""
+echo "=== Deploy remoto completado ==="
+SSHEOF
+
+# ============================================
+# VERIFICACIÓN POST-DEPLOY
+# ============================================
+if [ -n "$DOMAIN" ]; then
+    log_step "Verificando que el sitio responda..."
+    sleep 2
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$DOMAIN/" || echo "000")
+    if [ "$HTTP_CODE" = "200" ]; then
+        log_step "Sitio responde OK (HTTP 200)"
+    else
+        log_error "El sitio no responde correctamente (HTTP $HTTP_CODE)"
+        log_warn "Verificá manualmente: https://$DOMAIN"
+    fi
+fi
+
+echo ""
+log_step "Deploy finalizado."

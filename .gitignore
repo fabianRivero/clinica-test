@@ -59,9 +59,16 @@ desktop.ini
 
 # Scripts de reseteo de DB (PELIGROSOS - solo para desarrollo local)
 backend/scripts/
-scripts/
 
-# Script de deploy (solo para máquina local, contiene credenciales del droplet)
+# scripts/ solo se commitea si el archivo NO está en la blacklist de abajo.
+# Whitespaced exceptions:
+!scripts/
+!scripts/.gitkeep
+# Pero el script de deploy (con credenciales) y la config NUNCA se commitean:
+scripts/deploy.sh
+scripts/.deploy-config
+
+# Script de deploy en raíz (legacy)
 deploy.sh
 
 # Commands de Django que resetean o purgan datos de DB (no para producción)
