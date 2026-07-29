@@ -347,7 +347,12 @@ class VerificationInitEndpointTests(BiometricEndpointBase):
         data = response.json()
         self.assertTrue(data["has_fingerprint"])
         self.assertIn("capture_token", data)
-        self.assertEqual(data["agent_url"], "https://agent.example.com")
+        # Backend orchestrates the match; the frontend never sees
+        # agent_url. The score and threshold come back so the UI can
+        # show "matched / not matched" pending verify_confirm.
+        self.assertIn("score", data)
+        self.assertIn("threshold", data)
+        self.assertNotIn("agent_url", data)
 
     def test_verify_init_without_template_returns_manual_only(self):
         url = reverse(

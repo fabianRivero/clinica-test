@@ -555,8 +555,13 @@ def _pick_active_agent() -> Optional[AgentToken]:
 @csrf_exempt
 @require_POST
 def verify_init(request, cita_id: int):
-    """Return ``agent_url`` + ``capture_token`` for a cita that needs
-    biometric verification.
+    """Trigger a biometric verification for a cita.
+
+    Orchestrates the capture directly: the backend decrypts the
+    client's stored template, calls the agent's ``/match`` endpoint
+    with that template, and stores the resulting ``score`` against the
+    capture_token. The frontend then only has to poll or call
+    :func:`verify_confirm` once capture is complete.
 
     If the client has no ``HuellaBiometricaCliente`` row, returns
     ``{has_fingerprint:false, manual_only:true}`` so the UI can render
@@ -589,7 +594,7 @@ def verify_init(request, cita_id: int):
     huella = (
         HuellaBiometricaCliente.objects.filter(cliente=cliente, activo=True).first()
     )
-    if huella is None:
+    if huella is None or not huella.template_biometrico:
         return json_response(
             {"has_fingerprint": False, "manual_only": True},
             status=200,
@@ -602,6 +607,25 @@ def verify_init(request, cita_id: int):
             status=503,
         )
 
+    # Decrypt the stored template so the agent can use it as the
+    # reference for the 1:1 match.
+    try:
+        stored_template = decrypt_template(bytes(huella.template_biometrico))
+    except (InvalidToken, ValueError) as exc:
+        BiometricAttempt.objects.create(
+            cita=cita,
+            cliente=cliente,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.VERIFY,
+            success=False,
+            failure_reason=BiometricAttempt.FailureReason.DECRYPT_FAILED,
+        )
+        logger.exception("verify_init: stored template could not be decrypted")
+        return json_response(
+            {"detail": "La plantilla almacenada no se puede desencriptar. Reenrole al cliente.", "code": "DECRYPT_FAILED"},
+            status=500,
+        )
+
     capture_token = capture_token_store.create(
         {
             "kind": "verify",
@@ -612,14 +636,53 @@ def verify_init(request, cita_id: int):
         },
     )
 
+    # Run the match synchronously against the agent. The score is
+    # stored on the capture_token entry so verify_confirm can read
+    # it without touching the agent again.
+    try:
+        agent_client = get_agent_client()
+        match_response = agent_client.match(
+            agent,
+            template_bytes=stored_template,
+            capture_token=capture_token,
+        )
+    except AgentUnavailableError as exc:
+        BiometricAttempt.objects.create(
+            cita=cita,
+            cliente=cliente,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.VERIFY,
+            success=False,
+            failure_reason=BiometricAttempt.FailureReason.NO_IMAGE,
+        )
+        return json_response(
+            {"detail": "El lector de huellas no esta disponible.", "code": str(exc)},
+            status=503,
+        )
+    except AgentOperationError as exc:
+        BiometricAttempt.objects.create(
+            cita=cita,
+            cliente=cliente,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.VERIFY,
+            success=False,
+            failure_reason=BiometricAttempt.FailureReason.LOW_QUALITY,
+        )
+        return json_response(
+            {"detail": "No se pudo verificar la huella. Reintente.", "code": exc.code},
+            status=400,
+        )
+
+    # Persist the score on the capture_token entry so verify_confirm
+    # can read it without re-calling the agent.
+    capture_token_store.set_score(capture_token, float(match_response.score))
+
     return json_response(
         {
             "has_fingerprint": True,
             "capture_token": capture_token,
-            "agent_url": agent.public_url,
-            "agent_token_hint": agent.token_fingerprint,
-            "agent_id": agent.id,
             "threshold": str(get_threshold()),
+            "score": float(match_response.score),
             "cliente_id": cliente.id,
             "cita_id": cita_id,
         },

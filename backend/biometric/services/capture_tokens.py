@@ -74,6 +74,18 @@ class CaptureTokenStore:
             return None
         return dict(entry.payload)
 
+    def set_score(self, token: str, score: float) -> None:
+        """Attach a ``score`` to an existing capture token.
+
+        Used by ``verify_init`` so the score from the agent's match
+        call doesn't have to be re-fetched from the agent during
+        ``verify_confirm``.
+        """
+        with self._lock:
+            entry = self._entries.get(token)
+            if entry is not None:
+                entry.payload = {**entry.payload, "score": score}
+
     def reset(self) -> None:
         """Clear all entries. Test-only helper."""
         with self._lock:
