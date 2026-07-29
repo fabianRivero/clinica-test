@@ -31,6 +31,7 @@ from config.api_helpers import (
 )
 from config.api_views import _prospect_item
 from customers.models import Cliente, HuellaBiometricaCliente, Prospecto, ProspectoConversionBorrador
+from biometric.models import BiometricAttempt
 from operations.models import Operacion
 from clinical.models import (
     FichaAntecedenteMedico,
