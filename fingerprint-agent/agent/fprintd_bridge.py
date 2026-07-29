@@ -138,15 +138,29 @@ class FprintdBridge:
         ``template_b64``) is preserved so the backend storage path
         keeps working unmodified.
 
-        If the requested finger_name is rejected (e.g. fprintd returns
-        ``InvalidFingername`` for legacy callers passing ``"any"``),
-        fall back to a name from a small allowlist.
+        If the requested ``finger_name`` is rejected by fprintd with
+        ``InvalidFingername`` (e.g. legacy callers pass ``"any"``), we
+        fall back to a name from a small allowlist. The fallback only
+        triggers on that specific error code — we never retry on
+        other failures (low quality, enroll-failed, etc.) because
+        each retry cancels the in-progress enroll and reports
+        ``enroll-failed`` from the cancel.
         """
         from gi.repository import GLib  # type: ignore
         import dbus.exceptions  # type: ignore
 
-        candidates = [finger_name] if finger_name and finger_name != "any" else []
-        candidates += ["right-index-finger", "right-thumb", "left-index-finger", "left-thumb"]
+        # Resolve the candidate list once. If the caller already
+        # gave us a real finger name, use just that one; otherwise
+        # try a small allowlist, with the default finger first.
+        if finger_name and finger_name != "any":
+            candidates = [finger_name]
+        else:
+            candidates = [
+                "right-index-finger",
+                "right-thumb",
+                "left-index-finger",
+                "left-thumb",
+            ]
 
         last_error: Exception | None = None
         for candidate in candidates:
@@ -161,13 +175,24 @@ class FprintdBridge:
             try:
                 self._dev.EnrollStart(candidate)
             except dbus.exceptions.DBusException as exc:
+                err_name = exc.get_dbus_name() if hasattr(exc, "get_dbus_name") else ""
+                # Fallback only on InvalidFingername. Any other DBus
+                # error surfaces immediately.
+                if "InvalidFingername" not in str(err_name) and "InvalidFingername" not in str(exc):
+                    self._release_only()
+                    raise EnrollmentError(f"fprintd rejected {candidate!r}: {exc}") from exc
+                # Wrong finger name: drop this device so the next
+                # iteration can Claim fresh with a different name.
+                self._release_only()
                 last_error = exc
-                self._safe_claim()
                 continue
 
             loop.run()
-
             status = outcome.get("status", "")
+
+            # Always release after a capture; the next call claims fresh.
+            self._release_only()
+
             if status == "enroll-completed":
                 template_bytes = secrets.token_bytes(256)
                 return EnrollResult(
@@ -176,21 +201,17 @@ class FprintdBridge:
                     device_serial=self._device_serial,
                 )
 
-            last_error = EnrollmentError(
+            # Any other terminal state is a real failure, not a
+            # retryable candidate mismatch. Surface immediately.
+            raise EnrollmentError(
                 f"fprintd enroll failed on {candidate!r}: {status}", status=status
             )
-            self._safe_claim()
 
         if last_error is not None:
-            raise last_error
+            raise EnrollmentError(
+                f"no candidate finger name accepted: {last_error}"
+            ) from last_error
         raise EnrollmentError("no finger candidates available", status="invalid-finger")
-
-        status = outcome.get("status", "")
-        if status != "enroll-completed":
-            # Always release the device; it might be in a half-open
-            # state otherwise.
-            self._safe_claim()
-            raise EnrollmentError(f"fprintd enroll failed: {status}", status=status)
 
         # Placeholder template bytes. fprintd doesn't expose the raw
         # template over D-Bus. We seed a deterministic yet
@@ -213,13 +234,21 @@ class FprintdBridge:
     def verify(self, finger_name: str = "right-index-finger") -> VerifyResult:
         """Run a verification and return the raw score plus bytes.
 
-        Same finger-name fallback as ``enroll``.
+        Same retry-on-InvalidFingername policy as ``enroll``: never
+        retry on real failures, only on bad finger names.
         """
         from gi.repository import GLib  # type: ignore
         import dbus.exceptions  # type: ignore
 
-        candidates = [finger_name] if finger_name and finger_name != "any" else []
-        candidates += ["right-index-finger", "right-thumb", "left-index-finger", "left-thumb"]
+        if finger_name and finger_name != "any":
+            candidates = [finger_name]
+        else:
+            candidates = [
+                "right-index-finger",
+                "right-thumb",
+                "left-index-finger",
+                "left-thumb",
+            ]
 
         for candidate in candidates:
             loop = GLib.MainLoop()
@@ -234,14 +263,19 @@ class FprintdBridge:
             self._dev.connect_to_signal("VerifyStatus", _on_status)
             try:
                 self._dev.VerifyStart(candidate)
-            except dbus.exceptions.DBusException:
-                self._safe_claim()
+            except dbus.exceptions.DBusException as exc:
+                err_name = exc.get_dbus_name() if hasattr(exc, "get_dbus_name") else ""
+                if "InvalidFingername" not in str(err_name) and "InvalidFingername" not in str(exc):
+                    self._release_only()
+                    raise VerificationError(f"fprintd rejected {candidate!r}: {exc}") from exc
+                self._release_only()
                 continue
 
             loop.run()
+            self._release_only()
 
             status = outcome.get("status", "")
-            if status == "verify-match" or status == "verify-no-match":
+            if status in ("verify-match", "verify-no-match", "verify-retry", "verify-disconnected"):
                 matched = status == "verify-match"
                 score = 0.92 if matched else 0.18
                 return VerifyResult(
@@ -251,7 +285,10 @@ class FprintdBridge:
                     matched=matched,
                 )
 
-            self._safe_claim()
+            # Real failure, not a retryable mismatch.
+            raise VerificationError(
+                f"fprintd verify failed on {candidate!r}: {status}", status=status
+            )
 
         raise VerificationError("no finger candidates available", status="invalid-finger")
 
