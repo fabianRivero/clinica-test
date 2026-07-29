@@ -99,7 +99,7 @@ BIOMETRIC_CAPTURE_TOKEN_TTL_SECONDS = os.getenv(
 )
 AGENT_CLIENT_CLASS = os.getenv(
     "AGENT_CLIENT_CLASS",
-    "biometric.services.agent_client.MockAgentClient",
+    "biometric.services.agent_client.HttpAgentClient",
 )
 
 USE_LOCAL_DB = env_bool("DJANGO_USE_LOCAL_DB", False)

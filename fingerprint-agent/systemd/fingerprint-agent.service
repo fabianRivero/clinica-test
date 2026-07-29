@@ -1,0 +1,32 @@
+[Unit]
+Description=Clinic fingerprint agent (DigitalPersona 4500)
+Documentation=https://github.com/your-org/clinica
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The user/group that owns the binary and the config. Create with:
+#   sudo useradd -r -s /usr/sbin/nologin -d /opt/fingerprint-agent fingerprint-agent
+User=fingerprint-agent
+Group=fingerprint-agent
+WorkingDirectory=/opt/fingerprint-agent
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/fingerprint-agent/.venv/bin/python server.py --config /etc/fingerprint-agent/config.ini
+Restart=always
+RestartSec=5s
+TimeoutStopSec=20s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fingerprint-agent
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/log/fingerprint-agent
+
+[Install]
+WantedBy=multi-user.target

@@ -100,8 +100,20 @@ class AgentToken(TimeStampedModel):
     """Per-PC bearer token issued by an admin principal.
 
     The raw token is generated once on create and returned in the create
-    response. Only its SHA-256 hex digest is stored. Inactive tokens are
-    rejected by ``IsAgentToken`` permission.
+    response. Only its SHA-256 hex digest is persisted in ``token_hash``;
+    the raw token is also stored under ``token_encrypted`` (Fernet-encrypted)
+    so the backend can perform OUTBOUND calls to the agent (the agent
+    itself never initiates contact). The Fernet key is the same
+    ``BIOMETRIC_FERNET_KEY`` used for templates.
+
+    The two fields serve different purposes:
+
+    - ``token_hash``  — INBOUND auth: the agent presents the raw bearer,
+      the backend hashes it and looks up the row by hash. Never decrypts.
+    - ``token_encrypted`` — OUTBOUND auth: the backend constructs the
+      Authorization header for ``BaseAgentClient`` calls.
+
+    Inactive tokens are rejected by ``IsAgentToken`` permission.
     """
 
     name = models.CharField(max_length=120)
@@ -121,6 +133,10 @@ class AgentToken(TimeStampedModel):
         null=True,
         blank=True,
     )
+    # Fernet-encrypted raw token (used for outbound calls). Optional so
+    # existing rows from PR #1 (which only had token_hash) keep
+    # working; the agent will need to be re-issued to call out.
+    token_encrypted = models.BinaryField(null=True, blank=True)
 
     class Meta:
         db_table = "biometric_agent_tokens"
@@ -145,3 +161,32 @@ class AgentToken(TimeStampedModel):
         correlation without exposing the secret.
         """
         return self.token_hash[:8]
+
+    def decrypt_raw_token(self) -> str:
+        """Return the raw bearer token (Fernet-decrypted).
+
+        Used by ``HttpAgentClient`` to construct the
+        ``Authorization: Bearer <raw>`` header for outbound calls.
+
+        Raises:
+            RuntimeError: when ``token_encrypted`` is empty (legacy
+                row, or the agent was created before PR #2). Operators
+                must DELETE + recreate the agent to recover.
+            cryptography.fernet.InvalidToken: when the Fernet key has
+                rotated; same remediation path.
+        """
+        from biometric.services.encryption import InvalidToken, decrypt_template
+
+        if not self.token_encrypted:
+            raise RuntimeError(
+                f"AgentToken {self.id} has no encrypted raw token; "
+                "re-issue the agent via DELETE + POST /api/biometric/agents/."
+            )
+        try:
+            plaintext = decrypt_template(bytes(self.token_encrypted))
+        except InvalidToken as exc:
+            raise RuntimeError(
+                f"AgentToken {self.id} raw token could not be decrypted; "
+                "the Fernet key has rotated. Re-issue the agent."
+            ) from exc
+        return plaintext.decode("utf-8")

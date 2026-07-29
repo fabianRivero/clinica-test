@@ -1,0 +1,33 @@
+# Cloudflare Tunnel configuration for the clinic fingerprint agent.
+#
+# Copy to /etc/cloudflared/config.yml and run:
+#   sudo cloudflared tunnel login
+#   sudo cloudflared tunnel create clinic-pc-recepcion
+#   sudo cloudflared tunnel route dns clinic-pc-recepcion agent-001.clinica.app
+#   sudo cp systemd/cloudflared.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now cloudflared
+#
+# The CNAME record (created by `cloudflared tunnel route dns`) is what
+# the backend's AgentToken row stores as `public_url`. Keep them in
+# sync.
+
+# Replace with the UUID of the tunnel created by `cloudflared tunnel create`.
+tunnel: <TUNNEL_UUID>
+credentials-file: /etc/cloudflared/.cloudflared/<TUNNEL_UUID>.json
+
+# Bind locally and forward traffic from the tunnel to the agent.
+ingress:
+  # The agent's local listener. Match protocol so cloudflared does not
+  # try to inspect the encrypted backend protocol.
+  - hostname: agent-001.clinica.app
+    service: http://127.0.0.1:8765
+    originRequest:
+      # Tell cloudflared not to add headers like cf-connecting-ip
+      # blindly; the agent doesn't trust them anyway.
+      noTLSVerify: false
+  # Required catch-all. Cloudflare rejects configs without it.
+  - service: http_status:404
+
+# Transport-level options. Tune to taste.
+loglevel: info
+no-autoupdate: false

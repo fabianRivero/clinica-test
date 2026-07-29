@@ -1,0 +1,29 @@
+[Unit]
+Description=Cloudflare Tunnel for the clinic fingerprint agent
+Documentation=https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+After=network-online.target fingerprint-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cloudflared
+Group=cloudflared
+Environment=CLOUDFLARED_HOME=/var/lib/cloudflared
+ExecStart=/usr/local/bin/cloudflared tunnel --config /etc/cloudflared/config.yml run
+Restart=always
+RestartSec=5s
+TimeoutStopSec=20s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflared
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/cloudflared
+
+[Install]
+WantedBy=multi-user.target

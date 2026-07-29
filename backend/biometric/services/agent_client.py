@@ -1,10 +1,16 @@
 """Agent client abstraction.
 
 The biometric backend talks to a per-PC ``fingerprint-agent`` running
-on the admin's machine; in PR #1 that agent does not exist yet, so we
-ship a :class:`MockAgentClient` that returns deterministic fake
-payloads. PR #2 will introduce :class:`HttpAgentClient` against the
-real Cloudflare-Tunnel-exposed service.
+on the admin's machine. Two implementations live in this module:
+
+- :class:`MockAgentClient` — deterministic fake used while the agent
+  is being built or in tests that don't want to hit the network.
+- :class:`HttpAgentClient` — JSON-over-HTTPS client for the real
+  Cloudflare-Tunnel-exposed service introduced in PR #2.
+
+Both implementations honour the same :class:`BaseAgentClient`
+protocol; the factory in :mod:`biometric.services.factory` selects
+one based on the ``AGENT_CLIENT_CLASS`` setting / env var.
 """
 
 from __future__ import annotations
@@ -15,7 +21,8 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Protocol
+from typing import Any, Protocol
+
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +58,27 @@ class MatchResponse:
 
 
 class BaseAgentClient(Protocol):
-    """Backend's view of the agent. PR #1's only impl is the mock."""
+    """Backend's view of the agent.
 
-    def capture(self, enrollment_payload: dict) -> CaptureResponse: ...
+    Both methods take an :class:`AgentToken` instance so the client
+    can pick up the public URL and the (Fernet-encrypted) raw bearer
+    token. The mock implementation ignores those values and keeps
+    returning deterministic data.
+    """
 
-    def match(self, template_bytes: bytes, capture_token: str) -> MatchResponse: ...
+    def capture(
+        self,
+        agent: Any,
+        capture_token: str,
+        finger_name: str = "any",
+    ) -> CaptureResponse: ...
+
+    def match(
+        self,
+        agent: Any,
+        template_bytes: bytes,
+        capture_token: str,
+    ) -> MatchResponse: ...
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +127,12 @@ class MockAgentClient:
             else fail_with
         )
 
-    def capture(self, enrollment_payload: dict) -> CaptureResponse:
+    def capture(
+        self,
+        agent: Any,
+        capture_token: str,
+        finger_name: str = "any",
+    ) -> CaptureResponse:
         # Simulated hardware failure modes.
         if self.fail_with == "NO_IMAGE":
             raise AgentUnavailableError("NO_IMAGE: scanner returned no image")
@@ -118,7 +146,7 @@ class MockAgentClient:
 
         # Deterministic template bytes for the given token so that an
         # enroll→match round trip works in tests.
-        token = (enrollment_payload or {}).get("capture_token") or uuid.uuid4().hex
+        token = capture_token or uuid.uuid4().hex
         template_bytes = self._seeded_template(token)
         quality = self.quality_score
         # When the configured quality is below the enrollment
@@ -142,7 +170,12 @@ class MockAgentClient:
             height=360,
         )
 
-    def match(self, template_bytes: bytes, capture_token: str) -> MatchResponse:
+    def match(
+        self,
+        agent: Any,
+        template_bytes: bytes,
+        capture_token: str,
+    ) -> MatchResponse:
         if self.fail_with == "AGENT_OFFLINE":
             raise AgentUnavailableError("AGENT_OFFLINE: tunnel not reachable")
         if self.fail_with == "NO_IMAGE":
@@ -171,22 +204,178 @@ class MockAgentClient:
 
 
 # ---------------------------------------------------------------------------
-# Stub HTTP client (PR #2 territory)
+# Real HTTP client (PR #2)
 # ---------------------------------------------------------------------------
 
 
 class HttpAgentClient:
-    """Placeholder for the real HTTP client. PR #2."""
+    """JSON-over-HTTPS client for the per-PC fingerprint agent.
 
-    def capture(self, enrollment_payload: dict) -> CaptureResponse:
-        raise NotImplementedError(
-            "HttpAgentClient is part of PR #2 (fingerprint-agent + tunnel)."
+    The agent is exposed publicly via a Cloudflare Tunnel (the
+    hostname is stored on ``AgentToken.public_url``). The client
+    fetches the raw bearer token from the encrypted blob on the
+    ``AgentToken`` row and sends it as ``Authorization: Bearer <raw>``
+    on every request.
+
+    Errors are mapped to:
+
+    - Any ``httpx`` transport failure → :class:`AgentUnavailableError`
+      (the view layer maps that to a 503).
+    - HTTP 4xx / 5xx → :class:`AgentUnavailableError` with the body
+      snippet included so the view can pass a useful message.
+
+    The client is intentionally direct (no retries, no pooling beyond
+    httpx's connection pool) — the enroll/verify flow is
+    human-driven and a retry on a transient failure would confuse
+    the operator.
+    """
+
+    DEFAULT_TIMEOUT_SECONDS = 30.0
+
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float | None = None,
+        transport: Any | None = None,
+    ) -> None:
+        self._timeout = (
+            float(timeout_seconds)
+            if timeout_seconds is not None
+            else self.DEFAULT_TIMEOUT_SECONDS
+        )
+        # An optional transport (used by tests). When ``None`` we
+        # build a fresh ``httpx.Client`` per call so import-time
+        # side effects are limited (httpx keeps its own pool).
+        self._transport = transport
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def capture(
+        self,
+        agent: Any,
+        capture_token: str,
+        finger_name: str = "any",
+    ) -> CaptureResponse:
+        """POST ``/capture`` to the agent and return the encrypted template."""
+        url = self._agent_url(agent, "/capture")
+        headers = self._auth_headers(agent)
+        payload = {
+            "capture_token": capture_token or uuid.uuid4().hex,
+            "finger_name": finger_name or "any",
+            "quality_required": 60,
+        }
+
+        logger.info("HttpAgentClient.capture -> %s token=%s", url, _hint(capture_token))
+        data = self._post(url, headers, payload)
+        return CaptureResponse(
+            template_b64=str(data.get("template_b64", "")),
+            quality_score=int(data.get("quality_score", 0)),
+            device_serial=str(data.get("device_serial", "")),
+            template_format=str(data.get("template_format", "DP_PROPRIETARY")),
+            width=int(data.get("width", 0)),
+            height=int(data.get("height", 0)),
         )
 
-    def match(self, template_bytes: bytes, capture_token: str) -> MatchResponse:
-        raise NotImplementedError(
-            "HttpAgentClient is part of PR #2 (fingerprint-agent + tunnel)."
+    def match(
+        self,
+        agent: Any,
+        template_bytes: bytes,
+        capture_token: str,
+    ) -> MatchResponse:
+        """POST ``/match`` to the agent and return the raw score."""
+        url = self._agent_url(agent, "/match")
+        headers = self._auth_headers(agent)
+        payload = {
+            "capture_token": capture_token or uuid.uuid4().hex,
+            "template_b64": template_bytes.hex(),
+        }
+
+        logger.info("HttpAgentClient.match -> %s token=%s", url, _hint(capture_token))
+        data = self._post(url, headers, payload)
+        return MatchResponse(
+            score=Decimal(str(data.get("score", "0"))),
+            captured_template_b64=str(data.get("captured_template_b64", "")),
         )
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _agent_url(self, agent: Any, path: str) -> str:
+        public_url = getattr(agent, "public_url", None)
+        if not public_url:
+            raise AgentUnavailableError(
+                "AgentToken has no public_url; cannot reach the agent."
+            )
+        # Normalize trailing slashes on the URL so the join is clean.
+        base = str(public_url).rstrip("/")
+        suffix = path if path.startswith("/") else f"/{path}"
+        return f"{base}{suffix}"
+
+    def _auth_headers(self, agent: Any) -> dict[str, str]:
+        try:
+            raw_token = agent.decrypt_raw_token()
+        except Exception as exc:  # noqa: BLE001 - deliberately broad
+            raise AgentUnavailableError(
+                f"Could not decrypt agent token: {exc}"
+            ) from exc
+        return {
+            "Authorization": f"Bearer {raw_token}",
+            "Content-Type": "application/json",
+        }
+
+    def _post(self, url: str, headers: dict[str, str], payload: dict) -> dict:
+        """POST ``payload`` to ``url`` and return the parsed JSON body.
+
+        Transport construction is in its own method so tests can swap
+        in a ``MockTransport`` without monkey-patching the module.
+        """
+        try:
+            import httpx  # local import: optional dependency
+        except ImportError as exc:  # pragma: no cover - install-time failure
+            raise AgentUnavailableError(
+                "httpx is required for HttpAgentClient. "
+                "Install it via `pip install httpx>=0.27`."
+            ) from exc
+
+        try:
+            if self._transport is not None:
+                with httpx.Client(transport=self._transport, timeout=self._timeout) as client:
+                    resp = client.post(url, headers=headers, json=payload)
+            else:
+                with httpx.Client(timeout=self._timeout) as client:
+                    resp = client.post(url, headers=headers, json=payload)
+        except httpx.HTTPError as exc:
+            raise AgentUnavailableError(
+                f"HTTP transport error talking to {url}: {exc}"
+            ) from exc
+
+        if resp.status_code >= 400:
+            snippet = (resp.text or "")[:200]
+            raise AgentUnavailableError(
+                f"Agent returned {resp.status_code}: {snippet}"
+            )
+
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise AgentUnavailableError(
+                f"Agent returned non-JSON response: {exc}"
+            ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _hint(value: str | None) -> str:
+    """Return a short, non-sensitive hint of a capture token for logs."""
+    if not value:
+        return "?"
+    return value[:8] if len(value) >= 8 else value
 
 
 # ---------------------------------------------------------------------------

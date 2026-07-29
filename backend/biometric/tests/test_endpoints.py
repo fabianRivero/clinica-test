@@ -136,6 +136,18 @@ class BiometricEndpointBase(TestCase):
             },
         )
         self._agent_patch.start()
+        # Register an active agent so enroll/verify paths have a
+        # target. PR #2 lifted the agent requirement; tests that
+        # exercise the "no agent" path explicitly delete this row.
+        # Use a hash that does not collide with the per-class hash
+        # values in AgentListEndpointTests / AgentHeartbeatTests.
+        self.agent = AgentToken.objects.create(
+            name="Base endpoint agent",
+            sucursal=self.sucursal_a,
+            token_hash="f" * 64,
+            public_url="https://agent.example.com",
+            is_active=True,
+        )
 
     def tearDown(self):
         self._agent_patch.stop()
@@ -312,17 +324,6 @@ class FinalizeEndpointTests(BiometricEndpointBase):
 
 
 class VerificationInitEndpointTests(BiometricEndpointBase):
-    def setUp(self):
-        super().setUp()
-        # Register an active agent for happy-path verification.
-        self.agent = AgentToken.objects.create(
-            name="Test agent",
-            sucursal=self.sucursal_a,
-            token_hash="a" * 64,
-            public_url="https://agent.example.com",
-            is_active=True,
-        )
-
     def test_verify_init_returns_capture_token_when_template_exists(self):
         # Enroll first.
         template_bytes = b"\x01\x02\x03" * 32
@@ -551,6 +552,20 @@ class AgentCreateEndpointTests(BiometricEndpointBase):
         # The raw token is also exposed; the create response includes
         # both fields for clarity.
         self.assertTrue(AgentToken.objects.filter(name="PC-1").exists())
+        # PR #2: the token is Fernet-encrypted on the row so the
+        # backend can perform outbound calls (HttpAgentClient).
+        agent = AgentToken.objects.get(name="PC-1")
+        self.assertIsNotNone(agent.token_encrypted)
+        self.assertTrue(
+            bytes(agent.token_encrypted).startswith(b"gAAAAA"),
+            f"Encryption marker missing: {bytes(agent.token_encrypted)[:16]!r}",
+        )
+        # The raw token decrypts back to the same value the response
+        # advertised.
+        self.assertEqual(
+            agent.decrypt_raw_token(),
+            data["token"],
+        )
         # No token_hash or raw token leaks in subsequent list.
         response_list = self.client.get(
             reverse("biometric:agent-root"),
@@ -627,7 +642,8 @@ class AgentListEndpointTests(BiometricEndpointBase):
         response = self.client.get(reverse("biometric:agent-root"))
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(len(data["results"]), 2)
+        # 1 base agent + 2 hand-created = 3 active rows.
+        self.assertEqual(len(data["results"]), 3)
         for entry in data["results"]:
             self.assertNotIn("token", entry)
             self.assertIn("token_fingerprint", entry)
@@ -637,8 +653,11 @@ class AgentListEndpointTests(BiometricEndpointBase):
         response = self.client.get(reverse("biometric:agent-root"))
         self.assertEqual(response.status_code, 200)
         results = response.json()["results"]
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["id"], self.agent_a.id)
+        # The base endpoint agent + A-agent both belong to sucursal_a.
+        self.assertEqual(len(results), 2)
+        ids = {r["id"] for r in results}
+        self.assertIn(self.agent_a.id, ids)
+        self.assertIn(self.agent.id, ids)
 
     def test_unauthenticated_is_rejected(self):
         response = self.client.get(reverse("biometric:agent-root"))
@@ -648,10 +667,14 @@ class AgentListEndpointTests(BiometricEndpointBase):
 class AgentHeartbeatTests(BiometricEndpointBase):
     def setUp(self):
         super().setUp()
+        # Replace the default placeholder agent with one that has
+        # a real, deterministic hash so the heartbeat path can
+        # authenticate against it.
+        self.agent.delete()
         self.agent = AgentToken.objects.create(
             name="HB-agent",
             sucursal=self.sucursal_a,
-            token_hash="c" * 64,
+            token_hash="1" * 64,
             public_url="https://hb.example.com",
             is_active=True,
         )

@@ -8,6 +8,8 @@ whitenoise==6.9.0
 requests==2.32.3
 boto3==1.38.0
 # Biometric integration (DigitalPersona 4500). PR #1 stores Fernet
-# ciphertext for fingerprint templates; PR #2 will also use this for
-# any RSA signatures on the agent side.
+# ciphertext for fingerprint templates; PR #2 uses httpx for
+# backend -> agent calls and the same cryptography package for the
+# Fernet envelopes around AgentToken.token_encrypted.
 cryptography>=41.0.0
+httpx>=0.27.0

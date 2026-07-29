@@ -158,9 +158,34 @@ def enroll_init(request, cliente_id: int):
         {"kind": "enroll", "cliente_id": cliente_id, "user_id": subject.user.id},
     )
 
+    # Pick an active agent. PR #2 honours the same first-by-id rule
+    # as PR #1; the most-recently-seen tiebreaker is deferred to PR #3.
+    active_agent = (
+        AgentToken.objects.filter(is_active=True)
+        .order_by("id")
+        .first()
+    )
+    if active_agent is None:
+        BiometricAttempt.objects.create(
+            cliente=cliente,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=False,
+            failure_reason=BiometricAttempt.FailureReason.NO_IMAGE,
+        )
+        return json_response(
+            {
+                "detail": "No hay ningun lector de huellas configurado en esta sede.",
+                "code": "NO_AGENT",
+            },
+            status=503,
+        )
+
     try:
-        agent = get_agent_client()
-        capture = agent.capture({"capture_token": capture_token})
+        agent_client = get_agent_client()
+        capture = agent_client.capture(
+            active_agent, capture_token=capture_token, finger_name="any"
+        )
     except AgentUnavailableError as exc:
         # Log a BiometricAttempt with NO_IMAGE/AGENT_OFFLINE so the audit
         # log is complete even when nothing was persisted.
@@ -601,6 +626,21 @@ def agent_create(request):
 
     raw_token = secrets.token_urlsafe(32)
     token_hash_value = AgentToken.hash_token(raw_token)
+    # Fernet-encrypt the raw token so the backend can perform OUTBOUND
+    # calls to the agent (HttpAgentClient). The same Fernet key used
+    # for templates is used here.
+    try:
+        token_encrypted = encrypt_template(raw_token.encode("utf-8"))
+    except Exception as exc:  # noqa: BLE001 - propagate as 500
+        return json_response(
+            {
+                "detail": "No se pudo cifrar el token del agente. "
+                "Verifica BIOMETRIC_FERNET_KEY.",
+                "code": "ENCRYPTION_FAILED",
+            },
+            status=500,
+        )
+
     agent = AgentToken.objects.create(
         name=name,
         sucursal=sucursal,
@@ -608,6 +648,7 @@ def agent_create(request):
         public_url=public_url,
         is_active=True,
         created_by=subject.user,
+        token_encrypted=token_encrypted,
     )
 
     body = agent_token_payload(agent, include_raw=True, raw=raw_token)

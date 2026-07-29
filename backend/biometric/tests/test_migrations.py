@@ -48,6 +48,19 @@ class BiometricMigrationsForwardTests(TransactionTestCase):
             f"cliente+operation index missing. Found: {names}",
         )
 
+    def test_agent_token_token_encrypted_column(self):
+        """PR #2 0002 migration adds token_encrypted to AgentToken."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "PRAGMA table_info(biometric_agent_tokens)",
+            )
+            columns = {row[1] for row in cursor.fetchall()}
+        self.assertIn(
+            "token_encrypted",
+            columns,
+            f"token_encrypted column missing. Found: {columns}",
+        )
+
 
 class BiometricMigrationsBackwardTests(TransactionTestCase):
     """Roll back to a state before the biometric migrations; tables gone."""

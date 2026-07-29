@@ -67,7 +67,7 @@ Chain strategy: feature-branch-chain
 
 Deferred: create the Python 3.12 agent, DigitalPersona/fprintd capture and match endpoints, heartbeat client, tests, packaging, systemd files, and Cloudflare Tunnel configuration.
 
-- [ ] 2.1 Create and validate the Linux agent, tunnel configuration, service files, and smoke tests.
+- [x] 2.1 Create and validate the Linux agent, tunnel configuration, service files, and smoke tests.
 
 ## PR #3 — Frontend integration
 
