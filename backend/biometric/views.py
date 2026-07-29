@@ -455,6 +455,18 @@ def prospect_enroll_init(request, prospect_id: int):
             {"detail": "El lector de huellas no esta disponible.", "code": str(exc)},
             status=503,
         )
+    except AgentOperationError as exc:
+        BiometricAttempt.objects.create(
+            prospecto=prospect,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=False,
+            failure_reason=BiometricAttempt.FailureReason.LOW_QUALITY,
+        )
+        return json_response(
+            {"detail": "La calidad de la huella capturada es insuficiente. Reintente con el dedo mas limpio y plano sobre el cristal.", "code": exc.code},
+            status=400,
+        )
 
     if capture.quality_score < 50:
         BiometricAttempt.objects.create(
