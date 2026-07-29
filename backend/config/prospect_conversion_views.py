@@ -1427,17 +1427,51 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         cliente.observaciones = user_data.get("observacionesCliente", "")
         cliente.save()
 
-    HuellaBiometricaCliente.objects.update_or_create(
-        cliente=cliente,
-        defaults={
-            "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK,
-            "template_biometrico": biometric_data.get("template", ""),
-            "device_serial": biometric_data.get("deviceSerial", ""),
-            "calidad_captura": int(biometric_data.get("quality") or 0),
-            "consentimiento_aceptado": bool(biometric_data.get("consentAccepted")),
-            "registrado_por": request.user,
-        }
-    )
+    # If the prospect enrollment endpoint already captured the fingerprint
+    # during the wizard (step 4 now triggers a real capture), the row
+    # currently sits on the prospecto FK. Re-attach it to the freshly
+    # created cliente (and its BiometricAttempt rows) atomically before
+    # the rest of finalize runs. We update in-place rather than
+    # delete+insert so the encrypted template survives the transition.
+    if draft.prospecto is not None:
+        migrated = HuellaBiometricaCliente.objects.filter(
+            prospecto=draft.prospecto, cliente__isnull=True
+        ).update(cliente=cliente, prospecto=None)
+        BiometricAttempt.objects.filter(
+            prospecto=draft.prospecto, cliente__isnull=True
+        ).update(cliente=cliente, prospecto=None)
+        # Legacy drafts (saved before this PR landed) carried a
+        # `pending-enrollment` sentinel template and never hit the new
+        # prospect endpoint. If no real row was migrated, fall back to
+        # stamping one from the wizard payload so finalize still
+        # produces a huella + attempt row.
+        if migrated == 0 and biometric_data.get("template"):
+            HuellaBiometricaCliente.objects.update_or_create(
+                cliente=cliente,
+                defaults={
+                    "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK,
+                    "template_biometrico": biometric_data.get("template", ""),
+                    "device_serial": biometric_data.get("deviceSerial", ""),
+                    "calidad_captura": int(biometric_data.get("quality") or 0),
+                    "consentimiento_aceptado": bool(biometric_data.get("consentAccepted")),
+                    "registrado_por": request.user,
+                }
+            )
+    else:
+        # Reactivation path: there is no prospecto to migrate from. Fall
+        # back to the legacy "stamp a row from the wizard payload" path
+        # so older drafts keep working.
+        HuellaBiometricaCliente.objects.update_or_create(
+            cliente=cliente,
+            defaults={
+                "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK,
+                "template_biometrico": biometric_data.get("template", ""),
+                "device_serial": biometric_data.get("deviceSerial", ""),
+                "calidad_captura": int(biometric_data.get("quality") or 0),
+                "consentimiento_aceptado": bool(biometric_data.get("consentAccepted")),
+                "registrado_por": request.user,
+            }
+        )
 
     analisis = AnalisisEstetico.objects.create(
         paciente=cliente,

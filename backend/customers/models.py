@@ -230,8 +230,14 @@ class HuellaBiometricaCliente(TimeStampedModel):
     The model is intentionally cross-sucursal: there is no ``sucursal_id``
     and no ``dedo`` field. ``OneToOneField`` on ``cliente`` already
     satisfies spec requirement "one fingerprint per client" and the
-    design's ``unique_together(cliente)`` constraint. ``updated_at``
+    design's per-cliente uniqueness constraint. ``updated_at``
     comes from ``TimeStampedModel``.
+
+    A row may belong to a ``Cliente`` *or* a ``Prospecto`` — never both,
+    never neither (see the ``huella_exactly_one_owner`` check
+    constraint). The prospect-to-cliente conversion wizard captures the
+    fingerprint at step 4 and persists the row against the prospect;
+    finalize re-attaches it to the newly-created cliente.
 
     The ``template_biometrico`` column is now a ``BinaryField`` storing
     a Fernet ciphertext. Existing TextField rows are migrated to
@@ -254,6 +260,20 @@ class HuellaBiometricaCliente(TimeStampedModel):
         "customers.Cliente",
         on_delete=models.CASCADE,
         related_name="huella_biometrica",
+        null=True,
+        blank=True,
+    )
+    # Nullable FK to ``Prospecto``: the prospect-to-cliente conversion
+    # wizard captures the fingerprint at step 4, before the prospect has
+    # been promoted to a ``Cliente``. The finalize handler re-attaches
+    # the row to the new cliente. Enforces "exactly one of cliente /
+    # prospecto" via the ``huella_exactly_one_owner`` check constraint.
+    prospecto = models.ForeignKey(
+        "customers.Prospecto",
+        on_delete=models.CASCADE,
+        related_name="huellas_biometricas",
+        null=True,
+        blank=True,
     )
     proveedor = models.CharField(
         max_length=24,
@@ -287,6 +307,22 @@ class HuellaBiometricaCliente(TimeStampedModel):
     class Meta:
         db_table = "clientes_huellas_biometricas"
         ordering = ("-fecha_registro",)
+        unique_together = (("prospecto",),)
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(
+                        cliente__isnull=False,
+                        prospecto__isnull=True,
+                    )
+                    | models.Q(
+                        cliente__isnull=True,
+                        prospecto__isnull=False,
+                    )
+                ),
+                name="huella_exactly_one_owner",
+            ),
+        ]
 
     def __str__(self):
         return f"Huella biometrica - {self.cliente}"

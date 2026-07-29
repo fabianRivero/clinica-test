@@ -43,7 +43,7 @@ from biometric.services.factory import get_agent_client
 from biometric.services.threshold import decide_match, get_threshold
 from catalogs.models import Sucursal
 from config.api_helpers import json_response, load_payload
-from customers.models import Cliente, HuellaBiometricaCliente
+from customers.models import Cliente, HuellaBiometricaCliente, Prospecto
 from operations.models import CitaMedica
 
 
@@ -354,6 +354,155 @@ def enroll_finalize(request, cliente_id: int):
             "attempt": attempt_payload(attempt),
         },
         status=200,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Prospect enrollment (no Cliente yet)
+# ---------------------------------------------------------------------------
+
+
+@csrf_exempt
+@require_POST
+def prospect_enroll_init(request, prospect_id: int):
+    """Real fingerprint enrollment for a prospect (no cliente yet).
+
+    Mirrors :func:`enroll_init` but persists
+    ``HuellaBiometricaCliente`` with ``prospecto`` set and ``cliente=None``.
+    The finalize endpoint (:func:`config.prospect_conversion_views.admin_prospect_conversion_finalize`)
+    re-attaches the row to the newly-created ``Cliente`` atomically.
+
+    The view follows the same auth + quality + encryption pipeline as
+    :func:`enroll_init`. The only differences are:
+
+    - Looks up a ``Prospecto`` (not a ``Cliente``).
+    - Persists the huella with ``prospecto=<id>`` and ``cliente=None``.
+    - Returns ``prospecto_id`` (and ``cliente_id: None``) instead of
+      ``cliente_id`` so the frontend can identify the row.
+    """
+    subject, err = _require_admin_principal_or_sucursal(request)
+    if err is not None:
+        return err
+
+    payload = load_payload(request)
+    if payload is None:
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido.", "code": "INVALID_JSON"}, status=400)
+
+    if not payload.get("consentimiento_aceptado"):
+        return json_response(
+            {"detail": "El consentimiento del cliente es obligatorio.", "code": "CONSENT_REQUIRED"},
+            status=400,
+        )
+
+    prospect = Prospecto.objects.filter(pk=prospect_id).first()
+    if prospect is None:
+        return json_response({"detail": "Prospecto no encontrado.", "code": "PROSPECTO_NOT_FOUND"}, status=404)
+
+    capture_token = capture_token_store.create(
+        {"kind": "prospect_enroll", "prospect_id": prospect_id, "user_id": subject.user.id},
+    )
+
+    active_agent = (
+        AgentToken.objects.filter(is_active=True)
+        .order_by("id")
+        .first()
+    )
+    if active_agent is None:
+        BiometricAttempt.objects.create(
+            prospecto=prospect,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=False,
+            failure_reason=BiometricAttempt.FailureReason.NO_IMAGE,
+        )
+        return json_response(
+            {
+                "detail": "No hay ningun lector de huellas configurado en esta sede.",
+                "code": "NO_AGENT",
+            },
+            status=503,
+        )
+
+    try:
+        agent_client = get_agent_client()
+        capture = agent_client.capture(
+            active_agent, capture_token=capture_token, finger_name="any"
+        )
+    except AgentUnavailableError as exc:
+        BiometricAttempt.objects.create(
+            prospecto=prospect,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=False,
+            failure_reason=BiometricAttempt.FailureReason.NO_IMAGE,
+        )
+        return json_response(
+            {"detail": "El lector de huellas no esta disponible.", "code": str(exc)},
+            status=503,
+        )
+
+    if capture.quality_score < 50:
+        BiometricAttempt.objects.create(
+            prospecto=prospect,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=False,
+            score=Decimal(capture.quality_score) / Decimal(100),
+            failure_reason=BiometricAttempt.FailureReason.LOW_QUALITY,
+        )
+        return json_response(
+            {"detail": "La calidad de captura es insuficiente.", "code": "LOW_QUALITY"},
+            status=400,
+        )
+
+    try:
+        template_bytes = bytes.fromhex(capture.template_b64)
+    except ValueError:
+        return json_response(
+            {"detail": "La plantilla recibida del lector es invalida.", "code": "INVALID_TEMPLATE"},
+            status=400,
+        )
+
+    ciphertext = encrypt_template(template_bytes)
+
+    with transaction.atomic():
+        huella, _created = HuellaBiometricaCliente.objects.update_or_create(
+            prospecto=prospect,
+            defaults={
+                "cliente": None,
+                "proveedor": HuellaBiometricaCliente.Proveedor.DIGITAL_PERSONA,
+                "template_biometrico": ciphertext,
+                "template_format": capture.template_format or "DP_PROPRIETARY",
+                "device_serial": capture.device_serial,
+                "calidad_captura": capture.quality_score,
+                "consentimiento_aceptado": True,
+                "activo": True,
+                "registrado_por": subject.user,
+                "fecha_registro": timezone.now(),
+            },
+        )
+        attempt = BiometricAttempt.objects.create(
+            prospecto=prospect,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=True,
+            score=Decimal(capture.quality_score) / Decimal(100),
+            agent_pc=active_agent,
+        )
+
+    return json_response(
+        {
+            "ok": True,
+            "cliente_id": None,
+            "prospecto_id": prospect.id,
+            "huella_id": huella.id,
+            "device_serial": huella.device_serial,
+            "template_format": huella.template_format,
+            "calidad_captura": huella.calidad_captura,
+            "proveedor": huella.proveedor,
+            "attempt_id": attempt.id,
+        },
+        status=201,
     )
 
 
@@ -782,6 +931,7 @@ __all__ = [
     "confirm_manual",
     "enroll_finalize",
     "enroll_init",
+    "prospect_enroll_init",
     "verify_confirm",
     "verify_init",
 ]

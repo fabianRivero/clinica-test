@@ -73,6 +73,37 @@ export async function enrollInit(
 }
 
 // ---------------------------------------------------------------------------
+// Prospect enrollment
+// ---------------------------------------------------------------------------
+//
+// The conversion wizard now captures the fingerprint at step 4, before
+// the prospect has been promoted to a `Cliente`. The backend endpoint
+// persists the row against the prospect and the finalize handler
+// re-attaches it to the freshly-created cliente atomically.
+
+export interface ProspectEnrollResponse {
+  ok: boolean
+  cliente_id: number | null
+  prospecto_id: number
+  huella_id: number
+  device_serial: string
+  template_format: string
+  calidad_captura: number
+  proveedor: string
+  attempt_id: number
+}
+
+export async function prospectoEnrollInit(
+  prospectoId: number,
+  payload: BiometricEnrollInitRequest,
+): Promise<ProspectEnrollResponse> {
+  return postJson<ProspectEnrollResponse>(
+    `/api/biometric/prospectos/${prospectoId}/huella/enroll/`,
+    payload,
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Verification
 // ---------------------------------------------------------------------------
 
@@ -180,6 +211,7 @@ export function isAgentOnline(
 
 export const biometricClient = {
   enrollInit,
+  prospectoEnrollInit,
   verifyInit,
   verifyConfirm,
   listAgents,

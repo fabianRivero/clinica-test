@@ -55,6 +55,19 @@ class BiometricAttempt(TimeStampedModel):
         "customers.Cliente",
         on_delete=models.CASCADE,
         related_name="biometric_attempts",
+        null=True,
+        blank=True,
+    )
+    # Nullable FK to ``Prospecto``: the prospect-to-cliente conversion
+    # wizard captures the fingerprint at step 4 before the prospect
+    # has a cliente row; the attempt is logged against the prospect
+    # and later re-attached to the new cliente during finalize.
+    prospecto = models.ForeignKey(
+        "customers.Prospecto",
+        on_delete=models.CASCADE,
+        related_name="biometric_attempts",
+        null=True,
+        blank=True,
     )
     operation = models.CharField(max_length=16, choices=Operation.choices)
     success = models.BooleanField(default=False)
@@ -86,6 +99,10 @@ class BiometricAttempt(TimeStampedModel):
             models.Index(
                 fields=("cliente", "operation"),
                 name="biometric_atts_cliente_op",
+            ),
+            models.Index(
+                fields=("prospecto", "operation"),
+                name="biometric_atts_prospecto_op",
             ),
         ]               
 

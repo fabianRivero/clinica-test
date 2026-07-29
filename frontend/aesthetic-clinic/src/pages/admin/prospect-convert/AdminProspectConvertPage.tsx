@@ -38,6 +38,8 @@ export function AdminProspectConvertPage() {
     medicalForm,
     biometricForm,
     biometricStatus,
+    biometricModalOpen,
+    biometricModalSubjectName,
     medicalDocumentFile,
     paymentQrImageUrl,
     qrModalOpen,
@@ -62,7 +64,9 @@ export function AdminProspectConvertPage() {
     handleSaveStep1,
     handleSaveStep2,
     handleSaveStep3,
-    handleCaptureBiometric,
+    handleOpenBiometricModal,
+    handleCloseBiometricModal,
+    handleConfirmCapture,
     handleSaveBiometricStep,
     handleFinalize,
     handleCancelDraft,
@@ -268,10 +272,14 @@ export function AdminProspectConvertPage() {
           <ConversionStepBiometric
             biometricForm={biometricForm}
             biometricStatus={biometricStatus}
+            biometricModalOpen={biometricModalOpen}
+            biometricModalSubjectName={biometricModalSubjectName}
             fieldErrors={fieldErrors}
             isSaving={isSaving}
             isCancelling={isCancelling}
-            onCapture={handleCaptureBiometric}
+            onOpenBiometricModal={handleOpenBiometricModal}
+            onCloseBiometricModal={handleCloseBiometricModal}
+            onConfirmCapture={handleConfirmCapture}
             onSubmit={handleSaveBiometricStep}
             onBack={() => setActiveStep(3)}
             onCancel={handleCancelDraft}

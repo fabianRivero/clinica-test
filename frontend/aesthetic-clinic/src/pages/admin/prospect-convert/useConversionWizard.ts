@@ -40,7 +40,10 @@ import {
   getInitialStep,
   type FieldErrors,
 } from './conversionHelpers'
-import { enrollInit as biometricEnrollInit } from '../../../services/fingerprint/biometricClient'
+import {
+  enrollInit as biometricEnrollInit,
+  prospectoEnrollInit as biometricProspectoEnrollInit,
+} from '../../../services/fingerprint/biometricClient'
 
 type UseConversionWizardParams = {
   prospectId: string
@@ -67,6 +70,8 @@ type UseConversionWizardReturn = {
   medicalForm: ProspectConversionMedicalData | null
   biometricForm: ProspectConversionBiometricData
   biometricStatus: string | null
+  biometricModalOpen: boolean
+  biometricModalSubjectName: string
   medicalDocumentFile: File | null
   paymentQrImageUrl: string
   qrModalOpen: boolean
@@ -100,7 +105,13 @@ type UseConversionWizardReturn = {
   handleSaveStep1: (event: FormEvent) => Promise<void>
   handleSaveStep2: (event: FormEvent) => Promise<void>
   handleSaveStep3: (event: FormEvent) => Promise<void>
-  handleCaptureBiometric: () => Promise<void>
+  handleOpenBiometricModal: () => void
+  handleCloseBiometricModal: () => void
+  handleConfirmCapture: () => Promise<{
+    success: boolean
+    errorMessage?: string
+    calidadCaptura?: number
+  }>
   handleSaveBiometricStep: (event: FormEvent) => Promise<void>
   handleFinalize: (event: FormEvent) => Promise<void>
   handleCancelDraft: () => Promise<void>
@@ -133,6 +144,7 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
   const [medicalForm, setMedicalForm] = useState<ProspectConversionMedicalData | null>(null)
   const [biometricForm, setBiometricForm] = useState<ProspectConversionBiometricData>(blankBiometricData)
   const [biometricStatus, setBiometricStatus] = useState<string | null>(null)
+  const [biometricModalOpen, setBiometricModalOpen] = useState(false)
   const [paymentQrImageUrl, setPaymentQrImageUrl] = useState('')
   const [qrModalOpen, setQrModalOpen] = useState(false)
   const [shouldRegisterFirstPayment, setShouldRegisterFirstPayment] = useState(false)
@@ -488,45 +500,50 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     }
   }
 
-  const handleCaptureBiometric = async () => {
+  const handleConfirmCapture = async (): Promise<{
+    success: boolean
+    errorMessage?: string
+    calidadCaptura?: number
+  }> => {
     resetFeedback()
     setBiometricStatus('Capturando huella en el lector DigitalPersona 4500...')
     try {
-      // The DigitalPersona capture must be persisted to an existing
-      // `Cliente` (the backend `enroll_init` foreign-keys the template
-      // to a real cliente). During prospect conversion the cliente is
-      // created on `finalize`, so we have to defer the live capture.
-      // For reactivation the cliente already exists, so we trigger the
-      // real capture here.
-      const existingClientId = isReactivation
-        ? Number(clientId)
-        : Number(data?.client?.id) || null
-
-      if (!existingClientId) {
-        setBiometricStatus(
-          'La huella se capturara automaticamente al confirmar el alta. Podes continuar.',
-        )
+      if (isReactivation) {
+        const existingClientId = Number(clientId)
+        if (!Number.isFinite(existingClientId)) {
+          const message = 'No se pudo determinar el cliente para la captura.'
+          setBiometricStatus(message)
+          return { success: false, errorMessage: message }
+        }
+        const result = await biometricEnrollInit(existingClientId, {
+          consentimiento_aceptado: biometricForm.consentAccepted,
+        })
         setBiometricForm({
           provider: 'DIGITAL_PERSONA',
-          template: 'pending-enrollment',
-          quality: 0,
-          deviceSerial: '',
+          template: `digital-persona-${result.huella_id}`,
+          quality: result.calidad_captura,
+          deviceSerial: result.device_serial,
           capturedAt: new Date().toISOString(),
           consentAccepted: biometricForm.consentAccepted,
         })
-        return
+        setBiometricStatus(`Huella capturada con calidad ${result.calidad_captura}.`)
+        return { success: true, calidadCaptura: result.calidad_captura }
       }
 
-      const result = await biometricEnrollInit(existingClientId, {
+      // Prospect path: capture against the prospect before it has a
+      // cliente row. The finalize handler re-attaches the row to the
+      // newly-created cliente atomically.
+      const prospectIdValue = Number(prospectId)
+      if (!Number.isFinite(prospectIdValue)) {
+        const message = 'No se pudo determinar el prospecto para la captura.'
+        setBiometricStatus(message)
+        return { success: false, errorMessage: message }
+      }
+      const result = await biometricProspectoEnrollInit(prospectIdValue, {
         consentimiento_aceptado: biometricForm.consentAccepted,
       })
       setBiometricForm({
         provider: 'DIGITAL_PERSONA',
-        // The actual ciphertext is held by the backend. We stamp a
-        // sentinel so the legacy `paso-4` validator (which still
-        // requires a non-empty template) accepts the payload. The
-        // stored template is the Fernet token returned by
-        // `biometricClient.enrollInit`, not this string.
         template: `digital-persona-${result.huella_id}`,
         quality: result.calidad_captura,
         deviceSerial: result.device_serial,
@@ -534,14 +551,25 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
         consentAccepted: biometricForm.consentAccepted,
       })
       setBiometricStatus(`Huella capturada con calidad ${result.calidad_captura}.`)
+      return { success: true, calidadCaptura: result.calidad_captura }
     } catch (requestError) {
-      setSubmitError(
+      const message =
         requestError instanceof Error
           ? requestError.message
-          : 'No se pudo capturar la huella.',
-      )
-      setBiometricStatus(null)
+          : 'No se pudo capturar la huella.'
+      setSubmitError(message)
+      setBiometricStatus(message)
+      return { success: false, errorMessage: message }
     }
+  }
+
+  const handleOpenBiometricModal = () => {
+    resetFeedback()
+    setBiometricModalOpen(true)
+  }
+
+  const handleCloseBiometricModal = () => {
+    setBiometricModalOpen(false)
   }
 
   const handleSaveBiometricStep = async (event: FormEvent) => {
@@ -686,6 +714,8 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     setMedicalForm,
     biometricForm,
     biometricStatus,
+    biometricModalOpen,
+    biometricModalSubjectName: data?.prospect?.name ?? data?.client?.name ?? '',
     medicalDocumentFile,
     paymentQrImageUrl,
     qrModalOpen,
@@ -714,7 +744,9 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     handleSaveStep1,
     handleSaveStep2,
     handleSaveStep3,
-    handleCaptureBiometric,
+    handleOpenBiometricModal,
+    handleCloseBiometricModal,
+    handleConfirmCapture,
     handleSaveBiometricStep,
     handleFinalize,
     handleCancelDraft,

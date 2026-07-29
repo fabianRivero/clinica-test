@@ -3,14 +3,22 @@ import { type FormEvent } from 'react'
 import type { ProspectConversionBiometricData } from '../../../types/prospectConversion'
 
 import type { FieldErrors } from './conversionHelpers'
+import {
+  BiometricCaptureModal,
+  type BiometricCaptureConfirmResult,
+} from './BiometricCaptureModal'
 
 type Props = {
   biometricForm: ProspectConversionBiometricData
   biometricStatus: string | null
+  biometricModalOpen: boolean
+  biometricModalSubjectName: string
   fieldErrors: FieldErrors
   isSaving: boolean
   isCancelling: boolean
-  onCapture: () => void
+  onOpenBiometricModal: () => void
+  onCloseBiometricModal: () => void
+  onConfirmCapture: () => Promise<BiometricCaptureConfirmResult>
   onSubmit: (event: FormEvent) => void
   onBack: () => void
   onCancel: () => void
@@ -19,10 +27,14 @@ type Props = {
 export function ConversionStepBiometric({
   biometricForm,
   biometricStatus,
+  biometricModalOpen,
+  biometricModalSubjectName,
   fieldErrors,
   isSaving,
   isCancelling,
-  onCapture,
+  onOpenBiometricModal,
+  onCloseBiometricModal,
+  onConfirmCapture,
   onSubmit,
   onBack,
   onCancel,
@@ -46,7 +58,7 @@ export function ConversionStepBiometric({
             className="button button--ghost button--compact"
             disabled={isSaving || isCancelling}
             type="button"
-            onClick={onCapture}
+            onClick={onOpenBiometricModal}
           >
             {isCaptured ? 'Volver a capturar' : 'Capturar huella'}
           </button>
@@ -90,6 +102,14 @@ export function ConversionStepBiometric({
           {isSaving ? 'Guardando...' : 'Guardar y continuar'}
         </button>
       </div>
+
+      <BiometricCaptureModal
+        open={biometricModalOpen}
+        onClose={onCloseBiometricModal}
+        onConfirm={onConfirmCapture}
+        providerLabel={providerLabel}
+        subjectName={biometricModalSubjectName}
+      />
     </form>
   )
 }
