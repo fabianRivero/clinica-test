@@ -197,6 +197,13 @@ class FprintdBridge:
         # unlinkable 256-byte blob and tag the quality at 85 (a
         # realistic value for a good DP4500 capture).
         template_bytes = secrets.token_bytes(256)
+        # Release the device after a successful enroll so the
+        # next capture starts from a clean state. fprintd keeps the
+        # claim active until explicitly released; without this, a
+        # second capture within the same daemon lifetime sees
+        # AlreadyInUse because the device is still "claimed for the
+        # prior capture".
+        self._release_only()
         return EnrollResult(
             template_bytes=template_bytes,
             quality_score=85,
@@ -315,6 +322,17 @@ class FprintdBridge:
             self._dev.Claim(self.username)
         except Exception as exc:  # pragma: no cover - fprintd-specific
             logger.warning("Failed to re-claim after EnrollmentError: %s", exc)
+
+    def _release_only(self) -> None:
+        """Release the device but do NOT re-claim.
+
+        Called after a successful enroll so the next capture starts
+        from an unclaimed state.
+        """
+        try:
+            self._dev.Release()
+        except Exception as exc:  # pragma: no cover - fprintd-specific
+            logger.warning("Failed to release device after success: %s", exc)
 
 
 # ---------------------------------------------------------------------------
