@@ -166,34 +166,42 @@ class FprintdBridge:
         for candidate in candidates:
             loop = GLib.MainLoop()
             outcome: dict[str, str] = {}
+            log_lines: list[str] = []
 
             def _on_status(reason: str, *_args) -> None:
+                # Only quit the loop on terminal states; intermediate
+                # ``enroll-stage-passed`` signals must keep the loop
+                # running so we wait for ``enroll-completed``.
                 outcome["status"] = str(reason)
-                loop.quit()
+                log_lines.append(str(reason))
+                if str(reason) in (
+                    "enroll-completed",
+                    "enroll-failed",
+                    "enroll-disconnected",
+                    "enroll-stage-passed-then-not-recognized",
+                ):
+                    loop.quit()
 
             self._dev.connect_to_signal("EnrollStatus", _on_status)
             try:
                 self._dev.EnrollStart(candidate)
             except dbus.exceptions.DBusException as exc:
                 err_name = exc.get_dbus_name() if hasattr(exc, "get_dbus_name") else ""
-                # Fallback only on InvalidFingername. Any other DBus
-                # error surfaces immediately.
                 if "InvalidFingername" not in str(err_name) and "InvalidFingername" not in str(exc):
                     self._release_only()
                     raise EnrollmentError(f"fprintd rejected {candidate!r}: {exc}") from exc
-                # Wrong finger name: drop this device so the next
-                # iteration can Claim fresh with a different name.
                 self._release_only()
                 last_error = exc
                 continue
 
             loop.run()
-            status = outcome.get("status", "")
-
-            # Always release after a capture; the next call claims fresh.
             self._release_only()
 
+            status = outcome.get("status", "")
             if status == "enroll-completed":
+                logger.debug(
+                    "Enroll stages for %s: %s", candidate, ", ".join(log_lines)
+                )
                 template_bytes = secrets.token_bytes(256)
                 return EnrollResult(
                     template_bytes=template_bytes,
@@ -201,10 +209,10 @@ class FprintdBridge:
                     device_serial=self._device_serial,
                 )
 
-            # Any other terminal state is a real failure, not a
-            # retryable candidate mismatch. Surface immediately.
+            # Terminal failure; do not retry through candidates.
             raise EnrollmentError(
-                f"fprintd enroll failed on {candidate!r}: {status}", status=status
+                f"fprintd enroll failed on {candidate!r} after stages {log_lines!r}: {status}",
+                status=status,
             )
 
         if last_error is not None:
