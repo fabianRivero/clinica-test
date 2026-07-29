@@ -26,7 +26,7 @@ En el proveedor que elijas:
 | Parámetro | Valor recomendado |
 |---|---|
 | **Imagen** | Ubuntu 22.04 LTS o 24.04 LTS (x86_64) |
-| **Size** | 2 vCPU / 4 GB RAM / 80 GB SSD (mínimo para clínica con 1–3 sucursales). Para arrancar, 1 vCPU / 2 GB funciona. |
+| **Size** | 2 vCPU / 4 GB RAM / 80 GB SSD (mínimo para clínica con 1–3 sucursales). Para arrancar, 1 vCPU / 2 GB funciona. **El de 1 vCPU / 512 MB no sirve para producción real** — el build del frontend se queda sin memoria y va a fallar. |
 | **Región** | La más cercana al cliente (latencia). |
 | **Hostname** | `clinica-prod` (o el nombre que quieras). |
 | **SSH Keys** | Pegar tu clave pública (`cat ~/.ssh/id_ed25519.pub`). |
@@ -45,24 +45,35 @@ ssh root@<VPS_IP>
 # Actualizar el sistema
 apt update && apt upgrade -y
 
-# Instalar paquetes base
-apt install -y python3 python3-pip python3-venv nginx certbot python3-certbot-nginx \
-               postgresql postgresql-contrib ufw fail2ban curl git
+# Instalar paquetes base. En Ubuntu 24.04, los nombres de los paquetes
+# cambiaron respecto a 22.04: hay que agregar python3-pip y python3.12-venv
+# explícitamente, y nodejs está en el repo de Ubuntu (no en NodeSource).
+apt install -y python3 python3-pip python3-venv python3.12-venv \
+               nginx certbot python3-certbot-nginx \
+               postgresql postgresql-contrib \
+               ufw fail2ban curl git \
+               nodejs npm
 
 # Crear usuario de aplicación (NO usar root para la app)
 adduser --disabled-password --gecos "" deploy
 usermod -aG sudo deploy
 
+# SIN esta línea, `sudo` te va a pedir password cada vez y los
+# deploys automatizados no van a funcionar. NOPASSWD es estándar para
+# usuarios de deploy.
+echo "deploy ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/deploy
+chmod 440 /etc/sudoers.d/deploy
+
 # Firewall: abrir solo SSH, HTTP y HTTPS
-ufw allow OpenSSH
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw enable
-ufw status
+sudo ufw allow OpenSSH
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+sudo ufw status
 
 # Proteger SSH contra brute-force
-systemctl enable fail2ban
-systemctl start fail2ban
+sudo systemctl enable fail2ban
+sudo systemctl start fail2ban
 ```
 
 Ahora cierra la sesión root y sigue como `deploy`:
@@ -79,6 +90,8 @@ sudo sed -i 's/^PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
 sudo systemctl restart sshd
 ```
 
+> **⚠️ Si tenés problemas para entrar como `deploy` con `ssh-copy-id`**: abrí la consola web del proveedor (DigitalOcean, Hetzner, etc.) como root, y ejecutá los pasos de creación de `deploy` + copia de `authorized_keys` directamente ahí. A veces la key que subiste al crear el droplet no es la misma que tenés ahora en tu máquina local.
+
 ---
 
 ## 3. PostgreSQL
@@ -87,16 +100,61 @@ sudo systemctl restart sshd
 sudo -u postgres psql
 ```
 
-Dentro de `psql`:
+Dentro de `psql` (cada línea es un comando separado, esperaba el `;` o el prompt antes de la siguiente):
 
 ```sql
 CREATE DATABASE clinica;
 CREATE USER clinica_app WITH PASSWORD 'CAMBIAR_ESTA_PASSWORD';
 GRANT ALL PRIVILEGES ON DATABASE clinica TO clinica_app;
+```
+
+⚠️ **Postgres 16 (Ubuntu 24.04) rechaza SCRAM.** Si Django tira `password authentication failed for user "clinica_app"` al hacer `migrate`, hay que cambiar la auth a `md5`. Salí de psql con `\q` y:
+
+```bash
+sudo nano /etc/postgresql/16/main/pg_hba.conf
+```
+
+Buscá la línea:
+
+```
+host    all             all             127.0.0.1/32            scram-sha-256
+```
+
+Y cambiala por:
+
+```
+host    all             all             127.0.0.1/32            md5
+```
+
+Reiniciá Postgres:
+
+```bash
+sudo systemctl restart postgresql
+```
+
+Y reseteá la password (Postgres 16 necesitó esto — la password que tipeaste con `CREATE USER` queda con un hash que puede no coincidir):
+
+```bash
+sudo -u postgres psql
+```
+
+```sql
+ALTER USER clinica_app WITH PASSWORD 'CAMBIAR_ESTA_PASSWORD';
+```
+
+⚠️ **Usá password sin caracteres especiales** (`@`, `#`, `!`, `$`). Postgres 16 a veces los interpreta mal. Alfanumérica es lo más seguro.
+
+```sql
+\c clinica
+GRANT ALL ON SCHEMA public TO clinica_app;
+ALTER DATABASE clinica OWNER TO clinica_app;
+GRANT ALL ON DATABASE clinica TO clinica_app;
 \q
 ```
 
-> **Importante:** Reemplazá `CAMBIAR_ESTA_PASSWORD` por una contraseña fuerte y guardala aparte. La vas a poner en el `.env` del backend.
+> **⚠️ Postgres 15+ cambió los permisos del schema `public` por default.** El owner es `postgres`, así que sin los `GRANT` de arriba, `clinica_app` no puede crear tablas. Vas a ver `permission denied for schema public` cuando corras `migrate`. Esos `GRANT` lo arreglan.
+
+> **Importante:** Reemplazá `CAMBIAR_ESTA_PASSWORD` por una contraseña fuerte y guardala aparte. La vas a poner en el `.env` del backend. Tiene que ser **la misma** que usaste en el `CREATE USER` y en el `ALTER USER`.
 
 ---
 
@@ -131,6 +189,10 @@ find /var/www/clinica -type d -exec sudo chmod 2775 {} \;
 
 ```bash
 cd /var/www/clinica/backend
+
+# En Ubuntu 24.04, hay que instalar python3.12-venv explícitamente.
+# En 22.04 viene por defecto. Si vas a usar 24.04 y todavía no lo hiciste:
+sudo apt install -y python3-pip python3.12-venv
 
 # Crear virtualenv
 python3 -m venv env
@@ -184,59 +246,50 @@ python3 -c "from django.core.management.utils import get_random_secret_key; prin
 
 Pegá el resultado en `DJANGO_SECRET_KEY=...`.
 
-### 5.2. Elegir el modo de seed
+### 5.2. Cómo poblar la base de datos
 
-El sistema trae **4 comandos de seed** con alcances muy distintos. Elegí el que necesitás según el contexto:
-
-| # | Comando | Qué va a la DB | Cuándo usarlo |
-|---|---|---|---|
-| 1 | `seed_client_baseline` | 4 roles + 1 Sucursal (te pide los datos) + admin general (te pide user/pass) + 1 tablet kiosk (te pide código/clave) + **catálogo completo** (12 modelos: tipos de servicio, categorías de gasto, procedimientos, servicios con precio, antecedentes, implantes, cirugías, opciones, tipos de piel, patologías, sectores, etc.). **Idempotente y atómico.** | **Producción real de un cliente.** Esta es la opción correcta para hacer un deploy a un cliente nuevo. |
-| 2 | `seed_production_baseline` | 4 roles + 1 Sucursal fija (`Sede Principal`, La Paz) + admin fijo (`admin.general` / `admin123456`) + 1 tablet kiosk fijo (`KIOSKO-PRINCIPAL` / `tablet-verify-123`). **SIN catálogos.** | Legado. Útil solo si querés arrancar con menos y cargar catálogos a mano desde el admin. Fue reemplazado por `seed_client_baseline`. |
-| 3 | `seed_pdf_baseline` | Catálogo completo + 3 sucursales + 3 admins + 4 especialistas + 5 especialidades + form config + 2 pacientes demo con huellas mock + 3 tablet kiosks. **Wipea datos clínicos antes de correr.** | Demo, ambiente de staging, capacitación. **NUNCA en producción con datos reales.** |
-| 4 | `seed_branch_test_scenarios` | Capa extra: 5 pacientes, 2 especialistas móviles, 12 gastos, 3 tickets. **Requiere `seed_pdf_baseline` antes.** | Test manual de flujos multi-sucursal. |
-
-**Para un cliente real en producción, la opción correcta es `seed_client_baseline`**. Crea todo lo necesario con los datos que vos le das, y además te carga el catálogo de muestra (precios base 850/650/1500/120) para que el sistema funcione sin pasos manuales adicionales.
-
-### 5.3. Migraciones y seed
+Antes de poblar, siempre corré las migraciones:
 
 ```bash
 cd /var/www/clinica/backend
 sudo -u www-data env/bin/python manage.py migrate --noinput
-
-# Producción real de un cliente (RECOMENDADO):
-sudo -u www-data env/bin/python manage.py seed_client_baseline
-
-# Opcionales según contexto:
-# sudo -u www-data env/bin/python manage.py seed_production_baseline     # legado, sin catálogos
-# sudo -u www-data env/bin/python manage.py seed_pdf_baseline          # demo, wipea datos
-# sudo -u www-data env/bin/python manage.py seed_branch_test_scenarios # demo multi-sucursal
-
-# Archivos estáticos
-sudo -u www-data env/bin/python manage.py collectstatic --noinput
 ```
 
-#### 5.3.1. Seed `seed_client_baseline` — para producción real de un cliente
+El sistema trae **4 comandos de seed** para 4 contextos distintos. Elegí el que se ajusta a tu situación.
 
-Es el comando recomendado para cualquier deploy de un cliente nuevo. Tiene dos modos.
+#### Tabla comparativa
 
-**Modo interactivo** — te pregunta todo uno por uno:
+| # | Comando | Datos que crea | ¿Wipea datos existentes? | Cuándo usarlo |
+|---|---|---|---|---|
+| 1 | `seed_client_baseline` | 4 roles + 1 Sucursal (te la pide) + admin general (te pide user/pass) + 1 tablet kiosk (te pide código/clave) + **catálogo base** (12 modelos con precios 850/650/1500/120) | No | **Producción real de un cliente.** ⭐ Opción recomendada para deploys nuevos. |
+| 2 | `seed_production_baseline` | 4 roles + 1 Sucursal fija (`Sede Principal`, La Paz) + admin fijo (`admin.general` / `admin123456`) + 1 kiosk fijo (`KIOSKO-PRINCIPAL` / `tablet-verify-123`). **Sin catálogos.** | No | Legado. Útil solo si querés arrancar con lo mínimo y cargar catálogos a mano. Reemplazado por `seed_client_baseline`. |
+| 3 | `seed_pdf_baseline` | Catálogo base + 3 sucursales + 3 admins + 4 especialistas + 5 especialidades + form config + 2 pacientes demo con huellas mock + 3 kiosks | **Sí** — wipea `HuellaBiometricaCliente`, `PagoRealizado`, `CuotaPlanPago`, `CitaMedica`, `Operacion` y todas las agendas antes de seedear | Demo, staging, capacitación. **Nunca en producción con datos reales.** |
+| 4 | `seed_branch_test_scenarios` | 5 pacientes + 2 especialistas móviles + 12 gastos + 3 tickets | No, pero **requiere** `seed_pdf_baseline` previo | Test manual de flujos multi-sucursal. |
+
+---
+
+#### Opción 1 — `seed_client_baseline` (recomendada para producción) ⭐
+
+Comando pensado para deploys de clientes reales. Te pregunta los datos por consola (modo interactivo) o los tomá de flags (modo no-interactivo).
+
+**Modo interactivo** — el asistente te pregunta uno por uno:
 
 ```bash
 sudo -u www-data env/bin/python manage.py seed_client_baseline
 ```
 
-El asistente te va a pedir (en este orden):
+Te va a pedir en este orden:
 
 1. **Datos de la sucursal**: `nombre`, `ciudad`, `direccion`.
 2. **Datos del admin general**: `username`, `password`, `primer_nombre`, `apellido_paterno`, `email`.
 3. **Datos del kiosk**: `codigo`, `clave`.
 4. **Confirmación** si ya existe una sucursal principal.
 
-Validaciones que aplica (rechaza y vuelve a preguntar si no se cumplen):
+**Validaciones que aplica** (rechaza y vuelve a preguntar si no se cumplen):
 
 - Username único (salvo que colisione con el admin target, en cuyo caso lo actualiza).
 - Email con formato válido (`validate_email` de Django).
-- Password ≥8 chars (corre todas las validaciones de Django: longitud, passwords comunes, numéricos, similitud al usuario).
+- Password ≥8 chars (corre las validators de Django: longitud, passwords comunes, numéricos, similitud al usuario).
 - Clave del kiosk ≥8 chars.
 - Nombre de sucursal único.
 - Código de kiosk único.
@@ -261,7 +314,7 @@ sudo -u www-data env/bin/python manage.py seed_client_baseline \
 
 Flags disponibles:
 
-| Flag | Obligatorio no-interactive | Descripción |
+| Flag | Obligatorio en no-interactive | Descripción |
 |---|---|---|
 | `--non-interactive` | sí | Suprime todos los prompts. Falla si falta algún valor. |
 | `--branch-name` | sí | Nombre único de la sucursal. |
@@ -281,44 +334,6 @@ Flags disponibles:
 - **Idempotente**: se puede correr varias veces. `update_or_create` en todos los modelos. Si los datos coinciden, no duplica nada.
 - **Atómico**: todo dentro de un `transaction.atomic`. Si CUALQUIER paso falla, NADA se guarda.
 - **Reemplazo de sucursal principal**: si ya existe una `Sucursal` con `es_principal=True`, el modo interactivo te muestra los datos actuales y te pregunta "¿Reemplazarla?". El modo no-interactivo requiere `--replace-main-branch`. Al reemplazar, todas las demás sucursales se ponen en `es_principal=False`.
-
-**Qué va a la base de datos con `seed_client_baseline`:**
-
-**Sistema (4 registros):**
-
-| Modelo | Registros | Valores |
-|---|---|---|
-| `Rol` | 4 | `ADMIN_PRINCIPAL`, `ADMIN_SUCURSAL`, `TRABAJADOR`, `CLIENTE` |
-
-**Sucursal + admin + kiosk (los datos que vos diste):**
-
-| Modelo | Registros | Origen |
-|---|---|---|
-| `Sucursal` | 1 | Datos del prompt. `es_principal=True`, `activa=True`. |
-| `Usuario` (admin) | 1 | Datos del prompt. Superuser, `is_staff=True`, `is_active=True`, rol `ADMIN_PRINCIPAL`, sucursal la de arriba. |
-| `TabletKiosko` | 1 | Datos del prompt. `activo=True`, sucursal la de arriba. |
-
-**Catálogo completo (12 modelos, todos los registros):**
-
-| Modelo | Cantidad | Registros |
-|---|---|---|
-| `TipoServicio` | 2 | `Cita de consulta`, `Tratamiento estético` |
-| `CategoriaGasto` | 8 | `Alquiler`, `Servicios`, `Insumos`, `Equipamiento`, `Marketing`, `Sueldos`, `Mantenimiento`, `Otros` |
-| `ProcEsteticosTipo` | 1 | `Laser` |
-| `ProcEstetico` | 3 | `Depilacion definitiva`, `Tratamiento de manchas`, `Borrado de tatuajes` |
-| `ServicioConfig` | 4 | Consulta → **120**, Depilación → **850**, Manchas → **650**, Tatuajes → **1500** |
-| `AntecedenteMedico` | 6 | `Diabetes`, `Asma`, `Hipertension`, `Cancer`, `Otro`, `Ninguna` |
-| `ImplanteInjerto` | 5 | `Menton`, `Mejillas`, `Nariz`, `Otro`, `Ninguno` |
-| `CirugiaEstetica` | 7 | `Blefaroplastia`, `Rinoplastia`, `Bichectomia`, `Rinomodelacion`, `Lifting`, `Botox`, `Ninguna` |
-| `GrupoOpciones` | 2 | `SI_NO` (Sí/No), `PROFUNDIDAD_TATUAJE` (Superficial/Profunda) |
-| `OpcionCatalogo` | 4 | `Si`, `No`, `Superficial`, `Profunda` |
-| `TipoPiel` | 6 | `Piel normal`, `Mixta`, `Seca`, `Grasa`, `Desvitalizada`, `Hidratada` |
-| `GradoDeshidratacion` | 3 | `Leve`, `Medio`, `Alto` |
-| `GrosorPiel` | 5 | `Fina`, `Media fina`, `Media`, `Media gruesa`, `Gruesa` |
-| `PatologiaCutanea` | 28 | `Eritema`, `Telangiectasias`, `Papulas`, `Melasma`, `Hiperpigmentaciones`, `Ampollas`, `Couperosis`, `Pustulas`, `Arrugas`, `Estrellas vasculares`, `Vesiculas`, `Cicatrices`, `Quistes`, `Micosis`, `Dermatitis`, `Angiomas`, `Costra`, `Millium`, `Efelides`, `Hirsutismo`, `Comedones`, `Verruga`, `Rosacea`, `Queratosis`, `Urticaria`, `Eczema`, `Nodulos`, `Vitiligo` |
-| `Sector` | 3 | `DEP` (Depilacion), `MAN` (Manchas), `TAT` (Tatuajes) |
-
-**Catálogos NO cargados** (quedan vacíos y hay que popularlos a mano desde el admin si los necesitás): `ProductoAlergia`, `TipoAlergia`, `GravedadAlergia`.
 
 **Output al finalizar:**
 
@@ -347,9 +362,17 @@ Final credentials (shown once):
   URL Admin:     https://tu-dominio.com/admin
 ```
 
-#### 5.3.2. Seed `seed_production_baseline` — legado, sin catálogos
+⚠️ **Anotá las credenciales que te muestra al final.** Es la única vez que se imprimen en texto plano.
+
+---
+
+#### Opción 2 — `seed_production_baseline` (legado, sin catálogos)
 
 Comando antiguo que quedó reemplazado por `seed_client_baseline`. Crea los mismos 4 registros básicos pero con valores fijos y sin catálogos.
+
+```bash
+sudo -u www-data env/bin/python manage.py seed_production_baseline
+```
 
 | Registro | Valor | Notas |
 |---|---|---|
@@ -358,37 +381,24 @@ Comando antiguo que quedó reemplazado por `seed_client_baseline`. Crea los mism
 | 1 Usuario admin | `admin.general` / `admin123456` (superuser) | **CAMBIAR LA PASSWORD EN EL PRIMER LOGIN.** |
 | 1 Tablet kiosk | `KIOSKO-PRINCIPAL` / `tablet-verify-123` | **CAMBIAR LA CLAVE.** El save hashea automáticamente. |
 
-**No se crean catálogos**. Vas a tener que cargarlos manualmente desde `/admin/` (Tipo de servicio, Procedimientos estéticos, Servicios con precio, Antecedentes médicos, Especialidades, Sectores, etc.) o correr `seed_pdf_baseline` si querés ver el catálogo de muestra.
+**No se crean catálogos**. Vas a tener que cargarlos manualmente desde `/admin/` (Tipo de servicio, Procedimientos estéticos, Servicios con precio, Antecedentes médicos, Especialidades, Sectores, etc.) o correr `seed_client_baseline` después.
 
 **Cuándo usarlo:** solo si necesitás el mínimo absoluto y preferís cargar catálogos a mano. Para producción de un cliente, **preferí siempre `seed_client_baseline`**.
 
-#### 5.3.3. Seed `seed_pdf_baseline` — solo demo, NO en producción
+---
 
-Catálogos completos que se cargan (todos via `seed_pdf_baseline._seed_catalogs()`):
+#### Opción 3 — `seed_pdf_baseline` (solo demo, NO en producción)
 
-| Catálogo | Registros | Fuente |
-|---|---|---|
-| Tipos de servicio | 2: `Cita de consulta`, `Tratamiento estético` | `seed_pdf_baseline.py:380-389` |
-| Categorías de gasto | 8: `Alquiler`, `Servicios`, `Insumos`, `Equipamiento`, `Marketing`, `Sueldos`, `Mantenimiento`, `Otros` | `:391-405` |
-| Tipo procedimiento estético | 1: `Laser` | `:407-415` |
-| Procedimientos estéticos | 3: `Depilacion definitiva`, `Tratamiento de manchas`, `Borrado de tatuajes` | `:417-447` |
-| Servicios con precio | 4 (precios base): Depilación **850**, Manchas **650**, Tatuajes **1500**, Consulta **120** | `:437-460` |
-| Antecedentes médicos | 6: `Diabetes`, `Asma`, `Hipertension`, `Cancer`, `Otro`, `Ninguna` | `:462-474` |
-| Implante/Injerto | 5: `Menton`, `Mejillas`, `Nariz`, `Otro`, `Ninguno` | `:476-488` |
-| Cirugía estética | 7: `Blefaroplastia`, `Rinoplastia`, `Bichectomia`, `Rinomodelacion`, `Lifting`, `Botox`, `Ninguna` | `:490-510` |
-| Grupos de opciones | 2: `SI_NO` (Sí/No), `PROFUNDIDAD_TATUAJE` (Superficial/Profunda) | `:512-557` |
-| Tipos de piel | 6: `Piel normal`, `Mixta`, `Seca`, `Grasa`, `Desvitalizada`, `Hidratada` | `:559-570` |
-| Grado de deshidratación | 3: `Leve`, `Medio`, `Alto` | `:572-580` |
-| Grosor de piel | 5: `Fina`, `Media fina`, `Media`, `Media gruesa`, `Gruesa` | `:582-593` |
-| Patologías cutáneas | 28: `Eritema`, `Telangiectasias`, `Papulas`, `Melasma`, `Hiperpigmentaciones`, …, `Vitiligo` | `:595-633` |
-| Sectores | 3: `DEP` (Depilación), `MAN` (Manchas), `TAT` (Tatuajes) | `:638-655` |
+```bash
+sudo -u www-data env/bin/python manage.py seed_pdf_baseline
+```
 
-**Registros NO creados por el seed:** `ProductoAlergia`, `TipoAlergia`, `GravedadAlergia`. Quedan vacíos.
+⚠️ **Wipea datos clínicos antes de seedear.** No lo corras en una base con datos reales.
 
-**Datos extra que también se crean:**
+Útil para demos, staging, o capacitar a un cliente sobre cómo se ve el sistema poblado. Crea lo mismo que `seed_client_baseline` en términos de catálogo, **más**:
 
-- 3 Sucursales: `Sede Principal`, `Sucursal Norte` (La Paz), `Sucursal Sur` (Santa Cruz).
-- 3 Admins: `admin.general` (superuser), `admin.norte`, `admin.sur` — todos password `admin123456`.
+- 2 Sucursales extra: `Sucursal Norte` (La Paz), `Sucursal Sur` (Santa Cruz).
+- 2 Admins extra: `admin.norte`, `admin.sur` (todos password `admin123456`).
 - 4 Especialistas (usuarios): `lucia.laser`, `diego.tatuajes`, `sofia.manchas`, `rafael.consulta` — passwords `laser123456`, `tatuajes123456`, `manchas123456`, `consulta123456`.
 - 5 Especialidades + 4 Especialistas (vinculados).
 - 2 Prospectos (`PASAJERO`).
@@ -396,16 +406,22 @@ Catálogos completos que se cargan (todos via `seed_pdf_baseline._seed_catalogs(
 - Agendas: lun–vie 08:00–18:00 para cada especialista.
 - 3 Tablet kiosks: `KIOSKO-PRINCIPAL` / `tablet-principal-123`, `KIOSKO-NORTE` / `tablet-norte-123`, `KIOSKO-SUR` / `tablet-sur-123`.
 
-**Datos que el seed DESTRUYE antes de correr** (importante si lo corrés en una DB con datos reales):
+**Datos que el seed DESTRUYE antes de correr** (de `seed_pdf_baseline.py:1045-1050`):
 
 - `HuellaBiometricaCliente` (todas las huellas)
 - `PagoRealizado`, `CuotaPlanPago`, `CitaMedica`, `Operacion` (todo el historial clínico de pagos y turnos)
 
-`seed_pdf_baseline.py:1045-1050` lo hace explícitamente. **No lo corras en producción con datos clínicos reales.**
+Por eso **no lo corras en producción con datos clínicos reales.**
 
-#### 5.3.4. Seed `seed_branch_test_scenarios` — extra multi-sucursal
+---
 
-Capa adicional para testear flujos multi-sucursal. **Requiere haber corrido `seed_pdf_baseline` antes** (si no, falla con `RuntimeError`).
+#### Opción 4 — `seed_branch_test_scenarios` (test multi-sucursal)
+
+Capa adicional para testear flujos multi-sucursal. **Requiere `seed_pdf_baseline` previo** (si no, falla con `RuntimeError`).
+
+```bash
+sudo -u www-data env/bin/python manage.py seed_branch_test_scenarios
+```
 
 Agrega:
 
@@ -415,6 +431,54 @@ Agrega:
 - 3 `Ticket` con sus `TicketMessage`.
 
 **Solo para dev/test. No en producción.**
+
+---
+
+#### Catálogo base que cargan `seed_client_baseline` y `seed_pdf_baseline`
+
+Ambos comandos cargan la misma tabla de catálogo base. La diferencia es que `seed_client_baseline` te deja configurar la sucursal y admin con datos propios, y `seed_pdf_baseline` carga datos demo extra (sucursales, especialistas, pacientes, agendas).
+
+Los **12 modelos** que ambos cargan:
+
+| Modelo | Cantidad | Registros clave |
+|---|---|---|
+| `TipoServicio` | 2 | `Cita de consulta`, `Tratamiento estético` |
+| `CategoriaGasto` | 8 | `Alquiler`, `Servicios`, `Insumos`, `Equipamiento`, `Marketing`, `Sueldos`, `Mantenimiento`, `Otros` |
+| `ProcEsteticosTipo` | 1 | `Laser` |
+| `ProcEstetico` | 3 | `Depilacion definitiva`, `Tratamiento de manchas`, `Borrado de tatuajes` |
+| `ServicioConfig` | 4 | **Precios base**: Consulta → **120**, Depilación → **850**, Manchas → **650**, Tatuajes → **1500** |
+| `AntecedenteMedico` | 6 | `Diabetes`, `Asma`, `Hipertension`, `Cancer`, `Otro`, `Ninguna` |
+| `ImplanteInjerto` | 5 | `Menton`, `Mejillas`, `Nariz`, `Otro`, `Ninguno` |
+| `CirugiaEstetica` | 7 | `Blefaroplastia`, `Rinoplastia`, `Bichectomia`, `Rinomodelacion`, `Lifting`, `Botox`, `Ninguna` |
+| `GrupoOpciones` | 2 | `SI_NO` (Sí/No), `PROFUNDIDAD_TATUAJE` (Superficial/Profunda) |
+| `OpcionCatalogo` | 4 | `Si`, `No`, `Superficial`, `Profunda` |
+| `TipoPiel` | 6 | `Piel normal`, `Mixta`, `Seca`, `Grasa`, `Desvitalizada`, `Hidratada` |
+| `GradoDeshidratacion` | 3 | `Leve`, `Medio`, `Alto` |
+| `GrosorPiel` | 5 | `Fina`, `Media fina`, `Media`, `Media gruesa`, `Gruesa` |
+| `PatologiaCutanea` | 28 | `Eritema`, `Telangiectasias`, `Papulas`, `Melasma`, `Hiperpigmentaciones`, `Ampollas`, `Couperosis`, `Pustulas`, `Arrugas`, `Estrellas vasculares`, `Vesiculas`, `Cicatrices`, `Quistes`, `Micosis`, `Dermatitis`, `Angiomas`, `Costra`, `Millium`, `Efelides`, `Hirsutismo`, `Comedones`, `Verruga`, `Rosacea`, `Queratosis`, `Urticaria`, `Eczema`, `Nodulos`, `Vitiligo` |
+| `Sector` | 3 | `DEP` (Depilacion), `MAN` (Manchas), `TAT` (Tatuajes) |
+
+**Catálogos NO cargados** (quedan vacíos y hay que popularlos a mano desde el admin si los necesitás): `ProductoAlergia`, `TipoAlergia`, `GravedadAlergia`.
+
+---
+
+#### Verificación rápida post-seed
+
+```bash
+# ¿Gunicorn puede arrancar?
+sudo -u www-data env/bin/python manage.py check
+
+# ¿La DB responde?
+sudo -u www-data env/bin/python manage.py shell -c "from accounts.models import Usuario; print('Usuarios:', Usuario.objects.count())"
+sudo -u www-data env/bin/python manage.py shell -c "from catalogs.models import Sucursal, ProcEstetico, ServicioConfig; print('Sucursales:', Sucursal.objects.count(), 'Procedimientos:', ProcEstetico.objects.count(), 'Servicios:', ServicioConfig.objects.count())"
+```
+
+Después de esto:
+
+```bash
+# Archivos estáticos
+sudo -u www-data env/bin/python manage.py collectstatic --noinput
+```
 
 ### 5.4. Verificación rápida
 
@@ -439,6 +503,25 @@ npm run build
 ```
 
 El build genera `dist/` que Nginx va a servir.
+
+> **⚠️ Si tu droplet tiene 1 GB de RAM o menos**, el build puede tirarse por OOM (Out of Memory). Si `npm ci` o `npm run build` muestra `Killed` o `JavaScript heap out of memory`, agregá swap temporal:
+>
+> ```bash
+> sudo fallocate -l 2G /swapfile
+> sudo chmod 600 /swapfile
+> sudo mkswap /swapfile
+> sudo swapon /swapfile
+> free -h   # verificar que Swap muestre 2G
+> ```
+>
+> Reintentá `npm ci` y `npm run build`. Al terminar, podés eliminar el swap:
+>
+> ```bash
+> sudo swapoff /swapfile
+> sudo rm /swapfile
+> ```
+>
+> Si con 2 GB de swap sigue tirando OOM, probá con 3 GB.
 
 ---
 
@@ -518,9 +601,24 @@ sudo systemctl reload nginx
 
 ## 8. SSL con Let's Encrypt
 
+> **⚠️ Antes de correr certbot, asegurate de que el dominio ya apunta a la IP del droplet.** Si no, Let's Encrypt no puede validar el dominio y el comando falla. Verificá con:
+>
+> ```bash
+> dig +short tu-dominio.com
+> # Debe devolver la IP del droplet
+> ```
+>
+> Si usás Cloudflare, dejá el proxy desactivado (DNS only, gris) durante el cert — después lo podés volver a activar.
+
 ```bash
 sudo certbot --nginx -d tu-dominio.com -d www.tu-dominio.com
 ```
+
+Certbot te va a pedir:
+1. **Email**: el tuyo, para avisos de renovación.
+2. **Acepta los ToS**: `Y`.
+3. **Compartir email con EFF**: `Y` o `N`, no importa.
+4. **Redirigir HTTP a HTTPS**: `2` (redirect).
 
 Certbot modifica automáticamente el bloque Nginx para redirigir HTTP→HTTPS. Verificá:
 
@@ -781,13 +879,64 @@ sudo tail -f /var/log/nginx/clinica.error.log
 
 Casi siempre es que Gunicorn no está corriendo o el socket no existe. Mirá `journalctl -u gunicorn`.
 
+### 400 Bad Request en `/admin/` o `/api/`
+
+Django rechaza el `Host` header. Verificá que el dominio (o IP) que estás usando esté en `DJANGO_ALLOWED_HOSTS` del `.env`:
+
+```bash
+cat /var/www/clinica/backend/.env | grep ALLOWED_HOSTS
+```
+
+Si no está, agregalo y reiniciá:
+
+```bash
+sudo systemctl restart gunicorn
+```
+
 ### Error de migraciones
 
 ```bash
 cd /var/www/clinica/backend
 sudo -u www-data env/bin/python manage.py showmigrations
-sudo -u www-data env/bin/python manage.py migrate
+sudo -u www-data env/bin/python migrate
 ```
+
+### Error: `psycopg.OperationalError: connection to server failed: FATAL: password authentication failed for user "clinica_app"`
+
+Postgres 16 (Ubuntu 24.04) rechazando la password por usar `scram-sha-256`. Ver la sección 3 — cambiar `pg_hba.conf` a `md5` y resetear la password.
+
+### Error: `permission denied for schema public` durante `migrate`
+
+Postgres 15+ asigna el schema `public` al usuario `postgres` por default. Hay que dar permisos explícitos. Ver sección 3 — el bloque con `GRANT ALL ON SCHEMA public TO clinica_app`.
+
+### Error: `python3 -m venv env` falla con "ensurepip is not available"
+
+En Ubuntu 24.04, `python3-venv` no trae `ensurepip` por defecto. Instalá:
+
+```bash
+sudo apt install -y python3.12-venv
+```
+
+### Error: `npm ci` o `npm run build` muestra `Killed` o `JavaScript heap out of memory`
+
+OOM. Ver sección 6 — agregar swap temporal de 2–3 GB.
+
+### Error: `sudo: command not found` o `sudo: unable to resolve host`
+
+Normal en droplets recién creados. Andá a sección 2 — agregar `deploy` al grupo `sudo` y la línea NOPASSWD.
+
+### `certbot` o `nginx` no encontrados
+
+Algún paquete del `apt install` de la sección 2 falló. Reintentá:
+
+```bash
+sudo apt update
+sudo apt install -y nginx certbot python3-certbot-nginx
+```
+
+### `ssh-copy-id` rechaza con `Permission denied (publickey)`
+
+La SSH key que subiste al crear el droplet no coincide con la que tenés ahora en tu máquina. Ver el bloque de la sección 2 sobre cómo inyectar la key por la consola web del proveedor.
 
 ### Cambié el `.env` y nada se actualiza
 
@@ -801,7 +950,7 @@ sudo systemctl restart gunicorn
 
 ```bash
 cd /var/www/clinica/backend
-sudo -u www-data env/bin/python manage.py changepassword admin.general
+sudo -u www-data env/bin/python manage.py changepassword <username>
 ```
 
 ### Necesito cambiar la contraseña de la DB
@@ -861,6 +1010,9 @@ sudo systemctl restart gunicorn
 | Commit | Qué cambió |
 |---|---|
 | `7b107bc` | Creación de la guía. Reemplaza `droplet-setup-from-scratch.md` y `droplet-deploy-updates.md`. Agrega guía VPS genérica, comando `seed_client_baseline`, `.env.example`, `deploy.sh.example`, spec OpenSpec y 13 tests. |
+| `3332186` | Deploy script interactivo: pide VPS_HOST, PROJECT_PATH, etc. la primera vez y los guarda en `scripts/.deploy-config`. Arregla bug de paths hardcoded en el heredoc SSH. |
+| `33d67c4` | Changelog footer en la guía. |
+| `docs-fixups` | Reorganiza la sección 5.2 con una sección dedicada "Cómo poblar la base de datos" con tabla comparativa de los 4 seeds. Corrige gaps del deploy en DO: `sudo` NOPASSWD para `deploy`, `pg_hba.conf` md5, `GRANT ON SCHEMA public`, `python3.12-venv`, swap para Node build, DNS antes de certbot, troubleshooting extendido. |
 
 Si la guía quedó desactualizada respecto al código, este es el bloque a actualizar. Buscá la sección correspondiente en la tabla de arriba y en el diff del commit.
 
