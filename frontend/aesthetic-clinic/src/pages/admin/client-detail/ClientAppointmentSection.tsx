@@ -33,7 +33,7 @@ interface ClientAppointmentSectionProps {
   onCancelFreeMedicalAppointment: (id: number) => void
   onConfirmFreeMedicalAppointment: (id: number) => void
   onMarkPendingBiometric: (id: number) => void
-  onConfirmBiometric: (id: number, template: string) => void
+  onConfirmBiometric: (id: number) => void
   onCancelFromVerification: (id: number) => void
   onSetRescheduleAppointment: (id: number) => void
   onRescheduleDateChange: (value: string) => void
@@ -183,9 +183,9 @@ export function ClientAppointmentSection({
                           className="button button--ghost button--compact"
                           disabled={appointmentActionId !== null}
                           type="button"
-                          onClick={() => void onConfirmBiometric(appointment.rawId, appointment.biometricMockTemplate)}
+                          onClick={() => void onConfirmBiometric(appointment.rawId)}
                         >
-                          {appointmentActionId === appointment.rawId ? 'Validando...' : 'Confirmar huella mock'}
+                          {appointmentActionId === appointment.rawId ? 'Validando...' : 'Confirmar con huella'}
                         </button>
                       ) : null}
                       {appointment.canCancelFromVerification ? (

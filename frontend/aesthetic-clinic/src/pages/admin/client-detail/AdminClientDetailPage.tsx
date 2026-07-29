@@ -118,6 +118,10 @@ export function AdminClientDetailPage() {
     visibleOperationsCount,
     hasMoreOperations,
     hasLessOperations,
+
+    // Biometric agent state
+    hasAnyAgent,
+    allAgentsOffline,
   } = useClientDetail(clientId)
 
   const [profileModalOpen, setProfileModalOpen] = useState(false)
@@ -190,6 +194,16 @@ export function AdminClientDetailPage() {
           { label: 'Ver perfil del cliente', variant: 'ghost' as const, onClick: () => setProfileModalOpen(true) }
         ]}
       />
+
+      {hasAnyAgent && allAgentsOffline ? (
+        <div className="banner banner--warning" role="status" aria-live="polite">
+          <strong>Lector de huellas sin conexion.</strong>
+          <span>
+            Ningun agente reporto heartbeat en los ultimos 5 minutos. Si necesitas confirmar la
+            asistencia, usa la confirmacion manual hasta que el lector vuelva a estar disponible.
+          </span>
+        </div>
+      ) : null}
 
       <AdminRelationshipTabs />
 
@@ -313,9 +327,9 @@ export function AdminClientDetailPage() {
                         className="button button--ghost button--compact"
                         disabled={appointmentActionId !== null}
                         type="button"
-                        onClick={() => void handleConfirmBiometric(session.rawId, session.biometricMockTemplate)}
+                        onClick={() => void handleConfirmBiometric(session.rawId)}
                       >
-                        {appointmentActionId === session.rawId ? 'Validando...' : 'Confirmar huella mock'}
+                        {appointmentActionId === session.rawId ? 'Validando...' : 'Confirmar con huella'}
                       </button>
                     ) : null}
                     {session.canCancelFromVerification ? (

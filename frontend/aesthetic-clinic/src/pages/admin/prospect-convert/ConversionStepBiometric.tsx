@@ -27,13 +27,20 @@ export function ConversionStepBiometric({
   onBack,
   onCancel,
 }: Props) {
+  const providerLabel =
+    biometricForm.provider === 'DIGITAL_PERSONA'
+      ? 'DigitalPersona 4500'
+      : biometricForm.provider === 'SECU_GEN_LEGACY'
+        ? 'SecuGen (legacy)'
+        : 'Simulador (legacy)'
+  const isCaptured = Boolean(biometricForm.deviceSerial && biometricForm.quality > 0)
   return (
     <form className="form-grid" onSubmit={onSubmit}>
       <div className="wizard-block field--full">
         <div className="wizard-block__header">
           <div>
-            <strong>Captura simulada</strong>
-            <p>El sistema genera un template estable para probar el flujo completo sin conectar el dispositivo fisico.</p>
+            <strong>Captura biometrica</strong>
+            <p>Solicita al cliente que apoye el dedo en el lector DigitalPersona 4500. La captura la orquesta el backend.</p>
           </div>
           <button
             className="button button--ghost button--compact"
@@ -41,13 +48,13 @@ export function ConversionStepBiometric({
             type="button"
             onClick={onCapture}
           >
-            Capturar huella mock
+            {isCaptured ? 'Volver a capturar' : 'Capturar huella'}
           </button>
         </div>
         <div className="operation-card__note-grid">
           <article>
             <span>Proveedor</span>
-            <p>{biometricForm.provider === 'MOCK' ? 'Simulador SecuGen' : 'SecuGen real'}</p>
+            <p>{providerLabel}</p>
           </article>
           <article>
             <span>Dispositivo</span>

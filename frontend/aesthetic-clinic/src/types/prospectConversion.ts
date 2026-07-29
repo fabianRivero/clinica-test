@@ -82,7 +82,7 @@ export type ProspectConversionMedicalData = {
 }
 
 export type ProspectConversionBiometricData = {
-  provider: 'MOCK' | 'SECU_GEN'
+  provider: 'MOCK_LEGACY' | 'SECU_GEN_LEGACY' | 'DIGITAL_PERSONA'
   template: string
   quality: number
   deviceSerial: string

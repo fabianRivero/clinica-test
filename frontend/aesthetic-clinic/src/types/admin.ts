@@ -381,7 +381,6 @@ export type OperationDetailData = {
   documentPdfUrl: string
   documentPdfName: string
   hasBiometricEnrollment: boolean
-  biometricMockTemplate: string
   appointments: OperationDetailAppointment[]
   quotas: OperationDetailQuota[]
 }

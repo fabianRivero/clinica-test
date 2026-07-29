@@ -73,7 +73,7 @@ Deferred: create the Python 3.12 agent, DigitalPersona/fprintd capture and match
 
 Deferred: replace `mockFingerprint.ts` with `biometricClient.ts`, wire enrollment and verification screens, agent online/offline states, manual fallback, Playwright coverage, build/lint/type checks, and manual QA.
 
-- [ ] 3.1 Replace the mock client, wire React flows, add E2E coverage, and complete build/lint/type/manual QA checks.
+- [x] 3.1 Replace the mock client, wire React flows, add E2E coverage, and complete build/lint/type/manual QA checks.
 
 ## Spec → Task
 

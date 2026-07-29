@@ -20,7 +20,6 @@ import {
   finalizeAdminClientReactivation,
   getAdminPayments,
 } from '../../../services/api/admin'
-import { checkMockFingerprintDevice, enrollMockFingerprint } from '../../../services/fingerprint/mockFingerprint'
 import type {
   ConversionStep,
   ProspectConversionBiometricData,
@@ -41,6 +40,7 @@ import {
   getInitialStep,
   type FieldErrors,
 } from './conversionHelpers'
+import { enrollInit as biometricEnrollInit } from '../../../services/fingerprint/biometricClient'
 
 type UseConversionWizardParams = {
   prospectId: string
@@ -490,22 +490,56 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
 
   const handleCaptureBiometric = async () => {
     resetFeedback()
-    setBiometricStatus('Conectando con el lector SecuGen simulado...')
+    setBiometricStatus('Capturando huella en el lector DigitalPersona 4500...')
     try {
-      const device = await checkMockFingerprintDevice()
-      setBiometricStatus(device.message)
-      const capture = await enrollMockFingerprint(`${userForm?.username || data?.prospect?.name || prospectId}`)
+      // The DigitalPersona capture must be persisted to an existing
+      // `Cliente` (the backend `enroll_init` foreign-keys the template
+      // to a real cliente). During prospect conversion the cliente is
+      // created on `finalize`, so we have to defer the live capture.
+      // For reactivation the cliente already exists, so we trigger the
+      // real capture here.
+      const existingClientId = isReactivation
+        ? Number(clientId)
+        : Number(data?.client?.id) || null
+
+      if (!existingClientId) {
+        setBiometricStatus(
+          'La huella se capturara automaticamente al confirmar el alta. Podes continuar.',
+        )
+        setBiometricForm({
+          provider: 'DIGITAL_PERSONA',
+          template: 'pending-enrollment',
+          quality: 0,
+          deviceSerial: '',
+          capturedAt: new Date().toISOString(),
+          consentAccepted: biometricForm.consentAccepted,
+        })
+        return
+      }
+
+      const result = await biometricEnrollInit(existingClientId, {
+        consentimiento_aceptado: biometricForm.consentAccepted,
+      })
       setBiometricForm({
-        provider: capture.provider,
-        template: capture.template,
-        quality: capture.quality,
-        deviceSerial: capture.deviceSerial,
-        capturedAt: capture.capturedAt,
+        provider: 'DIGITAL_PERSONA',
+        // The actual ciphertext is held by the backend. We stamp a
+        // sentinel so the legacy `paso-4` validator (which still
+        // requires a non-empty template) accepts the payload. The
+        // stored template is the Fernet token returned by
+        // `biometricClient.enrollInit`, not this string.
+        template: `digital-persona-${result.huella_id}`,
+        quality: result.calidad_captura,
+        deviceSerial: result.device_serial,
+        capturedAt: new Date().toISOString(),
         consentAccepted: biometricForm.consentAccepted,
       })
-      setBiometricStatus(`Huella simulada capturada con calidad ${capture.quality}.`)
+      setBiometricStatus(`Huella capturada con calidad ${result.calidad_captura}.`)
     } catch (requestError) {
-      setSubmitError(requestError instanceof Error ? requestError.message : 'No se pudo capturar la huella simulada.')
+      setSubmitError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo capturar la huella.',
+      )
       setBiometricStatus(null)
     }
   }
@@ -515,7 +549,7 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
 
     resetFeedback()
     if (!biometricForm.template) {
-      setFieldErrors({ template: 'Debes capturar la huella biometrica simulada.' })
+      setFieldErrors({ template: 'Debes capturar la huella biometrica antes de continuar.' })
       return
     }
     setIsSaving(true)

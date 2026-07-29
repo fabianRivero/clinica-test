@@ -61,7 +61,7 @@ export function blankCirugia(): ProspectConversionCirugia {
 
 export function blankBiometricData(): ProspectConversionBiometricData {
   return {
-    provider: 'MOCK',
+    provider: 'DIGITAL_PERSONA',
     template: '',
     quality: 0,
     deviceSerial: '',

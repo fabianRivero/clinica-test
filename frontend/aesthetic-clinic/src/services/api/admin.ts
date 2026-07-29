@@ -193,16 +193,6 @@ export function rescheduleAdminAppointment(appointmentId: number, payload: { dat
   )
 }
 
-export function confirmAdminAppointmentBiometric(
-  appointmentId: number,
-  payload: Pick<ProspectConversionBiometricData, 'template' | 'quality' | 'deviceSerial' | 'provider'>,
-) {
-  return requestJsonWithBody<OperationDetailResponse>(
-    `/api/admin/citas/${appointmentId}/confirmar-biometria/`,
-    payload,
-  )
-}
-
 export function markAdminAppointmentPendingBiometric(appointmentId: number) {
   return requestJsonWithBody<{ detail: string }>(
     `/api/admin/citas/${appointmentId}/pendiente-biometria/`,

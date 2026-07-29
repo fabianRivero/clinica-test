@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { useApiResource } from '../../../hooks/useApiResource'
@@ -11,7 +11,6 @@ import {
   cancelAdminFreeMedicalAppointment,
   confirmAdminFreeMedicalAppointment,
   checkAdminConcurrency,
-  confirmAdminAppointmentBiometric,
   createAdminClientFreeMedicalAppointment,
   createAdminClientReservation,
   getAdminClientDetail,
@@ -20,7 +19,10 @@ import {
   rescheduleAdminAppointment,
   updateAdminPaymentStatus,
 } from '../../../services/api/admin'
-import { verifyMockFingerprint } from '../../../services/fingerprint/mockFingerprint'
+import {
+  biometricClient,
+  type AgentListItem,
+} from '../../../services/fingerprint/biometricClient'
 import type { AdminConcurrencyCheckResponse } from '../../../types/admin'
 import { useBranchContext } from '../../../providers/BranchProvider'
 import { migrateAdminClient } from '../../../services/api/admin'
@@ -245,32 +247,54 @@ export function useClientDetail(clientId: string) {
     }
   }
 
-  async function handleConfirmBiometric(appointmentId: number, biometricMockTemplate: string) {
-    if (!biometricMockTemplate) {
-      showNotification({
-        title: 'Sin huella registrada',
-        message: 'Este cliente no tiene una huella mock disponible para comparar.',
-        tone: 'danger',
-      })
-      return
-    }
-
+  async function handleConfirmBiometric(appointmentId: number) {
     setAppointmentActionId(appointmentId)
     try {
-      const capture = await verifyMockFingerprint(biometricMockTemplate)
-      const response = await confirmAdminAppointmentBiometric(appointmentId, {
-        provider: capture.provider,
-        template: capture.template,
-        quality: capture.quality,
-        deviceSerial: capture.deviceSerial,
+      // 1. Backend returns capture_token + agent_url (and rejects early
+      //    if the cita is not in `REALIZADA_PENDIENTE_VERIFICACION`).
+      const init = await biometricClient.verifyInit(appointmentId)
+      if (init.manual_only || !init.capture_token || !init.agent_url) {
+        showNotification({
+          title: 'Confirmar manualmente',
+          message: 'Este cliente no tiene huella registrada. Usa la confirmacion manual.',
+          tone: 'info',
+        })
+        return
+      }
+
+      // 2. Ask the local agent to capture+match. The agent's `/match`
+      //    endpoint accepts the same capture_token and returns a raw
+      //    score; the backend applies the threshold in step 3.
+      const matchResponse = await fetch(`${init.agent_url.replace(/\/$/, '')}/match`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          capture_token: init.capture_token,
+          template_b64: '',
+        }),
       })
+      if (!matchResponse.ok) {
+        throw new Error(`El lector respondio ${matchResponse.status}.`)
+      }
+      const matchJson = (await matchResponse.json()) as { score: number }
+      const score = Number(matchJson.score)
+      if (!Number.isFinite(score)) {
+        throw new Error('El lector devolvio un score invalido.')
+      }
+
+      // 3. Backend pops the one-shot token, compares the score to the
+      //    threshold, transitions the cita, and writes the attempt.
+      const confirm = await biometricClient.verifyConfirm(appointmentId, {
+        capture_token: init.capture_token,
+        score,
+      })
+
       showNotification({
-        title: 'Huella confirmada',
-        message: 'La cita fue confirmada con la huella biometrica simulada.',
-        tone: 'success',
+        title: confirm.matched ? 'Huella confirmada' : 'Huella rechazada',
+        message: confirm.message,
+        tone: confirm.matched ? 'success' : 'warning',
       })
       reload()
-      void response
     } catch (requestError) {
       showNotification({
         title: 'No se pudo confirmar la huella',
@@ -281,6 +305,36 @@ export function useClientDetail(clientId: string) {
       setAppointmentActionId(null)
     }
   }
+
+  // -----------------------------------------------------------------
+  // Agent online/offline detection (5-minute heartbeat window).
+  // -----------------------------------------------------------------
+  const [agents, setAgents] = useState<AgentListItem[]>([])
+
+  const refreshAgents = useCallback(async () => {
+    try {
+      const list = await biometricClient.listAgents()
+      setAgents(list)
+    } catch {
+      // Silently swallow: the banner is purely informational and the
+      // backend may be temporarily unavailable during navigation.
+    }
+  }, [])
+
+  useEffect(() => {
+    // Fetching on mount then polling every minute; the set-state call
+    // here is the documented sync-from-external-system pattern.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshAgents()
+    const interval = window.setInterval(() => {
+      void refreshAgents()
+    }, 60_000)
+    return () => window.clearInterval(interval)
+  }, [refreshAgents])
+
+  const hasAnyAgent = agents.length > 0
+  const allAgentsOffline =
+    hasAnyAgent && agents.every((agent) => !biometricClient.isAgentOnline(agent.last_seen_at))
 
   async function handleCancelFromVerification(appointmentId: number) {
     const confirmed = await confirm({
@@ -656,6 +710,12 @@ export function useClientDetail(clientId: string) {
     handleMarkPendingBiometric,
     handleConfirmBiometric,
     handleCancelFromVerification,
+    refreshAgents,
+
+    // Agent online/offline state (5-minute heartbeat window)
+    agents,
+    hasAnyAgent,
+    allAgentsOffline,
     handleCheckRescheduleAvailability,
     handleRescheduleAppointment,
     handleCheckConcurrency,
