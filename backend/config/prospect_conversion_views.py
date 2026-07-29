@@ -1450,7 +1450,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             HuellaBiometricaCliente.objects.update_or_create(
                 cliente=cliente,
                 defaults={
-                    "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK,
+                    "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK_LEGACY,
                     "template_biometrico": biometric_data.get("template", ""),
                     "device_serial": biometric_data.get("deviceSerial", ""),
                     "calidad_captura": int(biometric_data.get("quality") or 0),
@@ -1465,7 +1465,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         HuellaBiometricaCliente.objects.update_or_create(
             cliente=cliente,
             defaults={
-                "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK,
+                "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK_LEGACY,
                 "template_biometrico": biometric_data.get("template", ""),
                 "device_serial": biometric_data.get("deviceSerial", ""),
                 "calidad_captura": int(biometric_data.get("quality") or 0),

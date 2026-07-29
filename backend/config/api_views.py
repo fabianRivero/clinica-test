@@ -460,7 +460,7 @@ def _operation_detail(operacion):
         "documentPdfUrl": document_url,
         "documentPdfName": document_name,
         "hasBiometricEnrollment": bool(huella and huella.activo),
-        "biometricMockTemplate": huella.template_biometrico if huella and huella.proveedor == HuellaBiometricaCliente.Proveedor.MOCK else "",
+        "biometricMockTemplate": huella.template_biometrico if huella and huella.proveedor == HuellaBiometricaCliente.Proveedor.MOCK_LEGACY else "",
         "appointments": [
             {
                 "id": f"CIT-{cita.pk:04d}",

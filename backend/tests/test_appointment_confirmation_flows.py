@@ -103,7 +103,7 @@ class AppointmentConfirmationFlowTests(TestCase):
     def test_admin_biometric_confirmation_creates_audit_event(self):
         HuellaBiometricaCliente.objects.create(
             cliente=self.cliente,
-            proveedor=HuellaBiometricaCliente.Proveedor.MOCK,
+            proveedor=HuellaBiometricaCliente.Proveedor.MOCK_LEGACY,
             template_biometrico="TEMPLATE_OK",
             activo=True,
         )
