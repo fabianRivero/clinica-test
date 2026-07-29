@@ -354,6 +354,23 @@ class HttpAgentClient:
 
         if resp.status_code >= 400:
             snippet = (resp.text or "")[:200]
+            if 400 <= resp.status_code < 500:
+                # Operational rejection: bad quality, no finger, etc.
+                # Decode the JSON body if possible to recover the
+                # ``code`` + ``status`` so the view layer can build a
+                # meaningful 400 response.
+                code = "AGENT_OPERATION_FAILED"
+                status = ""
+                try:
+                    payload = resp.json()
+                    if isinstance(payload, dict):
+                        detail = payload.get("detail")
+                        if isinstance(detail, dict):
+                            code = str(detail.get("code") or code)
+                            status = str(detail.get("status") or status)
+                except ValueError:
+                    pass
+                raise AgentOperationError(code=code, status=status)
             raise AgentUnavailableError(
                 f"Agent returned {resp.status_code}: {snippet}"
             )
@@ -390,11 +407,25 @@ class AgentUnavailableError(RuntimeError):
     """
 
 
+class AgentOperationError(RuntimeError):
+    """The agent rejected an operational request (low quality, no finger,
+    invalid finger name, etc.). 4xx, not 5xx. Carries the agent's
+    detail body as ``code`` and ``status`` (the agent's biometric status
+    string, e.g. ``enroll-failed``).
+    """
+
+    def __init__(self, code: str, status: str) -> None:
+        super().__init__(f"agent operation rejected: {code} ({status})")
+        self.code = code
+        self.status = status
+
+
 __all__ = [
+    "AgentOperationError",
     "AgentUnavailableError",
     "BaseAgentClient",
     "CaptureResponse",
     "HttpAgentClient",
     "MatchResponse",
     "MockAgentClient",
-]
+]  

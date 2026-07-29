@@ -36,7 +36,7 @@ from biometric.permissions import (
     is_agent_token,
 )
 from biometric.serializers import agent_token_payload, attempt_payload, huella_payload
-from biometric.services.agent_client import AgentUnavailableError
+from biometric.services.agent_client import AgentOperationError, AgentUnavailableError
 from biometric.services.capture_tokens import capture_token_store
 from biometric.services.encryption import InvalidToken, decrypt_template, encrypt_template
 from biometric.services.factory import get_agent_client
@@ -199,6 +199,21 @@ def enroll_init(request, cliente_id: int):
         return json_response(
             {"detail": "El lector de huellas no esta disponible.", "code": str(exc)},
             status=503,
+        )
+    except AgentOperationError as exc:
+        # The agent rejected the capture operationally (low quality,
+        # no finger detected, etc.). Return 400 so the frontend can
+        # surface a clear retry instruction instead of "service unavailable".
+        BiometricAttempt.objects.create(
+            cliente=cliente,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=False,
+            failure_reason=BiometricAttempt.FailureReason.LOW_QUALITY,
+        )
+        return json_response(
+            {"detail": "La calidad de la huella capturada es insuficiente. Reintente.", "code": exc.code},
+            status=400,
         )
 
     if capture.quality_score < 50:
