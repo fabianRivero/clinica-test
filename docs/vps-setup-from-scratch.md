@@ -11,11 +11,11 @@
 
 ## 0. Prerrequisitos en tu máquina local
 
-Antes de tocar el VPS, necesitás:
+Antes de tocar el VPS, necesitas:
 
-- **SSH key** generada: `ssh-keygen -t ed25519 -C "tu-email@ejemplo.com"` (si no tenés).
+- **SSH key** generada: `ssh-keygen -t ed25519 -C "tu-email@ejemplo.com"` (si no se tiene).
 - Acceso al repo Git del proyecto (HTTPS o SSH).
-- Dominio apuntando a la IP del VPS (registro A en DNS). Si todavía no tenés dominio, podés usar la IP pública para probar, pero HTTPS no funcionará.
+- Dominio apuntando a la IP del VPS (registro A en DNS). Si todavía no tienes dominio, peudes usar la IP pública para probar, pero HTTPS no funcionará.
 
 ---
 
@@ -65,7 +65,7 @@ systemctl enable fail2ban
 systemctl start fail2ban
 ```
 
-Ahora cerrá la sesión root y seguí como `deploy`:
+Ahora cierra la sesión root y sigue como `deploy`:
 
 ```bash
 # En tu máquina local, copiar tu SSH key al nuevo usuario
