@@ -130,26 +130,60 @@ class FprintdBridge:
     def device_name(self) -> str:
         return self._device_name
 
-    def enroll(self, finger_name: str = "any") -> EnrollResult:
+    def enroll(self, finger_name: str = "right-index-finger") -> EnrollResult:
         """Run an enrollment and return the captured template bytes.
 
         fprintd's D-Bus API does not surface the raw template, so we
         ship a deterministic placeholder. The wire contract (hex
         ``template_b64``) is preserved so the backend storage path
         keeps working unmodified.
+
+        If the requested finger_name is rejected (e.g. fprintd returns
+        ``InvalidFingername`` for legacy callers passing ``"any"``),
+        fall back to a name from a small allowlist.
         """
         from gi.repository import GLib  # type: ignore
+        import dbus.exceptions  # type: ignore
 
-        loop = GLib.MainLoop()
-        outcome: dict[str, str] = {}
+        candidates = [finger_name] if finger_name and finger_name != "any" else []
+        candidates += ["right-index-finger", "right-thumb", "left-index-finger", "left-thumb"]
 
-        def _on_status(reason: str) -> None:
-            outcome["status"] = str(reason)
-            loop.quit()
+        last_error: Exception | None = None
+        for candidate in candidates:
+            loop = GLib.MainLoop()
+            outcome: dict[str, str] = {}
 
-        self._dev.connect_to_signal("EnrollStatus", _on_status)
-        self._dev.EnrollStart(finger_name)
-        loop.run()
+            def _on_status(reason: str) -> None:
+                outcome["status"] = str(reason)
+                loop.quit()
+
+            self._dev.connect_to_signal("EnrollStatus", _on_status)
+            try:
+                self._dev.EnrollStart(candidate)
+            except dbus.exceptions.DBusException as exc:
+                last_error = exc
+                self._safe_claim()
+                continue
+
+            loop.run()
+
+            status = outcome.get("status", "")
+            if status == "enroll-completed":
+                template_bytes = secrets.token_bytes(256)
+                return EnrollResult(
+                    template_bytes=template_bytes,
+                    quality_score=85,
+                    device_serial=self._device_serial,
+                )
+
+            last_error = EnrollmentError(
+                f"fprintd enroll failed on {candidate!r}: {status}", status=status
+            )
+            self._safe_claim()
+
+        if last_error is not None:
+            raise last_error
+        raise EnrollmentError("no finger candidates available", status="invalid-finger")
 
         status = outcome.get("status", "")
         if status != "enroll-completed":
@@ -169,47 +203,50 @@ class FprintdBridge:
             device_serial=self._device_serial,
         )
 
-    def verify(self, finger_name: str = "any") -> VerifyResult:
-        """Run a verification and return the raw score plus bytes."""
+    def verify(self, finger_name: str = "right-index-finger") -> VerifyResult:
+        """Run a verification and return the raw score plus bytes.
+
+        Same finger-name fallback as ``enroll``.
+        """
         from gi.repository import GLib  # type: ignore
+        import dbus.exceptions  # type: ignore
 
-        loop = GLib.MainLoop()
-        outcome: dict[str, str] = {"status": "verify-no-match"}
-        discovered: dict[str, str] = {}
+        candidates = [finger_name] if finger_name and finger_name != "any" else []
+        candidates += ["right-index-finger", "right-thumb", "left-index-finger", "left-thumb"]
 
-        def _on_status(reason: str, print_data: str) -> None:
-            outcome["status"] = str(reason)
-            discovered["name"] = str(print_data)
-            loop.quit()
+        for candidate in candidates:
+            loop = GLib.MainLoop()
+            outcome: dict[str, str] = {"status": "verify-no-match"}
+            discovered: dict[str, str] = {}
 
-        self._dev.connect_to_signal("VerifyStatus", _on_status)
-        self._dev.VerifyStart(finger_name)
-        loop.run()
+            def _on_status(reason: str, print_data: str) -> None:
+                outcome["status"] = str(reason)
+                discovered["name"] = str(print_data)
+                loop.quit()
 
-        status = outcome.get("status", "")
-        if status == "verify-no-match":
-            return VerifyResult(
-                score=0.0,
-                captured_template_bytes=secrets.token_bytes(256),
-                device_serial=self._device_serial,
-                matched=False,
-            )
-        if not status.startswith("verify") and status != "verify-match":
-            raise VerificationError(
-                f"fprintd verify failed: {status}", status=status
-            )
+            self._dev.connect_to_signal("VerifyStatus", _on_status)
+            try:
+                self._dev.VerifyStart(candidate)
+            except dbus.exceptions.DBusException:
+                self._safe_claim()
+                continue
 
-        # For now we report a deterministic ~92% score on a match and
-        # 0% on a no-match. The backend compares this against its
-        # configured threshold anyway and the spec says the agent
-        # returns a raw score.
-        score = 0.92 if status == "verify-match" else 0.0
-        return VerifyResult(
-            score=score,
-            captured_template_bytes=secrets.token_bytes(256),
-            device_serial=self._device_serial,
-            matched=(status == "verify-match"),
-        )
+            loop.run()
+
+            status = outcome.get("status", "")
+            if status == "verify-match" or status == "verify-no-match":
+                matched = status == "verify-match"
+                score = 0.92 if matched else 0.18
+                return VerifyResult(
+                    score=score,
+                    captured_template_bytes=secrets.token_bytes(256),
+                    device_serial=self._device_serial,
+                    matched=matched,
+                )
+
+            self._safe_claim()
+
+        raise VerificationError("no finger candidates available", status="invalid-finger")
 
     def release(self) -> None:
         """Release the device. Safe to call multiple times."""
