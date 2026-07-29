@@ -153,7 +153,7 @@ class FprintdBridge:
             loop = GLib.MainLoop()
             outcome: dict[str, str] = {}
 
-            def _on_status(reason: str) -> None:
+            def _on_status(reason: str, *_args) -> None:
                 outcome["status"] = str(reason)
                 loop.quit()
 
