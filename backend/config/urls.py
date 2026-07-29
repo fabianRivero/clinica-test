@@ -13,8 +13,9 @@ urlpatterns = [
     path("api/auth/", include("config.auth_urls")),
     path("api/tickets/", include("config.ticket_urls")),
     path("api/notifications/", include("config.notification_urls")),
+    path("api/biometric/", include("biometric.urls")),
     path("health/", healthcheck, name="healthcheck"),
-]
+]                      
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

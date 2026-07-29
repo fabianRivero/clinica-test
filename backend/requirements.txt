@@ -7,3 +7,7 @@ django-cors-headers==4.6.0
 whitenoise==6.9.0
 requests==2.32.3
 boto3==1.38.0
+# Biometric integration (DigitalPersona 4500). PR #1 stores Fernet
+# ciphertext for fingerprint templates; PR #2 will also use this for
+# any RSA signatures on the agent side.
+cryptography>=41.0.0

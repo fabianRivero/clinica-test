@@ -49,8 +49,9 @@ INSTALLED_APPS = [
     "billing",
     "clinical",
     "notifications",
+    "biometric.apps.BiometricConfig",
     "corsheaders",
-]
+]                      
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -82,6 +83,24 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+
+# ---------------------------------------------------------------------------
+# Biometric integration (DigitalPersona 4500, PR #1)
+#
+# Fail-fast is enforced in ``biometric.services.encryption`` at module
+# import time: a missing or malformed ``BIOMETRIC_FERNET_KEY`` raises
+# ``ImproperlyConfigured`` and the app refuses to start (spec
+# requirement 1, "Missing key fails fast at startup").
+# ---------------------------------------------------------------------------
+BIOMETRIC_FERNET_KEY = os.getenv("BIOMETRIC_FERNET_KEY", "")
+BIOMETRIC_MATCH_THRESHOLD = os.getenv("BIOMETRIC_MATCH_THRESHOLD", "0.85")
+BIOMETRIC_CAPTURE_TOKEN_TTL_SECONDS = os.getenv(
+    "BIOMETRIC_CAPTURE_TOKEN_TTL_SECONDS", "300"
+)
+AGENT_CLIENT_CLASS = os.getenv(
+    "AGENT_CLIENT_CLASS",
+    "biometric.services.agent_client.MockAgentClient",
+)
 
 USE_LOCAL_DB = env_bool("DJANGO_USE_LOCAL_DB", False)
 
@@ -172,3 +191,46 @@ CSRF_COOKIE_HTTPONLY = env_bool("DJANGO_CSRF_COOKIE_HTTPONLY", False)
 CSRF_COOKIE_SAMESITE = os.getenv("DJANGO_CSRF_COOKIE_SAMESITE", "None" if not DEBUG else "Lax")
 SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", not DEBUG)
 SESSION_COOKIE_SAMESITE = os.getenv("DJANGO_SESSION_COOKIE_SAMESITE", "None" if not DEBUG else "Lax")
+
+# ---------------------------------------------------------------------------
+# Logging configuration
+#
+# The biometric scrubber (``biometric.log_filters.BiometricLogScrubber``)
+# is attached to every handler so any log line emitted from the
+# ``biometric.*`` namespace has long base64-like blobs replaced with
+# ``<biometric-template-redacted>`` before reaching the handler. This
+# is the application-level mitigation for spec requirement 15,
+# "Application logs scrubbed".
+# ---------------------------------------------------------------------------
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "biometric_scrubber": {
+            "()": "biometric.log_filters.BiometricLogScrubber",
+        },
+    },
+    "formatters": {
+        "default": {
+            "format": "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "filters": ["biometric_scrubber"],
+            "formatter": "default",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+    "loggers": {
+        "biometric": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}

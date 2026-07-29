@@ -225,9 +225,30 @@ class Cliente(TimeStampedModel):
 
 
 class HuellaBiometricaCliente(TimeStampedModel):
+    """Stored fingerprint template per client.
+
+    The model is intentionally cross-sucursal: there is no ``sucursal_id``
+    and no ``dedo`` field. ``OneToOneField`` on ``cliente`` already
+    satisfies spec requirement "one fingerprint per client" and the
+    design's ``unique_together(cliente)`` constraint. ``updated_at``
+    comes from ``TimeStampedModel``.
+
+    The ``template_biometrico`` column is now a ``BinaryField`` storing
+    a Fernet ciphertext. Existing TextField rows are migrated to
+    ``NULL`` with ``activo=False`` and ``proveedor=MOCK_LEGACY`` so
+    re-enrollment under DigitalPersona is required.
+    """
+
     class Proveedor(models.TextChoices):
-        MOCK = "MOCK", "Simulador"
-        SECU_GEN = "SECU_GEN", "SecuGen"
+        MOCK_LEGACY = "MOCK_LEGACY", "Simulador (legacy, inactivo)"
+        SECU_GEN_LEGACY = "SECU_GEN_LEGACY", "SecuGen (legacy, inactivo)"
+        DIGITAL_PERSONA = "DIGITAL_PERSONA", "DigitalPersona 4500"
+
+    class TemplateFormat(models.TextChoices):
+        DP_PROPRIETARY = "DP_PROPRIETARY", "DigitalPersona proprietary"
+        ANSI_378 = "ANSI_378", "ANSI 378"
+        ISO_19794_2 = "ISO_19794_2", "ISO 19794-2"
+        UNKNOWN = "UNKNOWN", "Desconocido"
 
     cliente = models.OneToOneField(
         "customers.Cliente",
@@ -235,11 +256,17 @@ class HuellaBiometricaCliente(TimeStampedModel):
         related_name="huella_biometrica",
     )
     proveedor = models.CharField(
-        max_length=20,
+        max_length=24,
         choices=Proveedor.choices,
-        default=Proveedor.MOCK,
+        default=Proveedor.DIGITAL_PERSONA,
     )
-    template_biometrico = models.TextField()
+    template_biometrico = models.BinaryField(null=True, blank=True)
+    template_format = models.CharField(
+        max_length=24,
+        choices=TemplateFormat.choices,
+        default=TemplateFormat.UNKNOWN,
+    )
+    encrypted_template_key_id = models.CharField(max_length=40, blank=True, default="")
     device_serial = models.CharField(max_length=120, blank=True)
     calidad_captura = models.PositiveSmallIntegerField(default=0)
     consentimiento_aceptado = models.BooleanField(default=False)
@@ -252,6 +279,10 @@ class HuellaBiometricaCliente(TimeStampedModel):
         blank=True,
     )
     fecha_registro = models.DateTimeField(default=timezone.now)
+    last_match_at = models.DateTimeField(null=True, blank=True)
+    last_match_score = models.DecimalField(
+        max_digits=5, decimal_places=4, null=True, blank=True
+    )
 
     class Meta:
         db_table = "clientes_huellas_biometricas"
