@@ -884,8 +884,8 @@ class Command(BaseCommand):
         HuellaBiometricaCliente.objects.update_or_create(
             cliente=cliente_demo,
             defaults={
-                "proveedor": HuellaBiometricaCliente.Proveedor.MOCK,
-                "template_biometrico": "MOCK_TEMPLATE_DEMO_abc123def456",
+                "proveedor": HuellaBiometricaCliente.Proveedor.MOCK_LEGACY,
+                "template_biometrico": b"MOCK_TEMPLATE_DEMO_abc123def456",
                 "device_serial": "MOCK-DEVICE-001",
                 "calidad_captura": 85,
                 "consentimiento_aceptado": True,
@@ -971,8 +971,8 @@ class Command(BaseCommand):
         HuellaBiometricaCliente.objects.update_or_create(
             cliente=cliente_inactivo,
             defaults={
-                "proveedor": HuellaBiometricaCliente.Proveedor.MOCK,
-                "template_biometrico": "MOCK_TEMPLATE_CARLOS_xyz789ghi012",
+                "proveedor": HuellaBiometricaCliente.Proveedor.MOCK_LEGACY,
+                "template_biometrico": b"MOCK_TEMPLATE_CARLOS_xyz789ghi012",
                 "device_serial": "MOCK-DEVICE-002",
                 "calidad_captura": 90,
                 "consentimiento_aceptado": True,
