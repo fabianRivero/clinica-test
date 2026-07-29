@@ -71,10 +71,15 @@ scripts/.deploy-config
 # Script de deploy en raíz (legacy)
 deploy.sh
 
-# Commands de Django que resetean o purgan datos de DB (no para producción)
-backend/accounts/management/commands/purge_data_keep_admin.py
-backend/accounts/management/commands/seed_pdf_baseline.py
-backend/accounts/management/commands/seed_branch_test_scenarios.py
+# Commands de Django que resetan o purgan datos de DB (no para producción):
+# - purge_data_keep_admin: wipes ALL business tables, requires typing 'SI'.
+# - seed_pdf_baseline: wipes clinical data before seeding demo data.
+# - seed_branch_test_scenarios: requires seed_pdf_baseline to have run first.
+# These are intentionally tracked so they can be pulled to demo environments.
+# DO NOT run them against production data without a backup.
+# backend/accounts/management/commands/purge_data_keep_admin.py
+# backend/accounts/management/commands/seed_pdf_baseline.py
+# backend/accounts/management/commands/seed_branch_test_scenarios.py
 
 # Misc local artifacts
 *.log
