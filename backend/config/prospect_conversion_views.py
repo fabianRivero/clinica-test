@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 from datetime import date
@@ -287,8 +288,12 @@ def _build_initial_client_biometric_data(cliente):
     data = _blank_biometric_data()
     if hasattr(cliente, "huella_biometrica") and cliente.huella_biometrica.activo:
         huella = cliente.huella_biometrica
+        template_bytes = bytes(huella.template_biometrico) if huella.template_biometrico else b""
         data["provider"] = huella.proveedor
-        data["template"] = huella.template_biometrico
+        # Templates are binary (Fernet ciphertext). JSON requires
+        # base64 so the frontend can decode and (if needed) hand it
+        # back to the agent. Empty template -> empty string.
+        data["template"] = base64.b64encode(template_bytes).decode("ascii")
         data["quality"] = huella.calidad_captura
         data["deviceSerial"] = huella.device_serial
         data["consentAccepted"] = huella.consentimiento_aceptado
@@ -464,7 +469,7 @@ def _serialize_draft(draft):
         "medicalData": medical_data,
         "biometricData": {
             **initial_biometric_data,
-            **dict(draft.datos_biometria or {}),
+            **_normalize_biometric_draft_data(draft),
         },
     }
 
@@ -1097,10 +1102,27 @@ def _validate_biometric_step(payload):
     }, None
 
 
+def _normalize_biometric_draft_data(draft):
+    """Return the draft's ``datos_biometria`` with the ``template`` field
+    normalized so it can be JSON-serialized.
+
+    Legacy drafts (created when ``template_biometrico`` was a TextField
+    and held the literal string "pending-enrollment") and newer drafts
+    (which may have a Fernet ciphertext stored as bytes by some paths)
+    can both surface here. We coerce any bytes-typed template into a
+    base64 ascii string so the JSON encoder doesn't choke.
+    """
+    data = dict(draft.datos_biometria or {})
+    template = data.get("template")
+    if isinstance(template, (bytes, bytearray, memoryview)):
+        data["template"] = base64.b64encode(bytes(template)).decode("ascii")
+    return data
+
+
 def _admin_conversion_detail(draft):
     prospecto = draft.prospecto
     cliente = draft.cliente
-    
+
     service_config = None
     service_config_id = (draft.datos_operacion or {}).get("serviceConfigId")
     if service_config_id:
