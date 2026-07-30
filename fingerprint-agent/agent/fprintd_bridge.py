@@ -263,9 +263,9 @@ class FprintdBridge:
             outcome: dict[str, str] = {"status": "verify-no-match"}
             discovered: dict[str, str] = {}
 
-            def _on_status(reason: str, print_data: str) -> None:
-                outcome["status"] = str(reason)
-                discovered["name"] = str(print_data)
+            def _on_status(reason: str, *_args) -> None:
+                outcome["status"] = str(reason) if reason else "verify-no-match"
+                discovered["name"] = str(_args[0]) if _args else ""
                 loop.quit()
 
             self._dev.connect_to_signal("VerifyStatus", _on_status)
