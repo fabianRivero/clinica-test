@@ -373,6 +373,174 @@ def enroll_finalize(request, cliente_id: int):
 
 
 # ---------------------------------------------------------------------------
+# Cliente re-enrollment (overwrite existing template)
+# ---------------------------------------------------------------------------
+
+
+@csrf_exempt
+@require_POST
+def cliente_reenroll_init(request, cliente_id: int):
+    """Re-capture and overwrite the fingerprint for an existing cliente.
+
+    Unlike ``enroll_init`` (which only works for new clientes through
+    the prospect-convert flow), this endpoint is reachable from
+    /cms/clientes/<id>/ and updates the existing
+    ``HuellaBiometricaCliente`` row in place via ``update_or_create``.
+
+    Audit: writes a single ``BiometricAttempt(operation="ENROLL")`` row
+    on success. The previous template is overwritten and not preserved
+    in this column; the BiometricAttempt log is the trace.
+
+    Errors:
+    - 401: missing auth
+    - 403: not admin principal or admin sucursal
+    - 404: cliente not found
+    - 400: missing consent, agent failure, low quality, invalid template
+    - 503: no agent available
+    """
+    subject, err = _require_admin_principal_or_sucursal(request)
+    if err is not None:
+        return err
+
+    payload = load_payload(request)
+    if payload is None:
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido.", "code": "INVALID_JSON"}, status=400)
+
+    if not payload.get("consentimiento_aceptado"):
+        return json_response(
+            {"detail": "El consentimiento del cliente es obligatorio.", "code": "CONSENT_REQUIRED"},
+            status=400,
+        )
+
+    cliente = Cliente.objects.filter(pk=cliente_id).first()
+    if cliente is None:
+        return json_response({"detail": "Cliente no encontrado.", "code": "CLIENTE_NOT_FOUND"}, status=404)
+
+    if not hasattr(cliente, "huella_biometrica") or cliente.huella_biometrica is None:
+        return json_response(
+            {
+                "detail": "El cliente no tiene una huella registrada. Use el flujo de conversion de prospecto para enrolar por primera vez.",
+                "code": "NO_FINGERPRINT",
+            },
+            status=400,
+        )
+
+    capture_token = capture_token_store.create(
+        {"kind": "reenroll", "cliente_id": cliente_id, "user_id": subject.user.id},
+    )
+
+    active_agent = (
+        AgentToken.objects.filter(is_active=True)
+        .order_by("id")
+        .first()
+    )
+    if active_agent is None:
+        BiometricAttempt.objects.create(
+            cliente=cliente,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=False,
+            failure_reason=BiometricAttempt.FailureReason.NO_IMAGE,
+        )
+        return json_response(
+            {
+                "detail": "No hay ningun lector de huellas configurado en esta sede.",
+                "code": "NO_AGENT",
+            },
+            status=503,
+        )
+
+    try:
+        agent_client = get_agent_client()
+        capture = agent_client.capture(
+            active_agent, capture_token=capture_token, finger_name="any"
+        )
+    except AgentUnavailableError as exc:
+        BiometricAttempt.objects.create(
+            cliente=cliente,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=False,
+            failure_reason=BiometricAttempt.FailureReason.NO_IMAGE,
+        )
+        return json_response(
+            {"detail": "El lector de huellas no esta disponible.", "code": str(exc)},
+            status=503,
+        )
+    except AgentOperationError as exc:
+        BiometricAttempt.objects.create(
+            cliente=cliente,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=False,
+            failure_reason=BiometricAttempt.FailureReason.LOW_QUALITY,
+        )
+        return json_response(
+            {"detail": "La calidad de la huella capturada es insuficiente. Reintente.", "code": exc.code},
+            status=400,
+        )
+
+    if capture.quality_score < 50:
+        BiometricAttempt.objects.create(
+            cliente=cliente,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=False,
+            score=Decimal(capture.quality_score) / Decimal(100),
+            failure_reason=BiometricAttempt.FailureReason.LOW_QUALITY,
+        )
+        return json_response(
+            {"detail": "La calidad de captura es insuficiente.", "code": "LOW_QUALITY"},
+            status=400,
+        )
+
+    try:
+        template_bytes = bytes.fromhex(capture.template_b64)
+    except ValueError:
+        return json_response(
+            {"detail": "La plantilla recibida del lector es invalida.", "code": "INVALID_TEMPLATE"},
+            status=400,
+        )
+
+    ciphertext = encrypt_template(template_bytes)
+
+    with transaction.atomic():
+        huella, _ = HuellaBiometricaCliente.objects.update_or_create(
+            cliente=cliente,
+            defaults={
+                "proveedor": HuellaBiometricaCliente.Proveedor.DIGITAL_PERSONA,
+                "template_biometrico": ciphertext,
+                "template_format": capture.template_format or "DP_PROPRIETARY",
+                "device_serial": capture.device_serial,
+                "calidad_captura": capture.quality_score,
+                "consentimiento_aceptado": True,
+                "activo": True,
+                "registrado_por": subject.user,
+                "fecha_registro": timezone.now(),
+            },
+        )
+        BiometricAttempt.objects.create(
+            cliente=cliente,
+            usuario=subject.user,
+            operation=BiometricAttempt.Operation.ENROLL,
+            success=True,
+            score=Decimal(capture.quality_score) / Decimal(100),
+            agent_pc=active_agent,
+        )
+
+    return json_response(
+        {
+            "cliente_id": cliente.id,
+            "huella_id": huella.id,
+            "device_serial": huella.device_serial,
+            "calidad_captura": huella.calidad_captura,
+            "attempt_id": huella.id,
+        },
+        status=200,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Prospect enrollment (no Cliente yet)
 # ---------------------------------------------------------------------------
 

@@ -24,6 +24,11 @@ urlpatterns = [
         name="cliente-huella-enroll",
     ),
     path(
+        "clientes/<int:cliente_id>/huella/reenroll/",
+        views.cliente_reenroll_init,
+        name="cliente-huella-reenroll",
+    ),
+    path(
         "prospectos/<int:prospect_id>/huella/enroll/",
         views.prospect_enroll_init,
         name="prospecto-huella-enroll",
