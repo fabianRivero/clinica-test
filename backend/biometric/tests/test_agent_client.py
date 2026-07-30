@@ -173,7 +173,7 @@ class HttpAgentClientTests(SimpleTestCase):
         self.assertEqual(resp.width, 256)
         self.assertEqual(resp.height, 364)
 
-    def test_match_sends_template_and_returns_score(self):
+    def test_match_sends_capture_token_only(self):
         captured: dict = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -197,7 +197,11 @@ class HttpAgentClientTests(SimpleTestCase):
         )
 
         self.assertEqual(captured["url"], "https://agent.example.com/match")
-        self.assertIn(template.hex(), captured["body"])
+        # Wire payload only carries capture_token; the agent enforces
+        # the match against its internal state (fprintd's D-Bus API
+        # doesn't accept a reference template).
+        self.assertIn('"capture_token":"cap-xyz"', captured["body"])
+        self.assertNotIn("template_b64", captured["body"])
         self.assertEqual(resp.score, Decimal("0.91"))
 
     def test_capture_raises_on_5xx(self):

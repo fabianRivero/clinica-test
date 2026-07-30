@@ -284,12 +284,18 @@ class HttpAgentClient:
         template_bytes: bytes,
         capture_token: str,
     ) -> MatchResponse:
-        """POST ``/match`` to the agent and return the raw score."""
+        """POST ``/match`` to the agent and return the raw score.
+
+        Note: the captured template bytes are NOT sent in the wire
+        payload. fprintd's D-Bus API doesn't expose a way to inject a
+        reference template; the agent enforces the match against its
+        own internal state. The bytes are kept here so we can evolve
+        the protocol later without changing callers.
+        """
         url = self._agent_url(agent, "/match")
         headers = self._auth_headers(agent)
         payload = {
             "capture_token": capture_token or uuid.uuid4().hex,
-            "template_b64": template_bytes.hex(),
         }
 
         logger.info("HttpAgentClient.match -> %s token=%s", url, _hint(capture_token))
