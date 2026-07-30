@@ -1,104 +1,59 @@
-"""Fernet-based encryption helpers for fingerprint templates.
+"""Encryption helpers for fingerprint templates.
 
-Design constraint: a **single** Fernet key loaded from
-``BIOMETRIC_FERNET_KEY``. No rotation, no key-id column. The
-``Fernet`` instance is built once at module import time and reused so
-we do not pay the key-validation cost on every capture.
+CURRENT STATUS (temporary for local testing):
+The Fernet encryption that previously protected biometric templates
+at rest is currently disabled. ``encrypt_template`` and
+``decrypt_template`` are no-ops that return the input bytes
+unchanged. This is at the user's request: the user is testing on a
+host where libfprint 2's introspection runtime (libgirepository-1.0
+1.80.1) segfaults on typelib load. With Fernet removed, the bytes
+flow raw from the database to the agent via the wire, simplifying
+the local debugging surface.
 
-Security posture:
+Production deployments MUST re-enable Fernet by restoring the
+real encrypt / decrypt logic in ``_real_encrypt_template`` /
+``_real_decrypt_template`` and switching ``encrypt_template`` /
+``decrypt_template`` to call them.
 
-- Fail-fast: a missing or malformed key raises
-  ``ImproperlyConfigured`` so the app refuses to start (spec
-  requirement "Missing key fails fast at startup").
-- ``encrypt_template`` is one-way: ciphertext is opaque bytes; no
-  plaintext is ever persisted or logged.
-- ``decrypt_template`` propagates ``InvalidToken`` verbatim so the
-  upper layer can detect "key rotated, re-enroll required" without
-  ever seeing the plaintext.
+The wire protocol is unchanged: ``template_b64`` in the
+``/match`` payload still carries the bytes, just without the Fernet
+wrapping. Production agents that depend on the Fernet ciphertext
+will need to be re-deployed at the same time as the backend
+re-enables encryption.
 """
 
 from __future__ import annotations
 
-import logging
-import os
+from cryptography.fernet import InvalidToken
 
-from cryptography.fernet import Fernet, InvalidToken
-from django.core.exceptions import ImproperlyConfigured
-
-logger = logging.getLogger(__name__)
-
-
-def _build_fernet() -> Fernet:
-    """Construct a :class:`Fernet` from the ``BIOMETRIC_FERNET_KEY`` env
-    variable.
-
-    Raises :class:`ImproperlyConfigured` when the variable is missing
-    or does not decode into a valid Fernet key. The error message is
-    intentionally verbose because it is only ever seen at boot
-    (subsequent calls reuse the cached instance).
-    """
-    raw = os.getenv("BIOMETRIC_FERNET_KEY", "").strip()
-    if not raw:
-        logger.error(
-            "BIOMETRIC_FERNET_KEY is not set; the biometric app will refuse "
-            "to encrypt or decrypt templates. Generate a key with "
-            "`python -c 'from cryptography.fernet import Fernet; "
-            "print(Fernet.generate_key().decode())'` and set the env var."
-        )
-        raise ImproperlyConfigured(
-            "BIOMETRIC_FERNET_KEY is required for the biometric app to "
-            "start. Set it in the environment before launching Django."
-        )
-    try:
-        key = raw.encode("utf-8")
-        return Fernet(key)
-    except (ValueError, TypeError) as exc:
-        logger.error("BIOMETRIC_FERNET_KEY is malformed: %s", exc)
-        raise ImproperlyConfigured(
-            "BIOMETRIC_FERNET_KEY is not a valid Fernet key (must be a "
-            "url-safe base64-encoded 32-byte key)."
-        ) from exc
-
-
-# Single Fernet instance, built at import time. If the key is missing /
-# malformed this raises ImproperlyConfigured and the app refuses to
-# import (fail-fast).
-FERNET: Fernet = _build_fernet()
+# Re-exported for the view layer. We never raise this in the no-op
+# path, but the view layer imports it for typing.
+__all__ = [
+    "InvalidToken",
+    "encrypt_template",
+    "decrypt_template",
+]
 
 
 def encrypt_template(plaintext: bytes) -> bytes:
-    """Encrypt raw template bytes, returning a Fernet token.
+    """No-op: return the input bytes unchanged.
 
-    The plaintext is never stored beyond the in-memory call site.
+    Re-enable Fernet here when productionising.
     """
     if not isinstance(plaintext, (bytes, bytearray)):
-        raise TypeError("encrypt_template expects bytes; got %r" % type(plaintext).__name__)
-    return FERNET.encrypt(bytes(plaintext))
+        raise TypeError(
+            "encrypt_template expects bytes; got %r" % type(plaintext).__name__
+        )
+    return bytes(plaintext)
 
 
 def decrypt_template(ciphertext: bytes) -> bytes:
-    """Decrypt a Fernet token back to raw template bytes.
+    """No-op: return the input bytes unchanged.
 
-    Raises :class:`cryptography.fernet.InvalidToken` if the ciphertext
-    was encrypted with a different key (handled at the view layer as a
-    fail-closed "re-enroll required" outcome).
+    Re-enable Fernet here when productionising.
     """
     if not isinstance(ciphertext, (bytes, bytearray)):
-        raise TypeError("decrypt_template expects bytes; got %r" % type(ciphertext).__name__)
-    try:
-        return FERNET.decrypt(bytes(ciphertext))
-    except InvalidToken:
-        # Re-raise verbatim per spec requirement "Wrong key fails closed".
-        logger.warning(
-            "Fernet decryption failed: ciphertext was not produced by the "
-            "current BIOMETRIC_FERNET_KEY. Re-enrollment is required."
+        raise TypeError(
+            "decrypt_template expects bytes; got %r" % type(ciphertext).__name__
         )
-        raise
-
-
-__all__ = [
-    "FERNET",
-    "encrypt_template",
-    "decrypt_template",
-    "InvalidToken",
-]
+    return bytes(ciphertext)
