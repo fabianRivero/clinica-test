@@ -5,6 +5,7 @@ Wires:
 - ``GET  /health``  — unauthenticated (no bearer required).
 - ``POST /capture`` — bearer-protected; defers to :mod:`agent.capture`.
 - ``POST /match``   — bearer-protected; defers to :mod:`agent.match`.
+- ``POST /release`` — bearer-protected; defers to :mod:`agent.release`.
 - ``POST /heartbeat`` — bearer-protected; defers to :mod:`agent.heartbeat`.
 
 The agent server is intended to be launched via ``server.py`` which
@@ -18,7 +19,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 
-from agent import capture, heartbeat, match
+from agent import capture, heartbeat, match, release
 
 
 if TYPE_CHECKING:  # pragma: no cover - type-checking only
@@ -52,7 +53,7 @@ def build_app(
         description=(
             "Local HTTP service that wraps the DigitalPersona 4500 "
             "reader on each admin PC. Exposes /capture, /match, "
-            "/heartbeat and /health."
+            "/release, /heartbeat and /health."
         ),
     )
 
@@ -78,6 +79,7 @@ def build_app(
     # ---------------------------------------------------------------
     capture.register(app, config)
     match.register(app, config)
+    release.register(app, config)
     heartbeat.register(app, config)
 
     return app

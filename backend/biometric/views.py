@@ -641,6 +641,13 @@ def verify_init(request, cita_id: int):
     # it without touching the agent again.
     try:
         agent_client = get_agent_client()
+        # Force a Release+Claim cycle on the agent's device so
+        # fprintd's VerifyStart waits for a fresh finger contact
+        # instead of returning ``verify-no-match`` immediately from
+        # a cached state left by the previous attempt. The agent
+        # swallows reset failures internally; the bridge's own
+        # defensive ``_reset_claim`` is the second line of defence.
+        agent_client.release(agent)
         match_response = agent_client.match(
             agent,
             template_bytes=stored_template,

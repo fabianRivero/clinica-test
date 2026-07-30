@@ -37,4 +37,7 @@ name_match = 4500
 # Max time (seconds) to wait for an enroll to complete.
 enroll_timeout_seconds = 60
 # Max time (seconds) to wait for a verify to complete.
-verify_timeout_seconds = 30
+# Defaults to 120 so the operator always has plenty of time to place
+# a finger. Slow readers or cold-platen scenarios sometimes need 30-60s
+# to register a contact; the previous default of 30 was too tight.
+verify_timeout_seconds = 120

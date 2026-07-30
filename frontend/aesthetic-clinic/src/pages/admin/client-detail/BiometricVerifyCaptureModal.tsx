@@ -12,6 +12,19 @@ import { createPortal } from 'react-dom'
 import { biometricClient } from '../../../services/fingerprint/biometricClient'
 
 /**
+ * Minimum time (ms) the loading state stays on screen before the modal
+ * transitions to success/error. The DigitalPersona 4500 can return
+ * ``verify-no-match`` within ~200ms when fprintd has stale state from
+ * the previous attempt (the second ``VerifyStart`` never waits for a
+ * finger). Without this floor the operator would see the "Esperando
+ * huella..." message for a single frame before the error renders.
+ *
+ * 3000ms is short enough to feel responsive on a happy path and long
+ * enough for the operator to register the prompt.
+ */
+const MIN_LOADING_DISPLAY_MS = 3000
+
+/**
  * Modal that drives the biometric verify flow on the appointment
  * confirmation path.
  *
@@ -69,7 +82,29 @@ export function BiometricVerifyCaptureModal({
 
   const [state, setState] = useState<ModalState>({ kind: 'idle' })
 
+  // Ref that guards against double-clicks / re-entrant activations.
+  // ``state.kind === 'loading'`` would normally gate this, but the
+  // guard is checked synchronously inside ``handleActivate`` so a fast
+  // double-click before React re-renders the disabled button still
+  // gets rejected.
+  const inFlightRef = useRef(false)
+
   const isLoading = state.kind === 'loading'
+
+  /**
+   * Holds the loading state visible for at least ``MIN_LOADING_DISPLAY_MS``
+   * milliseconds. We always wait the remainder of the budget before
+   * transitioning to success/error so the operator sees the
+   * "Esperando huella..." prompt long enough to put a finger on the
+   * reader.
+   */
+  const ensureMinLoading = useCallback(async (startedAt: number) => {
+    const elapsed = Date.now() - startedAt
+    const remaining = MIN_LOADING_DISPLAY_MS - elapsed
+    if (remaining > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, remaining))
+    }
+  }, [])
 
   // Reset to idle whenever the modal opens so the operator always
   // sees the "Activar lector" affordance first. The pre-existing
@@ -129,6 +164,14 @@ export function BiometricVerifyCaptureModal({
   )
 
   const handleActivate = useCallback(async () => {
+    // Re-entrancy guard. The button is also disabled while loading,
+    // but a fast double-click before React commits the disabled prop
+    // can still hit this handler twice; we reject the second call
+    // synchronously instead of firing two parallel round-trips.
+    if (inFlightRef.current) return
+    inFlightRef.current = true
+
+    const startedAt = Date.now()
     setState({ kind: 'loading' })
 
     try {
@@ -139,6 +182,7 @@ export function BiometricVerifyCaptureModal({
       // error state so the operator clicks "Cancelar" and uses the
       // existing manual confirmation path.
       if (init.manual_only || init.has_fingerprint === false || !init.capture_token) {
+        await ensureMinLoading(startedAt)
         setState({
           kind: 'error',
           message: 'Este cliente no tiene huella registrada. Usa la confirmacion manual.',
@@ -150,6 +194,12 @@ export function BiometricVerifyCaptureModal({
         capture_token: init.capture_token,
         score: init.score ?? 0,
       })
+
+      // Hold the loading screen for the minimum display time so the
+      // operator always sees "Esperando huella..." long enough to put
+      // a finger on the reader — even when fprintd returned
+      // ``verify-no-match`` in <3000ms.
+      await ensureMinLoading(startedAt)
 
       if (confirm.matched) {
         setState({
@@ -175,6 +225,7 @@ export function BiometricVerifyCaptureModal({
       // Surface the backend's `detail` (already extracted by postJson)
       // instead of a generic "Failed to fetch" so the operator sees
       // the real reason (INVALID_TOKEN, LOW_QUALITY, etc.).
+      await ensureMinLoading(startedAt)
       setState({
         kind: 'error',
         message:
@@ -182,11 +233,23 @@ export function BiometricVerifyCaptureModal({
             ? caughtError.message
             : FALLBACK_ERROR_MESSAGE,
       })
+    } finally {
+      inFlightRef.current = false
     }
-  }, [citaId, onConfirmResult])
+  }, [citaId, ensureMinLoading, onConfirmResult])
 
   const handleRetry = useCallback(() => {
+    // Reset to idle and re-focus the dialog so the operator can
+    // immediately press "Activar lector" without having to Tab back
+    // to the focusable dialog wrapper. The in-flight guard is cleared
+    // by the ``finally`` in ``handleActivate`` so we don't need to
+    // touch it here, but we still clear it defensively in case the
+    // modal is closed and reopened mid-flight.
+    inFlightRef.current = false
     setState({ kind: 'idle' })
+    window.setTimeout(() => {
+      dialogRef.current?.focus()
+    }, 0)
   }, [])
 
   const handleSuccessClose = useCallback(() => {
@@ -235,7 +298,7 @@ export function BiometricVerifyCaptureModal({
           {state.kind === 'idle' ? (
             <div className="biometric-capture-modal__section">
               <p className="_m-0">
-                Pedile al cliente que apoye el dedo en el lector para confirmar la cita.
+                Pide al cliente que apoye el dedo en el lector para confirmar la cita.
               </p>
               <p className="_mt-sm biometric-capture-modal__hint">
                 Cuando estes listo, activa el lector. El sistema captura la huella,
@@ -252,6 +315,7 @@ export function BiometricVerifyCaptureModal({
                 </button>
                 <button
                   className="button"
+                  disabled={isLoading}
                   type="button"
                   onClick={handleActivate}
                 >

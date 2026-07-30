@@ -79,6 +79,14 @@ class MockAgentClientTests(unittest.TestCase):
             client = MockAgentClient()
             self.assertEqual(client.match_score, Decimal("0.42"))
 
+    def test_release_is_noop_for_mock(self):
+        """The mock has no device to reset; ``release`` must succeed
+        and never raise (the view layer calls it unconditionally
+        before every ``match``)."""
+        client = MockAgentClient(quality_score=80, match_score=0.91)
+        # Must not raise; returns None.
+        self.assertIsNone(client.release(agent=None))
+
 
 # ---------------------------------------------------------------------------
 # Factory
@@ -246,3 +254,51 @@ class HttpAgentClientTests(SimpleTestCase):
         client = HttpAgentClient(transport=httpx.MockTransport(handler))
         with self.assertRaises(AgentUnavailableError):
             client.match(agent=_fake_agent(), template_bytes=b"x", capture_token="y")
+
+    def test_release_posts_bearer_and_returns_silently(self):
+        """``release()`` POSTs to ``/release`` with the bearer token
+        and swallows the response body — failures must never raise
+        (a failed reset must not block the verify round-trip)."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["url"] = str(request.url)
+            captured["auth"] = request.headers.get("Authorization")
+            captured["body"] = request.read().decode("utf-8")
+            return httpx.Response(200, json={"status": "ok"})
+
+        client = HttpAgentClient(transport=httpx.MockTransport(handler))
+        # Must not raise.
+        client.release(agent=_fake_agent())
+        self.assertEqual(captured["url"], "https://agent.example.com/release")
+        self.assertEqual(captured["auth"], "Bearer raw-token-xyz")
+        self.assertEqual(captured["body"], "{}")
+
+    def test_release_swallows_5xx(self):
+        """A failing ``/release`` must not propagate — the bridge's
+        defensive ``_reset_claim`` is the second line of defence."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503, text="agent offline")
+
+        client = HttpAgentClient(transport=httpx.MockTransport(handler))
+        # Must NOT raise AgentUnavailableError.
+        client.release(agent=_fake_agent())
+
+    def test_release_swallows_transport_error(self):
+        """A network-level failure must also be swallowed."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("boom")
+
+        client = HttpAgentClient(transport=httpx.MockTransport(handler))
+        # Must NOT raise.
+        client.release(agent=_fake_agent())
+
+    def test_release_swallows_missing_public_url(self):
+        """An agent with no ``public_url`` cannot be reached; the
+        client must silently skip the reset instead of raising."""
+        agent = SimpleNamespace(public_url="", decrypt_raw_token=lambda: "x")
+        client = HttpAgentClient()
+        # Must NOT raise.
+        client.release(agent=agent)

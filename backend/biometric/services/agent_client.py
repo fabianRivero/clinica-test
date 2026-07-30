@@ -80,6 +80,20 @@ class BaseAgentClient(Protocol):
         capture_token: str,
     ) -> MatchResponse: ...
 
+    def release(
+        self,
+        agent: Any,
+    ) -> None:
+        """Reset the agent's device state.
+
+        Called by the backend immediately before a match so fprintd's
+        ``VerifyStart`` starts from a clean ``Release`` + ``Claim``
+        cycle. Implementations must never raise on transport errors —
+        a failed reset must not block the verify round-trip; the
+        in-bridge ``_reset_claim`` is the second line of defence.
+        """
+        ...
+
 
 # ---------------------------------------------------------------------------
 # Mock implementation
@@ -189,6 +203,15 @@ class MockAgentClient:
             score=self.match_score,
             captured_template_b64=secrets.token_hex(64),
         )
+
+    def release(self, agent: Any) -> None:
+        """No-op for the in-memory agent.
+
+        The mock never holds fprintd state, so there is nothing to
+        reset. Keeping the method on the class honours
+        :class:`BaseAgentClient` and lets views call it unconditionally.
+        """
+        return None
 
     @staticmethod
     def _seeded_template(capture_token: str) -> bytes:
@@ -304,6 +327,50 @@ class HttpAgentClient:
             score=Decimal(str(data.get("score", "0"))),
             captured_template_b64=str(data.get("captured_template_b64", "")),
         )
+
+    def release(self, agent: Any) -> None:
+        """POST ``/release`` to the agent to reset its fprintd state.
+
+        Called by the view layer immediately before each
+        ``/match`` so fprintd's ``VerifyStart`` starts from a clean
+        Release+Claim cycle and the operator actually gets the full
+        wait window to put a finger on the reader. We swallow every
+        failure (``AgentUnavailableError``, ``httpx`` transport
+        errors, non-2xx responses): a reset that fails must NEVER
+        block the verify round-trip; the bridge's own
+        ``_reset_claim`` is the second line of defence.
+        """
+        try:
+            url = self._agent_url(agent, "/release")
+            headers = self._auth_headers(agent)
+        except AgentUnavailableError as exc:
+            logger.info("HttpAgentClient.release skipped: %s", exc)
+            return
+
+        logger.info("HttpAgentClient.release -> %s", url)
+        try:
+            import httpx  # local import: optional dependency
+
+            try:
+                if self._transport is not None:
+                    with httpx.Client(transport=self._transport, timeout=self._timeout) as client:
+                        resp = client.post(url, headers=headers, json={})
+                else:
+                    with httpx.Client(timeout=self._timeout) as client:
+                        resp = client.post(url, headers=headers, json={})
+            except httpx.HTTPError as exc:
+                logger.info("HttpAgentClient.release transport error (ignored): %s", exc)
+                return
+        except ImportError:  # pragma: no cover - install-time failure
+            logger.info("HttpAgentClient.release skipped: httpx not installed")
+            return
+
+        if resp.status_code >= 400:
+            logger.info(
+                "HttpAgentClient.release got %d (ignored): %s",
+                resp.status_code,
+                (resp.text or "")[:200],
+            )
 
     # ------------------------------------------------------------------
     # Internals

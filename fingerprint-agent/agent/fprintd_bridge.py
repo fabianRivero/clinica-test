@@ -244,9 +244,23 @@ class FprintdBridge:
 
         Same retry-on-InvalidFingername policy as ``enroll``: never
         retry on real failures, only on bad finger names.
+
+        Before each ``VerifyStart`` we re-issue ``Release`` + ``Claim``
+        on the device. fprintd keeps internal state about the previous
+        match across ``VerifyStart`` calls — when the device is left
+        ``Claim``-ed between attempts the second ``VerifyStart`` often
+        returns ``verify-no-match`` within a few hundred milliseconds
+        without giving the operator time to put a finger on the
+        reader. The Release+Claim cycle forces fprintd to flush that
+        state so the next verify actually waits for a fresh contact.
+        Errors from the cycle are swallowed (logged) because
+        ``Release`` legitimately raises ``NotClaimed`` when the device
+        is already unclaimed.
         """
         from gi.repository import GLib  # type: ignore
         import dbus.exceptions  # type: ignore
+
+        self._reset_claim()
 
         if finger_name and finger_name != "any":
             candidates = [finger_name]
@@ -367,6 +381,33 @@ class FprintdBridge:
             self._dev.Claim(self.username)
         except Exception as exc:  # pragma: no cover - fprintd-specific
             logger.warning("Failed to re-claim after EnrollmentError: %s", exc)
+
+    def _reset_claim(self) -> None:
+        """Force the device back into a clean Claim state.
+
+        ``Release`` + ``Claim`` is issued at the start of every verify
+        so fprintd's internal ``VerifyStatus`` cache cannot leak between
+        attempts. ``Release`` legitimately raises ``NotClaimed`` when
+        the device is already unclaimed (e.g. right after a fresh
+        enroll), so we swallow that specific error and re-issue
+        ``Claim``. Any other exception is logged but never re-raised:
+        a transient failure to reset the device must not block a verify
+        attempt, the worst case is fprintd returning ``verify-no-match``
+        quickly (the existing fallback path) and the operator can still
+        retry.
+        """
+        try:
+            self._dev.Release()
+        except Exception as exc:  # pragma: no cover - fprintd-specific
+            # ``net.reactivated.Fprint.Error.NotClaimed`` is the
+            # expected outcome when the device was already unclaimed.
+            dbus_name = getattr(exc, "get_dbus_name", lambda: "")()
+            if "NotClaimed" not in str(dbus_name) and "NotClaimed" not in str(exc):
+                logger.debug("verify reset: Release raised (ignored): %s", exc)
+        try:
+            self._dev.Claim(self.username)
+        except Exception as exc:  # pragma: no cover - fprintd-specific
+            logger.warning("verify reset: Claim failed: %s", exc)
 
     def _release_only(self) -> None:
         """Release the device but do NOT re-claim.
