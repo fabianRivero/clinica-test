@@ -239,7 +239,15 @@ class FprintdBridge:
             device_serial=self._device_serial,
         )
 
-    def verify(self, finger_name: str = "right-index-finger") -> VerifyResult:
+    def verify(
+        self,
+        template_bytes: bytes = b"",
+        finger_name: str = "right-index-finger",
+    ) -> VerifyResult:
+        # ``template_bytes`` is accepted for API symmetry with the
+        # fprint2 bridge but ignored here: fprintd's D-Bus API does
+        # not let us pass an external template; the match is against
+        # the device's internal print store.
         """Run a verification and return the raw score plus bytes.
 
         Same retry-on-InvalidFingername policy as ``enroll``: never
