@@ -64,7 +64,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--bridge",
-        choices=("fprintd", "memory"),
+        choices=("fprint2", "fprintd", "memory"),
         default=None,
         help="Bridge driver (defaults to AGENT_BRIDGE env or 'fprintd').",
     )

@@ -469,7 +469,7 @@ def build_bridge(
     device_name_match: str,
     enroll_timeout_seconds: int,
     verify_timeout_seconds: int,
-) -> "FprintdBridge | InMemoryBridge":
+) -> "FprintdBridge | Fprint2Bridge | InMemoryBridge":
     """Construct the appropriate bridge based on the configured driver.
 
     The CLI / systemd launchers can force ``driver="memory"`` for
@@ -484,6 +484,13 @@ def build_bridge(
             enroll_timeout_seconds=enroll_timeout_seconds,
             verify_timeout_seconds=verify_timeout_seconds,
         )
+    if driver == "fprint2":
+        # Lazy import so the agent can still start on hosts where
+        # libfprint's Fprint-2.0 typelib is not available (e.g. broken
+        # libgirepository-1.0). The import raises at construction
+        # time if the typelib is genuinely missing.
+        from agent.fprint2_bridge import Fprint2Bridge
+        return Fprint2Bridge(username=fingerprint_username)
     raise ValueError(f"Unknown bridge driver: {driver!r}")
 
 
