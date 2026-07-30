@@ -267,7 +267,7 @@ export function AdminProspectConvertPage() {
         <SectionCard
           eyebrow="Paso 4"
           title="Huella biometrica"
-          description="Simula el enrolamiento con un lector SecuGen Hamster Pro 20. Esta capa queda lista para reemplazar el proveedor mock por la WebAPI real."
+          description="Recopilación de huella dactilar."
         >
           <ConversionStepBiometric
             biometricForm={biometricForm}

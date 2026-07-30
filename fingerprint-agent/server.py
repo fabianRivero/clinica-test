@@ -22,6 +22,19 @@ import logging
 import sys
 from pathlib import Path
 
+# Allow the agent to fall back to system-distributed dbus-python +
+# PyGObject when the venv cannot compile those C extensions (e.g. on
+# Ubuntu 24.04 where the girepository-2.0 pkg-config file was removed
+# from libgirepository1.0-dev). Harmless on systems where the venv
+# already has them.
+try:
+    import dbus  # noqa: F401
+    import gi  # noqa: F401
+except ImportError:
+    sys.path.insert(0, "/usr/lib/python3/dist-packages")
+    import dbus  # noqa: F401
+    import gi  # noqa: F401
+
 import uvicorn
 
 from agent.app import build_app

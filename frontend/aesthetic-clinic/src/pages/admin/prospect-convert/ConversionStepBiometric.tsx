@@ -52,7 +52,7 @@ export function ConversionStepBiometric({
         <div className="wizard-block__header">
           <div>
             <strong>Captura biometrica</strong>
-            <p>Solicita al cliente que apoye el dedo en el lector DigitalPersona 4500. La captura la orquesta el backend.</p>
+            <p>Solicita al cliente que apoye el dedo en el lector DigitalPersona 4500.</p>
           </div>
           <button
             className="button button--ghost button--compact"

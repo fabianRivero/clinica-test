@@ -251,8 +251,8 @@ export function BiometricCaptureModal({
                   : '.'}
               </strong>
               <p className="_mt-sm biometric-capture-modal__hint">
-                El template fue cifrado y guardado. Podes cerrar este dialogo y
-                continuar con la conversion.
+                El template fue cifrado y guardado. Puedes cerrar este diálogo y
+                continuar con la conversión.
               </p>
               <div className="_flex-end _flex-gap-md _mt-lg">
                 <button
