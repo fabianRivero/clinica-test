@@ -43,14 +43,21 @@ logger = logging.getLogger(__name__)
 class MatchRequest(BaseModel):
     """Body for ``POST /match``.
 
-    The agent enforces the match against its own internal state
-    (fprintd's D-Bus API can't accept a reference template), so
-    ``template_b64`` is optional. We still accept it for protocol
-    forward-compatibility.
+    The agent forwards ``template_b64`` (the Fernet-decrypted
+    reference template from the backend) to the active bridge. The
+    fprint2 bridge deserializes the bytes into an ``FpPrint`` via
+    ``Fprint.Print.deserialize`` and compares it against the live
+    capture. The fprintd bridge (which uses the device's internal
+    print store) ignores the bytes.
+
+    ``template_b64`` is hex-encoded because that's the format that
+    the wire layer has used since the agent's first release. Hex
+    matches what the backend HttpAgentClient sends (it hex-encodes
+    the Fernet-decrypted bytes before transmission).
     """
 
     capture_token: str = Field(..., min_length=4, max_length=128)
-    template_b64: str | None = Field(default=None, max_length=4096)
+    template_b64: str | None = Field(default=None, max_length=8192)
     finger_name: str = Field(default="right-index-finger", max_length=64)
 
 
@@ -80,15 +87,15 @@ def register(app, config: "AgentConfig") -> None:
     ) -> MatchResponse:
         await require(authorization=authorization)
 
-        # The agent ignores the supplied template bytes for now
-        # (fprintd's D-Bus API doesn't expose the match operation in
-        # a way that lets us pass a reference template). The actual
-        # comparison is left to the backend's threshold logic. The
-        # template is decoded to validate the format and surface a
-        # clean 400 on garbage input.
+        # The agent forwards the reference template (hex-encoded
+        # Fernet-decrypted bytes from the backend) to the active bridge.
+        # fprint2 deserializes the bytes into an FpPrint and compares
+        # against the live capture. fprintd ignores the bytes and uses
+        # its internal print store instead.
+        template_bytes: bytes = b""
         if req.template_b64:
             try:
-                bytes.fromhex(req.template_b64)
+                template_bytes = bytes.fromhex(req.template_b64)
             except (ValueError, TypeError):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -97,7 +104,10 @@ def register(app, config: "AgentConfig") -> None:
 
         bridge = request.app.state.fprintd_bridge
         try:
-            result = bridge.verify(req.finger_name)
+            result = bridge.verify(
+                template_bytes=template_bytes,
+                finger_name=req.finger_name,
+            )
         except DeviceNotFoundError as exc:
             logger.warning("Device not available: %s", exc)
             raise HTTPException(

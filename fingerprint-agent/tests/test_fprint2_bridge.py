@@ -223,8 +223,15 @@ def test_enroll_completes_via_callback(fake_gi: dict) -> None:
 
 
 def test_verify_match(fake_gi: dict) -> None:
+    """The deserialized reference is passed to verify_async when
+    Fprint.Print.deserialize is available, and the result is
+    RESULT_MATCH."""
     bridge_mod = importlib.import_module("agent.fprint2_bridge")
     importlib.reload(bridge_mod)
+
+    # Inject a stub deserialize on the fake Fprint.Print class.
+    ref_print = mock.MagicMock(name="ReferencePrint")
+    bridge_mod.Fprint.Print.deserialize = staticmethod(lambda _bytes: ref_print)
 
     match_obj = mock.MagicMock()
     match_obj.get_property.return_value = bridge_mod.Fprint.FingerMatchResult.RESULT_MATCH
@@ -239,6 +246,9 @@ def test_verify_no_match(fake_gi: dict) -> None:
     bridge_mod = importlib.import_module("agent.fprint2_bridge")
     importlib.reload(bridge_mod)
 
+    ref_print = mock.MagicMock(name="ReferencePrint")
+    bridge_mod.Fprint.Print.deserialize = staticmethod(lambda _bytes: ref_print)
+
     match_obj = mock.MagicMock()
     match_obj.get_property.return_value = bridge_mod.Fprint.FingerMatchResult.RESULT_NO_MATCH
     fake_gi["device"].verify_result = (match_obj, None)
@@ -251,6 +261,9 @@ def test_verify_no_match(fake_gi: dict) -> None:
 def test_verify_retry_raises(fake_gi: dict) -> None:
     bridge_mod = importlib.import_module("agent.fprint2_bridge")
     importlib.reload(bridge_mod)
+
+    ref_print = mock.MagicMock(name="ReferencePrint")
+    bridge_mod.Fprint.Print.deserialize = staticmethod(lambda _bytes: ref_print)
 
     match_obj = mock.MagicMock()
     match_obj.get_property.return_value = bridge_mod.Fprint.FingerMatchResult.RESULT_RETRY
@@ -265,29 +278,105 @@ def test_verify_error_propagates(fake_gi: dict) -> None:
     bridge_mod = importlib.import_module("agent.fprint2_bridge")
     importlib.reload(bridge_mod)
 
+    ref_print = mock.MagicMock(name="ReferencePrint")
+    bridge_mod.Fprint.Print.deserialize = staticmethod(lambda _bytes: ref_print)
+
     fake_gi["device"].verify_result = RuntimeError("libfprint broken")
     bridge = bridge_mod.Fprint2Bridge()
     with pytest.raises(bridge_mod.VerificationError):
         bridge.verify(b"template")
 
 
-def test_template_bytes_is_logged_but_does_not_control_match(fake_gi: dict) -> None:
-    """Two verifies with different template_bytes both rely on the
-    device's INTERNAL print store. The bridge must accept the bytes
-    for forward-compat but the match result is independent of them.
+def test_template_bytes_drives_the_match(fake_gi: dict) -> None:
+    """Two verifies with different template_bytes should produce
+    the same RESULT_MATCH result because Fprint.Print.deserialize
+    returns a print object that the device uses for comparison.
+    We assert the deserialize call was attempted for each.
     """
     bridge_mod = importlib.import_module("agent.fprint2_bridge")
     importlib.reload(bridge_mod)
+
+    deserialize_calls: list = []
+
+    def fake_deserialize(_bytes):
+        deserialize_calls.append(_bytes)
+        return mock.MagicMock(name="ReferencePrint")
+
+    bridge_mod.Fprint.Print.deserialize = staticmethod(fake_deserialize)
 
     match_obj = mock.MagicMock()
     match_obj.get_property.return_value = bridge_mod.Fprint.FingerMatchResult.RESULT_MATCH
     fake_gi["device"].verify_result = (match_obj, None)
     bridge = bridge_mod.Fprint2Bridge()
 
-    r1 = bridge.verify(b"template-A", finger_name="right-index-finger")
-    r2 = bridge.verify(b"template-B", finger_name="right-index-finger")
-    assert r1.matched == r2.matched == True
-    assert r1.score == r2.score == 0.92
+    bridge.verify(b"template-A", finger_name="right-index-finger")
+    bridge.verify(b"template-B", finger_name="right-index-finger")
+    assert deserialize_calls == [b"template-A", b"template-B"]
+
+
+def test_verify_with_empty_template_falls_back_to_internal_store(fake_gi: dict) -> None:
+    """When no template is sent (template_bytes empty), we fall back to
+    Fprint.Print.IGNORE so the device uses its internal print store.
+    This preserves backward compatibility with workflows that don't
+    yet pass templates over the wire.
+    """
+    bridge_mod = importlib.import_module("agent.fprint2_bridge")
+    importlib.reload(bridge_mod)
+
+    # Pre-seed verify_result so the bridge can populate state["match"]
+    # via the verify_finish call inside _on_verify.
+    match_obj = mock.MagicMock()
+    match_obj.get_property.return_value = bridge_mod.Fprint.FingerMatchResult.RESULT_MATCH
+    fake_gi["device"].verify_result = (match_obj, None)
+
+    # Track verify_async invocations to confirm we passed IGNORE
+    verify_async_calls: list = []
+
+    original_verify_async = fake_gi["device"].verify_async
+
+    def tracking_verify_async(print_arg, finger_arg, cancellable, callback, user_data):
+        verify_async_calls.append(print_arg)
+        return original_verify_async(
+            print_arg, finger_arg, cancellable, callback, user_data
+        )
+
+    fake_gi["device"].verify_async = tracking_verify_async  # type: ignore[method-assign]
+    bridge = bridge_mod.Fprint2Bridge()
+    bridge.verify(b"", finger_name="right-index-finger")
+    # Should have been called with Fprint.Print.IGNORE, not a deserialized print.
+    assert verify_async_calls[0] == bridge_mod.Fprint.Print.IGNORE
+
+
+def test_deserialize_unavailable_raises_clear_error(fake_gi: dict) -> None:
+    """If the libfprint version does not expose Fprint.Print.deserialize,
+    the verify path must surface a clear VerificationError rather than
+    silently using the internal print store.
+    """
+    bridge_mod = importlib.import_module("agent.fprint2_bridge")
+    importlib.reload(bridge_mod)
+
+    # Strip the deserialize attribute.
+    if hasattr(bridge_mod.Fprint.Print, "deserialize"):
+        delattr(bridge_mod.Fprint.Print, "deserialize")
+
+    bridge = bridge_mod.Fprint2Bridge()
+    with pytest.raises(bridge_mod.VerificationError) as exc_info:
+        bridge.verify(b"template")
+    assert exc_info.value.status == "deserialize-unsupported"
+
+
+def test_deserialize_failure_raises_clear_error(fake_gi: dict) -> None:
+    """If Fprint.Print.deserialize throws or returns None, surface the
+    failure rather than passing a None FpPrint to verify_async.
+    """
+    bridge_mod = importlib.import_module("agent.fprint2_bridge")
+    importlib.reload(bridge_mod)
+
+    bridge_mod.Fprint.Print.deserialize = staticmethod(lambda _b: None)
+    bridge = bridge_mod.Fprint2Bridge()
+    with pytest.raises(bridge_mod.VerificationError) as exc_info:
+        bridge.verify(b"template")
+    assert exc_info.value.status == "invalid-template"
 
 
 def test_release_swallows_errors(fake_gi: dict) -> None:

@@ -450,7 +450,14 @@ class InMemoryBridge:
             device_serial=self._device_serial,
         )
 
-    def verify(self, finger_name: str = "any") -> VerifyResult:
+    def verify(
+        self,
+        template_bytes: bytes = b"",
+        finger_name: str = "any",
+    ) -> VerifyResult:
+        # ``template_bytes`` is accepted for API symmetry with the
+        # fprint2 bridge but the memory bridge always returns a
+        # deterministic match score for the token used to seed it.
         return VerifyResult(
             score=self._default_score,
             captured_template_bytes=secrets.token_bytes(256),

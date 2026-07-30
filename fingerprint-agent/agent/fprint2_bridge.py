@@ -175,13 +175,14 @@ class Fprint2Bridge:
         """Run a verification.
 
         ``template_bytes`` is the Fernet-decrypted reference template
-        from the backend. libfprint 2's high-level async API does
-        not currently let us inject an external FpPrint, so the
-        match is against the device's internal print store (the
-        one populated by ``enroll`` on the same agent). We log the
-        length for diagnostics and proceed.
+        from the backend. We deserialize it back into an ``FpPrint``
+        via ``Fprint.Print.deserialize`` (the inverse of what
+        ``Fprint.Print.new(...).serialize()`` would produce) and pass
+        the resulting ``FpPrint`` to ``verify_async``. The live capture
+        is then compared against that reference, not against the
+        device's internal print store.
 
-        The match is determined by ``Fprint.FingerMatchResult``:
+        The match result is determined by ``Fprint.FingerMatchResult``:
         - ``RESULT_MATCH`` -> score=0.92, matched=True
         - ``RESULT_NO_MATCH`` -> score=0.18, matched=False
         - ``RESULT_RETRY`` -> VerificationError (treat as failure
@@ -192,10 +193,32 @@ class Fprint2Bridge:
             raise VerificationError(
                 "Fprint typelib not available", status="no-library"
             )
+
+        reference_print = None
         if template_bytes:
+            if not hasattr(Fprint.Print, "deserialize"):
+                # Older libfprint (1.94.7) may not expose deserialize
+                # on the Print class. Fall back to a clear error so the
+                # backend logs an INSUFFICIENT_STORAGE-style failure
+                # rather than silently using the internal print store.
+                raise VerificationError(
+                    "Fprint.Print.deserialize not available on this libfprint version",
+                    status="deserialize-unsupported",
+                )
+            try:
+                reference_print = Fprint.Print.deserialize(template_bytes)
+            except Exception as exc:
+                raise VerificationError(
+                    f"fprint2 could not deserialize reference template: {exc}",
+                    status="invalid-template",
+                )
+            if reference_print is None:
+                raise VerificationError(
+                    "fprint2 returned a null FpPrint from deserialize",
+                    status="invalid-template",
+                )
             logger.debug(
-                "Fprint2Bridge.verify received %d reference bytes; "
-                "using device internal print store for comparison",
+                "Fprint2Bridge.verify deserialized %d reference bytes to FpPrint",
                 len(template_bytes),
             )
 
@@ -215,13 +238,17 @@ class Fprint2Bridge:
             loop.quit()
 
         try:
-            # Fprint.Print.IGNORE tells the device to ignore any
-            # pre-existing print-store match and run a fresh scan +
-            # match. The finger_name parameter selects which
-            # registered finger to verify against.
-            self._dev.verify_async(
-                Fprint.Print.IGNORE, finger_name, None, _on_verify, None
-            )
+            # When we have a deserialized reference, pass it directly.
+            # Otherwise, fall back to Fprint.Print.IGNORE so the device
+            # uses its internal print store (legacy fprintd behaviour).
+            if reference_print is not None:
+                self._dev.verify_async(
+                    reference_print, finger_name, None, _on_verify, None
+                )
+            else:
+                self._dev.verify_async(
+                    Fprint.Print.IGNORE, finger_name, None, _on_verify, None
+                )
         except Exception as exc:
             self._safe_claim()
             raise VerificationError(f"fprint2 verify rejected: {exc}")
