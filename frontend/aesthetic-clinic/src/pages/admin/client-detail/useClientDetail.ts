@@ -250,10 +250,13 @@ export function useClientDetail(clientId: string) {
   async function handleConfirmBiometric(appointmentId: number) {
     setAppointmentActionId(appointmentId)
     try {
-      // 1. Backend returns capture_token + agent_url (and rejects early
-      //    if the cita is not in `REALIZADA_PENDIENTE_VERIFICACION`).
+      // Backend orchestrates the entire verification flow:
+      // verify_init runs the agent's /match against the client's stored
+      // template and returns the score; verify_confirm applies the
+      // threshold and transitions the cita. The frontend never talks
+      // to the agent directly.
       const init = await biometricClient.verifyInit(appointmentId)
-      if (init.manual_only || !init.capture_token || !init.agent_url) {
+      if (init.manual_only || !init.capture_token) {
         showNotification({
           title: 'Confirmar manualmente',
           message: 'Este cliente no tiene huella registrada. Usa la confirmacion manual.',
@@ -262,31 +265,11 @@ export function useClientDetail(clientId: string) {
         return
       }
 
-      // 2. Ask the local agent to capture+match. The agent's `/match`
-      //    endpoint accepts the same capture_token and returns a raw
-      //    score; the backend applies the threshold in step 3.
-      const matchResponse = await fetch(`${init.agent_url.replace(/\/$/, '')}/match`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          capture_token: init.capture_token,
-          template_b64: '',
-        }),
-      })
-      if (!matchResponse.ok) {
-        throw new Error(`El lector respondio ${matchResponse.status}.`)
-      }
-      const matchJson = (await matchResponse.json()) as { score: number }
-      const score = Number(matchJson.score)
-      if (!Number.isFinite(score)) {
-        throw new Error('El lector devolvio un score invalido.')
-      }
-
-      // 3. Backend pops the one-shot token, compares the score to the
-      //    threshold, transitions the cita, and writes the attempt.
       const confirm = await biometricClient.verifyConfirm(appointmentId, {
         capture_token: init.capture_token,
-        score,
+        // Score is informational on the response; backend computes
+        // match vs threshold itself. Pass through for completeness.
+        score: init.score ?? 0,
       })
 
       showNotification({

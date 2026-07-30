@@ -111,9 +111,9 @@ export interface BiometricVerifyInitResponse {
   has_fingerprint: boolean
   manual_only?: boolean
   capture_token?: string
-  agent_url?: string
-  agent_token_hint?: string
-  agent_id?: number
+  /** Backend-computed score from the agent's match call. 0..1. */
+  score?: number
+  /** Backend-configured threshold (DecimalField serialized as string). */
   threshold?: string
   cliente_id?: number
   cita_id?: number
