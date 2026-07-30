@@ -41,11 +41,17 @@ logger = logging.getLogger(__name__)
 
 
 class MatchRequest(BaseModel):
-    """Body for ``POST /match``."""
+    """Body for ``POST /match``.
+
+    The agent enforces the match against its own internal state
+    (fprintd's D-Bus API can't accept a reference template), so
+    ``template_b64`` is optional. We still accept it for protocol
+    forward-compatibility.
+    """
 
     capture_token: str = Field(..., min_length=4, max_length=128)
-    template_b64: str = Field(..., min_length=0, max_length=4096)
-    finger_name: str = Field(default="any", max_length=64)
+    template_b64: str | None = Field(default=None, max_length=4096)
+    finger_name: str = Field(default="right-index-finger", max_length=64)
 
 
 class MatchResponse(BaseModel):
@@ -80,13 +86,14 @@ def register(app, config: "AgentConfig") -> None:
         # comparison is left to the backend's threshold logic. The
         # template is decoded to validate the format and surface a
         # clean 400 on garbage input.
-        try:
-            bytes.fromhex(req.template_b64) if req.template_b64 else b""
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": "INVALID_TEMPLATE"},
-            )
+        if req.template_b64:
+            try:
+                bytes.fromhex(req.template_b64)
+            except (ValueError, TypeError):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"code": "INVALID_TEMPLATE"},
+                )
 
         bridge = request.app.state.fprintd_bridge
         try:
