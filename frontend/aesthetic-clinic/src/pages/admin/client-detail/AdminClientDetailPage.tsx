@@ -6,6 +6,7 @@ import { PageHeader } from '../../../components/admin/PageHeader'
 import { SectionCard } from '../../../components/admin/SectionCard'
 import { StatusBadge } from '../../../components/admin/StatusBadge'
 import { DataState } from '../../../components/admin/DataState'
+import { useNotifications } from '../../../providers/NotificationProvider'
 import { useClientDetail } from './useClientDetail'
 import { ClientReservationSection } from './ClientReservationSection'
 import { ClientFreeMedicalAppointmentSection } from './ClientFreeMedicalAppointmentSection'
@@ -13,13 +14,16 @@ import { ClientPaymentSection } from './ClientPaymentSection'
 import { ClientOperationList } from './ClientOperationList'
 import { ClientProfileModal } from './ClientProfileModal'
 import { RescheduleModal } from './RescheduleModal'
+import { BiometricVerifyCaptureModal } from './BiometricVerifyCaptureModal'
 
 export function AdminClientDetailPage() {
   const { clientId = '' } = useParams()
+  const { showNotification } = useNotifications()
   const {
     data,
     isLoading,
     error,
+    reload,
     navigate,
     ConfirmDialogModal,
 
@@ -100,7 +104,6 @@ export function AdminClientDetailPage() {
     appointmentActionId,
     handleCancelAppointment,
     handleMarkPendingBiometric,
-    handleConfirmBiometric,
     handleCancelFromVerification,
     handleCheckRescheduleAvailability,
     handleRescheduleAppointment,
@@ -112,6 +115,11 @@ export function AdminClientDetailPage() {
     rescheduleCheck,
     setRescheduleCheck,
     isCheckingReschedule,
+
+    // Biometric verify modal
+    verifyModalCitaId,
+    openVerifyBiometric,
+    closeVerifyBiometric,
 
     // Operations pagination
     visibleOperations,
@@ -327,7 +335,7 @@ export function AdminClientDetailPage() {
                         className="button button--ghost button--compact"
                         disabled={appointmentActionId !== null}
                         type="button"
-                        onClick={() => void handleConfirmBiometric(session.rawId)}
+                        onClick={() => openVerifyBiometric(session.rawId)}
                       >
                         {appointmentActionId === session.rawId ? 'Validando...' : 'Confirmar con huella'}
                       </button>
@@ -433,6 +441,36 @@ export function AdminClientDetailPage() {
         onCheckAvailability={handleCheckRescheduleAvailability}
         onConfirm={() => handleRescheduleAppointment(() => setRescheduleModalOpen(false))}
         isBookingKey={appointmentActionId ? 'reprogramming' : null}
+      />
+
+      <BiometricVerifyCaptureModal
+        open={verifyModalCitaId !== null}
+        citaId={verifyModalCitaId ?? 0}
+        onClose={closeVerifyBiometric}
+        onConfirmResult={({ matched, message, citaId: confirmedCitaId }) => {
+          if (matched) {
+            showNotification({
+              title: 'Huella confirmada',
+              message,
+              tone: 'success',
+            })
+          } else {
+            showNotification({
+              title: 'Huella rechazada',
+              message,
+              tone: 'warning',
+            })
+          }
+          // The modal fires onConfirmResult while the modal is still
+          // mounted; the actual refetch is triggered by onAfterAttempt
+          // when the operator clicks "Cerrar" on the success state.
+          void confirmedCitaId
+        }}
+        onAfterAttempt={() => {
+          // Refetch the surrounding page so the cita state reflects
+          // CONFIRMADA / BIOMETRICO without a manual reload.
+          reload()
+        }}
       />
     </div>
   )

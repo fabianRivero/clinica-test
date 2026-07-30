@@ -247,46 +247,21 @@ export function useClientDetail(clientId: string) {
     }
   }
 
-  async function handleConfirmBiometric(appointmentId: number) {
+  // The biometric confirm flow is now driven by BiometricVerifyCaptureModal.
+  // We only own the modal open/close state here; the modal owns the
+  // verify-init + verify-confirm round-trip and reports back via
+  // onConfirmResult. The modal lifecycle is also what keeps the button
+  // disabled (appointmentActionId is set while the modal is open).
+  const [verifyModalCitaId, setVerifyModalCitaId] = useState<number | null>(null)
+
+  function openVerifyBiometric(appointmentId: number) {
     setAppointmentActionId(appointmentId)
-    try {
-      // Backend orchestrates the entire verification flow:
-      // verify_init runs the agent's /match against the client's stored
-      // template and returns the score; verify_confirm applies the
-      // threshold and transitions the cita. The frontend never talks
-      // to the agent directly.
-      const init = await biometricClient.verifyInit(appointmentId)
-      if (init.manual_only || !init.capture_token) {
-        showNotification({
-          title: 'Confirmar manualmente',
-          message: 'Este cliente no tiene huella registrada. Usa la confirmacion manual.',
-          tone: 'info',
-        })
-        return
-      }
+    setVerifyModalCitaId(appointmentId)
+  }
 
-      const confirm = await biometricClient.verifyConfirm(appointmentId, {
-        capture_token: init.capture_token,
-        // Score is informational on the response; backend computes
-        // match vs threshold itself. Pass through for completeness.
-        score: init.score ?? 0,
-      })
-
-      showNotification({
-        title: confirm.matched ? 'Huella confirmada' : 'Huella rechazada',
-        message: confirm.message,
-        tone: confirm.matched ? 'success' : 'warning',
-      })
-      reload()
-    } catch (requestError) {
-      showNotification({
-        title: 'No se pudo confirmar la huella',
-        message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
-        tone: 'danger',
-      })
-    } finally {
-      setAppointmentActionId(null)
-    }
+  function closeVerifyBiometric() {
+    setVerifyModalCitaId(null)
+    setAppointmentActionId(null)
   }
 
   // -----------------------------------------------------------------
@@ -691,9 +666,13 @@ export function useClientDetail(clientId: string) {
     handleCancelFreeMedicalAppointment,
     handleConfirmFreeMedicalAppointment,
     handleMarkPendingBiometric,
-    handleConfirmBiometric,
     handleCancelFromVerification,
     refreshAgents,
+
+    // Biometric verify modal state
+    verifyModalCitaId,
+    openVerifyBiometric,
+    closeVerifyBiometric,
 
     // Agent online/offline state (5-minute heartbeat window)
     agents,
