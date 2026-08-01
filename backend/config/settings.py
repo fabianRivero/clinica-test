@@ -25,6 +25,25 @@ SECRET_KEY = os.getenv(
 )
 DEBUG = os.getenv("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver")
+
+# ---------------------------------------------------------------------------
+# Seed baseline configuration (reform-database-seed-scripts, decisions D4/D5)
+#
+# BASE_URL is the deployment's public origin. It is used as the fallback for
+# the admin URL footer emitted by ``seed_client_baseline`` when no explicit
+# ``SEED_ADMIN_URL`` is configured. Never hard-code a domain here.
+#
+# SEED_ADMIN_URL, when set, overrides ``BASE_URL + "/admin"``. Leave empty in
+# dev/test so the helper falls back to BASE_URL.
+#
+# ENVIRONMENT gates non-production seed commands (notably
+# ``seed_pdf_baseline``). Defaults to ``development`` so unset deployments
+# continue to allow the demo seed; set ``DJANGO_ENVIRONMENT=production`` to
+# reject it pre-transaction.
+# ---------------------------------------------------------------------------
+BASE_URL = os.getenv("DJANGO_BASE_URL", "http://localhost:8000")
+SEED_ADMIN_URL = os.getenv("DJANGO_SEED_ADMIN_URL", "")
+ENVIRONMENT = os.getenv("DJANGO_ENVIRONMENT", "development")
 if DEBUG:
     ALLOWED_HOSTS = sorted({*ALLOWED_HOSTS, "127.0.0.1", "localhost", "testserver"})
 
