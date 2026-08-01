@@ -37,31 +37,21 @@ Usage examples:
         --branch-name "Sede Nueva" ...
 """
 
-from decimal import Decimal
-
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.core.validators import validate_email
 from django.db import transaction
 
+from accounts.management._baselines.clean_baseline import seed_aesthetic_catalog
+from accounts.management._baselines.url import resolve_admin_url
 from accounts.models import Rol, Usuario
-from billing.models import CategoriaGasto
 from catalogs.models import (
-    AntecedenteMedico,
-    CirugiaEstetica,
-    GradoDeshidratacion,
-    GrosorPiel,
-    GrupoOpciones,
-    ImplanteInjerto,
-    OpcionCatalogo,
     PatologiaCutanea,
     ProcEstetico,
-    ProcEsteticosTipo,
     Sector,
     ServicioConfig,
     Sucursal,
-    TipoPiel,
     TipoServicio,
 )
 from operations.models import TabletKiosko
@@ -134,6 +124,16 @@ class Command(BaseCommand):
         # cleanly without partial state. Uniqueness checks against existing
         # rows are validations, not writes.
         self._validate_values(values)
+
+        # Resolve the admin URL up-front so a misconfiguration aborts the
+        # command before any baseline row is written. The same value is
+        # reused in the summary footer.
+        try:
+            self._admin_url = resolve_admin_url()
+        except ValueError as exc:
+            raise CommandError(
+                f"Invalid admin URL configuration: {exc}"
+            ) from exc
 
         existing_branch = Sucursal.objects.filter(
             es_principal=True, activa=True
@@ -435,280 +435,13 @@ class Command(BaseCommand):
         return kiosk
 
     def _seed_catalogs(self):
-        # 1. TipoServicio — 2 records
-        tipo_servicio_specs = {
-            "consulta": (
-                "Cita de consulta",
-                "Reserva para valoracion o control medico.",
-                1,
-            ),
-            "tratamiento": (
-                "Tratamiento estetico",
-                "Procedimientos de la ficha medica.",
-                2,
-            ),
-        }
-        tipo_servicio_by_key = {}
-        for key, (name, description, order) in tipo_servicio_specs.items():
-            item, _ = TipoServicio.objects.update_or_create(
-                tipo=name,
-                defaults={
-                    "descripcion": description,
-                    "orden": order,
-                    "activo": True,
-                },
-            )
-            tipo_servicio_by_key[key] = item
-
-        # 2. CategoriaGasto — 8 records
-        categoria_gasto_specs = [
-            ("Alquiler", "Gastos de alquiler de ambientes y espacios operativos."),
-            ("Servicios", "Agua, electricidad, internet y otros servicios recurrentes."),
-            ("Insumos", "Materiales e insumos usados por la sucursal."),
-            ("Equipamiento", "Compra o reposicion de equipos y herramientas."),
-            ("Marketing", "Publicidad, pauta y materiales comerciales."),
-            ("Sueldos", "Pagos administrativos relacionados con personal."),
-            ("Mantenimiento", "Reparaciones, limpieza y mantenimiento general."),
-            ("Otros", "Gastos administrativos no clasificados."),
-        ]
-        for name, description in categoria_gasto_specs:
-            CategoriaGasto.objects.update_or_create(
-                nombre=name,
-                defaults={"descripcion": description, "activo": True},
-            )
-
-        # 3. ProcEsteticosTipo — 1 record
-        procedure_type, _ = ProcEsteticosTipo.objects.update_or_create(
-            tipo="Laser",
-            defaults={
-                "descripcion": "Procedimientos laser de la ficha medica.",
-                "orden": 1,
-                "activo": True,
-            },
-        )
-
-        # 4. ProcEstetico — 3 records
-        procedure_specs = {
-            "depilacion": (
-                "Depilacion definitiva",
-                "Procedimiento de depilacion definitiva.",
-                1,
-                Decimal("850.00"),
-            ),
-            "manchas": (
-                "Tratamiento de manchas",
-                "Procedimiento para tratamiento de manchas.",
-                2,
-                Decimal("650.00"),
-            ),
-            "tatuajes": (
-                "Borrado de tatuajes",
-                "Procedimiento para borrado de tatuajes.",
-                3,
-                Decimal("1500.00"),
-            ),
-        }
-        for _key, (name, description, order, price) in procedure_specs.items():
-            procedure, _ = ProcEstetico.objects.update_or_create(
-                tipo_p_estetico=procedure_type,
-                proceso=name,
-                defaults={
-                    "descripcion": description,
-                    "orden": order,
-                    "activo": True,
-                },
-            )
-            ServicioConfig.objects.update_or_create(
-                tipo_servicio=tipo_servicio_by_key["tratamiento"],
-                proc_estetico=procedure,
-                defaults={"precio_base": price, "activo": True},
-            )
-
-        # 4th ServicioConfig — consulta priced 120.00
-        ServicioConfig.objects.update_or_create(
-            tipo_servicio=tipo_servicio_by_key["consulta"],
-            proc_estetico=None,
-            defaults={"precio_base": Decimal("120.00"), "activo": True},
-        )
-
-        # 5. AntecedenteMedico — 6 records
-        for order, name in enumerate(
-            ["Diabetes", "Asma", "Hipertension", "Cancer", "Otro", "Ninguna"],
-            start=1,
-        ):
-            AntecedenteMedico.objects.update_or_create(
-                nombre=name,
-                defaults={
-                    "descripcion": f"Opcion de antecedente: {name}.",
-                    "orden": order,
-                    "activo": True,
-                },
-            )
-
-        # 6. ImplanteInjerto — 5 records
-        for order, name in enumerate(
-            ["Menton", "Mejillas", "Nariz", "Otro", "Ninguno"],
-            start=1,
-        ):
-            ImplanteInjerto.objects.update_or_create(
-                nombre=name,
-                defaults={
-                    "descripcion": f"Opcion de implante o injerto: {name}.",
-                    "orden": order,
-                    "activo": True,
-                },
-            )
-
-        # 7. CirugiaEstetica — 7 records
-        for order, name in enumerate(
-            [
-                "Blefaroplastia",
-                "Rinoplastia",
-                "Bichectomia",
-                "Rinomodelacion",
-                "Lifting",
-                "Botox",
-                "Ninguna",
-            ],
-            start=1,
-        ):
-            CirugiaEstetica.objects.update_or_create(
-                nombre=name,
-                defaults={
-                    "descripcion": (
-                        f"Opcion de cirugia o tratamiento estetico: {name}."
-                    ),
-                    "orden": order,
-                    "activo": True,
-                },
-            )
-
-        # 8 + 9. GrupoOpciones (2) + OpcionCatalogo (4)
-        si_no_group, _ = GrupoOpciones.objects.update_or_create(
-            codigo="SI_NO",
-            defaults={
-                "nombre": "Si / No",
-                "descripcion": "Opciones binarias de la ficha medica.",
-                "activo": True,
-            },
-        )
-        for order, (code, label) in enumerate(
-            (("SI", "Si"), ("NO", "No")), start=1
-        ):
-            OpcionCatalogo.objects.update_or_create(
-                grupo=si_no_group,
-                codigo=code,
-                defaults={
-                    "nombre": label,
-                    "valor": label,
-                    "orden": order,
-                    "activo": True,
-                },
-            )
-
-        depth_group, _ = GrupoOpciones.objects.update_or_create(
-            codigo="PROFUNDIDAD_TATUAJE",
-            defaults={
-                "nombre": "Profundidad del tatuaje",
-                "descripcion": "Opciones del punto de borrado de tatuajes.",
-                "activo": True,
-            },
-        )
-        for order, (code, label) in enumerate(
-            (("SUPERFICIAL", "Superficial"), ("PROFUNDA", "Profunda")),
-            start=1,
-        ):
-            OpcionCatalogo.objects.update_or_create(
-                grupo=depth_group,
-                codigo=code,
-                defaults={
-                    "nombre": label,
-                    "valor": label,
-                    "orden": order,
-                    "activo": True,
-                },
-            )
-
-        # 10. TipoPiel — 6 records
-        for order, name in enumerate(
-            ["Piel normal", "Mixta", "Seca", "Grasa", "Desvitalizada", "Hidratada"],
-            start=1,
-        ):
-            TipoPiel.objects.update_or_create(
-                nombre=name,
-                defaults={
-                    "descripcion": f"Tipo de piel: {name}.",
-                    "orden": order,
-                    "activo": True,
-                },
-            )
-
-        # 11. GradoDeshidratacion — 3 records
-        for order, name in enumerate(["Leve", "Medio", "Alto"], start=1):
-            GradoDeshidratacion.objects.update_or_create(
-                nombre=name,
-                defaults={
-                    "descripcion": f"Grado de deshidratacion: {name}.",
-                    "orden": order,
-                    "activo": True,
-                },
-            )
-
-        # 12. GrosorPiel — 5 records
-        for order, name in enumerate(
-            ["Fina", "Media fina", "Media", "Media gruesa", "Gruesa"],
-            start=1,
-        ):
-            GrosorPiel.objects.update_or_create(
-                nombre=name,
-                defaults={
-                    "descripcion": f"Grosor de piel: {name}.",
-                    "orden": order,
-                    "activo": True,
-                },
-            )
-
-        # 13. PatologiaCutanea — 28 records
-        patologia_names = [
-            "Eritema",
-            "Telangiectasias",
-            "Papulas",
-            "Melasma",
-            "Hiperpigmentaciones",
-            "Ampollas",
-            "Couperosis",
-            "Pustulas",
-            "Arrugas",
-            "Estrellas vasculares",
-            "Vesiculas",
-            "Cicatrices",
-            "Quistes",
-            "Micosis",
-            "Dermatitis",
-            "Angiomas",
-            "Costra",
-            "Millium",
-            "Efelides",
-            "Hirsutismo",
-            "Comedones",
-            "Verruga",
-            "Rosacea",
-            "Queratosis",
-            "Urticaria",
-            "Eczema",
-            "Nodulos",
-            "Vitiligo",
-        ]
-        for order, name in enumerate(patologia_names, start=1):
-            PatologiaCutanea.objects.update_or_create(
-                nombre=name,
-                defaults={
-                    "descripcion": f"Patologia cutanea: {name}.",
-                    "orden": order,
-                    "activo": True,
-                },
-            )
-
+        # The full catalog baseline (TipoServicio, CategoriaGasto, the Laser
+        # procedure type, the three aesthetic procedures + ServicioConfig
+        # links, AntecedenteMedico, ImplanteInjerto, CirugiaEstetica,
+        # GrupoOpciones, OpcionCatalogo, TipoPiel, GradoDeshidratacion,
+        # GrosorPiel, PatologiaCutanea) lives in the shared library so the
+        # PDF demo command can converge on the same canonical set.
+        seed_aesthetic_catalog()
         self.stdout.write("  Catalog baseline seeded.")
 
     def _seed_sectors(self):
@@ -791,4 +524,4 @@ class Command(BaseCommand):
             f"  Kiosk secret:  "
             f"{self._summary_passwords.get('kiosk', '<hidden>')}"
         )
-        self.stdout.write("  URL Admin:     https://reactproject.site/admin")
+        self.stdout.write(f"  URL Admin:     {self._admin_url}")

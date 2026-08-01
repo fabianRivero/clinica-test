@@ -32,12 +32,12 @@ Chain strategy: pending
 
 ## Phase 2: Work Unit A2 — Library + URL/Env Helpers + Client Tests
 
-- [ ] 2.1 Create `backend/accounts/management/_baselines/__init__.py` + `clean_baseline.py` exposing `seed_roles`, `seed_branches`, `seed_admins`, `seed_staff`, `seed_aesthetic_catalog`, `seed_form_configuration`, `seed_prospects`, `seed_formal_patients`, `seed_schedules`, `seed_tablet_kiosks` as `update_or_create`; no `@transaction.atomic`.
-- [ ] 2.2 Create `_baselines/url.py::resolve_admin_url()` (D4) and `env_guard.py::require_dev_or_test()` (D5).
-- [ ] 2.3 In `commands/seed_client_baseline.py`, replace inline aesthetic literals with `clean_baseline.seed_aesthetic_catalog()` and footer URL with `resolve_admin_url()`; keep CLI/validation/prompts/transaction.
-- [ ] 2.4 In `tests/test_seed_client_baseline.py`, preserve 13 existing tests; add `test_admin_url_uses_settings_seed_admin_url`, `test_admin_url_falls_back_to_base_url`, `test_aesthetic_set_complete_when_partial`, `test_allergy_catalogs_unchanged`, `test_invalid_url_aborts_pre_write`.
-- [ ] 2.5 Add `tests/test_clean_baseline.py` with unit tests for `resolve_admin_url` (explicit/fallback/invalid) and `require_dev_or_test` (rejects prod/staging, accepts dev/test).
-- [ ] 2.6 Verify: `python manage.py test accounts.tests.test_seed_client_baseline accounts.tests.test_clean_baseline` — 13/13 + new tests pass; `seed_client_baseline --non-interactive ...` end-to-end.
+- [x] 2.1 Create `backend/accounts/management/_baselines/__init__.py` + `clean_baseline.py` exposing `seed_roles`, `seed_branches`, `seed_admins`, `seed_staff`, `seed_aesthetic_catalog`, `seed_form_configuration`, `seed_prospects`, `seed_formal_patients`, `seed_schedules`, `seed_tablet_kiosks` as `update_or_create`; no `@transaction.atomic`.
+- [x] 2.2 Create `_baselines/url.py::resolve_admin_url()` (D4) and `env_guard.py::require_dev_or_test()` (D5).
+- [x] 2.3 In `commands/seed_client_baseline.py`, replace inline aesthetic literals with `clean_baseline.seed_aesthetic_catalog()` and footer URL with `resolve_admin_url()`; keep CLI/validation/prompts/transaction.
+- [x] 2.4 In `tests/test_seed_client_baseline.py`, preserve 13 existing tests; add `test_admin_url_uses_settings_seed_admin_url`, `test_admin_url_falls_back_to_base_url`, `test_aesthetic_set_complete_when_partial`, `test_allergy_catalogs_unchanged`, `test_invalid_url_aborts_pre_write`.
+- [x] 2.5 Add `tests/test_clean_baseline.py` with unit tests for `resolve_admin_url` (explicit/fallback/invalid) and `require_dev_or_test` (rejects prod/staging, accepts dev/test).
+- [x] 2.6 Verify: `python manage.py test accounts.tests.test_seed_client_baseline accounts.tests.test_clean_baseline` — 13/13 + new tests pass; `seed_client_baseline --non-interactive ...` end-to-end.
 
 ## Phase 3: Work Unit B1 — PDF Rewrite + Env Guard + New Tests
 

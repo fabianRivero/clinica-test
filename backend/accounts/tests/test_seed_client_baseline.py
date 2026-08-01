@@ -1,12 +1,13 @@
 """Tests for the seed_client_baseline management command."""
 
+import io
 from decimal import Decimal
 from unittest import mock
 
 from django.contrib.auth.hashers import identify_hasher
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from accounts.management.commands.seed_client_baseline import Command
 from accounts.models import Rol, Usuario
@@ -15,6 +16,7 @@ from catalogs.models import (
     AntecedenteMedico,
     CirugiaEstetica,
     GradoDeshidratacion,
+    GravedadAlergia,
     GrosorPiel,
     GrupoOpciones,
     ImplanteInjerto,
@@ -22,9 +24,11 @@ from catalogs.models import (
     PatologiaCutanea,
     ProcEstetico,
     ProcEsteticosTipo,
+    ProductoAlergia,
     Sector,
     ServicioConfig,
     Sucursal,
+    TipoAlergia,
     TipoPiel,
     TipoServicio,
 )
@@ -324,6 +328,148 @@ class SeedClientBaselineTests(TestCase):
         self.assertEqual(TipoServicio.objects.count(), 0)
         # ProcEsteticosTipo was the first insert (before the boom); if the
         # transaction actually rolled back, it must be absent.
+        self.assertEqual(ProcEsteticosTipo.objects.count(), 0)
+
+    # -- Work Unit A2 new tests ------------------------------------------
+
+    @override_settings(SEED_ADMIN_URL="https://admin.example.com/admin/")
+    def test_admin_url_uses_settings_seed_admin_url(self):
+        """SEED_ADMIN_URL takes precedence and trailing slashes are normalized."""
+        out = io.StringIO()
+        call_command(
+            "seed_client_baseline",
+            "--non-interactive",
+            stdout=out,
+            **VALID_FLAGS,
+        )
+        self.assertIn(
+            "URL Admin:     https://admin.example.com/admin",
+            out.getvalue(),
+        )
+
+    @override_settings(
+        SEED_ADMIN_URL="",
+        BASE_URL="https://app.example.com/",
+    )
+    def test_admin_url_falls_back_to_base_url(self):
+        """When SEED_ADMIN_URL is empty, BASE_URL + /admin is used."""
+        out = io.StringIO()
+        call_command(
+            "seed_client_baseline",
+            "--non-interactive",
+            stdout=out,
+            **VALID_FLAGS,
+        )
+        self.assertIn(
+            "URL Admin:     https://app.example.com/admin",
+            out.getvalue(),
+        )
+
+    def test_aesthetic_set_complete_when_partial(self):
+        """Even when only the Laser type + one procedure exist, a successful
+        command run must complete the canonical aesthetic set without
+        duplicating any natural key."""
+        # Pre-create the type and the depilacion procedure so the catalog
+        # baseline starts "partially completed". The command must fill the
+        # gap (manchas, tatuajes) and reconcile prices.
+        procedure_type = ProcEsteticosTipo.objects.create(
+            tipo="Laser",
+            descripcion="Procedimientos laser de la ficha medica.",
+            orden=1,
+            activo=True,
+        )
+        existing_proc = ProcEstetico.objects.create(
+            tipo_p_estetico=procedure_type,
+            proceso="Depilacion definitiva",
+            descripcion="Procedimiento de depilacion definitiva.",
+            orden=1,
+            activo=True,
+        )
+
+        _run_with()
+
+        self.assertEqual(ProcEsteticosTipo.objects.count(), 1)
+        self.assertEqual(ProcEsteticosTipo.objects.get().pk, procedure_type.pk)
+        self.assertEqual(ProcEstetico.objects.count(), 3)
+        self.assertTrue(
+            ProcEstetico.objects.filter(
+                proceso="Depilacion definitiva"
+            ).exists()
+        )
+        self.assertTrue(
+            ProcEstetico.objects.filter(
+                proceso="Tratamiento de manchas"
+            ).exists()
+        )
+        self.assertTrue(
+            ProcEstetico.objects.filter(
+                proceso="Borrado de tatuajes"
+            ).exists()
+        )
+        # Existing procedure was reused, not duplicated, and reconciled.
+        existing_proc.refresh_from_db()
+        self.assertEqual(existing_proc.tipo_p_estetico_id, procedure_type.pk)
+        self.assertEqual(ServicioConfig.objects.count(), 4)
+        self.assertEqual(
+            ServicioConfig.objects.get(
+                proc_estetico__proceso="Depilacion definitiva"
+            ).precio_base,
+            Decimal("850.00"),
+        )
+
+    def test_allergy_catalogs_unchanged(self):
+        """Allergy catalogs MUST NOT be created or modified by the command.
+
+        Regression guard for the spec requirement 'Allergy catalogs remain
+        operator-managed' (proposal.md, success criteria).
+        """
+        ProductoAlergia.objects.create(
+            nombre="Penicilina", descripcion="Allergy.", orden=1, activo=True
+        )
+        TipoAlergia.objects.create(
+            nombre="Medicamento", descripcion="Type.", orden=1, activo=True
+        )
+        GravedadAlergia.objects.create(
+            nombre="Leve", descripcion="Severity.", orden=1, activo=True
+        )
+        snapshot = (
+            list(ProductoAlergia.objects.values_list("id", flat=True)),
+            list(TipoAlergia.objects.values_list("id", flat=True)),
+            list(GravedadAlergia.objects.values_list("id", flat=True)),
+        )
+
+        _run_with()
+
+        self.assertEqual(
+            list(ProductoAlergia.objects.values_list("id", flat=True)),
+            snapshot[0],
+        )
+        self.assertEqual(
+            list(TipoAlergia.objects.values_list("id", flat=True)),
+            snapshot[1],
+        )
+        self.assertEqual(
+            list(GravedadAlergia.objects.values_list("id", flat=True)),
+            snapshot[2],
+        )
+
+    @override_settings(
+        SEED_ADMIN_URL="not-a-valid-url",
+        BASE_URL="also-bad",
+    )
+    def test_invalid_url_aborts_pre_write(self):
+        """When both SEED_ADMIN_URL and BASE_URL are unusable, the command
+        aborts before any baseline row is written."""
+        with self.assertRaises(CommandError) as ctx:
+            _run_with()
+        self.assertIn("SEED_ADMIN_URL", str(ctx.exception))
+
+        # Nothing should have been written.
+        self.assertEqual(Rol.objects.count(), 0)
+        self.assertEqual(self._command_branches().count(), 0)
+        self.assertEqual(Usuario.objects.count(), 0)
+        self.assertEqual(TabletKiosko.objects.count(), 0)
+        self.assertEqual(TipoServicio.objects.count(), 0)
         self.assertEqual(ProcEsteticosTipo.objects.count(), 0)
 
 
