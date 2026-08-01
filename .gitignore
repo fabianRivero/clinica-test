@@ -17,6 +17,8 @@ venv/
 backend/env/
 backend/.venv/
 backend/venv/
+fingerprint-agent/agent-venv/
+fingerprint-agent/config.ini
 
 # Python and Django
 __pycache__/
