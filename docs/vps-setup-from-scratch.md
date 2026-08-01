@@ -236,6 +236,11 @@ DJANGO_CORS_ALLOWED_ORIGINS=https://<tu-dominio.com>
 DJANGO_CSRF_TRUSTED_ORIGINS=https://<tu-dominio.com>
 DJANGO_CSRF_COOKIE_SECURE=1
 DJANGO_SESSION_COOKIE_SECURE=1
+
+# Seeds (opcional): URL del footer de los comandos de seed y guard de entorno.
+# DJANGO_BASE_URL=https://<tu-dominio.com>          # default http://localhost:8000
+# DJANGO_SEED_ADMIN_URL=https://admin.<tu-dominio.com/admin>   # toma precedencia sobre BASE_URL
+# DJANGO_ENVIRONMENT=development                    # production bloquea seed_pdf_baseline
 ```
 
 **Generar `DJANGO_SECRET_KEY`:**
@@ -263,7 +268,7 @@ El sistema trae **4 comandos de seed** para 4 contextos distintos. Elegí el que
 |---|---|---|---|---|
 | 1 | `seed_client_baseline` | 4 roles + 1 Sucursal (te la pide) + admin general (te pide user/pass) + 1 tablet kiosk (te pide código/clave) + **catálogo base** (12 modelos con precios 850/650/1500/120) | No | **Producción real de un cliente.** ⭐ Opción recomendada para deploys nuevos. |
 | 2 | `seed_production_baseline` | 4 roles + 1 Sucursal fija (`Sede Principal`, La Paz) + admin fijo (`admin.general` / `admin123456`) + 1 kiosk fijo (`KIOSKO-PRINCIPAL` / `tablet-verify-123`). **Sin catálogos.** | No | Legado. Útil solo si querés arrancar con lo mínimo y cargar catálogos a mano. Reemplazado por `seed_client_baseline`. |
-| 3 | `seed_pdf_baseline` | Catálogo base + 3 sucursales + 3 admins + 4 especialistas + 5 especialidades + form config + 2 pacientes demo con huellas mock + 3 kiosks | **Sí** — wipea `HuellaBiometricaCliente`, `PagoRealizado`, `CuotaPlanPago`, `CitaMedica`, `Operacion` y todas las agendas antes de seedear | Demo, staging, capacitación. **Nunca en producción con datos reales.** |
+| 3 | `seed_pdf_baseline` | Catálogo base + 3 sucursales + 3 admins + 4 especialistas + 5 especialidades + form config + 2 prospectos + 2 pacientes demo (`INACTIVO`) + 3 kiosks. | **No** — no destructivo; solo `update_or_create` sobre natural keys. | Demo, staging, capacitación. **Rechaza correr con `DJANGO_ENVIRONMENT=production`** (ver "Guard de entorno" abajo). |
 | 4 | `seed_branch_test_scenarios` | 5 pacientes + 2 especialistas móviles + 12 gastos + 3 tickets | No, pero **requiere** `seed_pdf_baseline` previo | Test manual de flujos multi-sucursal. |
 
 ---
@@ -393,25 +398,22 @@ sudo -u www-data env/bin/python manage.py seed_production_baseline
 sudo -u www-data env/bin/python manage.py seed_pdf_baseline
 ```
 
-⚠️ **Wipea datos clínicos antes de seedear.** No lo corras en una base con datos reales.
-
 Útil para demos, staging, o capacitar a un cliente sobre cómo se ve el sistema poblado. Crea lo mismo que `seed_client_baseline` en términos de catálogo, **más**:
 
 - 2 Sucursales extra: `Sucursal Norte` (La Paz), `Sucursal Sur` (Santa Cruz).
-- 2 Admins extra: `admin.norte`, `admin.sur` (todos password `admin123456`).
+- 4 Admins: `admin.general` (clean), `admin.norte`, `admin.sur`, **`admin.demo`** (D6 — administrador dedicado para demos, todos password `admin123456`).
 - 4 Especialistas (usuarios): `lucia.laser`, `diego.tatuajes`, `sofia.manchas`, `rafael.consulta` — passwords `laser123456`, `tatuajes123456`, `manchas123456`, `consulta123456`.
 - 5 Especialidades + 4 Especialistas (vinculados).
 - 2 Prospectos (`PASAJERO`).
-- 2 Pacientes demo: `paciente.demo` / `paciente123456`, `paciente.inactivo` / `paciente123456`. **Cada uno con una `HuellaBiometricaCliente` mock** — `MOCK_TEMPLATE_DEMO_abc123def456` y `MOCK_TEMPLATE_CARLOS_xyz789ghi012`. Esto es porque el sistema todavía no tiene integración biométrica real (es un placeholder).
+- 2 Pacientes demo: `paciente.demo` / `paciente123456`, `paciente.inactivo` / `paciente123456` (ambos en estado `INACTIVO`).
 - Agendas: lun–vie 08:00–18:00 para cada especialista.
 - 3 Tablet kiosks: `KIOSKO-PRINCIPAL` / `tablet-principal-123`, `KIOSKO-NORTE` / `tablet-norte-123`, `KIOSKO-SUR` / `tablet-sur-123`.
 
-**Datos que el seed DESTRUYE antes de correr** (de `seed_pdf_baseline.py:1045-1050`):
+**No es destructivo:** la nueva implementación solo hace `update_or_create` sobre natural keys. No llama `Model.delete()` sobre ninguna tabla operacional (las 9 tablas de `exploration.md` quedan intactas). Si necesitás arrancar de cero, la convención es vaciar la base manualmente antes de correr el seed.
 
-- `HuellaBiometricaCliente` (todas las huellas)
-- `PagoRealizado`, `CuotaPlanPago`, `CitaMedica`, `Operacion` (todo el historial clínico de pagos y turnos)
+**Guard de entorno:** el comando aborta con `CommandError` antes de escribir nada si `settings.ENVIRONMENT` no es `development` o `test`. Por default `DJANGO_ENVIRONMENT=development` en el `.env.example` (los seeds siguen funcionando). Para bloquear el comando en producción seteá `DJANGO_ENVIRONMENT=production` en el `.env` del backend. No hay flag de override — el rechazo es duro.
 
-Por eso **no lo corras en producción con datos clínicos reales.**
+**Override del footer URL:** los comandos `seed_client_baseline` y `seed_pdf_baseline` derivan la URL del footer de la configuración del proyecto. Si en el `.env` definís `DJANGO_SEED_ADMIN_URL=https://admin.tu-dominio.com/admin` se usa esa URL exacta (con normalización de slashes). Si está vacía, se usa `DJANGO_BASE_URL + "/admin"` (default `http://localhost:8000`). Ambos comandos fallan con `CommandError` antes de tocar la base si ninguna de las dos es una URL `http(s)://` válida.
 
 ---
 

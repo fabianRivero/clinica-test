@@ -41,11 +41,11 @@ Chain strategy: pending
 
 ## Phase 3: Work Unit B1 — PDF Rewrite + Env Guard + New Tests
 
-- [ ] 3.1 Rewrite `commands/seed_pdf_baseline.py` `handle()`: `require_dev_or_test` pre-transaction, then `clean_baseline` helpers per D6/D9/D10 inside one `transaction.atomic`; remove `_clear_business_data`, `_clear_schedule_configuration`, and the `ADMINISTRADOR` purge.
-- [ ] 3.2 Add `admin.demo` to admin tuple (D6); use fixed identifiers (`prospecto.demo1`, `cliente.demo1`, `KIOSKO-DEMO-PRINCIPAL`) and module-level demo timestamps (D7); no `timezone.now()` outside constants.
-- [ ] 3.3 Create `tests/test_seed_pdf_baseline.py`: `test_env_guard_rejects_production` (CommandError pre-write, no rows), `test_env_guard_accepts_development_and_test`, `test_deterministic_record_counts_across_runs`, `test_demo_admin_distinct_from_clean_admin`, `test_no_delete_calls_on_operational_tables` (AST on nine tables), `test_full_baseline_reproduction`.
-- [ ] 3.4 Update `docs/vps-setup-from-scratch.md` 5.2: one short paragraph on `SEED_ADMIN_URL`/`BASE_URL` override and one on the `ENVIRONMENT` guard.
-- [ ] 3.5 Verify: `python manage.py test accounts.tests.test_seed_pdf_baseline` passes; `ENVIRONMENT=production python manage.py seed_pdf_baseline` aborts pre-write; rerun on dev yields identical record counts.
+- [x] 3.1 Rewrite `commands/seed_pdf_baseline.py` `handle()`: `require_dev_or_test` pre-transaction, then `clean_baseline` helpers per D6/D9/D10 inside one `transaction.atomic`; remove `_clear_business_data`, `_clear_schedule_configuration`, and the `ADMINISTRADOR` purge.
+- [x] 3.2 Add `admin.demo` to admin tuple (D6); use fixed identifiers (`prospecto.demo1`, `cliente.demo1`, `KIOSKO-DEMO-PRINCIPAL`) and module-level demo timestamps (D7); no `timezone.now()` outside constants.
+- [x] 3.3 Create `tests/test_seed_pdf_baseline.py`: `test_env_guard_rejects_production` (CommandError pre-write, no rows), `test_env_guard_accepts_development_and_test`, `test_deterministic_record_counts_across_runs`, `test_demo_admin_distinct_from_clean_admin`, `test_no_delete_calls_on_operational_tables` (AST on nine tables), `test_full_baseline_reproduction`.
+- [x] 3.4 Update `docs/vps-setup-from-scratch.md` 5.2: one short paragraph on `SEED_ADMIN_URL`/`BASE_URL` override and one on the `ENVIRONMENT` guard.
+- [x] 3.5 Verify: `python manage.py test accounts.tests.test_seed_pdf_baseline` passes; `ENVIRONMENT=production python manage.py seed_pdf_baseline` aborts pre-write; rerun on dev yields identical record counts.
 
 ## Phase 4: Rollout
 
