@@ -270,6 +270,7 @@ El sistema trae **4 comandos de seed** para 4 contextos distintos. Elegí el que
 | 2 | `seed_production_baseline` | 4 roles + 1 Sucursal fija (`Sede Principal`, La Paz) + admin fijo (`admin.general` / `admin123456`) + 1 kiosk fijo (`KIOSKO-PRINCIPAL` / `tablet-verify-123`). **Sin catálogos.** | No | Legado. Útil solo si querés arrancar con lo mínimo y cargar catálogos a mano. Reemplazado por `seed_client_baseline`. |
 | 3 | `seed_pdf_baseline` | Catálogo base + 3 sucursales + 3 admins + 4 especialistas + 5 especialidades + form config + 2 prospectos + 2 pacientes demo (`INACTIVO`) + 3 kiosks. | **No** — no destructivo; solo `update_or_create` sobre natural keys. | Demo, staging, capacitación. **Rechaza correr con `DJANGO_ENVIRONMENT=production`** (ver "Guard de entorno" abajo). |
 | 4 | `seed_branch_test_scenarios` | 5 pacientes + 2 especialistas móviles + 12 gastos + 3 tickets | No, pero **requiere** `seed_pdf_baseline` previo | Test manual de flujos multi-sucursal. |
+| 5 | `reset_pdf_baseline` | Lo mismo que `seed_pdf_baseline` (opción 3), pero **destructivo**: primero purga datos de negocio preservando admins y luego re-seeda la demo PDF, todo dentro de **una sola transacción**. | **Sí** — wipe + reseed atómico. `TRUNCATE` en Postgres, `DELETE` por tabla en SQLite. | Reset rápido de demo/staging cuando querés volver al estado PDF inicial sin pasos manuales. Idempotente. **Rechaza correr con `DJANGO_ENVIRONMENT=production`**. |
 
 ---
 
