@@ -9,11 +9,11 @@
 | Chained PRs recommended | Yes |
 | Suggested split | A1 → A2 → B1 (stacked-to-main) |
 | Delivery strategy | ask-on-risk |
-| Chain strategy | pending |
+| Chain strategy | stacked-to-main |
 
 Decision needed before apply: Yes
 Chained PRs recommended: Yes
-Chain strategy: pending
+Chain strategy: stacked-to-main
 400-line budget risk: Medium
 
 ### Suggested Work Units
@@ -49,6 +49,6 @@ Chain strategy: pending
 
 ## Phase 4: Rollout
 
-- [ ] 4.1 Land A1; confirm migration reverse on SQLite leaves FK rows intact.
-- [ ] 4.2 Land A2; confirm 13/13 client tests green before opening B1.
-- [ ] 4.3 Surface chain strategy (stacked-to-main vs feature-branch-chain) to user before apply; cache in `openspec/config.yaml` `persistence.chain_strategy` and update `Chain strategy` line.
+- [x] 4.1 Land A1; confirm migration reverse on SQLite leaves FK rows intact. *(Marked complete by `sdd-archive` reconciliation: A1 is operationally merged per `verify-report.md`; forward+reverse migration on SQLite verified with FK rows intact.)*
+- [x] 4.2 Land A2; confirm 13/13 client tests green before opening B1. *(Marked complete by `sdd-archive` reconciliation: A2 is operationally merged per `verify-report.md`; 55/55 tests green including the original 13 client tests.)*
+- [x] 4.3 Surface chain strategy (stacked-to-main vs feature-branch-chain) to user before apply; cache in `openspec/config.yaml` `persistence.chain_strategy` and update `Chain strategy` line. *(Resolved: user chose `stacked-to-main`; `openspec/config.yaml:64` updated to `chain_strategy: stacked-to-main`; forecast line above updated.)*

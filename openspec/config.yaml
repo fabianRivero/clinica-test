@@ -61,7 +61,7 @@ persistence:
   project: clinica-test
   delivery_strategy: ask-on-risk
   review_budget_lines: 400
-  chain_strategy: not_yet_set
+  chain_strategy: stacked-to-main
 
 strict_tdd: false
 # Note: pytest not installed; using Django's built-in unittest framework
