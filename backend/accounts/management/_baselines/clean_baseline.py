@@ -431,11 +431,72 @@ def seed_aesthetic_catalog():
     }
 
 
+# Demo FichaCampo seed scope: only the two PUNTO_D sections under the
+# depilacion and manchas procedures, plus the PUNTO_E section under the
+# tatuajes procedure. The literal specs match the historical
+# ``seed_pdf_baseline.py`` so the deterministic demo dataset is byte-stable
+# across refactors.
+DEPILATION_FIELDS = (
+    ("BRONCEADO", "Bronceado", FichaCampo.TipoCampo.SELECCION, "SI_NO"),
+    ("ISOTRETINOINA", "Isotretinoina", FichaCampo.TipoCampo.SELECCION, "SI_NO"),
+    ("DESODORANTES", "Desodorantes", FichaCampo.TipoCampo.SELECCION, "SI_NO"),
+    ("INFLAMATORIOS", "Antiinflamatorios", FichaCampo.TipoCampo.SELECCION, "SI_NO"),
+    ("TIPO_DEPILACION", "Tipo de depilacion", FichaCampo.TipoCampo.TEXTO, None),
+    ("DESORDEN_HORMONAL", "Desorden hormonal", FichaCampo.TipoCampo.SELECCION, "SI_NO"),
+    ("DIABETES_METFORMINA", "Diabetes (Metformina)", FichaCampo.TipoCampo.SELECCION, "SI_NO"),
+    ("HIPOTIROIDISMO", "Hipotiroidismo", FichaCampo.TipoCampo.SELECCION, "SI_NO"),
+    ("KETOCONAZOL", "Ketoconazol", FichaCampo.TipoCampo.SELECCION, "SI_NO"),
+    ("DIURETICOS", "Diureticos", FichaCampo.TipoCampo.SELECCION, "SI_NO"),
+    ("TIPO_VELLO", "Tipo de vello", FichaCampo.TipoCampo.TEXTO, None),
+    ("COLOR_VELLO", "Color", FichaCampo.TipoCampo.TEXTO, None),
+    ("GROSOR_VELLO", "Grosor", FichaCampo.TipoCampo.TEXTO, None),
+)
+
+TATTOO_FIELDS = (
+    ("TIEMPO_ANTIGUEDAD", "Tiempo de antiguedad", FichaCampo.TipoCampo.TEXTO, None),
+    ("PROFUNDIDAD_TATUAJE", "Profundidad del tatuaje", FichaCampo.TipoCampo.SELECCION, "PROFUNDIDAD_TATUAJE"),
+    ("COLOR_TATUAJE", "Color del tatuaje", FichaCampo.TipoCampo.TEXTO, None),
+    ("TIPO_CICATRIZACION", "Tipo de cicatrizacion", FichaCampo.TipoCampo.TEXTO, None),
+    ("PROTECTOR_SOLAR", "Protector solar", FichaCampo.TipoCampo.SELECCION, "SI_NO"),
+    ("OTROS_CUIDADOS", "Otros cuidados", FichaCampo.TipoCampo.TEXTO, None),
+    ("TIPO_COLOR_PIEL", "Tipo de color de piel", FichaCampo.TipoCampo.TEXTO, None),
+    ("AREA_CORPORAL", "Area corporal", FichaCampo.TipoCampo.TEXTO, None),
+    ("AREA_FACIAL", "Area facial", FichaCampo.TipoCampo.TEXTO, None),
+)
+
+
 def seed_form_configuration(procedures):
-    """Seed the three Sector rows and the matching ``FichaSeccion`` headers.
+    """Seed the three Sector rows, the matching ``FichaSeccion`` headers, and
+    the demo ``FichaCampo`` rows for the PDF baseline.
 
     ``procedures`` is a dict keyed by ``"depilacion"``, ``"manchas"``,
     ``"tatuajes"`` (matching the ``AESTHETIC_PROCEDURES`` keys).
+
+    The contract covers:
+
+    * Three ``Sector`` rows identified by their ``codigo`` (``DEP``, ``MAN``,
+      ``TAT``).
+    * Three ``FichaSeccion`` rows identified by ``(proc_estetico, codigo)``:
+      ``PUNTO_D`` under both the depilacion and manchas procedures (each
+      belongs to the ``DEP`` sector; the ``MAN`` sector is the historical
+      home for the manchas procedure but the helper only references it
+      via the seeded sector), and ``PUNTO_E`` under the tattoos procedure
+      (linked to the ``TAT`` sector).
+    * Per-section ``FichaCampo`` rows identified by ``(seccion, codigo)``:
+      the 13 depilation fields are written TWICE — once for the depilacion
+      ``PUNTO_D`` section and once for the manchas ``PUNTO_D`` section — so
+      each section owns its own independent field instances; the 9
+      tatuaje fields are written once for the tattoos ``PUNTO_E`` section.
+    * Field defaults: ``es_multiple`` matches ``MULTISELECCION`` (none of
+      the demo fields use it), ``permite_detalle=False``, ``requerido=False``,
+      ``activo=True``.
+    * Group references reuse the ``GrupoOpciones`` rows already produced by
+      ``seed_aesthetic_catalog`` (``SI_NO`` and ``PROFUNDIDAD_TATUAJE``);
+      this helper does NOT create new groups or options.
+
+    The helper is idempotent — every write uses ``update_or_create`` on
+    the natural key, so re-running ``seed_pdf_baseline`` reconciles stale
+    mutable values without duplicating rows.
 
     Used by B1.
     """
@@ -463,8 +524,9 @@ def seed_form_configuration(procedures):
         )
         sectors[codigo] = sector
 
+    section_lookup = {}
     for proc_key in ("depilacion", "manchas"):
-        FichaSeccion.objects.update_or_create(
+        section, _ = FichaSeccion.objects.update_or_create(
             proc_estetico=procedures[proc_key],
             codigo="PUNTO_D",
             defaults={
@@ -474,7 +536,8 @@ def seed_form_configuration(procedures):
                 "sector": sectors["DEP"],
             },
         )
-    FichaSeccion.objects.update_or_create(
+        section_lookup[(proc_key, "PUNTO_D")] = section
+    tattoos_section, _ = FichaSeccion.objects.update_or_create(
         proc_estetico=procedures["tatuajes"],
         codigo="PUNTO_E",
         defaults={
@@ -484,6 +547,67 @@ def seed_form_configuration(procedures):
             "sector": sectors["TAT"],
         },
     )
+    section_lookup[("tatuajes", "PUNTO_E")] = tattoos_section
+
+    # Resolve the demo GrupoOpciones rows AFTER section creation so the
+    # helper does not depend on any catalog row existence before its primary
+    # writes. Missing groups would raise IntegrityError on field write,
+    # which is the desired loud failure.
+    grupo_codigos = {group_code for _, _, _, group_code in DEPILATION_FIELDS}
+    grupo_codigos.update(
+        group_code for _, _, _, group_code in TATTOO_FIELDS
+    )
+    grupo_codigos.discard(None)
+    grupos_by_codigo = {
+        group.codigo: group
+        for group in GrupoOpciones.objects.filter(codigo__in=grupo_codigos)
+    }
+    missing = grupo_codigos - set(grupos_by_codigo)
+    if missing:
+        raise GrupoOpciones.DoesNotExist(
+            f"seed_form_configuration requires GrupoOpciones rows {sorted(missing)} "
+            "produced by seed_aesthetic_catalog; they were not found."
+        )
+
+    for proc_key in ("depilacion", "manchas"):
+        section = section_lookup[(proc_key, "PUNTO_D")]
+        for order, (code, label, field_type, group_code) in enumerate(
+            DEPILATION_FIELDS, start=1
+        ):
+            group = grupos_by_codigo.get(group_code) if group_code else None
+            FichaCampo.objects.update_or_create(
+                seccion=section,
+                codigo=code,
+                defaults={
+                    "etiqueta": label,
+                    "tipo_campo": field_type,
+                    "grupo_opciones": group,
+                    "es_multiple": field_type == FichaCampo.TipoCampo.MULTISELECCION,
+                    "permite_detalle": False,
+                    "requerido": False,
+                    "orden": order,
+                    "activo": True,
+                },
+            )
+
+    for order, (code, label, field_type, group_code) in enumerate(
+        TATTOO_FIELDS, start=1
+    ):
+        group = grupos_by_codigo.get(group_code) if group_code else None
+        FichaCampo.objects.update_or_create(
+            seccion=tattoos_section,
+            codigo=code,
+            defaults={
+                "etiqueta": label,
+                "tipo_campo": field_type,
+                "grupo_opciones": group,
+                "es_multiple": field_type == FichaCampo.TipoCampo.MULTISELECCION,
+                "permite_detalle": False,
+                "requerido": False,
+                "orden": order,
+                "activo": True,
+            },
+        )
 
 
 def seed_prospects(branches):
