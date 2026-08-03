@@ -32,11 +32,11 @@ Chain strategy: pending
 
 ## Phase 2: Backend Gates and Conversion
 
-- [ ] 2.1 Gate canonical enrollment, re-enrollment, finalize, verification init/confirm, and prospect enrollment in `backend/biometric/views.py` after auth/permissions but before validation, tokens, agent contact, or writes; return family-specific HTTP 503 contracts.
-- [ ] 2.2 Gate both legacy routes in `backend/config/api_views.py` (slash function) and `backend/config/api/viewsets/operaciones.py` (DRF no-slash action), preserving URL precedence and auth-before-gate semantics.
-- [ ] 2.3 Gate agent create/heartbeat/delete while retaining authorized list/history reads; force `last_seen_at` and activity unchanged, and suppress `canConfirmBiometric` plus template fields in `api_views._operation_detail` and `client_api_views._appointment_item`.
-- [ ] 2.4 Split conversion behavior in `backend/config/prospect_conversion_views.py`: new prospects use blank biometric data and skip capture/attempt migration; existing-client reactivation redacts templates, leaves `datos_biometria` byte-for-byte unchanged, and skips biometric upsert.
-- [ ] 2.5 Add backend regression coverage for auth-before-gate, canonical and both legacy routes, unchanged heartbeat timestamps, historical template redaction, new prospect versus reactivation, manual confirmation (`MANUAL`, `false`) versus unaffected tablet (`TABLET`, `false`), and **proof that `agent_client.release()` is unreachable while suspended (so views cannot accidentally 500 by calling `release` on the suspended client)** in existing biometric, prospect, conversion, and appointment test modules.
+- [x] 2.1 Gate canonical enrollment, re-enrollment, finalize, verification init/confirm, and prospect enrollment in `backend/biometric/views.py` after auth/permissions but before validation, tokens, agent contact, or writes; return family-specific HTTP 503 contracts.
+- [x] 2.2 Gate both legacy routes in `backend/config/api_views.py` (slash function) and `backend/config/api/viewsets/operaciones.py` (DRF no-slash action), preserving URL precedence and auth-before-gate semantics.
+- [x] 2.3 Gate agent create/heartbeat/delete while retaining authorized list/history reads; force `last_seen_at` and activity unchanged, and suppress `canConfirmBiometric` plus template fields in `api_views._operation_detail` and `client_api_views._appointment_item`.
+- [x] 2.4 Split conversion behavior in `backend/config/prospect_conversion_views.py`: new prospects use blank biometric data and skip capture/attempt migration; existing-client reactivation redacts templates, leaves `datos_biometria` byte-for-byte unchanged, and skips biometric upsert.
+- [x] 2.5 Add backend regression coverage for auth-before-gate, canonical and both legacy routes, unchanged heartbeat timestamps, historical template redaction, new prospect versus reactivation, manual confirmation (`MANUAL`, `false`) versus unaffected tablet (`TABLET`, `false`), and **proof that `agent_client.release()` is unreachable while suspended (so views cannot accidentally 500 by calling `release` on the suspended client)** in existing biometric, prospect, conversion, and appointment test modules.
 
 ## Phase 3: Frontend and Rollout
 

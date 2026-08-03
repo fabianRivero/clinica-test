@@ -20,6 +20,9 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from django.conf import settings
+from biometric.serializers import verification_suspended_payload
+
 from billing.models import CuotaPlanPago, PagoRealizado
 from operations.models import CitaMedica, EventoConfirmacionCita, Operacion
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
@@ -518,6 +521,9 @@ class CitasViewSet(viewsets.ViewSet):
         POST /citas/<int:appointment_id>/confirmar-biometria/
         Confirm appointment using biometric verification.
         """
+        if settings.BIOMETRIC_SUSPENDED:
+            return Response(verification_suspended_payload(), status=503)
+
         appointment = self._get_appointment(pk)
         if not appointment:
             return Response({"detail": "No encontramos la cita solicitada."}, status=404)
