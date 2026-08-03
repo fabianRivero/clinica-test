@@ -9,6 +9,74 @@ from __future__ import annotations
 
 from typing import Any
 
+# ---------------------------------------------------------------------------
+# Suspension contracts (change `suspend-fingerprint-integration`).
+#
+# When the ``BIOMETRIC_SUSPENDED`` flag is on, the backend must emit a
+# stable response family for every gated endpoint so legacy clients
+# keep receiving a recognisable payload instead of an exception. The
+# bodies below are the *only* accepted shapes for suspended responses;
+# view-level adapters (``json_response`` and DRF ``Response``) layer
+# the HTTP status (503) on top.
+# ---------------------------------------------------------------------------
+
+BIOMETRIC_SUSPENDED_CODE = "BIOMETRIC_SUSPENDED"
+
+# Human-readable message shared by every suspended body. Views MAY
+# override ``detail`` when a more specific explanation is useful (e.g.
+# agent lifecycle), but the ``code`` field is always this constant so
+# clients can switch on it.
+BIOMETRIC_SUSPENDED_DETAIL = (
+    "La verificación biométrica está suspendida temporalmente. "
+    "Use la confirmación manual."
+)
+
+
+def enrollment_suspended_payload() -> dict[str, Any]:
+    """Body for suspended enrollment / re-enrollment / finalize /
+    prospect-enrollment responses.
+
+    Shape (always HTTP 503): ``{detail, code, enrollment_available:false}``.
+    The ``enrollment_available`` flag is explicit so legacy clients can
+    distinguish "service unavailable" from "biometric disabled" without
+    parsing strings.
+    """
+    return {
+        "detail": BIOMETRIC_SUSPENDED_DETAIL,
+        "code": BIOMETRIC_SUSPENDED_CODE,
+        "enrollment_available": False,
+    }
+
+
+def verification_suspended_payload() -> dict[str, Any]:
+    """Body for suspended verification / canonical and legacy biometric
+    confirmation responses.
+
+    Shape (always HTTP 503): ``{detail, code, manual_only:true, matched:false}``.
+    ``manual_only`` mirrors the existing "no fingerprint registered"
+    response so the frontend already renders the manual confirmation
+    path; ``matched:false`` prevents any stale code path from
+    interpreting a suspended response as a successful match.
+    """
+    return {
+        "detail": BIOMETRIC_SUSPENDED_DETAIL,
+        "code": BIOMETRIC_SUSPENDED_CODE,
+        "manual_only": True,
+        "matched": False,
+    }
+
+
+def agent_suspended_payload() -> dict[str, Any]:
+    """Body for suspended agent create / heartbeat / delete responses.
+
+    Shape (always HTTP 503): ``{detail, code}``. Reads (list / detail)
+    are NOT gated here — the spec keeps authorized history visible.
+    """
+    return {
+        "detail": BIOMETRIC_SUSPENDED_DETAIL,
+        "code": BIOMETRIC_SUSPENDED_CODE,
+    }
+
 
 def agent_token_payload(token, *, include_raw: bool = False, raw: str = "") -> dict[str, Any]:
     """Serialize an :class:`AgentToken` for API responses.
@@ -71,4 +139,13 @@ def attempt_payload(attempt) -> dict[str, Any]:
     }
 
 
-__all__ = ["agent_token_payload", "huella_payload", "attempt_payload"]
+__all__ = [
+    "BIOMETRIC_SUSPENDED_CODE",
+    "BIOMETRIC_SUSPENDED_DETAIL",
+    "agent_suspended_payload",
+    "agent_token_payload",
+    "attempt_payload",
+    "enrollment_suspended_payload",
+    "huella_payload",
+    "verification_suspended_payload",
+]

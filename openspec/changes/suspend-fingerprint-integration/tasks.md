@@ -26,9 +26,9 @@ Chain strategy: pending
 
 ## Phase 1: Foundation and Contracts
 
-- [ ] 1.1 Add `BIOMETRIC_SUSPENDED` via `env_bool` in `backend/config/settings.py`, example deployment value in `backend/.env.example`, and shared response builders/contracts in `backend/biometric/serializers.py`; preserve all models, enums, routes, and data.
-- [ ] 1.2 Add `SuspendedAgentClient` and factory short-circuit in `backend/biometric/services/agent_client.py` and `factory.py`; ensure capture/match/release raise `AgentUnavailableError("BIOMETRIC_SUSPENDED")` without imports, token decryption, URL resolution, or sockets.
-- [ ] 1.3 Add deterministic client/factory tests in `backend/biometric/tests/test_agent_client.py` and `test_endpoints.py` proving no network/class loading and flag-off active behavior remains eligible.
+- [x] 1.1 Add `BIOMETRIC_SUSPENDED` via `env_bool` in `backend/config/settings.py`, example deployment value in `backend/.env.example`, and shared response builders/contracts in `backend/biometric/serializers.py`; preserve all models, enums, routes, and data.
+- [x] 1.2 Add `SuspendedAgentClient` and factory short-circuit in `backend/biometric/services/agent_client.py` and `factory.py`; ensure capture/match/release raise `AgentUnavailableError("BIOMETRIC_SUSPENDED")` without imports, token decryption, URL resolution, or sockets.
+- [x] 1.3 Add deterministic foundation tests in `backend/biometric/tests/test_agent_client.py` (suspended client + factory short-circuit) and a new `backend/biometric/tests/test_suspension_foundation.py` (shared response-builder contracts); prove no network/importlib/httpx traffic and that flag-off returns the active `HttpAgentClient`/`MockAgentClient` per existing selection rules. Endpoint-level gated behavior (HTTP 503 schemas, auth-before-gate, canonical/legacy routes) is explicitly deferred to task 2.5.
 
 ## Phase 2: Backend Gates and Conversion
 
@@ -36,7 +36,7 @@ Chain strategy: pending
 - [ ] 2.2 Gate both legacy routes in `backend/config/api_views.py` (slash function) and `backend/config/api/viewsets/operaciones.py` (DRF no-slash action), preserving URL precedence and auth-before-gate semantics.
 - [ ] 2.3 Gate agent create/heartbeat/delete while retaining authorized list/history reads; force `last_seen_at` and activity unchanged, and suppress `canConfirmBiometric` plus template fields in `api_views._operation_detail` and `client_api_views._appointment_item`.
 - [ ] 2.4 Split conversion behavior in `backend/config/prospect_conversion_views.py`: new prospects use blank biometric data and skip capture/attempt migration; existing-client reactivation redacts templates, leaves `datos_biometria` byte-for-byte unchanged, and skips biometric upsert.
-- [ ] 2.5 Add backend regression coverage for auth-before-gate, canonical and both legacy routes, unchanged heartbeat timestamps, historical template redaction, new prospect versus reactivation, and manual confirmation (`MANUAL`, `false`) versus unaffected tablet (`TABLET`, `false`) in existing biometric, prospect, conversion, and appointment test modules.
+- [ ] 2.5 Add backend regression coverage for auth-before-gate, canonical and both legacy routes, unchanged heartbeat timestamps, historical template redaction, new prospect versus reactivation, manual confirmation (`MANUAL`, `false`) versus unaffected tablet (`TABLET`, `false`), and **proof that `agent_client.release()` is unreachable while suspended (so views cannot accidentally 500 by calling `release` on the suspended client)** in existing biometric, prospect, conversion, and appointment test modules.
 
 ## Phase 3: Frontend and Rollout
 
