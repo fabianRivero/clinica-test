@@ -3,36 +3,53 @@ import { postJson } from '../api/apiClient'
 /**
  * Frontend wrapper for the DigitalPersona 4500 biometric flow.
  *
- * PR #1 / PR #2 move the capture and match orchestration to the Django
- * backend (which calls the local `fingerprint-agent` service over
- * Cloudflare Tunnel). The frontend never imports `mockFingerprint` or
- * talks to the agent directly: every request goes to Django, which
- * returns the metadata the UI needs.
+ * The frontend never imports `mockFingerprint` or talks to the agent
+ * directly: every request goes to Django, which calls the local
+ * `fingerprint-agent` service over Cloudflare Tunnel and returns the
+ * metadata the UI needs. Wire contract matches `backend/biometric/views.py`.
  *
- * Wire contract (matches `backend/biometric/views.py`):
- *
- *  - `enrollInit(clienteId, {consentimiento_aceptado})`
- *      Backend captures once via the agent, encrypts the template,
- *      persists a `HuellaBiometricaCliente` row (provider
- *      `DIGITAL_PERSONA`) and writes a `BiometricAttempt`. The response
- *      carries metadata only (no template bytes).
- *  - `verifyInit(citaId)`
- *      Backend returns `{capture_token, agent_url, threshold, ...}`
- *      if the cliente has a stored template. The frontend then asks
- *      the agent to capture+match by POSTing to `agent_url/match`
- *      with the same `capture_token`. The agent returns a raw score.
- *      If the cliente has no template, the backend answers
- *      `{has_fingerprint: false, manual_only: true}` so the UI hides
- *      the biometric button.
- *  - `verifyConfirm(citaId, {capture_token, agent_score})`
- *      Backend pops the one-shot token, compares the score to the
- *      configured threshold, transitions the cita to `CONFIRMADA` on
+ *  - `enrollInit(clienteId, {consentimiento_aceptado})` — backend
+ *      captures once via the agent, encrypts the template, persists a
+ *      `HuellaBiometricaCliente` row (provider `DIGITAL_PERSONA`) and
+ *      writes a `BiometricAttempt`. Response carries metadata only.
+ *  - `verifyInit(citaId)` — backend returns `{capture_token, ...}` if
+ *      the cliente has a stored template, or `{manual_only: true}` if
+ *      not (the UI hides the biometric button in that case).
+ *  - `verifyConfirm(citaId, {capture_token, score})` — backend pops the
+ *      one-shot token, compares the score, transitions the cita on
  *      match, and writes a `BiometricAttempt`.
- *  - `listAgents()`
- *      Backend returns all active `AgentToken` rows scoped to the
- *      admin's role. The UI uses `last_seen_at` to render the
- *      "reader offline" warning banner.
+ *  - `listAgents()` — backend returns active `AgentToken` rows. The UI
+ *      uses `last_seen_at` to render the "reader offline" banner.
+ *
+ * Suspension:
+ *
+ *  `isBiometricSuspended()` reads the build-time flag
+ *  `VITE_BIOMETRIC_SUSPENDED` (set by `backend/build.sh`). When `true`,
+ *  every capture/match/enroll call short-circuits at the source — no
+ *  HTTP request is emitted — and the agent heartbeat poll is skipped.
+ *  The backend `BIOMETRIC_SUSPENDED` env var remains authoritative;
+ *  if the flags diverge, the backend 503 response wins. Rebuild and
+ *  reload are required to change the frontend value at runtime.
  */
+
+const BIOMETRIC_SUSPENDED_RAW = import.meta.env.VITE_BIOMETRIC_SUSPENDED
+
+/**
+ * Returns `true` when the build was produced with
+ * `VITE_BIOMETRIC_SUSPENDED=true` (also accepts `1`, case-insensitive).
+ * Vite replaces `import.meta.env.VITE_*` at build time, so this value
+ * is immutable without a rebuild.
+ */
+export function isBiometricSuspended(): boolean {
+  const value = BIOMETRIC_SUSPENDED_RAW
+  if (typeof value !== 'string') return false
+  const normalized = value.trim().toLowerCase()
+  return normalized === '1' || normalized === 'true'
+}
+
+// Snapshot at module load. Kept private — callers should go through
+// `isBiometricSuspended()` so the contract stays explicit.
+const SUSPENDED: boolean = isBiometricSuspended()
 
 // ---------------------------------------------------------------------------
 // Enrollment
@@ -62,10 +79,28 @@ export interface BiometricEnrollInitResponse {
   }
 }
 
+/**
+ * Thrown by capture/match calls when the build flag
+ * `VITE_BIOMETRIC_SUSPENDED` is set. Callers can catch it to render
+ * the manual-only path. Distinct from network failures so tests and
+ * UI flows can differentiate "we deliberately didn't try" from "the
+ * backend is unreachable".
+ */
+export class BiometricSuspendedError extends Error {
+  readonly code = 'BIOMETRIC_SUSPENDED' as const
+  constructor(message = 'Biometric capture is temporarily suspended.') {
+    super(message)
+    this.name = 'BiometricSuspendedError'
+  }
+}
+
 export async function enrollInit(
   clienteId: number,
   payload: BiometricEnrollInitRequest,
 ): Promise<BiometricEnrollInitResponse> {
+  if (SUSPENDED) {
+    throw new BiometricSuspendedError('Captura por huella suspendida.')
+  }
   return postJson<BiometricEnrollInitResponse>(
     `/api/biometric/clientes/${clienteId}/huella/enroll/`,
     payload,
@@ -76,8 +111,8 @@ export async function enrollInit(
 // Prospect enrollment
 // ---------------------------------------------------------------------------
 //
-// The conversion wizard now captures the fingerprint at step 4, before
-// the prospect has been promoted to a `Cliente`. The backend endpoint
+// The conversion wizard captures the fingerprint at step 4, before the
+// prospect has been promoted to a `Cliente`. The backend endpoint
 // persists the row against the prospect and the finalize handler
 // re-attaches it to the freshly-created cliente atomically.
 
@@ -97,6 +132,9 @@ export async function prospectoEnrollInit(
   prospectoId: number,
   payload: BiometricEnrollInitRequest,
 ): Promise<ProspectEnrollResponse> {
+  if (SUSPENDED) {
+    throw new BiometricSuspendedError('Captura por huella suspendida.')
+  }
   return postJson<ProspectEnrollResponse>(
     `/api/biometric/prospectos/${prospectoId}/huella/enroll/`,
     payload,
@@ -107,9 +145,22 @@ export async function prospectoEnrollInit(
 // Verification
 // ---------------------------------------------------------------------------
 
+/**
+ * Reasons the verify-init response can come back without a capture
+ * token. `suspended` is the build-time VITE flag result and is
+ * distinct from `no_fingerprint` (cliente has no stored template).
+ */
+export type BiometricVerifyUnavailableReason = 'suspended' | 'no_fingerprint'
+
 export interface BiometricVerifyInitResponse {
   has_fingerprint: boolean
   manual_only?: boolean
+  /**
+   * When the verify path is unavailable, this field names the reason.
+   * `suspended` = build-time flag is on; `no_fingerprint` = cliente
+   * has no template on file. Absent on the happy path.
+   */
+  unavailable_reason?: BiometricVerifyUnavailableReason
   capture_token?: string
   /** Backend-computed score from the agent's match call. 0..1. */
   score?: number
@@ -141,6 +192,13 @@ export interface BiometricVerifyConfirmResponse {
 }
 
 export async function verifyInit(citaId: number): Promise<BiometricVerifyInitResponse> {
+  if (SUSPENDED) {
+    return {
+      has_fingerprint: false,
+      manual_only: true,
+      unavailable_reason: 'suspended',
+    }
+  }
   return postJson<BiometricVerifyInitResponse>(
     `/api/biometric/citas/${citaId}/huella/verify-init/`,
     {},
@@ -151,6 +209,9 @@ export async function verifyConfirm(
   citaId: number,
   payload: BiometricVerifyConfirmRequest,
 ): Promise<BiometricVerifyConfirmResponse> {
+  if (SUSPENDED) {
+    throw new BiometricSuspendedError('Verificacion por huella suspendida.')
+  }
   return postJson<BiometricVerifyConfirmResponse>(
     `/api/biometric/citas/${citaId}/huella/verify-confirm/`,
     payload,
@@ -173,6 +234,9 @@ export interface AgentListItem {
 }
 
 export async function listAgents(): Promise<AgentListItem[]> {
+  if (SUSPENDED) {
+    return []
+  }
   const response = await postJson<{ results: AgentListItem[] }>(
     '/api/biometric/agents/',
     {},
@@ -188,11 +252,8 @@ const DEFAULT_OFFLINE_THRESHOLD_MS = 5 * 60 * 1000
 
 /**
  * Returns `true` if the agent's heartbeat is fresh enough to be
- * considered online. We compare against `nowMs` (defaults to `Date.now()`)
- * with a 5-minute window to match `design.md` §7 / spec requirement 11.
- *
- * `null` `last_seen_at` means the agent has never reported in; that is
- * always treated as offline so the UI shows the warning banner.
+ * considered online. `null` `last_seen_at` is treated as offline so
+ * the warning banner renders.
  */
 export function isAgentOnline(
   lastSeenAt: string | null,
@@ -216,6 +277,7 @@ export const biometricClient = {
   verifyConfirm,
   listAgents,
   isAgentOnline,
+  isBiometricSuspended,
 }
 
 export default biometricClient

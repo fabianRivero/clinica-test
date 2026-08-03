@@ -12,6 +12,9 @@ interface ClientAppointmentSectionProps {
   appointmentYear: number
   changeAppointmentMonth: (direction: -1 | 1) => void
   viewedMonthLabel: string
+  // Propagated by the parent (which reads `isBiometricSuspended()`
+  // once). Keeps this component free of build-flag plumbing.
+  biometricSuspended: boolean
   // Filter
   appointmentStatusFilter: string
   setAppointmentStatusFilter: (value: string) => void
@@ -61,6 +64,7 @@ export function ClientAppointmentSection({
   rescheduleTime,
   rescheduleCheck,
   isCheckingReschedule,
+  biometricSuspended,
   onCancelAppointment,
   onCancelFreeMedicalAppointment,
   onConfirmFreeMedicalAppointment,
@@ -178,7 +182,7 @@ export function ClientAppointmentSection({
                           Cancelar reserva
                         </button>
                       ) : null}
-                      {appointment.canConfirmBiometric ? (
+                      {appointment.canConfirmBiometric && !biometricSuspended ? (
                         <button
                           className="button button--ghost button--compact"
                           disabled={appointmentActionId !== null}
