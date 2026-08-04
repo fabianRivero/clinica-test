@@ -43,6 +43,7 @@ import {
 import {
   enrollInit as biometricEnrollInit,
   prospectoEnrollInit as biometricProspectoEnrollInit,
+  isBiometricSuspended,
 } from '../../../services/fingerprint/biometricClient'
 
 type UseConversionWizardParams = {
@@ -72,6 +73,7 @@ type UseConversionWizardReturn = {
   biometricStatus: string | null
   biometricModalOpen: boolean
   biometricModalSubjectName: string
+  biometricSuspended: boolean
   medicalDocumentFile: File | null
   paymentQrImageUrl: string
   qrModalOpen: boolean
@@ -125,6 +127,9 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
   const navigate = useNavigate()
   const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
   const { showNotification } = useNotifications()
+
+  // Build-time flag, immutable for the lifetime of this bundle.
+  const biometricSuspended = isBiometricSuspended()
 
   const [data, setData] = useState<ProspectConversionResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -506,6 +511,24 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     calidadCaptura?: number
   }> => {
     resetFeedback()
+    // When the build flag is on, the wizard must skip the capture
+    // round-trip entirely. We still mark the local step as "captured"
+    // so the existing UX (continue / finalize) stays usable. The
+    // backend finalize handler skips the biometric upsert in this
+    // mode, so an empty template is acceptable.
+    if (biometricSuspended) {
+      setBiometricForm((current) => ({
+        ...current,
+        provider: current.provider || 'DIGITAL_PERSONA',
+        template: '',
+        quality: 0,
+        deviceSerial: '',
+        capturedAt: new Date().toISOString(),
+        consentAccepted: current.consentAccepted,
+      }))
+      setBiometricStatus('Captura omitida: huella biometrica suspendida.')
+      return { success: true }
+    }
     setBiometricStatus('Capturando huella en el lector DigitalPersona 4500...')
     try {
       if (isReactivation) {
@@ -576,7 +599,10 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     event.preventDefault()
 
     resetFeedback()
-    if (!biometricForm.template) {
+    // While the build flag is on we deliberately skip capture; an
+    // empty template is the explicit contract for the suspended
+    // finalize path. We still write the step so the wizard advances.
+    if (!biometricForm.template && !biometricSuspended) {
       setFieldErrors({ template: 'Debes capturar la huella biometrica antes de continuar.' })
       return
     }
@@ -716,6 +742,7 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     biometricStatus,
     biometricModalOpen,
     biometricModalSubjectName: data?.prospect?.name ?? data?.client?.name ?? '',
+    biometricSuspended,
     medicalDocumentFile,
     paymentQrImageUrl,
     qrModalOpen,

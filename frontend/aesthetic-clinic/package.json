@@ -6,8 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:suspended": "VITE_BIOMETRIC_SUSPENDED=true tsc -b && VITE_BIOMETRIC_SUSPENDED=true vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:suspension": "playwright test --config playwright.suspension.config.ts"
   },
   "dependencies": {
     "react": "^19.2.4",

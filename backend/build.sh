@@ -17,7 +17,15 @@ cd "$SCRIPT_DIR/../frontend/aesthetic-clinic"
 npm install
 
 echo "=== Building frontend ==="
-npm run build
+# OpenSpec change `suspend-fingerprint-integration` (PR #3):
+# mirror the backend `BIOMETRIC_SUSPENDED` flag into the frontend build
+# so the UI hides every biometric control and stops issuing capture /
+# match / agent heartbeat requests. Default is "true" (production
+# deployments suspend fingerprint); set `VITE_BIOMETRIC_SUSPENDED=false`
+# in the environment before running this script to keep the original
+# behaviour (e.g. local dev, staging, post-rollback).
+VITE_BIOMETRIC_SUSPENDED="${VITE_BIOMETRIC_SUSPENDED:-true}" \
+  npm run build
 
 echo "=== Collecting static files ==="
 cd "$SCRIPT_DIR"

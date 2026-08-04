@@ -13,6 +13,7 @@ type Props = {
   biometricStatus: string | null
   biometricModalOpen: boolean
   biometricModalSubjectName: string
+  biometricSuspended: boolean
   fieldErrors: FieldErrors
   isSaving: boolean
   isCancelling: boolean
@@ -29,6 +30,7 @@ export function ConversionStepBiometric({
   biometricStatus,
   biometricModalOpen,
   biometricModalSubjectName,
+  biometricSuspended,
   fieldErrors,
   isSaving,
   isCancelling,
@@ -52,17 +54,37 @@ export function ConversionStepBiometric({
         <div className="wizard-block__header">
           <div>
             <strong>Captura biometrica</strong>
-            <p>Solicita al cliente que apoye el dedo en el lector DigitalPersona 4500.</p>
+            <p>
+              {biometricSuspended
+                ? 'La captura por huella esta temporalmente suspendida. Podes continuar y finalizar la conversion sin huella; los datos existentes del cliente (si los hay) quedan intactos.'
+                : 'Solicita al cliente que apoye el dedo en el lector DigitalPersona 4500.'}
+            </p>
           </div>
-          <button
-            className="button button--ghost button--compact"
-            disabled={isSaving || isCancelling}
-            type="button"
-            onClick={onOpenBiometricModal}
-          >
-            {isCaptured ? 'Volver a capturar' : 'Capturar huella'}
-          </button>
+          {biometricSuspended ? null : (
+            <button
+              className="button button--ghost button--compact"
+              disabled={isSaving || isCancelling}
+              type="button"
+              onClick={onOpenBiometricModal}
+            >
+              {isCaptured ? 'Volver a capturar' : 'Capturar huella'}
+            </button>
+          )}
         </div>
+        {biometricSuspended ? (
+          <div
+            className="banner banner--warning"
+            data-testid="biometric-suspended-banner"
+            role="status"
+            aria-live="polite"
+          >
+            <strong>Huella biometrica suspendida.</strong>
+            <span>
+              Esta conversion se registrara sin captura; el backend omitira la escritura de la
+              huella y del intento biometrico.
+            </span>
+          </div>
+        ) : null}
         <div className="operation-card__note-grid">
           <article>
             <span>Proveedor</span>

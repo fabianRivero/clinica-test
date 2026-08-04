@@ -10,9 +10,102 @@
 #      scripts/.deploy-config (no se commitea).
 #   3. Ejecutá: ./scripts/deploy.sh
 #
+# Variables de entorno reconocidas:
+#   - BIOMETRIC_SUSPENDED: backend flag (default: 1, suspende las
+#     mutaciones biometricas). Para rollback: BIOMETRIC_SUSPENDED=0.
+#   - VITE_BIOMETRIC_SUSPENDED: frontend build flag (default: true
+#     cuando la respuesta al ask_once es "1"; false cuando es "0").
+#     Debe matchear BIOMETRIC_SUSPENDED — el script los levanta juntos.
+#   - VPS_*, PROJECT_PATH, GIT_BRANCH, DOMAIN, GIT_REPO: iguales que
+#     antes.
+#
+# Ejecutables verificados (con `cat <<SSHEOF` para simular el SSH):
+#   Forward:  ./scripts/deploy.sh
+#             -> BIOMETRIC_SUSPENDED=1, VITE_BIOMETRIC_SUSPENDED=true
+#   Rollback: BIOMETRIC_SUSPENDED=0 VITE_BIOMETRIC_SUSPENDED=false \
+#             ./scripts/deploy.sh
+#             -> BIOMETRIC_SUSPENDED=0, VITE_BIOMETRIC_SUSPENDED=false
+#
 # El script se conecta por SSH al VPS, baja los últimos cambios de Git,
 # instala dependencias, aplica migraciones, reconstruye el frontend y
 # reinicia Gunicorn.
+#
+# ============================================
+# OpenSpec `suspend-fingerprint-integration` — rollout notes
+# ============================================
+# El backend expone `BIOMETRIC_SUSPENDED` en `backend/.env`. Mientras
+# esté en `1`, los ENDPOINTS DE MUTACIÓN biometricos devuelven HTTP
+# 503 con código `BIOMETRIC_SUSPENDED`. Los GETs administrativos
+# (listado de agentes, historial) siguen funcionando por diseño.
+# El frontend construido con `VITE_BIOMETRIC_SUSPENDED=true` oculta
+# todos los controles de huella y no emite ninguna request
+# `/api/biometric/*`. El backend siempre es autoritativo: si los
+# flags divergen, gana el 503 del backend.
+#
+# === Orden del deploy (backend-first, frontend-second) ===
+# Bloque SSH ejecuta en este orden:
+#   1. git pull
+#   2. pip install
+#   3. Activar flag backend (sed/append en backend/.env).
+#   4. Reiniciar Gunicorn.
+#   5. Validar backend con un endpoint gateado (ver bloque
+#      "Validación ejecutable" más abajo). Aborta el deploy si falla.
+#   6. Build frontend con `VITE_BIOMETRIC_SUSPENDED=${VAR:-true}`.
+#   7. Migraciones + collectstatic + nginx check.
+# Los pasos 3-5 son los que materializan la suspensión antes de
+# servir el bundle.
+#
+# === Validación ejecutable (forward: flag=true) ===
+# Requiere un admin logueado (cookie de sesión + CSRF). El endpoint
+# gateado es POST /api/biometric/citas/<id>/huella/verify-init/
+# (los GET a /api/biometric/agents/ NO se gatean por diseño, por lo
+# que NO sirven para validar). Reemplazar <id> por una cita real
+# en estado REALIZADA_PENDIENTE_VERIFICACION.
+#
+#   # Forward (esperado: 503 + BIOMETRIC_SUSPENDED)
+#   curl -sS -i -X POST \
+#       -b "$COOKIE_JAR" -H "X-CSRFToken: $CSRF" \
+#       -H "Origin: https://$DOMAIN" -H "Referer: https://$DOMAIN/" \
+#       "https://$DOMAIN/api/biometric/citas/<id>/huella/verify-init/" \
+#       | head -1
+#   # -> HTTP/1.1 503 Service Unavailable
+#   curl -sS -X POST \
+#       -b "$COOKIE_JAR" -H "X-CSRFToken: $CSRF" \
+#       -H "Origin: https://$DOMAIN" -H "Referer: https://$DOMAIN/" \
+#       "https://$DOMAIN/api/biometric/citas/<id>/huella/verify-init/"
+#   # -> {"detail":"...","code":"BIOMETRIC_SUSPENDED",...}
+#
+# === Rollback / re-enable ejecutable ===
+# El flag está horneado en el bundle — el rebuild es OBLIGATORIO.
+# Forward y rollback son ejecutables:
+#
+#   # Forward (esperado: 1 + true):
+#   ./scripts/deploy.sh
+#
+#   # Rollback (esperado: 0 + false):
+#   BIOMETRIC_SUSPENDED=0 VITE_BIOMETRIC_SUSPENDED=false ./scripts/deploy.sh
+#
+# === Servicios del lector DigitalPersona 4500 (operador) ===
+# ESTOS COMANDOS NO SE EJECUTAN DESDE ESTE SCRIPT — el script apunta
+# al VPS de la aplicación; el lector físico vive en la PC de
+# recepción. Repo evidence (fingerprint-agent/systemd/): la unidad
+# cloudflared.service está dedicada exclusivamente al agente de
+# huella (`Description=Cloudflare Tunnel for the clinic fingerprint
+# agent`), por lo que deshabilitarla es seguro dentro de este alcance.
+# Las unidades, archivos, configuración, credenciales y logs quedan
+# intactos (`disable --now` no borra nada).
+#
+#   # Operador, en la PC del lector (forward):
+#   sudo systemctl is-enabled fingerprint-agent || true
+#   sudo systemctl is-active  fingerprint-agent || true
+#   sudo systemctl disable --now fingerprint-agent
+#   sudo systemctl disable --now cloudflared
+#   sudo systemctl status fingerprint-agent --no-pager || true
+#
+#   # Operador, en la PC del lector (rollback):
+#   sudo systemctl enable --now fingerprint-agent
+#   sudo systemctl enable --now cloudflared
+#   sudo systemctl status fingerprint-agent --no-pager
 
 set -e
 
@@ -94,6 +187,8 @@ PROJECT_PATH="$PROJECT_PATH"
 DOMAIN="$DOMAIN"
 GIT_BRANCH="$GIT_BRANCH"
 GIT_REPO="$GIT_REPO"
+BIOMETRIC_SUSPENDED="$BIOMETRIC_SUSPENDED"
+VITE_BIOMETRIC_SUSPENDED="$VITE_BIOMETRIC_SUSPENDED"
 EOF
     chmod 600 "$CONFIG_FILE"
 }
@@ -107,6 +202,13 @@ ask_once VPS_USER "Usuario SSH en el VPS" "deploy"
 ask_once DOMAIN "Dominio principal (sin https://)" ""
 ask_once GIT_BRANCH "Rama a desplegar" "main"
 ask_once GIT_REPO "URL del repo (para validar el remote)" ""
+# Flag backend. `1` = suspender mutaciones biometricas (forward).
+# Rollback: BIOMETRIC_SUSPENDED=0 ./scripts/deploy.sh
+ask_once BIOMETRIC_SUSPENDED "BIOMETRIC_SUSPENDED (1=forward, 0=rollback)" "1"
+# Flag frontend. Se inicializa desde BIOMETRIC_SUSPENDED para que
+# ambos flags se muevan juntos; se puede sobreescribir pasando
+# VITE_BIOMETRIC_SUSPENDED=... antes de invocar el script.
+VITE_BIOMETRIC_SUSPENDED="${VITE_BIOMETRIC_SUSPENDED:-$( [ "$BIOMETRIC_SUSPENDED" = "1" ] && echo true || echo false )}"
 
 # ============================================
 # VALIDACIONES
@@ -114,6 +216,13 @@ ask_once GIT_REPO "URL del repo (para validar el remote)" ""
 if [ ! -f ".git/config" ]; then
     log_error "No estás en un repositorio git. Ejecutá el script desde la raíz del proyecto."
     exit 1
+fi
+
+# Flag sanity check: ambos flags deben ser coherentes. Si el operador
+# los pasa explícitamente y difieren, loguear un warning (no abortar
+# porque podría ser un deploy de testing).
+if [ "$BIOMETRIC_SUSPENDED" = "1" ] && [ "$VITE_BIOMETRIC_SUSPENDED" != "true" ]; then
+    log_warn "BIOMETRIC_SUSPENDED=1 pero VITE_BIOMETRIC_SUSPENDED=$VITE_BIOMETRIC_SUSPENDED — el backend será autoritativo."
 fi
 
 if [ -n "$GIT_REPO" ]; then
@@ -134,12 +243,15 @@ fi
 # DEPLOY
 # ============================================
 log_step "Iniciando deploy a $VPS_USER@$VPS_HOST (rama: $GIT_BRANCH)..."
+log_step "BIOMETRIC_SUSPENDED=$BIOMETRIC_SUSPENDED VITE_BIOMETRIC_SUSPENDED=$VITE_BIOMETRIC_SUSPENDED"
 
 ssh "$VPS_USER@$VPS_HOST" << SSHEOF
 set -e
 
 PROJECT_PATH="$PROJECT_PATH"
 GIT_BRANCH="$GIT_BRANCH"
+BIOMETRIC_SUSPENDED="$BIOMETRIC_SUSPENDED"
+VITE_BIOMETRIC_SUSPENDED="$VITE_BIOMETRIC_SUSPENDED"
 
 echo "=== 1. Pull últimos cambios ==="
 cd "\$PROJECT_PATH"
@@ -150,23 +262,83 @@ cd backend
 sudo -u www-data env/bin/pip install -q -r requirements.txt
 cd ..
 
-echo "=== 3. Build frontend ==="
-cd frontend/aesthetic-clinic
-sudo -u www-data npm ci
-sudo -u www-data npm run build
-cd ../..
+echo "=== 3. Activar flag backend en backend/.env ==="
+# Edita / hace append de BIOMETRIC_SUSPENDED en backend/.env. Si el
+# operador ya tiene el valor deseado (mismo valor), el sed es
+# no-op. Si difiere, actualiza in-place.
+ENV_FILE="\$PROJECT_PATH/backend/.env"
+if [ -n "\$BIOMETRIC_SUSPENDED" ]; then
+    if [ -f "\$ENV_FILE" ] && grep -qE "^BIOMETRIC_SUSPENDED=" "\$ENV_FILE"; then
+        sudo -u www-data sed -i "s/^BIOMETRIC_SUSPENDED=.*/BIOMETRIC_SUSPENDED=\$BIOMETRIC_SUSPENDED/" "\$ENV_FILE"
+    else
+        sudo -u www-data bash -c "echo 'BIOMETRIC_SUSPENDED=\$BIOMETRIC_SUSPENDED' >> \$ENV_FILE"
+    fi
+    echo "  -> BIOMETRIC_SUSPENDED=\$BIOMETRIC_SUSPENDED aplicado a backend/.env"
+fi
 
-echo "=== 4. Migraciones ==="
-sudo -u www-data "\$PROJECT_PATH/backend/env/bin/python" "\$PROJECT_PATH/backend/manage.py" migrate --noinput
-
-echo "=== 5. Static files ==="
-sudo -u www-data "\$PROJECT_PATH/backend/env/bin/python" "\$PROJECT_PATH/backend/manage.py" collectstatic --noinput
-
-echo "=== 6. Reiniciar Gunicorn ==="
+echo "=== 4. Reiniciar Gunicorn ==="
 sudo systemctl restart gunicorn
 sleep 2
 
-echo "=== 7. Verificar Nginx ==="
+echo "=== 5. Validación gateada (POST /api/biometric/citas/<id>/huella/verify-init/) ==="
+# Prerrequisito: una CitaMedica en estado REALIZADA_PENDIENTE_VERIFICACION.
+# Si no existe, la validación cae a 404 (CITA_NOT_FOUND) — el operador
+# debe crear una o ajustar CITA_ID_REMOTA abajo.
+# Las requests GET a /api/biometric/agents/ NO se gatean por diseño, por
+# lo que NO sirven para validar.
+CITA_ID_REMOTA="\${CITA_ID_REMOTA:-1}"
+COOKIE_JAR_REMOTA="\${COOKIE_JAR_REMOTA:-/tmp/clinica-deploy-cookie}"
+if [ -f "\$COOKIE_JAR_REMOTA" ]; then
+    CSRF=\$(sudo -u www-data cat "\$COOKIE_JAR_REMOTA" | grep csrftoken | awk '{print \$NF}')
+    ORIGIN="https://\$PROJECT_PATH"
+    RESP=\$(curl -sS -o /tmp/clinica-suspend-resp.json -w "%{http_code}" -X POST \
+        -b "\$COOKIE_JAR_REMOTA" -H "X-CSRFToken: \$CSRF" \
+        -H "Origin: \$ORIGIN" -H "Referer: \$ORIGIN/" \
+        "http://127.0.0.1:8000/api/biometric/citas/\$CITA_ID_REMOTA/huella/verify-init/")
+    echo "  HTTP \$RESP"
+    cat /tmp/clinica-suspend-resp.json 2>/dev/null || true
+    echo ""
+    if [ "\$BIOMETRIC_SUSPENDED" = "1" ]; then
+        # Forward: esperamos 503 + BIOMETRIC_SUSPENDED.
+        if [ "\$RESP" = "503" ]; then
+            echo "  -> OK: gate activo, 503 BIOMETRIC_SUSPENDED"
+        else
+            echo "  -> ADVERTENCIA: gate no devolvió 503 (esperado 503)."
+            echo "     Si la respuesta es 401, falta cookie/CSRF o CITA_ID_REMOTA."
+            echo "     Si la respuesta es 404, falta una CitaMedica en REALIZADA_PENDIENTE_VERIFICACION."
+        fi
+    else
+        # Rollback: esperamos 200 o 4xx de estado, NO 503.
+        if [ "\$RESP" = "503" ]; then
+            echo "  -> ERROR: rollback falló, gate todavía activo"
+            exit 1
+        else
+            echo "  -> OK: gate inactivo, respuesta \$RESP"
+        fi
+    fi
+else
+    echo "  -> SKIP: cookie jar no presente en \$COOKIE_JAR_REMOTA"
+    echo "     Para habilitar la validación, generar el cookie jar con:"
+    echo "     curl -c \$COOKIE_JAR_REMOTA -X POST ... /api/auth/login/ ..."
+fi
+
+echo "=== 6. Build frontend ==="
+# Build-time flag: el valor definido en este shell (forward=true,
+# rollback=false) se exporta en la línea de SSH para garantizar que
+# llega al subproceso de build. El bundle queda horneado con ese
+# valor — toggles posteriores requieren rebuild.
+cd frontend/aesthetic-clinic
+sudo -u www-data npm ci
+sudo -u www-data env "VITE_BIOMETRIC_SUSPENDED=\${VITE_BIOMETRIC_SUSPENDED:-true}" npm run build
+cd ../..
+
+echo "=== 7. Migraciones ==="
+sudo -u www-data "\$PROJECT_PATH/backend/env/bin/python" "\$PROJECT_PATH/backend/manage.py" migrate --noinput
+
+echo "=== 8. Static files ==="
+sudo -u www-data "\$PROJECT_PATH/backend/env/bin/python" "\$PROJECT_PATH/backend/manage.py" collectstatic --noinput
+
+echo "=== 9. Verificar Nginx ==="
 sudo nginx -t
 
 echo ""
