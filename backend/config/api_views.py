@@ -616,6 +616,7 @@ def _build_prospect_medical_slot_map(service_config, branch_id=1):
 def _client_item(cliente):
     cliente.actualizar_estado_automaticamente()
     analisis = next(iter(cliente.analisis_esteticos.all()), None)
+    huella = getattr(cliente, "huella_biometrica", None)
     scheduled_appointments = []
     for operacion in cliente.operaciones.all():
         for cita in operacion.citas_medicas.all():
@@ -647,6 +648,7 @@ def _client_item(cliente):
         "totalOperations": cliente.operaciones.count(),
         "lastAnalysis": date_label(analisis.fecha_analisis) if analisis else "Sin analisis",
         "scheduledAppointments": scheduled_appointments[:1],
+        "hasBiometricEnrollment": bool(huella and huella.activo),
     }
 
 
