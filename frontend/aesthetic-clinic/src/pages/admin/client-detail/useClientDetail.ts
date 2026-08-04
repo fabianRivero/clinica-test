@@ -21,6 +21,7 @@ import {
 } from '../../../services/api/admin'
 import {
   biometricClient,
+  isBiometricSuspended,
   type AgentListItem,
 } from '../../../services/fingerprint/biometricClient'
 import type { AdminConcurrencyCheckResponse } from '../../../types/admin'
@@ -270,6 +271,8 @@ export function useClientDetail(clientId: string) {
   const [agents, setAgents] = useState<AgentListItem[]>([])
 
   const refreshAgents = useCallback(async () => {
+    // `listAgents` short-circuits to `[]` while suspended, so calling
+    // it here is safe and keeps the banner logic uniform.
     try {
       const list = await biometricClient.listAgents()
       setAgents(list)
@@ -279,16 +282,34 @@ export function useClientDetail(clientId: string) {
     }
   }, [])
 
+  // Computed once per render — the value is baked at build time and
+  // does not change at runtime, but the call is cheap.
+  const biometricSuspended = isBiometricSuspended()
+
   useEffect(() => {
-    // Fetching on mount then polling every minute; the set-state call
-    // here is the documented sync-from-external-system pattern.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // Skipping the polling entirely while suspended avoids touching
+    // the backend and keeps the agent list cleared so the offline
+    // banner computation reads `false`. No runtime flag toggling —
+    // rebuilding the bundle is required to flip the flag, by design.
+    // The two `setAgents(...)` / `refreshAgents` calls are the
+    // documented sync-from-external-system pattern; the lint rule
+    // fires on the direct setState inside the effect body, so we
+    // disable just that line.
+    if (biometricSuspended) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAgents([])
+      return
+    }
+    // Fetching on mount then polling every minute. `refreshAgents` is
+    // an async callback that calls `setAgents` internally — the lint
+    // rule does not fire on async-derived updates, so no disable is
+    // needed here.
     void refreshAgents()
     const interval = window.setInterval(() => {
       void refreshAgents()
     }, 60_000)
     return () => window.clearInterval(interval)
-  }, [refreshAgents])
+  }, [biometricSuspended, refreshAgents])
 
   const hasAnyAgent = agents.length > 0
   const allAgentsOffline =
@@ -678,6 +699,7 @@ export function useClientDetail(clientId: string) {
     agents,
     hasAnyAgent,
     allAgentsOffline,
+    biometricSuspended,
     handleCheckRescheduleAvailability,
     handleRescheduleAppointment,
     handleCheckConcurrency,
@@ -732,5 +754,8 @@ export function useClientDetail(clientId: string) {
     setVisibleOperationsCount,
     hasMoreOperations,
     hasLessOperations,
+
+    // Biometric enrollment status (true when the client has an active huella)
+    hasBiometricEnrollment: Boolean(data?.client?.hasBiometricEnrollment),
   }
 }

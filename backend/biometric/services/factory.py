@@ -5,6 +5,11 @@ Selects the agent client implementation based on the
 :class:`HttpAgentClient` (the real Cloudflare-Tunnel-exposed agent
 introduced in PR #2). The mock remains available for tests and
 management commands that want to run without hardware.
+
+When ``settings.BIOMETRIC_SUSPENDED`` is true the factory returns a
+:class:`SuspendedAgentClient` and skips dynamic class loading entirely
+so a misconfigured ``AGENT_CLIENT_CLASS`` cannot re-enable the network
+while the operational suspension is in effect.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from biometric.services.agent_client import (
     BaseAgentClient,
     HttpAgentClient,
     MockAgentClient,
+    SuspendedAgentClient,
 )
 
 
@@ -29,7 +35,21 @@ def get_agent_client() -> BaseAgentClient:
     tests can swap in a fake. Defaults to :class:`HttpAgentClient`.
     Falls back to :class:`MockAgentClient` if the configured class
     can't be loaded so a misconfig never takes the whole backend down.
+
+    When ``settings.BIOMETRIC_SUSPENDED`` is true the function returns
+    a :class:`SuspendedAgentClient` BEFORE inspecting
+    ``AGENT_CLIENT_CLASS`` or touching ``importlib``. The flag is
+    authoritative: even an explicit ``AGENT_CLIENT_CLASS=HttpAgentClient``
+    cannot bypass the operational suspension.
     """
+    # Authoritative suspension short-circuit (change
+    # `suspend-fingerprint-integration`). Imports are deferred to keep
+    # settings access cheap and to avoid touching Django at import time.
+    from django.conf import settings
+
+    if getattr(settings, "BIOMETRIC_SUSPENDED", False):
+        return SuspendedAgentClient()
+
     class_path = os.getenv("AGENT_CLIENT_CLASS", DEFAULT_AGENT_CLASS)
     module_path, _, attr = class_path.rpartition(".")
     if not module_path:

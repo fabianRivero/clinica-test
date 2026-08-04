@@ -16,6 +16,9 @@ import { ClientProfileModal } from './ClientProfileModal'
 import { RescheduleModal } from './RescheduleModal'
 import { BiometricVerifyCaptureModal } from './BiometricVerifyCaptureModal'
 
+const BIOMETRIC_SUSPENDED_NOTICE =
+  'Verificacion por huella temporalmente suspendida. Usa la confirmacion manual para finalizar las citas pendientes.'
+
 export function AdminClientDetailPage() {
   const { clientId = '' } = useParams()
   const { showNotification } = useNotifications()
@@ -130,6 +133,8 @@ export function AdminClientDetailPage() {
     // Biometric agent state
     hasAnyAgent,
     allAgentsOffline,
+    biometricSuspended,
+    hasBiometricEnrollment,
   } = useClientDetail(clientId)
 
   const [profileModalOpen, setProfileModalOpen] = useState(false)
@@ -203,13 +208,32 @@ export function AdminClientDetailPage() {
         ]}
       />
 
-      {hasAnyAgent && allAgentsOffline ? (
+      {biometricSuspended ? (
+        <div
+          className="banner banner--warning"
+          data-testid="biometric-suspended-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <strong>Huella biometrica suspendida.</strong>
+          <span>{BIOMETRIC_SUSPENDED_NOTICE}</span>
+        </div>
+      ) : hasAnyAgent && allAgentsOffline ? (
         <div className="banner banner--warning" role="status" aria-live="polite">
           <strong>Lector de huellas sin conexion.</strong>
           <span>
             Ningun agente reporto heartbeat en los ultimos 5 minutos. Si necesitas confirmar la
             asistencia, usa la confirmacion manual hasta que el lector vuelva a estar disponible.
           </span>
+        </div>
+      ) : !hasBiometricEnrollment ? (
+        <div
+          className="banner banner--info"
+          data-testid="biometric-enrollment-pending-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <strong>Este cliente aun no tiene huella registrada.</strong>
         </div>
       ) : null}
 
@@ -330,7 +354,7 @@ export function AdminClientDetailPage() {
                         Cancelar reserva
                       </button>
                     ) : null}
-                    {session.canConfirmBiometric ? (
+                    {session.canConfirmBiometric && !biometricSuspended ? (
                       <button
                         className="button button--ghost button--compact"
                         disabled={appointmentActionId !== null}
@@ -444,7 +468,7 @@ export function AdminClientDetailPage() {
       />
 
       <BiometricVerifyCaptureModal
-        open={verifyModalCitaId !== null}
+        open={!biometricSuspended && verifyModalCitaId !== null}
         citaId={verifyModalCitaId ?? 0}
         onClose={closeVerifyBiometric}
         onConfirmResult={({ matched, message, citaId: confirmedCitaId }) => {

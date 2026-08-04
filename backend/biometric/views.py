@@ -19,6 +19,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -35,7 +36,10 @@ from biometric.permissions import (
     is_admin_principal_or_sucursal,
     is_agent_token,
 )
-from biometric.serializers import agent_token_payload, attempt_payload, huella_payload
+from biometric.serializers import (
+    agent_suspended_payload, agent_token_payload, attempt_payload,
+    enrollment_suspended_payload, huella_payload, verification_suspended_payload,
+)
 from biometric.services.agent_client import AgentOperationError, AgentUnavailableError
 from biometric.services.capture_tokens import capture_token_store
 from biometric.services.encryption import InvalidToken, decrypt_template, encrypt_template
@@ -117,6 +121,10 @@ def _require_agent_token(request):
     return subject, None
 
 
+def _suspension_response(payload_builder):
+    return json_response(payload_builder(), status=503)
+
+
 # ---------------------------------------------------------------------------
 # Enrollment
 # ---------------------------------------------------------------------------
@@ -139,6 +147,8 @@ def enroll_init(request, cliente_id: int):
     subject, err = _require_admin_principal_or_sucursal(request)
     if err is not None:
         return err
+    if settings.BIOMETRIC_SUSPENDED:
+        return _suspension_response(enrollment_suspended_payload)
 
     payload = load_payload(request)
     if payload is None:
@@ -297,6 +307,8 @@ def enroll_finalize(request, cliente_id: int):
     subject, err = _require_admin_principal_or_sucursal(request)
     if err is not None:
         return err
+    if settings.BIOMETRIC_SUSPENDED:
+        return _suspension_response(enrollment_suspended_payload)
 
     payload = load_payload(request)
     if payload is None:
@@ -401,6 +413,8 @@ def cliente_reenroll_init(request, cliente_id: int):
     subject, err = _require_admin_principal_or_sucursal(request)
     if err is not None:
         return err
+    if settings.BIOMETRIC_SUSPENDED:
+        return _suspension_response(enrollment_suspended_payload)
 
     payload = load_payload(request)
     if payload is None:
@@ -566,6 +580,8 @@ def prospect_enroll_init(request, prospect_id: int):
     subject, err = _require_admin_principal_or_sucursal(request)
     if err is not None:
         return err
+    if settings.BIOMETRIC_SUSPENDED:
+        return _suspension_response(enrollment_suspended_payload)
 
     payload = load_payload(request)
     if payload is None:
@@ -738,6 +754,8 @@ def verify_init(request, cita_id: int):
     subject, err = _require_admin_principal_or_sucursal(request)
     if err is not None:
         return err
+    if settings.BIOMETRIC_SUSPENDED:
+        return _suspension_response(verification_suspended_payload)
 
     cita = CitaMedica.objects.select_related("operacion__paciente", "sucursal").filter(pk=cita_id).first()
     if cita is None:
@@ -881,6 +899,8 @@ def verify_confirm(request, cita_id: int):
     subject, err = _require_admin_principal_or_sucursal(request)
     if err is not None:
         return err
+    if settings.BIOMETRIC_SUSPENDED:
+        return _suspension_response(verification_suspended_payload)
 
     payload = load_payload(request)
     if payload is None:
@@ -1010,6 +1030,8 @@ def agent_create(request):
     subject, err = _require_admin_principal(request)
     if err is not None:
         return err
+    if settings.BIOMETRIC_SUSPENDED:
+        return _suspension_response(agent_suspended_payload)
 
     payload = load_payload(request)
     if payload is None:
@@ -1100,6 +1122,8 @@ def agent_heartbeat(request, agent_id: int):
     subject, err = _require_agent_token(request)
     if err is not None:
         return err
+    if settings.BIOMETRIC_SUSPENDED:
+        return _suspension_response(agent_suspended_payload)
 
     if subject.agent_token_id != agent_id:
         # Token does not belong to this agent.
@@ -1119,6 +1143,8 @@ def agent_delete(request, agent_id: int):
     subject, err = _require_admin_principal(request)
     if err is not None:
         return err
+    if settings.BIOMETRIC_SUSPENDED:
+        return _suspension_response(agent_suspended_payload)
 
     agent = AgentToken.objects.filter(pk=agent_id).first()
     if agent is None:

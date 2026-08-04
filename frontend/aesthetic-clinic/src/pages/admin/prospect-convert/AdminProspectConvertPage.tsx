@@ -40,6 +40,7 @@ export function AdminProspectConvertPage() {
     biometricStatus,
     biometricModalOpen,
     biometricModalSubjectName,
+    biometricSuspended,
     medicalDocumentFile,
     paymentQrImageUrl,
     qrModalOpen,
@@ -274,6 +275,7 @@ export function AdminProspectConvertPage() {
             biometricStatus={biometricStatus}
             biometricModalOpen={biometricModalOpen}
             biometricModalSubjectName={biometricModalSubjectName}
+            biometricSuspended={biometricSuspended}
             fieldErrors={fieldErrors}
             isSaving={isSaving}
             isCancelling={isCancelling}

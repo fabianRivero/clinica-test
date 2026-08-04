@@ -9,6 +9,7 @@ from django.db.models import Prefetch, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_GET, require_POST
+from django.conf import settings
 
 from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
 from clinical.models import AnalisisEstetico
@@ -408,9 +409,9 @@ def _appointment_item(cita, appointment_index=None, total_appointments=None):
         "details": cita.detalles_cita or "Sin notas adicionales.",
         "canManage": can_manage,
         "canMarkPendingBiometric": cita.estado == CitaMedica.Estado.PROGRAMADA,
-        "canConfirmBiometric": cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
+        "canConfirmBiometric": (not settings.BIOMETRIC_SUSPENDED) and cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
         "canCancelFromVerification": cita.estado == CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
-        "biometricMockTemplate": getattr(cita.operacion.paciente, "huella_biometrica", None).template_biometrico
+        "biometricMockTemplate": "" if settings.BIOMETRIC_SUSPENDED else getattr(cita.operacion.paciente, "huella_biometrica", None).template_biometrico
         if hasattr(cita.operacion.paciente, "huella_biometrica")
         and cita.operacion.paciente.huella_biometrica.activo
         and cita.operacion.paciente.huella_biometrica.proveedor == "MOCK"
