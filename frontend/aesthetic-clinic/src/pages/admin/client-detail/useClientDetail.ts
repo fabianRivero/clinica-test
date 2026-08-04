@@ -754,5 +754,8 @@ export function useClientDetail(clientId: string) {
     setVisibleOperationsCount,
     hasMoreOperations,
     hasLessOperations,
+
+    // Biometric enrollment status (true when the client has an active huella)
+    hasBiometricEnrollment: Boolean(data?.client?.hasBiometricEnrollment),
   }
 }

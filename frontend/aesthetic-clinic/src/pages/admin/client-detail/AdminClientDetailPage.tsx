@@ -134,6 +134,7 @@ export function AdminClientDetailPage() {
     hasAnyAgent,
     allAgentsOffline,
     biometricSuspended,
+    hasBiometricEnrollment,
   } = useClientDetail(clientId)
 
   const [profileModalOpen, setProfileModalOpen] = useState(false)
@@ -224,6 +225,15 @@ export function AdminClientDetailPage() {
             Ningun agente reporto heartbeat en los ultimos 5 minutos. Si necesitas confirmar la
             asistencia, usa la confirmacion manual hasta que el lector vuelva a estar disponible.
           </span>
+        </div>
+      ) : !hasBiometricEnrollment ? (
+        <div
+          className="banner banner--info"
+          data-testid="biometric-enrollment-pending-banner"
+          role="status"
+          aria-live="polite"
+        >
+          <strong>Este cliente aun no tiene huella registrada.</strong>
         </div>
       ) : null}
 

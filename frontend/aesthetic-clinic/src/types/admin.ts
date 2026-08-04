@@ -240,6 +240,7 @@ export type ClientSnapshot = {
   totalOperations: number
   lastAnalysis: string
   scheduledAppointments: ClientScheduledAppointment[]
+  hasBiometricEnrollment?: boolean
 }
 
 export type ClientScheduledAppointment = {
