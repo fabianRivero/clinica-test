@@ -121,6 +121,22 @@ AGENT_CLIENT_CLASS = os.getenv(
     "biometric.services.agent_client.HttpAgentClient",
 )
 
+# ---------------------------------------------------------------------------
+# Biometric suspension (change `suspend-fingerprint-integration`).
+#
+# Central, reversible flag that the biometric factory inspects BEFORE
+# dynamic class loading. When ``True`` the factory returns a
+# :class:`biometric.services.agent_client.SuspendedAgentClient` whose
+# capture/match/release raise :class:`AgentUnavailableError` with code
+# ``BIOMETRIC_SUSPENDED`` without importing ``httpx``, decrypting tokens,
+# resolving URLs or opening sockets. Endpoint-level gates (added in
+# PR #2 of the same change) short-circuit before any agent contact or
+# database write while this flag is enabled.
+#
+# Default is ``False``; flip to ``True`` in ``backend/.env`` to suspend.
+# ---------------------------------------------------------------------------
+BIOMETRIC_SUSPENDED = env_bool("BIOMETRIC_SUSPENDED", False)
+
 USE_LOCAL_DB = env_bool("DJANGO_USE_LOCAL_DB", False)
 
 if USE_LOCAL_DB:

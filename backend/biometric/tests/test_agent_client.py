@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import base64
+import importlib
 import os
 import unittest
 from decimal import Decimal
@@ -19,12 +20,13 @@ from types import SimpleNamespace
 from unittest import mock
 
 import httpx
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from biometric.services.agent_client import (
     AgentUnavailableError,
     HttpAgentClient,
     MockAgentClient,
+    SuspendedAgentClient,
 )
 from biometric.services.factory import get_agent_client
 
@@ -302,3 +304,166 @@ class HttpAgentClientTests(SimpleTestCase):
         client = HttpAgentClient()
         # Must NOT raise.
         client.release(agent=agent)
+
+
+# ---------------------------------------------------------------------------
+# Suspended client + factory short-circuit
+# (change `suspend-fingerprint-integration`, PR 1 foundation).
+# ---------------------------------------------------------------------------
+
+
+class SuspendedAgentClientTests(SimpleTestCase):
+    """The suspended client MUST refuse every operation and MUST NOT
+    open a socket, import ``httpx``, decrypt a token or resolve a URL.
+
+    These tests are deterministic: they patch the network library at
+    import time and inspect the call count rather than relying on real
+    errors. The factory short-circuit tests below also confirm that
+    even a misconfigured ``AGENT_CLIENT_CLASS`` cannot bypass the flag.
+    """
+
+    def test_capture_raises_suspended_error(self):
+        client = SuspendedAgentClient()
+        with self.assertRaises(AgentUnavailableError) as ctx:
+            client.capture(agent=None, capture_token="x")
+        self.assertEqual(str(ctx.exception), "BIOMETRIC_SUSPENDED")
+
+    def test_match_raises_suspended_error(self):
+        client = SuspendedAgentClient()
+        with self.assertRaises(AgentUnavailableError) as ctx:
+            client.match(agent=None, template_bytes=b"x", capture_token="y")
+        self.assertEqual(str(ctx.exception), "BIOMETRIC_SUSPENDED")
+
+    def test_release_raises_suspended_error(self):
+        """Unlike ``HttpAgentClient.release`` (which swallows transport
+        failures), the suspended client's ``release`` raises. Suspension
+        is the operating state, not a transient transport failure.
+
+        This is the single source of truth for the ``release`` contract;
+        ``test_release_does_not_swallow_suspended_error`` (removed)
+        duplicated the same assertion with a different idiom.
+        """
+        client = SuspendedAgentClient()
+        with self.assertRaises(AgentUnavailableError) as ctx:
+            client.release(agent=None)
+        self.assertEqual(str(ctx.exception), "BIOMETRIC_SUSPENDED")
+
+    def test_capture_does_not_import_httpx(self):
+        """``capture`` / ``match`` / ``release`` must NOT touch the
+        network layer. We patch ``importlib.import_module`` and record
+        every module name loaded during the three operations; the
+        recorded list must not contain ``httpx`` (or any other
+        network/URL helper).
+
+        Note: the wrapped ``import_module`` only sees imports triggered
+        *inside* the ``with mock.patch(...)`` block — module import
+        machinery that runs at test-collection time is unaffected.
+        """
+        client = SuspendedAgentClient()
+        seen: list[str] = []
+
+        real_import_module = importlib.import_module
+
+        def tracking_import(name, *args, **kwargs):
+            seen.append(name)
+            return real_import_module(name, *args, **kwargs)
+
+        with mock.patch("importlib.import_module", side_effect=tracking_import):
+            with self.assertRaises(AgentUnavailableError):
+                client.capture(agent=None, capture_token="t")
+            with self.assertRaises(AgentUnavailableError):
+                client.match(agent=None, template_bytes=b"t", capture_token="t")
+            with self.assertRaises(AgentUnavailableError):
+                client.release(agent=None)
+        # The suspended client is intentionally zero-dependency; it
+        # never imports anything. Nothing in the call chain should add
+        # an entry for ``httpx`` or any other network module.
+        self.assertNotIn("httpx", seen)
+        # Sanity: the suspicious helpers used by the active client
+        # (``agent.decrypt_raw_token``, ``agent.public_url``) must
+        # never be touched.
+        sentinel = SimpleNamespace(
+            public_url="https://should-not-be-resolved.example.com",
+            decrypt_token_called=False,
+            decrypt_raw_token=lambda: (sentinel.__setattr__("decrypt_token_called", True) or "x"),
+        )
+        with self.assertRaises(AgentUnavailableError):
+            client.capture(agent=sentinel, capture_token="t")
+        self.assertFalse(sentinel.decrypt_token_called)
+
+
+class SuspendedFactoryTests(SimpleTestCase):
+    """The factory short-circuit MUST run BEFORE dynamic class loading.
+
+    That means ``BIOMETRIC_SUSPENDED=True`` overrides any value of
+    ``AGENT_CLIENT_CLASS`` (including one pointing at ``HttpAgentClient``)
+    and returns :class:`SuspendedAgentClient` without calling
+    ``importlib.import_module``.
+    """
+
+    def setUp(self):
+        os.environ.pop("AGENT_CLIENT_CLASS", None)
+
+    def test_factory_returns_suspended_when_flag_on(self):
+        with override_settings(BIOMETRIC_SUSPENDED=True):
+            client = get_agent_client()
+        self.assertIsInstance(client, SuspendedAgentClient)
+
+    def test_factory_returns_suspended_even_with_explicit_http_class(self):
+        """A misconfigured ``AGENT_CLIENT_CLASS`` cannot bypass the flag."""
+        with override_settings(BIOMETRIC_SUSPENDED=True):
+            with mock.patch.dict(
+                os.environ,
+                {"AGENT_CLIENT_CLASS": "biometric.services.agent_client.HttpAgentClient"},
+            ):
+                client = get_agent_client()
+        self.assertIsInstance(client, SuspendedAgentClient)
+
+    def test_factory_short_circuits_before_importlib(self):
+        """The suspension branch MUST return before dynamic class
+        loading. We patch ``importlib.import_module`` and confirm it is
+        never called while the flag is on — a leak would mean a future
+        refactor could reintroduce network contact under suspension."""
+        with override_settings(BIOMETRIC_SUSPENDED=True):
+            with mock.patch(
+                "biometric.services.factory.importlib.import_module"
+            ) as patched:
+                client = get_agent_client()
+        self.assertIsInstance(client, SuspendedAgentClient)
+        patched.assert_not_called()
+
+    def test_factory_short_circuits_before_httpx_import(self):
+        """``httpx`` is the network client used by the real implementation;
+        it must not be imported (or even looked up) while the flag is on."""
+        import sys
+
+        with override_settings(BIOMETRIC_SUSPENDED=True):
+            with mock.patch.dict(sys.modules, {"httpx": None}):
+                # If the suspended path tried to import httpx, Python
+                # would raise ``ImportError`` because the entry is set
+                # to ``None`` (the documented sentinel for "this module
+                # is explicitly blocked").
+                client = get_agent_client()
+        self.assertIsInstance(client, SuspendedAgentClient)
+
+    def test_factory_returns_http_when_flag_off(self):
+        """Flag-off is the pre-change behavior; ``HttpAgentClient`` is
+        still the default so the rollback path is a single env flag flip."""
+        with override_settings(BIOMETRIC_SUSPENDED=False):
+            with mock.patch.dict(
+                os.environ,
+                {"AGENT_CLIENT_CLASS": "biometric.services.agent_client.HttpAgentClient"},
+            ):
+                client = get_agent_client()
+        self.assertIsInstance(client, HttpAgentClient)
+
+    def test_factory_returns_mock_when_flag_off_and_explicit_mock(self):
+        """Explicit ``MockAgentClient`` selection still works when the
+        suspension flag is off — tests using the mock keep passing."""
+        with override_settings(BIOMETRIC_SUSPENDED=False):
+            with mock.patch.dict(
+                os.environ,
+                {"AGENT_CLIENT_CLASS": "biometric.services.agent_client.MockAgentClient"},
+            ):
+                client = get_agent_client()
+        self.assertIsInstance(client, MockAgentClient)

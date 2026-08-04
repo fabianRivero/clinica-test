@@ -8,6 +8,8 @@ from django.contrib.auth.hashers import make_password
 from django.db import transaction
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
+from django.conf import settings
+from biometric.serializers import enrollment_suspended_payload
 
 from accounts.models import Rol, Usuario
 from billing.models import CuotaPlanPago
@@ -288,12 +290,16 @@ def _build_initial_client_biometric_data(cliente):
     data = _blank_biometric_data()
     if hasattr(cliente, "huella_biometrica") and cliente.huella_biometrica.activo:
         huella = cliente.huella_biometrica
-        template_bytes = bytes(huella.template_biometrico) if huella.template_biometrico else b""
         data["provider"] = huella.proveedor
-        # Templates are binary (Fernet ciphertext). JSON requires
-        # base64 so the frontend can decode and (if needed) hand it
-        # back to the agent. Empty template -> empty string.
-        data["template"] = base64.b64encode(template_bytes).decode("ascii")
+        if settings.BIOMETRIC_SUSPENDED:
+            # Suspended mode: keep metadata but redact the ciphertext template.
+            data["template"] = ""
+        else:
+            template_bytes = bytes(huella.template_biometrico) if huella.template_biometrico else b""
+            # Templates are binary (Fernet ciphertext). JSON requires
+            # base64 so the frontend can decode and (if needed) hand it
+            # back to the agent. Empty template -> empty string.
+            data["template"] = base64.b64encode(template_bytes).decode("ascii")
         data["quality"] = huella.calidad_captura
         data["deviceSerial"] = huella.device_serial
         data["consentAccepted"] = huella.consentimiento_aceptado
@@ -373,6 +379,24 @@ def _is_effectively_empty_medical_data(medical_data):
         and len(field_responses) == 0
         and analisis_vacio
     )
+
+
+def _serialized_biometric_data(initial_biometric_data, draft):
+    """Build the draft's ``biometricData`` payload with suspension redaction.
+
+    Returns a copy of ``initial_biometric_data`` overlaid with the draft's
+    stored ``datos_biometria``. When ``BIOMETRIC_SUSPENDED`` is on, the
+    template is forced to an empty string so a stale frontend cannot hand
+    the ciphertext to an (offline) agent; descriptive metadata is
+    preserved.
+    """
+    payload = {
+        **initial_biometric_data,
+        **_normalize_biometric_draft_data(draft),
+    }
+    if settings.BIOMETRIC_SUSPENDED:
+        payload["template"] = ""
+    return payload
 
 
 def _serialize_draft(draft):
@@ -467,10 +491,7 @@ def _serialize_draft(draft):
             "fechasVencimientoCuotas": due_dates,
         },
         "medicalData": medical_data,
-        "biometricData": {
-            **initial_biometric_data,
-            **_normalize_biometric_draft_data(draft),
-        },
+        "biometricData": _serialized_biometric_data(initial_biometric_data, draft),
     }
 
 
@@ -1320,9 +1341,38 @@ def admin_prospect_conversion_medical_step(request, prospecto_id=None, cliente_i
 @require_POST
 @admin_required
 def admin_prospect_conversion_biometric_step(request, prospecto_id=None, cliente_id=None):
+    # Resolve + authorize the draft BEFORE the suspended branch so we
+    # preserve the existing "no encontrado / ya procesado / sin permisos"
+    # errors even while the flag is on. The suspended path then mutates
+    # only the resolved draft and never touches the agent or persistence.
     draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
     if error:
         return json_response({"detail": error}, status=400)
+
+    if settings.BIOMETRIC_SUSPENDED:
+        # Biometric capture is unavailable: advance the wizard without
+        # requiring a template. New prospects never had a real template
+        # to leak; reactivation drafts keep `datos_biometria` byte-for-byte
+        # intact (we only flip the boolean flag so finalize can run).
+        kind = "reactivation" if draft.cliente is not None else "new_prospect"
+        logger.warning(
+            "[SUSPENSION] conversion biometric step bypass kind=%s prospecto_id=%s cliente_id=%s",
+            kind,
+            getattr(draft.prospecto, "id", None),
+            getattr(draft.cliente, "id", None),
+        )
+        if draft.cliente is not None:
+            reactivation_data = dict(draft.datos_biometria or {})
+            reactivation_data["template"] = ""
+            draft.datos_biometria = reactivation_data
+        else:
+            draft.datos_biometria = _blank_biometric_data()
+        draft.paso_biometria_completado = True
+        draft.paso_actual = ProspectoConversionBorrador.Paso.BIOMETRIA
+        draft.save(update_fields=[
+            "datos_biometria", "paso_biometria_completado", "paso_actual", "updated_at",
+        ])
+        return json_response(_admin_conversion_detail(draft))
 
     payload = load_payload(request)
     if payload is None:
@@ -1457,18 +1507,45 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
     # the rest of finalize runs. We update in-place rather than
     # delete+insert so the encrypted template survives the transition.
     if draft.prospecto is not None:
-        migrated = HuellaBiometricaCliente.objects.filter(
-            prospecto=draft.prospecto, cliente__isnull=True
-        ).update(cliente=cliente, prospecto=None)
-        BiometricAttempt.objects.filter(
-            prospecto=draft.prospecto, cliente__isnull=True
-        ).update(cliente=cliente, prospecto=None)
-        # Legacy drafts (saved before this PR landed) carried a
-        # `pending-enrollment` sentinel template and never hit the new
-        # prospect endpoint. If no real row was migrated, fall back to
-        # stamping one from the wizard payload so finalize still
-        # produces a huella + attempt row.
-        if migrated == 0 and biometric_data.get("template"):
+        # New prospect finalize: under suspension skip BOTH the prospect→cliente
+        # Huella/Attempt migration AND the legacy "stamp a row from the
+        # wizard payload" fallback so prospect-owned history and rows stay
+        # byte-for-byte unchanged. The conversion still produces the user,
+        # operation, and medical records.
+        if not settings.BIOMETRIC_SUSPENDED:
+            migrated = HuellaBiometricaCliente.objects.filter(
+                prospecto=draft.prospecto, cliente__isnull=True
+            ).update(cliente=cliente, prospecto=None)
+            BiometricAttempt.objects.filter(
+                prospecto=draft.prospecto, cliente__isnull=True
+            ).update(cliente=cliente, prospecto=None)
+            # Legacy drafts (saved before this PR landed) carried a
+            # `pending-enrollment` sentinel template and never hit the new
+            # prospect endpoint. If no real row was migrated, fall back to
+            # stamping one from the wizard payload so finalize still
+            # produces a huella + attempt row.
+            if migrated == 0 and biometric_data.get("template"):
+                HuellaBiometricaCliente.objects.update_or_create(
+                    cliente=cliente,
+                    defaults={
+                        "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK_LEGACY,
+                        "template_biometrico": biometric_data.get("template", ""),
+                        "device_serial": biometric_data.get("deviceSerial", ""),
+                        "calidad_captura": int(biometric_data.get("quality") or 0),
+                        "consentimiento_aceptado": bool(biometric_data.get("consentAccepted")),
+                        "registrado_por": request.user,
+                    }
+                )
+    else:
+        # Reactivation path: there is no prospecto to migrate from. Fall
+        # back to the legacy "stamp a row from the wizard payload" path
+        # so older drafts keep working.
+        if settings.BIOMETRIC_SUSPENDED:
+            # Keep existing HuellaBiometricaCliente rows byte-for-byte unchanged; finalize
+            # still produces the user/operation/medical records without touching the
+            # historical template or attempts log.
+            pass
+        else:
             HuellaBiometricaCliente.objects.update_or_create(
                 cliente=cliente,
                 defaults={
@@ -1480,21 +1557,6 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
                     "registrado_por": request.user,
                 }
             )
-    else:
-        # Reactivation path: there is no prospecto to migrate from. Fall
-        # back to the legacy "stamp a row from the wizard payload" path
-        # so older drafts keep working.
-        HuellaBiometricaCliente.objects.update_or_create(
-            cliente=cliente,
-            defaults={
-                "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK_LEGACY,
-                "template_biometrico": biometric_data.get("template", ""),
-                "device_serial": biometric_data.get("deviceSerial", ""),
-                "calidad_captura": int(biometric_data.get("quality") or 0),
-                "consentimiento_aceptado": bool(biometric_data.get("consentAccepted")),
-                "registrado_por": request.user,
-            }
-        )
 
     analisis = AnalisisEstetico.objects.create(
         paciente=cliente,

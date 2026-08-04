@@ -14,6 +14,8 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.core.cache import cache
 from django.views.decorators.http import require_GET, require_POST
+from django.conf import settings
+from biometric.serializers import verification_suspended_payload
 
 
 def _request_ip(request):
@@ -460,7 +462,7 @@ def _operation_detail(operacion):
         "documentPdfUrl": document_url,
         "documentPdfName": document_name,
         "hasBiometricEnrollment": bool(huella and huella.activo),
-        "biometricMockTemplate": huella.template_biometrico if huella and huella.proveedor == HuellaBiometricaCliente.Proveedor.MOCK_LEGACY else "",
+        "biometricMockTemplate": "" if settings.BIOMETRIC_SUSPENDED else (huella.template_biometrico if huella and huella.proveedor == HuellaBiometricaCliente.Proveedor.MOCK_LEGACY else ""),
         "appointments": [
             {
                 "id": f"CIT-{cita.pk:04d}",
@@ -469,7 +471,7 @@ def _operation_detail(operacion):
                 "specialist": "Sin asignar",
                 "status": cita.get_estado_display(),
                 "biometricStatus": _appointment_biometric_status(cita),
-                "canConfirmBiometric": cita.estado in {
+                "canConfirmBiometric": (not settings.BIOMETRIC_SUSPENDED) and cita.estado in {
                     CitaMedica.Estado.PROGRAMADA,
                     CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
                 },
@@ -3580,6 +3582,14 @@ def admin_reschedule_appointment(request, appointment_id):
 @admin_required
 @transaction.atomic
 def admin_confirm_appointment_biometric(request, appointment_id):
+    if settings.BIOMETRIC_SUSPENDED:
+        logger.warning(
+            "[SUSPENSION] legacy function biometric confirm gated family=verification cita_id=%s user=%s",
+            appointment_id,
+            getattr(request.user, "id", None),
+        )
+        return json_response(verification_suspended_payload(), status=503)
+
     appointment = (
         CitaMedica.objects.select_related(
             

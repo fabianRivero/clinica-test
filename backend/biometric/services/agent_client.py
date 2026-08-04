@@ -227,6 +227,58 @@ class MockAgentClient:
 
 
 # ---------------------------------------------------------------------------
+# Suspended implementation (change `suspend-fingerprint-integration`).
+#
+# Returned by :func:`biometric.services.factory.get_agent_client` while
+# ``settings.BIOMETRIC_SUSPENDED`` is true. The class is intentionally
+# fail-closed: ``capture``/``match``/``release`` all raise
+# :class:`AgentUnavailableError` with code ``"BIOMETRIC_SUSPENDED"`` and
+# never import ``httpx``, decrypt the agent token, resolve the public
+# URL or open a socket. The factory short-circuits BEFORE dynamic class
+# loading so even an unparseable ``AGENT_CLIENT_CLASS`` cannot reach the
+# network while the flag is on.
+#
+# Unlike :class:`HttpAgentClient.release`, ``SuspendedAgentClient.release``
+# raises the suspension error (not silently swallowed). The suspended
+# mode is the operating state, not a transient transport failure, and
+# callers should never silently "complete" a release they never issued.
+# ---------------------------------------------------------------------------
+
+
+class SuspendedAgentClient:
+    """No-op client that refuses every operation while biometric
+    integration is suspended.
+
+    Implements the :class:`BaseAgentClient` protocol without inheriting
+    from any active client. Holds no state. Any call to capture, match
+    or release raises :class:`AgentUnavailableError` carrying the
+    canonical ``BIOMETRIC_SUSPENDED`` code so the view layer can map
+    the exception to the matching suspended HTTP 503 body.
+    """
+
+    _SUSPENDED_MESSAGE = "BIOMETRIC_SUSPENDED"
+
+    def capture(
+        self,
+        agent: Any,
+        capture_token: str,
+        finger_name: str = "any",
+    ) -> CaptureResponse:
+        raise AgentUnavailableError(self._SUSPENDED_MESSAGE)
+
+    def match(
+        self,
+        agent: Any,
+        template_bytes: bytes,
+        capture_token: str,
+    ) -> MatchResponse:
+        raise AgentUnavailableError(self._SUSPENDED_MESSAGE)
+
+    def release(self, agent: Any) -> None:
+        raise AgentUnavailableError(self._SUSPENDED_MESSAGE)
+
+
+# ---------------------------------------------------------------------------
 # Real HTTP client (PR #2)
 # ---------------------------------------------------------------------------
 
@@ -501,4 +553,5 @@ __all__ = [
     "HttpAgentClient",
     "MatchResponse",
     "MockAgentClient",
-]  
+    "SuspendedAgentClient",
+]
