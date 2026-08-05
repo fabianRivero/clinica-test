@@ -4,6 +4,7 @@ import { getAdminReportIncome } from '../../../services/api/admin'
 import type { ReportIncomeItem, ReportResponse } from '../../../types/admin'
 import { ReportLayout } from './ReportLayout'
 import { ReportTable, type ReportTableColumn } from './ReportTable'
+import { buildReportExcelExport } from './useReportExcelExport'
 
 const COLUMNS: ReportTableColumn[] = [
   { key: 'date', label: 'Fecha' },
@@ -70,6 +71,18 @@ export function AdminReportIncomePage() {
       emptyTitle="Sin ingresos en el mes seleccionado"
       emptyMessage="No se registran pagos para el periodo que estas consultando."
       periodLabel="Periodo de ingresos"
+      buildExport={(rows) =>
+        // Filename depends on the current period; resolved at click-time
+        // through a closure that reads the latest month/year from refs that
+        // are kept in sync inside the children render prop.
+        buildReportExcelExport({
+          columns: COLUMNS,
+          rows: rows as Record<string, unknown>[],
+          filename: `ingresos_${monthRef.current}_${yearRef.current}.xlsx`,
+          sheetName: 'Ingresos',
+          withHyperlinks: true,
+        })
+      }
     >
       {({ rows, period }) => {
         // Sync refs with the period owned by `ReportLayout`. Updated during
@@ -83,9 +96,6 @@ export function AdminReportIncomePage() {
           <ReportTable
             columns={COLUMNS}
             rows={rows as ReportIncomeItem[] as unknown as Record<string, unknown>[]}
-            filename={`ingresos_${period.month}_${period.year}.xlsx`}
-            sheetName="Ingresos"
-            withHyperlinks
           />
         )
       }}

@@ -46,6 +46,13 @@ type ReportLayoutProps<T> = {
   emptyMessage: string
   periodLabel?: string
   extraHeader?: ReactNode
+  /**
+   * Builds the export handler for the current dataset. Called with the
+   * resolved rows so the page can produce a memoised export that reads
+   * `rows` lazily inside the click handler. The header renders the
+   * `↓ Excel` button only when this is provided AND rows are non-empty.
+   */
+  buildExport?: (rows: unknown[]) => (() => void) | undefined
   children: (context: {
     rows: unknown[]
     data: T
@@ -89,6 +96,7 @@ export function ReportLayout<T>({
   emptyMessage,
   periodLabel = 'Mes seleccionado',
   extraHeader,
+  buildExport,
   children,
 }: ReportLayoutProps<T>) {
   const { activeBranch } = useBranchContext()
@@ -142,7 +150,22 @@ export function ReportLayout<T>({
     setYear(nextYear)
   }
 
-  const periodActions = withPeriod ? (
+  const exportHandler = buildExport?.(rows) ?? null
+  const canExport = Boolean(exportHandler) && rows.length > 0
+
+  const exportButton = canExport ? (
+    <button
+      className="button button--ghost"
+      style={{ minWidth: '4.5rem', minHeight: '2.6rem', padding: '0 0.75rem' }}
+      type="button"
+      onClick={() => exportHandler?.()}
+      title="Descargar Excel"
+    >
+      ↓ Excel
+    </button>
+  ) : null
+
+  const headerActions = withPeriod ? (
     <div className="expense-period-controls">
       <button
         className="button button--ghost"
@@ -192,7 +215,10 @@ export function ReportLayout<T>({
           ))}
         </select>
       </label>
+      {exportButton}
     </div>
+  ) : canExport ? (
+    <div className="expense-period-controls">{exportButton}</div>
   ) : null
 
   return (
@@ -223,7 +249,7 @@ export function ReportLayout<T>({
               : title
           }
           description={composedDescription}
-          action={periodActions}
+          action={headerActions}
         >
           {rows.length ? (
             children({ rows, data, reload, period: { month, year } })

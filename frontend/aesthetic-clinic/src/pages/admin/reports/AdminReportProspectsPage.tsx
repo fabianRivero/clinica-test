@@ -6,6 +6,7 @@ import type { ReportProspect, ReportResponse } from '../../../types/admin'
 import { branchNameToSlug } from './reportUtils'
 import { ReportLayout } from './ReportLayout'
 import { ReportTable, type ReportTableColumn } from './ReportTable'
+import { buildReportExcelExport } from './useReportExcelExport'
 
 const COLUMNS: ReportTableColumn[] = [
   { key: 'firstName', label: 'Nombre' },
@@ -48,14 +49,20 @@ export function AdminReportProspectsPage() {
       rowsSelector={rowsSelector}
       emptyTitle="Sin prospectos para mostrar"
       emptyMessage="No hay prospectos registrados en la sucursal activa."
+      buildExport={(rows) =>
+        buildReportExcelExport({
+          columns: COLUMNS,
+          rows: rows as Record<string, unknown>[],
+          filename,
+          sheetName: 'Prospectos',
+          withHyperlinks: false,
+        })
+      }
     >
       {({ rows }) => (
         <ReportTable
           columns={COLUMNS}
           rows={rows as ReportProspect[] as unknown as Record<string, unknown>[]}
-          filename={filename}
-          sheetName="Prospectos"
-          withHyperlinks={false}
         />
       )}
     </ReportLayout>

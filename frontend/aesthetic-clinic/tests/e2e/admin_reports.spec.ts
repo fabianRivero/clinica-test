@@ -224,8 +224,10 @@ test.describe('Admin Reports — /cms/reportes/* navigation, period controls, an
     // the `SectionCard` (`<h2>`) when `withPeriod` is false. `.first()`
     // disambiguates so the strict-mode locator resolves to the page heading.
     await expect(page.getByRole('heading', { name: /Reporte de clientes/i }).first()).toBeVisible();
-    // The clients report does NOT expose period controls (no month/year on the page).
-    await expect(page.locator('.expense-period-controls')).toHaveCount(0);
+    // The clients report does NOT expose month/year period controls; the
+    // `↓ Excel` button lives inside its own `.expense-period-controls`
+    // wrapper (mirroring `AdminExpenseListPage`'s right-aligned action slot).
+    await expect(page.locator('.expense-period-controls')).toHaveCount(1);
     // Row count matches the fixture.
     await expect(page.locator('table.admin-table tbody tr')).toHaveCount(clientsFixture.rows.length);
     // The export button is rendered because there are rows.
@@ -238,7 +240,8 @@ test.describe('Admin Reports — /cms/reportes/* navigation, period controls, an
     // the `SectionCard` (`<h2>`). `.first()` disambiguates so the strict-mode
     // locator resolves to the page heading.
     await expect(page.getByRole('heading', { name: /Reporte de prospectos/i }).first()).toBeVisible();
-    await expect(page.locator('.expense-period-controls')).toHaveCount(0);
+    // Same single `.expense-period-controls` wrapper as the clients report.
+    await expect(page.locator('.expense-period-controls')).toHaveCount(1);
     await expect(page.locator('table.admin-table tbody tr')).toHaveCount(prospectsFixture.rows.length);
     await expect(page.getByRole('button', { name: /↓ Excel/i })).toBeVisible();
   });

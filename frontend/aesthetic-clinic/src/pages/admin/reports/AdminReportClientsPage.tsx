@@ -6,6 +6,7 @@ import type { ReportClient, ReportResponse } from '../../../types/admin'
 import { branchNameToSlug } from './reportUtils'
 import { ReportLayout } from './ReportLayout'
 import { ReportTable, type ReportTableColumn } from './ReportTable'
+import { buildReportExcelExport } from './useReportExcelExport'
 
 const COLUMNS: ReportTableColumn[] = [
   { key: 'firstName', label: 'Nombre' },
@@ -46,14 +47,20 @@ export function AdminReportClientsPage() {
       rowsSelector={rowsSelector}
       emptyTitle="Sin clientes para mostrar"
       emptyMessage="No hay clientes registrados en la sucursal activa."
+      buildExport={(rows) =>
+        buildReportExcelExport({
+          columns: COLUMNS,
+          rows: rows as Record<string, unknown>[],
+          filename,
+          sheetName: 'Clientes',
+          withHyperlinks: false,
+        })
+      }
     >
       {({ rows }) => (
         <ReportTable
           columns={COLUMNS}
           rows={rows as ReportClient[] as unknown as Record<string, unknown>[]}
-          filename={filename}
-          sheetName="Clientes"
-          withHyperlinks={false}
         />
       )}
     </ReportLayout>

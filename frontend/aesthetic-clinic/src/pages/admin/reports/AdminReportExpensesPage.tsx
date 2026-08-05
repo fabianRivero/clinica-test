@@ -4,6 +4,7 @@ import { getAdminExpenses } from '../../../services/api/admin'
 import type { ExpenseItem, ExpensesResponse } from '../../../types/admin'
 import { ReportLayout } from './ReportLayout'
 import { ReportTable, type ReportTableColumn } from './ReportTable'
+import { buildReportExcelExport } from './useReportExcelExport'
 
 const COLUMNS: ReportTableColumn[] = [
   { key: 'dateLabel', label: 'Fecha' },
@@ -70,6 +71,15 @@ export function AdminReportExpensesPage() {
       emptyTitle="Sin gastos en el mes seleccionado"
       emptyMessage="No se registran gastos para el periodo que estas consultando."
       periodLabel="Periodo de gastos"
+      buildExport={(rows) =>
+        buildReportExcelExport({
+          columns: COLUMNS,
+          rows: rows as Record<string, unknown>[],
+          filename: `gastos_${monthRef.current}_${yearRef.current}.xlsx`,
+          sheetName: 'Gastos',
+          withHyperlinks: true,
+        })
+      }
     >
       {({ rows, period }) => {
         // Sync refs with the period owned by `ReportLayout` so the loader
@@ -82,9 +92,6 @@ export function AdminReportExpensesPage() {
           <ReportTable
             columns={COLUMNS}
             rows={rows as ExpenseItem[] as unknown as Record<string, unknown>[]}
-            filename={`gastos_${period.month}_${period.year}.xlsx`}
-            sheetName="Gastos"
-            withHyperlinks
           />
         )
       }}
