@@ -1,10 +1,12 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 import { useBranchContext } from '../../../providers/BranchProvider'
 import { getAdminReportClients } from '../../../services/api/admin'
 import type { ReportClient, ReportResponse } from '../../../types/admin'
 import { branchNameToSlug, dateTimeCell } from './reportUtils'
 import { ReportLayout } from './ReportLayout'
+import { ReportSearch } from './ReportSearch'
+import { matchesReportSearch } from './reportSearchFilter'
 import { ReportTable, type ReportTableColumn } from './ReportTable'
 import { buildReportExcelExport } from './useReportExcelExport'
 
@@ -20,6 +22,12 @@ const COLUMNS: ReportTableColumn[] = [
 ]
 
 /**
+ * Keys used for the client-side search filter. CI, first/last name, and
+ * status cover the most common lookups for an admin triaging the list.
+ */
+const SEARCH_KEYS = ['firstName', 'lastName', 'ci', 'status'] as const
+
+/**
  * Branch-scoped clients report.
  *
  * Reuses the new `/api/admin/reportes/clientes/` endpoint (added in Phase 1)
@@ -27,11 +35,18 @@ const COLUMNS: ReportTableColumn[] = [
  * envelope so the page only needs to plug a `rowsSelector` and column list into
  * the shared `ReportLayout` shell.
  *
- * Read-only by design: no edit/delete actions, mirroring the rest of the
- * `/cms/reportes/*` family.
+ * Filtering: a client-side text filter narrows the dataset on `firstName`,
+ * `lastName`, `ci`, and `status` so admins can locate a specific client
+ * without re-hitting the API. The filter is purely visual — the export still
+ * reflects the entire dataset so the workbook stays consistent with the
+ * page header. To export the filtered subset only, extend `buildExport` to
+ * use the same predicate.
+ *
+ * Read-only by design: no edit/delete actions.
  */
 export function AdminReportClientsPage() {
   const { activeBranch } = useBranchContext()
+  const [searchTerm, setSearchTerm] = useState('')
 
   const loader = useCallback(() => getAdminReportClients(), [])
   const rowsSelector = useCallback(
@@ -41,6 +56,24 @@ export function AdminReportClientsPage() {
 
   const branchSuffix = activeBranch ? ` de ${activeBranch.nombre}` : ''
   const filename = `clientes_${branchNameToSlug(activeBranch?.nombre)}.xlsx`
+
+  /**
+   * Filter callback exposed via the render prop so `ReportLayout`'s shell
+   * can render both the unfiltered dataset (export) and the filtered one
+   * (table). The callback closes over `searchTerm` so the filter recomputes
+   * on every keystroke without forcing the layout to re-render.
+   */
+  const filterRows = useCallback(
+    (rows: unknown[]) => {
+      if (!searchTerm.trim()) return rows
+      return rows.filter((row) =>
+        matchesReportSearch(searchTerm, row as Record<string, unknown>, SEARCH_KEYS),
+      )
+    },
+    [searchTerm],
+  )
+
+  const hasActiveFilter = searchTerm.trim().length > 0
 
   return (
     <ReportLayout<ReportResponse<ReportClient>>
@@ -60,12 +93,21 @@ export function AdminReportClientsPage() {
         })
       }
     >
-      {({ rows }) => (
-        <ReportTable
-          columns={COLUMNS}
-          rows={rows as ReportClient[] as unknown as Record<string, unknown>[]}
-        />
-      )}
+      {({ rows }) => {
+        const filteredRows = hasActiveFilter ? filterRows(rows) : rows
+        const tableRows = (filteredRows as ReportClient[] as unknown as Record<string, unknown>[])
+        return (
+          <>
+            <ReportSearch
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="Nombre, apellido, CI o estado"
+              label="Buscar cliente"
+            />
+            <ReportTable columns={COLUMNS} rows={tableRows} />
+          </>
+        )
+      }}
     </ReportLayout>
   )
 }

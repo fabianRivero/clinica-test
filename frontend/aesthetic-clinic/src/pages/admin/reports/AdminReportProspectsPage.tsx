@@ -1,10 +1,12 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 import { useBranchContext } from '../../../providers/BranchProvider'
 import { getAdminReportProspects } from '../../../services/api/admin'
 import type { ReportProspect, ReportResponse } from '../../../types/admin'
 import { branchNameToSlug, dateTimeCell } from './reportUtils'
 import { ReportLayout } from './ReportLayout'
+import { ReportSearch } from './ReportSearch'
+import { matchesReportSearch } from './reportSearchFilter'
 import { ReportTable, type ReportTableColumn } from './ReportTable'
 import { buildReportExcelExport } from './useReportExcelExport'
 
@@ -22,17 +24,39 @@ const COLUMNS: ReportTableColumn[] = [
 ]
 
 /**
+ * Keys used for the client-side search filter on the prospects report. CI
+ * may be a dash placeholder when missing, but it still matches the search
+ * input as a string when populated.
+ */
+const SEARCH_KEYS = [
+  'firstName',
+  'lastName',
+  'phone',
+  'ci',
+  'interest',
+  'state',
+  'registeredBy',
+] as const
+
+/**
  * Branch-scoped prospects report.
  *
  * Reuses the new `/api/admin/reportes/prospectos/` endpoint (added in Phase 1)
  * via `getAdminReportProspects`. Column layout matches the prospect row shape
  * documented in `design.md` (`firstName`, `lastName`, `phone`, `ci`,
- * `interest`, `state`, `createdAt`, `registeredBy`).
+ * `interest`, `state`, `createdAt`, `registeredBy`, plus the two appointment
+ * date columns added in the follow-up).
+ *
+ * Filtering: a client-side text filter narrows the dataset on the columns
+ * that uniquely identify a prospect — name, phone, CI, interest, state, or
+ * registrar — so admins can locate a specific row without re-hitting the
+ * API. Export remains unfiltered so the workbook matches the page header.
  *
  * Read-only by design: no edit/delete actions.
  */
 export function AdminReportProspectsPage() {
   const { activeBranch } = useBranchContext()
+  const [searchTerm, setSearchTerm] = useState('')
 
   const loader = useCallback(() => getAdminReportProspects(), [])
   const rowsSelector = useCallback(
@@ -42,6 +66,18 @@ export function AdminReportProspectsPage() {
 
   const branchSuffix = activeBranch ? ` de ${activeBranch.nombre}` : ''
   const filename = `prospectos_${branchNameToSlug(activeBranch?.nombre)}.xlsx`
+
+  const filterRows = useCallback(
+    (rows: unknown[]) => {
+      if (!searchTerm.trim()) return rows
+      return rows.filter((row) =>
+        matchesReportSearch(searchTerm, row as Record<string, unknown>, SEARCH_KEYS),
+      )
+    },
+    [searchTerm],
+  )
+
+  const hasActiveFilter = searchTerm.trim().length > 0
 
   return (
     <ReportLayout<ReportResponse<ReportProspect>>
@@ -61,12 +97,21 @@ export function AdminReportProspectsPage() {
         })
       }
     >
-      {({ rows }) => (
-        <ReportTable
-          columns={COLUMNS}
-          rows={rows as ReportProspect[] as unknown as Record<string, unknown>[]}
-        />
-      )}
+      {({ rows }) => {
+        const filteredRows = hasActiveFilter ? filterRows(rows) : rows
+        const tableRows = (filteredRows as ReportProspect[] as unknown as Record<string, unknown>[])
+        return (
+          <>
+            <ReportSearch
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="Nombre, CI, teléfono o estado"
+              label="Buscar prospecto"
+            />
+            <ReportTable columns={COLUMNS} rows={tableRows} />
+          </>
+        )
+      }}
     </ReportLayout>
   )
 }
