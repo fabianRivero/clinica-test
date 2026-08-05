@@ -3,7 +3,7 @@ import { useCallback } from 'react'
 import { useBranchContext } from '../../../providers/BranchProvider'
 import { getAdminReportClients } from '../../../services/api/admin'
 import type { ReportClient, ReportResponse } from '../../../types/admin'
-import { branchNameToSlug } from './reportUtils'
+import { branchNameToSlug, dateTimeCell } from './reportUtils'
 import { ReportLayout } from './ReportLayout'
 import { ReportTable, type ReportTableColumn } from './ReportTable'
 import { buildReportExcelExport } from './useReportExcelExport'
@@ -13,7 +13,10 @@ const COLUMNS: ReportTableColumn[] = [
   { key: 'lastName', label: 'Apellido' },
   { key: 'ci', label: 'CI' },
   { key: 'status', label: 'Estado' },
-  { key: 'lastAppointmentDate', label: 'Última cita' },
+  { key: 'lastAppointmentDate', label: 'Última cita', render: dateTimeCell('lastAppointmentDate') },
+  { key: 'nextAppointmentDate', label: 'Próxima cita', render: dateTimeCell('nextAppointmentDate') },
+  { key: 'lastPaymentDate', label: 'Último pago', render: dateTimeCell('lastPaymentDate') },
+  { key: 'nextPaymentDate', label: 'Próximo pago', render: dateTimeCell('nextPaymentDate') },
 ]
 
 /**

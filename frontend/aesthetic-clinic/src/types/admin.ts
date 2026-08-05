@@ -114,6 +114,9 @@ export type ReportClient = {
   ci: string
   status: string
   lastAppointmentDate: string | null
+  nextAppointmentDate: string | null
+  lastPaymentDate: string | null
+  nextPaymentDate: string | null
 }
 
 export type ReportProspect = {
@@ -127,6 +130,8 @@ export type ReportProspect = {
   state: string
   createdAt: string
   registeredBy: string
+  lastAppointmentDate: string | null
+  nextAppointmentDate: string | null
 }
 
 export type ReportIncomeItem = {

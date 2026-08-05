@@ -25,25 +25,30 @@ The admin UI MUST expose a Reports navigation group with separate routes for cli
 - THEN every row belongs to branch A and records from branch B are excluded
 
 ### Requirement: Client report
-The client report MUST be read-only and display first name, last name, CI, status, and last appointment date. It SHOULD support text search and status filtering.
+The client report MUST be read-only and display first name, last name, CI, status, last appointment date and time, next appointment date and time, last payment date and time, and next payment date and time. Datetimes MUST be rendered in the locale `es-BO` (America/La_Paz). The report SHOULD support text search and status filtering.
 
 #### Scenario: Client rows are displayed
 - GIVEN clients exist for the active branch
 - WHEN the client report loads
-- THEN each row displays all five required fields
+- THEN each row displays all nine required fields, with null dates rendered as `-`
 
 #### Scenario: No clients exist
 - GIVEN the active branch has no clients
 - WHEN the report loads
 - THEN an explicit empty state is shown and export is unavailable
 
+#### Scenario: Next appointment and next payment are correctly resolved
+- GIVEN a client with one past appointment, one future appointment, one past payment, and one pending cuota
+- WHEN the client report loads
+- THEN the past appointment timestamp populates `Última cita`, the future appointment timestamp populates `Próxima cita`, the past payment timestamp populates `Último pago`, and the pending cuota's `fecha_vencimiento` populates `Próximo pago`
+
 ### Requirement: Prospect report
-The prospect report MUST be read-only and display each prospect with its status and relevant identifying/contact data. It SHOULD support search and status filtering.
+The prospect report MUST be read-only and display each prospect with its status, identifying/contact data, last appointment date and time, and next appointment date and time. Datetimes MUST be rendered in the locale `es-BO` (America/La_Paz). The report SHOULD support search and status filtering.
 
 #### Scenario: Prospect rows are displayed
 - GIVEN prospects exist for the active branch
 - WHEN the prospect report loads
-- THEN the table displays prospect identity, contact information, and status
+- THEN the table displays prospect identity, contact information, status, and appointment dates
 
 ### Requirement: Monthly income report
 The income report MUST provide month/year selection and include ALL recorded payments in the selected period, with amount, client, service, date, time, status, and invoice PDF URL when available.

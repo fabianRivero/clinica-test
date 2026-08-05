@@ -12,16 +12,18 @@ The tests follow the conventions used in ``backend/tests/`` (Django
 the Phase 1 backend contract required by the change.
 """
 
-from datetime import date
+from datetime import date, timedelta
+from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.utils import timezone
 
 from accounts.models import Rol, Usuario
 from billing.models import CuotaPlanPago, PagoRealizado
 from catalogs.models import Sucursal
 from customers.models import Cliente, Prospecto
-from operations.models import Operacion
+from operations.models import CitaMedica, Operacion
 from catalogs.models import ServicioConfig, TipoServicio, ProcEstetico, ProcEsteticosTipo
 
 
@@ -240,9 +242,73 @@ class AdminReportClientsTests(AdminReportEndpointSetupMixin, TestCase):
         response = self.client.get(self.URL)
         self.assertEqual(response.status_code, 200)
         row = response.json()["rows"][0]
-        for field in ("firstName", "lastName", "ci", "status", "lastAppointmentDate"):
+        for field in (
+            "firstName",
+            "lastName",
+            "ci",
+            "status",
+            "lastAppointmentDate",
+            "nextAppointmentDate",
+            "lastPaymentDate",
+            "nextPaymentDate",
+        ):
             self.assertIn(field, row, f"missing field: {field}")
         self.assertIn(row["status"], {"Activo", "Inactivo"})
+
+    def test_next_appointment_and_payment_resolve_correctly(self):
+        """`Última cita` populates from the most recent past appointment;
+        `Próxima cita` from the earliest future appointment. `Último pago`
+        populates from the most recent `PagoRealizado` (any status);
+        `Próximo pago` from the earliest pending `CuotaPlanPago`.
+        """
+        ana = Cliente.objects.get(usuario__username="user.Ana.Aguilar")
+        operacion = ana.operaciones.first()
+        self.assertIsNotNone(operacion, "fixture must create at least one operacion")
+
+        future = timezone.now() + timedelta(days=14)
+
+        # Wipe the fixture's citas so we can predict `Última cita` and
+        # `Próxima cita` cleanly.
+        operacion.citas_medicas.all().delete()
+        CitaMedica.objects.create(
+            operacion=operacion,
+            sucursal=ana.sucursal_registro,
+            fecha_hora=future,
+        )
+
+        self.client.force_login(self.admin_branch_a)
+        response = self.client.get(self.URL)
+        self.assertEqual(response.status_code, 200)
+        ana_row = next(row for row in response.json()["rows"] if row["firstName"] == "Ana")
+
+        # No past appointments, so `Última cita` is null. The freshly
+        # created future cita populates `Próxima cita`.
+        self.assertIsNone(ana_row["lastAppointmentDate"])
+        self.assertEqual(ana_row["nextAppointmentDate"], future.isoformat())
+
+        # `Último pago` is the most recent PagoRealizado from the fixture
+        # (the `_create_payment` helper attaches a PENDIENTE row).
+        last_payment_db = (
+            PagoRealizado.objects
+            .filter(cuota__operacion__paciente=ana)
+            .order_by("-created_at")
+            .first()
+        )
+        self.assertIsNotNone(last_payment_db, "fixture must include at least one PagoRealizado")
+        self.assertEqual(ana_row["lastPaymentDate"], last_payment_db.created_at.isoformat())
+
+        # `Próximo pago` is the earliest pending cuota's fecha_vencimiento,
+        # converted to datetime so the API emits an ISO string.
+        from datetime import datetime
+        pending_cuota = (
+            CuotaPlanPago.objects
+            .filter(operacion__paciente=ana, estado=CuotaPlanPago.Estado.PENDIENTE)
+            .order_by("fecha_vencimiento")
+            .first()
+        )
+        self.assertIsNotNone(pending_cuota, "fixture must include at least one PENDIENTE cuota")
+        expected_next = datetime.combine(pending_cuota.fecha_vencimiento, datetime.min.time())
+        self.assertEqual(ana_row["nextPaymentDate"], expected_next.isoformat())
 
     def test_500_row_cap_is_enforced(self):
         self.client.force_login(self.admin_principal)
@@ -306,6 +372,49 @@ class AdminReportProspectsTests(AdminReportEndpointSetupMixin, TestCase):
         self.assertEqual(row["firstName"], "Paula")
         self.assertEqual(row["ci"], "-")
         self.assertIn(row["state"], {"Pasajero", "Convertido", "Descartado"})
+        # New appointment date/time fields must be present (nullable).
+        for field in ("lastAppointmentDate", "nextAppointmentDate"):
+            self.assertIn(field, row, f"missing field: {field}")
+
+    def test_prospect_appointment_dates_resolve(self):
+        """The most recent past CitaProspecto populates `lastAppointmentDate`;
+        the earliest future CitaProspecto populates `nextAppointmentDate`."""
+        paula = Prospecto.objects.get(primer_nombre="Paula")
+        now = timezone.now()
+        past = now - timedelta(days=7)
+        future = now + timedelta(days=14)
+
+        # Build a minimal ServicioConfig (no proc_estetico — required for prospect
+        # cita medica). Reuse the same catalog objects created by setUp.
+        from operations.models import CitaProspecto
+        tipo_servicio = TipoServicio.objects.create(
+            tipo="srv-prospecto-test", orden=1, activo=True
+        )
+        servicio_config_medico = ServicioConfig.objects.create(
+            tipo_servicio=tipo_servicio,
+            proc_estetico=None,
+            activo=True,
+            precio_base=0,
+        )
+        CitaProspecto.objects.create(
+            prospecto=paula,
+            servicio_config=servicio_config_medico,
+            sucursal=self.branch_a,
+            fecha_hora=past,
+        )
+        CitaProspecto.objects.create(
+            prospecto=paula,
+            servicio_config=servicio_config_medico,
+            sucursal=self.branch_a,
+            fecha_hora=future,
+        )
+
+        self.client.force_login(self.admin_branch_a)
+        response = self.client.get(self.URL)
+        self.assertEqual(response.status_code, 200)
+        paula_row = next(row for row in response.json()["rows"] if row["firstName"] == "Paula")
+        self.assertEqual(paula_row["lastAppointmentDate"], past.isoformat())
+        self.assertEqual(paula_row["nextAppointmentDate"], future.isoformat())
 
     def test_500_row_cap_is_enforced(self):
         self.client.force_login(self.admin_principal)

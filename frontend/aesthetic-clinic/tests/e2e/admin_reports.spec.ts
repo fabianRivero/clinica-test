@@ -53,7 +53,10 @@ const clientsFixture: ReportFixture = {
       lastName: 'Aguilar',
       ci: '1001',
       status: 'Activo',
-      lastAppointmentDate: '2026-07-15',
+      lastAppointmentDate: '2026-07-15T15:30:00Z',
+      nextAppointmentDate: '2026-08-20T10:00:00Z',
+      lastPaymentDate: '2026-08-01T12:00:00Z',
+      nextPaymentDate: '2026-08-15T00:00:00',
     },
     {
       firstName: 'Andres',
@@ -61,6 +64,9 @@ const clientsFixture: ReportFixture = {
       ci: '1002',
       status: 'Activo',
       lastAppointmentDate: null,
+      nextAppointmentDate: null,
+      lastPaymentDate: null,
+      nextPaymentDate: null,
     },
   ],
 };
@@ -79,6 +85,8 @@ const prospectsFixture: ReportFixture = {
       state: 'Pasajero',
       createdAt: '2026-08-01',
       registeredBy: 'admin.general',
+      lastAppointmentDate: '2026-08-05T09:00:00Z',
+      nextAppointmentDate: '2026-08-25T16:30:00Z',
     },
   ],
 };

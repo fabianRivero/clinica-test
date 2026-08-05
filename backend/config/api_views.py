@@ -5899,28 +5899,86 @@ def admin_grupo_opciones_opciones_estado(request, grupo_id, opcion_id):
 REPORT_ROW_CAP = 500
 
 
-def _client_last_appointment_date(cliente):
-    """Return the most recent CitaMedica fecha for the client, excluding CANCELADA.
+def _client_appointment_dates(cliente):
+    """Return ``(last, next)`` appointment datetimes for the client.
 
     Looks at both ``Operacion``-bound appointments and free medical
     appointments (``CitaClienteLibre``) so clients who only have free medical
-    appointments still report a useful ``lastAppointmentDate``.
+    appointments still report useful dates. Cancelled appointments are
+    excluded. ``last`` is the most recent past or current datetime;
+    ``next`` is the earliest future datetime relative to ``timezone.now()``.
     """
-    latest = None
+    now = timezone.now()
+    last = None
+    next_date = None
+
+    def _consider(fecha):
+        nonlocal last, next_date
+        if fecha is None:
+            return
+        if fecha <= now:
+            if last is None or fecha > last:
+                last = fecha
+        else:
+            if next_date is None or fecha < next_date:
+                next_date = fecha
+
     for operacion in cliente.operaciones.all():
         for cita in operacion.citas_medicas.all():
             if cita.estado == CitaMedica.Estado.CANCELADA:
                 continue
-            fecha = cita.fecha_hora
-            if latest is None or fecha > latest:
-                latest = fecha
+            _consider(cita.fecha_hora)
     for cita in getattr(cliente, "citas_medicas_libres", []).all():
         if cita.estado == CitaClienteLibre.Estado.CANCELADA:
             continue
+        _consider(cita.fecha_hora)
+    return last, next_date
+
+
+def _client_payment_dates(cliente):
+    """Return ``(last, next)`` payment datetimes for the client.
+
+    ``last`` is the most recent ``PagoRealizado.created_at`` (any status,
+    matching the rest of the income report's "all payments" rule).
+    ``next`` is the earliest pending ``CuotaPlanPago.fecha_vencimiento``
+    for an unpaid cuota. Both are returned as ``datetime`` so the frontend
+    can format them with a single ``DateTimeFormat``.
+    """
+    from datetime import datetime, time as _time
+
+    last = None
+    next_date = None
+    for operacion in cliente.operaciones.all():
+        for cuota in operacion.cuotas_plan_pagos.all():
+            for pago in cuota.pagos_realizados.all():
+                created = pago.created_at
+                if last is None or created > last:
+                    last = created
+            if cuota.estado in {CuotaPlanPago.Estado.PENDIENTE, CuotaPlanPago.Estado.VENCIDA}:
+                fecha = cuota.fecha_vencimiento
+                if next_date is None or fecha < next_date:
+                    next_date = fecha
+    if next_date is not None and isinstance(next_date, datetime) is False:
+        next_date = datetime.combine(next_date, _time.min)
+    return last, next_date
+
+
+def _prospect_appointment_dates(prospecto):
+    """Return ``(last, next)`` ``CitaProspecto`` datetimes for the prospect."""
+    now = timezone.now()
+    last = None
+    next_date = None
+    for cita in getattr(prospecto, "citas_medicas", []).all():
+        if cita.estado == CitaProspecto.Estado.CANCELADA:
+            continue
         fecha = cita.fecha_hora
-        if latest is None or fecha > latest:
-            latest = fecha
-    return latest
+        if fecha <= now:
+            if last is None or fecha > last:
+                last = fecha
+        else:
+            if next_date is None or fecha < next_date:
+                next_date = fecha
+    return last, next_date
 
 
 def _report_client_row(cliente):
@@ -5928,7 +5986,8 @@ def _report_client_row(cliente):
     usuario = cliente.usuario
     primer_nombre = (usuario.primer_nombre or "").strip()
     apellido_paterno = (usuario.apellido_paterno or "").strip()
-    last_appointment = _client_last_appointment_date(cliente)
+    last_appointment, next_appointment = _client_appointment_dates(cliente)
+    last_payment, next_payment = _client_payment_dates(cliente)
     return {
         "id": f"CLI-{cliente.pk:04d}",
         "rawId": cliente.pk,
@@ -5937,11 +5996,15 @@ def _report_client_row(cliente):
         "ci": cliente.ci or "",
         "status": cliente.get_estado_cliente_display(),
         "lastAppointmentDate": last_appointment.isoformat() if last_appointment else None,
+        "nextAppointmentDate": next_appointment.isoformat() if next_appointment else None,
+        "lastPaymentDate": last_payment.isoformat() if last_payment else None,
+        "nextPaymentDate": next_payment.isoformat() if next_payment else None,
     }
 
 
 def _report_prospect_row(prospecto):
     """Build a single ReportProspect row from a ``Prospecto`` instance."""
+    last_appointment, next_appointment = _prospect_appointment_dates(prospecto)
     return {
         "id": f"PRO-{prospecto.pk:04d}",
         "rawId": prospecto.pk,
@@ -5953,6 +6016,8 @@ def _report_prospect_row(prospecto):
         "state": prospecto.get_estado_display(),
         "createdAt": _datetime_label(prospecto.created_at),
         "registeredBy": full_name(prospecto.registrado_por),
+        "lastAppointmentDate": last_appointment.isoformat() if last_appointment else None,
+        "nextAppointmentDate": next_appointment.isoformat() if next_appointment else None,
     }
 
 
@@ -6011,7 +6076,12 @@ def admin_report_prospects(request):
     from config.api_serializers import ReportProspectSerializer
 
     branch = get_user_branch(request)
-    prospectos_qs = Prospecto.objects.select_related("registrado_por")
+    prospectos_qs = Prospecto.objects.select_related("registrado_por").prefetch_related(
+        Prefetch(
+            "citas_medicas",
+            queryset=CitaProspecto.objects.select_related().order_by("fecha_hora"),
+        ),
+    )
     if branch:
         prospectos_qs = prospectos_qs.filter(sucursal_registro=branch)
 

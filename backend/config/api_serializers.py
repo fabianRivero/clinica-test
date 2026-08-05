@@ -29,10 +29,25 @@ class ReportClientSerializer(serializers.Serializer):
     ci = serializers.CharField()
     status = serializers.CharField()
     lastAppointmentDate = serializers.SerializerMethodField()
+    nextAppointmentDate = serializers.SerializerMethodField()
+    lastPaymentDate = serializers.SerializerMethodField()
+    nextPaymentDate = serializers.SerializerMethodField()
+
+    def _nullable(self, obj, key):
+        value = obj.get(key)
+        return value if value else None
 
     def get_lastAppointmentDate(self, obj):
-        value = obj.get("lastAppointmentDate")
-        return value if value else None
+        return self._nullable(obj, "lastAppointmentDate")
+
+    def get_nextAppointmentDate(self, obj):
+        return self._nullable(obj, "nextAppointmentDate")
+
+    def get_lastPaymentDate(self, obj):
+        return self._nullable(obj, "lastPaymentDate")
+
+    def get_nextPaymentDate(self, obj):
+        return self._nullable(obj, "nextPaymentDate")
 
 
 class ReportProspectSerializer(serializers.Serializer):
@@ -48,12 +63,24 @@ class ReportProspectSerializer(serializers.Serializer):
     state = serializers.CharField()
     createdAt = serializers.CharField()
     registeredBy = serializers.CharField()
+    lastAppointmentDate = serializers.SerializerMethodField()
+    nextAppointmentDate = serializers.SerializerMethodField()
 
     def get_ci(self, obj):
         # Prospects do not always carry a CI; render an explicit dash so the
         # frontend table stays uniform and the export keeps a stable column.
         value = obj.get("ci")
         return value if value else "-"
+
+    def _nullable(self, obj, key):
+        value = obj.get(key)
+        return value if value else None
+
+    def get_lastAppointmentDate(self, obj):
+        return self._nullable(obj, "lastAppointmentDate")
+
+    def get_nextAppointmentDate(self, obj):
+        return self._nullable(obj, "nextAppointmentDate")
 
 
 class ReportIncomeSerializer(serializers.Serializer):
