@@ -13,16 +13,20 @@
 
 Decision needed before apply: Yes
 Chained PRs recommended: Yes
-Chain strategy: pending
+Chain strategy: feature-branch-chain
 400-line budget risk: High
 
 ### Suggested Work Units
 
 | Unit | Goal | Likely PR | Notes |
 |------|------|-----------|-------|
-| 1 | Reports shell + clients and prospects reports | PR 1 | Base: main. Adds shell, table component, two pages, frontend types, two new endpoints. |
-| 2 | Income report | PR 2 | Base: main. Adds income endpoint, income page, joins `Pago` + `Cliente` + service + invoice. |
-| 3 | Expenses read-only mirror + E2E coverage | PR 3 | Base: main. Adds expenses page, e2e tests covering nav, isolation, exports, empty states. |
+| 1 | Reports shell + clients and prospects reports | PR 1 | Base: `feature/admin-reports`. Adds shell, table component, two pages, frontend types, two new endpoints. |
+| 2 | Income report | PR 2 | Base: `feature/admin-reports-pr1`. Adds income endpoint, income page, joins `Pago` + `Cliente` + service + invoice. |
+| 3 | Expenses read-only mirror + E2E coverage | PR 3 | Base: `feature/admin-reports-pr2`. Adds expenses page, e2e tests covering nav, isolation, exports, empty states. |
+
+### Override: single-PR `size:exception`
+
+The team has approved `size:exception`, so the work will be delivered as a single PR against `main`, but the stacked PRs above still describe the implementation order. The reviewer burden is absorbed by the existing 400-line review budget exception.
 
 ## Phase 1: Foundation (Backend contract)
 
