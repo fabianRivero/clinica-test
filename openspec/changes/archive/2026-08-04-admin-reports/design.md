@@ -30,7 +30,7 @@ Build a brand-new read-only Reports section inside the admin SPA, anchored on fo
 
 | Concern | Approach |
 |---|---|
-| Branch isolation | `IsAdminBranchMember` reused; endpoint takes `activeBranchId` from session, ignores any client-supplied branch param to avoid tampering. |
+| Branch isolation | `get_user_branch(request)` reused. The endpoint honours the active branch resolved by the helper, which for main admins accepts the `HTTP_X_SELECTED_BRANCH_ID` header **or** a `branchId` query/body parameter (so the global branch selector can switch contexts), and for branch admins falls back to their assigned branch. There is no path-level branch parameter, and the frontend never sends `branchId` from the report pages — the helper's session/header resolution is the single source of truth. |
 | Pagination | Hard cap of 500 rows per report; ETag-based revalidation handled by the shared `useApiResource` hook. |
 | Invoice URL | Same field name (`invoiceUrl`) as expenses; no rewriting. |
 | `lastAppointmentDate` | New column on the client serializer; sourced from the most recent `Cita` (excluding `CANCELADA`) on the client's branch. |
