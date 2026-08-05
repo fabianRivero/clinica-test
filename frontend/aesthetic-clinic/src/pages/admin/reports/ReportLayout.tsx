@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { DataState } from '../../../components/admin/DataState'
 import { PageHeader } from '../../../components/admin/PageHeader'
@@ -97,8 +97,21 @@ export function ReportLayout<T>({
   const [month, setMonth] = useState(defaultMonth ?? now.getMonth() + 1)
   const [year, setYear] = useState(defaultYear ?? now.getFullYear())
 
-  const periodLoader = useCallback(() => loader(), [loader, branchId, month, year])
-  const { data, isLoading, error, reload } = useApiResource<T>(periodLoader)
+  const { data, isLoading, error, reload } = useApiResource<T>(loader)
+
+  // The page-supplied loader closes over refs (so its identity is stable),
+  // which means `useApiResource` won't refetch on its own when the user
+  // navigates the period or switches branch. Trigger the refetch explicitly
+  // when any of those inputs change. The first run is skipped because
+  // `useApiResource` already fires its own fetch on mount.
+  const hasMountedRef = useRef(false)
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true
+      return
+    }
+    reload()
+  }, [branchId, month, year, reload])
 
   const rows = useMemo<unknown[]>(() => {
     if (!data) return []

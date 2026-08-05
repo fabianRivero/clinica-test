@@ -153,10 +153,6 @@ export type ReportResponse<T> = {
   year?: number
 }
 
-export type ReportClientResponse = ReportResponse<ReportClient>
-export type ReportProspectResponse = ReportResponse<ReportProspect>
-export type ReportIncomeResponse = ReportResponse<ReportIncomeItem>
-
 export type UpsertAdminExpensePayload = {
   date: string
   categoryId: number | string

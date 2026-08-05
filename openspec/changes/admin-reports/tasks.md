@@ -60,5 +60,5 @@ The team has approved `size:exception`, so the work will be delivered as a singl
 
 ## Phase 5: Cleanup
 
-- [ ] 5.1 Remove temporary code, dead imports, and ensure shared `useApiResource` is used consistently.
-- [ ] 5.2 Confirm no regression in existing admin pages (`/cms/gastos/lista`, `/cms/pagos/pendientes`).
+- [x] 5.1 Remove temporary code, dead imports, and ensure shared `useApiResource` is used consistently.
+- [x] 5.2 Confirm no regression in existing admin pages (`/cms/gastos/lista`, `/cms/pagos/pendientes`).

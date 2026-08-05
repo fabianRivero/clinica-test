@@ -220,7 +220,10 @@ test.describe('Admin Reports — /cms/reportes/* navigation, period controls, an
 
   test('Clients report renders the table at /cms/reportes/clientes', async ({ page }) => {
     await page.goto('/cms/reportes/clientes');
-    await expect(page.getByRole('heading', { name: /Reporte de clientes/i })).toBeVisible();
+    // `ReportLayout` renders the title in both the `PageHeader` (`<h1>`) and
+    // the `SectionCard` (`<h2>`) when `withPeriod` is false. `.first()`
+    // disambiguates so the strict-mode locator resolves to the page heading.
+    await expect(page.getByRole('heading', { name: /Reporte de clientes/i }).first()).toBeVisible();
     // The clients report does NOT expose period controls (no month/year on the page).
     await expect(page.locator('.expense-period-controls')).toHaveCount(0);
     // Row count matches the fixture.
@@ -231,7 +234,10 @@ test.describe('Admin Reports — /cms/reportes/* navigation, period controls, an
 
   test('Prospects report renders the table at /cms/reportes/prospectos', async ({ page }) => {
     await page.goto('/cms/reportes/prospectos');
-    await expect(page.getByRole('heading', { name: /Reporte de prospectos/i })).toBeVisible();
+    // `ReportLayout` renders the title in both the `PageHeader` (`<h1>`) and
+    // the `SectionCard` (`<h2>`). `.first()` disambiguates so the strict-mode
+    // locator resolves to the page heading.
+    await expect(page.getByRole('heading', { name: /Reporte de prospectos/i }).first()).toBeVisible();
     await expect(page.locator('.expense-period-controls')).toHaveCount(0);
     await expect(page.locator('table.admin-table tbody tr')).toHaveCount(prospectsFixture.rows.length);
     await expect(page.getByRole('button', { name: /↓ Excel/i })).toBeVisible();
@@ -239,7 +245,10 @@ test.describe('Admin Reports — /cms/reportes/* navigation, period controls, an
 
   test('Income report at /cms/reportes/ingresos exposes period controls', async ({ page }) => {
     await page.goto('/cms/reportes/ingresos');
-    await expect(page.getByRole('heading', { name: /Reporte de ingresos/i })).toBeVisible();
+    // `ReportLayout` renders the title in both the `PageHeader` (`<h1>`) and
+    // the `SectionCard` (`<h2>`). `.first()` disambiguates so the strict-mode
+    // locator resolves to the page heading.
+    await expect(page.getByRole('heading', { name: /Reporte de ingresos/i }).first()).toBeVisible();
     // Period controls MUST be visible on the income report.
     await expect(page.locator('.expense-period-controls')).toBeVisible();
     // Month + year selects live inside the period controls.
@@ -250,7 +259,10 @@ test.describe('Admin Reports — /cms/reportes/* navigation, period controls, an
 
   test('Expenses report at /cms/reportes/gastos exposes period controls', async ({ page }) => {
     await page.goto('/cms/reportes/gastos');
-    await expect(page.getByRole('heading', { name: /Reporte de gastos/i })).toBeVisible();
+    // `ReportLayout` renders the title in both the `PageHeader` (`<h1>`) and
+    // the `SectionCard` (`<h2>`). `.first()` disambiguates so the strict-mode
+    // locator resolves to the page heading.
+    await expect(page.getByRole('heading', { name: /Reporte de gastos/i }).first()).toBeVisible();
     await expect(page.locator('.expense-period-controls')).toBeVisible();
     await expect(page.locator('.expense-period-controls select')).toHaveCount(2);
     await expect(page.locator('table.admin-table tbody tr')).toHaveCount(expensesFixture.rows.length);
