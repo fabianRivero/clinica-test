@@ -53,10 +53,10 @@ The team has approved `size:exception`, so the work will be delivered as a singl
 
 ## Phase 4: Testing and verification
 
-- [ ] 4.1 Add `tests/e2e/admin_reports.spec.ts` covering: navigation, branch isolation, XLSX download trigger, empty state, and error state.
-- [ ] 4.2 Verify the new endpoints against the spec scenarios: branch isolation, admin-only, all-payments included, invoice URL is a usable hyperlink.
-- [ ] 4.3 Run `npm run lint` and `npx tsc --noEmit` in `frontend/aesthetic-clinic/`.
-- [ ] 4.4 Run `python manage.py test` in `backend/`.
+- [x] 4.1 Add `tests/e2e/admin_reports.spec.ts` covering: navigation, branch isolation, XLSX download trigger, empty state, and error state.
+- [x] 4.2 Verify the new endpoints against the spec scenarios: branch isolation, admin-only, all-payments included, invoice URL is a usable hyperlink.
+- [x] 4.3 Run `npm run lint` and `npx tsc --noEmit` in `frontend/aesthetic-clinic/`.
+- [x] 4.4 Run `python manage.py test` in `backend/`.
 
 ## Phase 5: Cleanup
 
