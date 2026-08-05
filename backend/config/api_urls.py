@@ -89,6 +89,9 @@ from config.api_views import (
     admin_offline_confirmation_conflicts,
     admin_resolve_offline_confirmation_conflict,
     admin_offline_confirmation_metrics,
+    admin_report_clients,
+    admin_report_prospects,
+    admin_report_income,
 )
 from config.prospect_conversion_views import (
     admin_prospect_conversion_cancel,
@@ -124,6 +127,10 @@ urlpatterns = [
     path("citas/offline/conflictos/<slug:event_id>/resolver/", admin_resolve_offline_confirmation_conflict, name="admin-offline-confirmation-conflict-resolve-api"),
     path("citas/offline/metricas/", admin_offline_confirmation_metrics, name="admin-offline-confirmation-metrics-api"),
     path("gastos/", admin_gastos, name="admin-gastos-api"),
+    # Admin Reports — branch-scoped, read-only datasets (Phase 1 contract).
+    path("reportes/clientes/", admin_report_clients, name="admin-report-clients-api"),
+    path("reportes/prospectos/", admin_report_prospects, name="admin-report-prospects-api"),
+    path("reportes/ingresos/", admin_report_income, name="admin-report-income-api"),
     path("gastos/categorias/", admin_gastos_categorias, name="admin-gastos-categorias-api"),
     path("gastos/crear/", admin_gasto_crear, name="admin-gastos-crear-api"),
     path("gastos/<int:expense_id>/actualizar/", admin_gasto_actualizar, name="admin-gastos-actualizar-api"),

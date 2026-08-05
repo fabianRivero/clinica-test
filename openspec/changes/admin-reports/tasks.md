@@ -30,10 +30,10 @@ The team has approved `size:exception`, so the work will be delivered as a singl
 
 ## Phase 1: Foundation (Backend contract)
 
-- [ ] 1.1 Add `ReportClientSerializer`, `ReportProspectSerializer`, `ReportIncomeSerializer` in `backend/config/api_serializers.py` with `firstName`, `lastName`, `ci`, `status`, `lastAppointmentDate` for clients.
-- [ ] 1.2 Add `AdminReportClientsView`, `AdminReportProspectsView`, `AdminReportIncomeView` in `backend/config/api_views.py`; branch-scoped, admin-only, 500-row cap.
-- [ ] 1.3 Register the three endpoints under `/api/admin/reportes/` in `backend/config/api_urls.py`.
-- [ ] 1.4 Add backend test in `backend/config/tests/test_admin_reports.py` covering branch isolation, admin-only access, and 500-row cap.
+- [x] 1.1 Add `ReportClientSerializer`, `ReportProspectSerializer`, `ReportIncomeSerializer` in `backend/config/api_serializers.py` with `firstName`, `lastName`, `ci`, `status`, `lastAppointmentDate` for clients.
+- [x] 1.2 Add `AdminReportClientsView`, `AdminReportProspectsView`, `AdminReportIncomeView` in `backend/config/api_views.py`; branch-scoped, admin-only, 500-row cap.
+- [x] 1.3 Register the three endpoints under `/api/admin/reportes/` in `backend/config/api_urls.py`.
+- [x] 1.4 Add backend test in `backend/config/tests/test_admin_reports.py` covering branch isolation, admin-only access, and 500-row cap.
 
 ## Phase 2: Frontend shell and shared primitives
 

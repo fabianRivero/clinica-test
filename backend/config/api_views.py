@@ -5879,3 +5879,201 @@ def admin_grupo_opciones_opciones_estado(request, grupo_id, opcion_id):
             "item": _serialize_opcion(opcion),
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Admin Reports — branch-scoped, read-only datasets
+# ---------------------------------------------------------------------------
+#
+# These endpoints back the admin Reports section. Each endpoint:
+#   * requires an authenticated admin (via ``admin_required``),
+#   * resolves the active branch from the session via ``get_user_branch``
+#     (no client-supplied branch id is honoured, preventing tampering),
+#   * caps the response at 500 rows to keep browser exports bounded, and
+#   * returns a uniform envelope ``{branch, month?, year?, rows[]}``.
+#
+# The row payloads are produced by DRF serializers in
+# ``config.api_serializers`` so the frontend never has to re-split or rename
+# backend fields.
+
+REPORT_ROW_CAP = 500
+
+
+def _client_last_appointment_date(cliente):
+    """Return the most recent CitaMedica fecha for the client, excluding CANCELADA.
+
+    Looks at both ``Operacion``-bound appointments and free medical
+    appointments (``CitaClienteLibre``) so clients who only have free medical
+    appointments still report a useful ``lastAppointmentDate``.
+    """
+    latest = None
+    for operacion in cliente.operaciones.all():
+        for cita in operacion.citas_medicas.all():
+            if cita.estado == CitaMedica.Estado.CANCELADA:
+                continue
+            fecha = cita.fecha_hora
+            if latest is None or fecha > latest:
+                latest = fecha
+    for cita in getattr(cliente, "citas_medicas_libres", []).all():
+        if cita.estado == CitaClienteLibre.Estado.CANCELADA:
+            continue
+        fecha = cita.fecha_hora
+        if latest is None or fecha > latest:
+            latest = fecha
+    return latest
+
+
+def _report_client_row(cliente):
+    """Build a single ReportClient row from a ``Cliente`` instance."""
+    usuario = cliente.usuario
+    primer_nombre = (usuario.primer_nombre or "").strip()
+    apellido_paterno = (usuario.apellido_paterno or "").strip()
+    last_appointment = _client_last_appointment_date(cliente)
+    return {
+        "id": f"CLI-{cliente.pk:04d}",
+        "rawId": cliente.pk,
+        "firstName": primer_nombre,
+        "lastName": f"{apellido_paterno} {(usuario.apellido_materno or '').strip()}".strip(),
+        "ci": cliente.ci or "",
+        "status": cliente.get_estado_cliente_display(),
+        "lastAppointmentDate": last_appointment.isoformat() if last_appointment else None,
+    }
+
+
+def _report_prospect_row(prospecto):
+    """Build a single ReportProspect row from a ``Prospecto`` instance."""
+    return {
+        "id": f"PRO-{prospecto.pk:04d}",
+        "rawId": prospecto.pk,
+        "firstName": (prospecto.primer_nombre or "").strip(),
+        "lastName": f"{prospecto.apellido_paterno or ''} {(prospecto.apellido_materno or '').strip()}".strip(),
+        "phone": prospecto.telefono or "",
+        "ci": getattr(prospecto, "ci", "") or "",
+        "interest": _prospect_interest(prospecto),
+        "state": prospecto.get_estado_display(),
+        "createdAt": _datetime_label(prospecto.created_at),
+        "registeredBy": full_name(prospecto.registrado_por),
+    }
+
+
+def _report_income_row(payment):
+    """Build a single ReportIncome row from a ``PagoRealizado`` instance."""
+    operacion = payment.cuota.operacion
+    submitted = payment.created_at
+    invoice_field = payment.comprobante_url
+    return {
+        "paymentId": payment.pk,
+        "date": submitted.date().isoformat() if submitted else "",
+        "time": submitted.strftime("%H:%M") if submitted else "",
+        "amount": str(payment.monto_pagado),
+        "clientName": full_name(operacion.paciente.usuario),
+        "serviceName": procedure_name(operacion),
+        "status": _payment_status(payment),
+        "invoiceUrl": invoice_field.url if invoice_field else "",
+        "invoiceName": PurePosixPath(invoice_field.name).name if invoice_field else "",
+    }
+
+
+@require_GET
+@admin_required
+def admin_report_clients(request):
+    """Branch-scoped read-only client dataset for the admin reports area."""
+    from config.api_serializers import ReportClientSerializer
+
+    branch = get_user_branch(request)
+    clientes_qs = _admin_client_queryset()
+    if branch:
+        clientes_qs = clientes_qs.filter(sucursal_registro=branch)
+
+    # Stable ordering so the same row set is returned across requests.
+    clientes_qs = clientes_qs.order_by(
+        "usuario__primer_nombre", "usuario__apellido_paterno", "pk"
+    )
+
+    full_count = clientes_qs.count()
+    rows = [_report_client_row(cliente) for cliente in clientes_qs[:REPORT_ROW_CAP]]
+    serialized = ReportClientSerializer(rows, many=True).data
+
+    return json_response(
+        {
+            "branch": {"id": branch.pk, "name": branch.nombre} if branch else None,
+            "rows": serialized,
+            "cap": REPORT_ROW_CAP,
+            "truncated": full_count > REPORT_ROW_CAP,
+        }
+    )
+
+
+@require_GET
+@admin_required
+def admin_report_prospects(request):
+    """Branch-scoped read-only prospect dataset for the admin reports area."""
+    from config.api_serializers import ReportProspectSerializer
+
+    branch = get_user_branch(request)
+    prospectos_qs = Prospecto.objects.select_related("registrado_por")
+    if branch:
+        prospectos_qs = prospectos_qs.filter(sucursal_registro=branch)
+
+    prospectos_qs = prospectos_qs.order_by("-created_at")
+    rows = [_report_prospect_row(prospecto) for prospecto in prospectos_qs[:REPORT_ROW_CAP]]
+    serialized = ReportProspectSerializer(rows, many=True).data
+
+    return json_response(
+        {
+            "branch": {"id": branch.pk, "name": branch.nombre} if branch else None,
+            "rows": serialized,
+            "cap": REPORT_ROW_CAP,
+            "truncated": prospectos_qs.count() > REPORT_ROW_CAP,
+        }
+    )
+
+
+@require_GET
+@admin_required
+def admin_report_income(request):
+    """Branch-scoped read-only monthly income dataset for the admin reports area."""
+    from config.api_serializers import ReportIncomeSerializer
+
+    branch = get_user_branch(request)
+    today = timezone.localdate()
+    try:
+        month = int(request.GET.get("month") or today.month)
+        year = int(request.GET.get("year") or today.year)
+    except (TypeError, ValueError):
+        return json_response({"detail": "Mes o anio invalido."}, status=400)
+
+    if month == 12:
+        end = date(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end = date(year, month + 1, 1) - timedelta(days=1)
+    start = date(year, month, 1)
+
+    pagos_qs = (
+        PagoRealizado.objects.select_related(
+            "cuota__operacion__paciente__usuario",
+            "cuota__operacion__servicio_config__proc_estetico",
+            "cuota__operacion__servicio_config__tipo_servicio",
+            "verificado_por",
+        )
+        .filter(cuota__fecha_vencimiento__range=(start, end))
+        .order_by("-created_at")
+    )
+    if branch:
+        pagos_qs = pagos_qs.filter(
+            cuota__operacion__paciente__sucursal_registro=branch
+        ).distinct()
+
+    rows = [_report_income_row(payment) for payment in pagos_qs[:REPORT_ROW_CAP]]
+    serialized = ReportIncomeSerializer(rows, many=True).data
+
+    return json_response(
+        {
+            "branch": {"id": branch.pk, "name": branch.nombre} if branch else None,
+            "month": month,
+            "year": year,
+            "rows": serialized,
+            "cap": REPORT_ROW_CAP,
+            "truncated": pagos_qs.count() > REPORT_ROW_CAP,
+        }
+    )
