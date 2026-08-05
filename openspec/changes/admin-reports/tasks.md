@@ -37,10 +37,10 @@ The team has approved `size:exception`, so the work will be delivered as a singl
 
 ## Phase 2: Frontend shell and shared primitives
 
-- [ ] 2.1 Add `ReportClient`, `ReportProspect`, `ReportIncomeItem`, `ReportResponse` in `frontend/aesthetic-clinic/src/types/admin.ts`.
-- [ ] 2.2 Add `getAdminReportClients`, `getAdminReportProspects`, `getAdminReportIncome` in `frontend/aesthetic-clinic/src/services/api/admin.ts`.
-- [ ] 2.3 Create `ReportLayout.tsx` in `pages/admin/reports/` with branch header, loading/error/empty wrappers, and month/year controls.
-- [ ] 2.4 Create `ReportTable.tsx` in `pages/admin/reports/` with `columns[]` slot and XLSX export button using `xlsx` and `HYPERLINK` formulas for invoice URLs.
+- [x] 2.1 Add `ReportClient`, `ReportProspect`, `ReportIncomeItem`, `ReportResponse` in `frontend/aesthetic-clinic/src/types/admin.ts`.
+- [x] 2.2 Add `getAdminReportClients`, `getAdminReportProspects`, `getAdminReportIncome` in `frontend/aesthetic-clinic/src/services/api/admin.ts`.
+- [x] 2.3 Create `ReportLayout.tsx` in `pages/admin/reports/` with branch header, loading/error/empty wrappers, and month/year controls.
+- [x] 2.4 Create `ReportTable.tsx` in `pages/admin/reports/` with `columns[]` slot and XLSX export button using `xlsx` and `HYPERLINK` formulas for invoice URLs.
 
 ## Phase 3: Report pages and navigation
 

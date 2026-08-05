@@ -98,6 +98,65 @@ export type ExpensesResponse = {
   expenses: ExpenseItem[]
 }
 
+// --- Admin Reports ---
+// Backend emits explicit camelCase rows under
+// `/api/admin/reportes/{clientes,prospectos,ingresos}/` so the frontend never
+// has to rename backend fields. The envelope mirrors the shape returned by
+// `admin_report_clients` / `admin_report_prospects` / `admin_report_income`
+// (`backend/config/api_views.py`): `{ branch, rows, cap, truncated }`, with
+// `month`/`year` added on the income response.
+
+export type ReportClient = {
+  id: string
+  rawId: number
+  firstName: string
+  lastName: string
+  ci: string
+  status: string
+  lastAppointmentDate: string | null
+}
+
+export type ReportProspect = {
+  id: string
+  rawId: number
+  firstName: string
+  lastName: string
+  phone: string
+  ci: string
+  interest: string
+  state: string
+  createdAt: string
+  registeredBy: string
+}
+
+export type ReportIncomeItem = {
+  paymentId: number
+  date: string
+  time: string
+  amount: string
+  clientName: string
+  serviceName: string
+  status: string
+  invoiceUrl: string | null
+  invoiceName: string | null
+}
+
+export type ReportResponse<T> = {
+  branch: {
+    id: number
+    name: string
+  } | null
+  rows: T[]
+  cap: number
+  truncated: boolean
+  month?: number
+  year?: number
+}
+
+export type ReportClientResponse = ReportResponse<ReportClient>
+export type ReportProspectResponse = ReportResponse<ReportProspect>
+export type ReportIncomeResponse = ReportResponse<ReportIncomeItem>
+
 export type UpsertAdminExpensePayload = {
   date: string
   categoryId: number | string

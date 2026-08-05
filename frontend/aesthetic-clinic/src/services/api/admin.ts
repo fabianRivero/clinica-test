@@ -33,6 +33,13 @@ import type {
   OperationsResponse,
   PaymentsResponse,
   ProspectsResponse,
+  ReportClient,
+  ReportClientResponse,
+  ReportIncomeItem,
+  ReportIncomeResponse,
+  ReportProspect,
+  ReportProspectResponse,
+  ReportResponse,
   StaffResponse,
   UpdateAdminOperationDetailsPayload,
   UpdateAdminOperationPricePayload,
@@ -300,6 +307,26 @@ function expensePayloadToFormData(payload: UpsertAdminExpensePayload) {
 
 export function getAdminExpenses(month: number, year: number) {
   return requestJson<ExpensesResponse>(`/api/admin/gastos/?month=${month}&year=${year}`)
+}
+
+// --- Admin Reports ---
+// Branch-scoped, read-only datasets used by `ReportLayout` and the four report
+// pages. The backend resolves the active branch from the session/header, so we
+// don't pass `branchId`. Income requires `month` + `year` because the queryset
+// is filtered by `cuota__fecha_vencimiento` inside the requested period.
+
+export function getAdminReportClients() {
+  return requestJson<ReportResponse<ReportClient>>('/api/admin/reportes/clientes/')
+}
+
+export function getAdminReportProspects() {
+  return requestJson<ReportResponse<ReportProspect>>('/api/admin/reportes/prospectos/')
+}
+
+export function getAdminReportIncome(month: number, year: number) {
+  return requestJson<ReportResponse<ReportIncomeItem>>(
+    `/api/admin/reportes/ingresos/?month=${month}&year=${year}`,
+  )
 }
 
 export function createAdminExpense(payload: UpsertAdminExpensePayload) {
