@@ -317,4 +317,33 @@ test.describe('Admin Reports — /cms/reportes/* navigation, period controls, an
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/^ingresos_\d+_\d+\.xlsx$/);
   });
+
+  test('Report page renders an error state when the endpoint fails', async ({ page, context }) => {
+    // Re-route the income endpoint with a 500 status. `ReportLayout`
+    // surfaces this through `useApiResource`, which captures the error
+    // and renders a `<DataState tone="danger">` so admins can see the
+    // failure without stale or cross-branch data leaking through.
+    await context.unroute(/\/api\/admin\/reportes\/ingresos\/?(\?.*)?$/);
+    await context.route(/\/api\/admin\/reportes\/ingresos\/?(\?.*)?$/, async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'Internal server error' }),
+      });
+    });
+
+    await page.goto('/cms/reportes/ingresos');
+    // The shared error card uses a `<SectionCard>` titled with the error
+    // string and renders a `<DataState tone="danger">`. We assert both
+    // pieces so a regression in either the title or the data state
+    // surfaces in this test. `.first()` disambiguates because the same
+    // title is reused by the SectionCard wrapper and the inner DataState.
+    await expect(page.getByText(/No pudimos cargar el reporte/i).first()).toBeVisible();
+    await expect(page.locator('.data-state--danger')).toBeVisible();
+    // The page must NOT show the table or the export button when the
+    // initial fetch fails — admins should not be able to export stale
+    // data from a previous successful run.
+    await expect(page.locator('table.admin-table')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /↓ Excel/i })).toHaveCount(0);
+  });
 });
