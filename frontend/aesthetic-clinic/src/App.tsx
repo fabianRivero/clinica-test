@@ -32,6 +32,10 @@ import { AdminTicketDetailPage } from './pages/admin/AdminTicketDetailPage'
 import { AdminProspectConvertPage } from './pages/admin/prospect-convert'
 import { AdminProspectCreatePage } from './pages/admin/AdminProspectCreatePage'
 import { AdminProspectsPage } from './pages/admin/AdminProspectsPage'
+import { AdminReportClientsPage } from './pages/admin/reports/AdminReportClientsPage'
+import { AdminReportProspectsPage } from './pages/admin/reports/AdminReportProspectsPage'
+import { AdminReportIncomePage } from './pages/admin/reports/AdminReportIncomePage'
+import { AdminReportExpensesPage } from './pages/admin/reports/AdminReportExpensesPage'
 import { AdminStaffCreatePage, AdminStaffManagePage } from './pages/admin/AdminStaffPage'
 import { AdminBranchesPage } from './pages/admin/AdminBranchesPage'
 import { AdminBranchHistoryPage } from './pages/admin/AdminBranchHistoryPage'
@@ -141,6 +145,11 @@ function App() {
           <Route path="pagos/qr" element={<AdminPaymentsPage view="qr" />} />
           <Route path="pagos/pendientes" element={<AdminPaymentsPage view="pendientes" />} />
           <Route path="pagos/cuotas" element={<AdminPaymentsPage view="cuotas" />} />
+          <Route path="reportes" element={<Navigate to="/cms/reportes/clientes" replace />} />
+          <Route path="reportes/clientes" element={<AdminReportClientsPage />} />
+          <Route path="reportes/prospectos" element={<AdminReportProspectsPage />} />
+          <Route path="reportes/ingresos" element={<AdminReportIncomePage />} />
+          <Route path="reportes/gastos" element={<AdminReportExpensesPage />} />
           <Route path="mensajes" element={<Navigate to="/cms/mensajes/permisos" replace />} />
           <Route path="mensajes/permisos" element={<AdminMessagingPermissionsPage />} />
           <Route path="mensajes/fichas" element={<AdminMessagingTicketsPage />} />

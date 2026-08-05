@@ -44,12 +44,12 @@ The team has approved `size:exception`, so the work will be delivered as a singl
 
 ## Phase 3: Report pages and navigation
 
-- [ ] 3.1 Create `AdminReportClientsPage.tsx` rendering `firstName`, `lastName`, `ci`, `status`, `lastAppointmentDate` and the export button.
-- [ ] 3.2 Create `AdminReportProspectsPage.tsx` rendering `firstName`, `lastName`, `phone`, `ci`, `interest`, `state`, `createdAt`, `registeredBy`.
-- [ ] 3.3 Create `AdminReportIncomePage.tsx` with month/year controls, income rows, invoice `HYPERLINK` export.
-- [ ] 3.4 Create `AdminReportExpensesPage.tsx` reusing `getAdminExpenses` and the existing month/year UX; export mirrors `AdminExpenseListPage`.
-- [ ] 3.5 Add `Reportes` group in `layouts/AdminLayout.tsx` with 4 children (`/cms/reportes/clientes`, `prospectos`, `ingresos`, `gastos`).
-- [ ] 3.6 Register routes in `App.tsx` and add `index` redirect to `clientes`.
+- [x] 3.1 Create `AdminReportClientsPage.tsx` rendering `firstName`, `lastName`, `ci`, `status`, `lastAppointmentDate` and the export button.
+- [x] 3.2 Create `AdminReportProspectsPage.tsx` rendering `firstName`, `lastName`, `phone`, `ci`, `interest`, `state`, `createdAt`, `registeredBy`.
+- [x] 3.3 Create `AdminReportIncomePage.tsx` with month/year controls, income rows, invoice `HYPERLINK` export.
+- [x] 3.4 Create `AdminReportExpensesPage.tsx` reusing `getAdminExpenses` and the existing month/year UX; export mirrors `AdminExpenseListPage`.
+- [x] 3.5 Add `Reportes` group in `layouts/AdminLayout.tsx` with 4 children (`/cms/reportes/clientes`, `prospectos`, `ingresos`, `gastos`).
+- [x] 3.6 Register routes in `App.tsx` and add `index` redirect to `clientes`.
 
 ## Phase 4: Testing and verification
 

@@ -1,0 +1,94 @@
+import { useCallback, useRef } from 'react'
+
+import { getAdminReportIncome } from '../../../services/api/admin'
+import type { ReportIncomeItem, ReportResponse } from '../../../types/admin'
+import { ReportLayout } from './ReportLayout'
+import { ReportTable, type ReportTableColumn } from './ReportTable'
+
+const COLUMNS: ReportTableColumn[] = [
+  { key: 'date', label: 'Fecha' },
+  { key: 'time', label: 'Hora' },
+  { key: 'amount', label: 'Monto' },
+  { key: 'clientName', label: 'Cliente' },
+  { key: 'serviceName', label: 'Servicio' },
+  { key: 'status', label: 'Estado' },
+  {
+    key: 'invoiceUrl',
+    label: 'Factura',
+    // Render as an anchor in the table; `ReportTable` also writes a
+    // `HYPERLINK` formula into the exported sheet so Excel renders a
+    // clickable link for the same row (mirrors `AdminExpenseListPage`).
+    render: (row) => {
+      const url = typeof row.invoiceUrl === 'string' ? row.invoiceUrl : ''
+      if (!url) return 'Sin factura'
+      return (
+        <a href={url} rel="noreferrer" target="_blank">
+          Ver factura
+        </a>
+      )
+    },
+  },
+]
+
+/**
+ * Branch-scoped income report.
+ *
+ * Pulls `ReportIncomeItem[]` from the new `/api/admin/reportes/ingresos/`
+ * endpoint via `getAdminReportIncome(month, year)`. The page enables the
+ * month/year picker inside `ReportLayout` (`withPeriod`) so users can
+ * navigate across periods without leaving the page.
+ *
+ * The loader closure captures the period via refs that are kept in sync with
+ * `ReportLayout`'s internal month/year state through the `children` render
+ * prop. This is the only way to feed a parameterized loader into the shared
+ * shell without rewriting `ReportLayout`.
+ *
+ * Read-only: row-level invoice URL is rendered as a clickable `<a>` in the
+ * table AND exported as a `HYPERLINK` formula by `ReportTable`.
+ */
+export function AdminReportIncomePage() {
+  const now = new Date()
+  const monthRef = useRef(now.getMonth() + 1)
+  const yearRef = useRef(now.getFullYear())
+
+  const loader = useCallback(
+    () => getAdminReportIncome(monthRef.current, yearRef.current),
+    [],
+  )
+  const rowsSelector = useCallback(
+    (data: ReportResponse<ReportIncomeItem>) => data.rows ?? [],
+    [],
+  )
+
+  return (
+    <ReportLayout<ReportResponse<ReportIncomeItem>>
+      title="Reporte de ingresos"
+      description="Pagos registrados en el mes seleccionado, con vinculo directo a la factura cuando esta disponible."
+      loader={loader}
+      rowsSelector={rowsSelector}
+      withPeriod
+      emptyTitle="Sin ingresos en el mes seleccionado"
+      emptyMessage="No se registran pagos para el periodo que estas consultando."
+      periodLabel="Periodo de ingresos"
+    >
+      {({ rows, period }) => {
+        // Sync refs with the period owned by `ReportLayout`. Updated during
+        // render so the subsequent `useApiResource` effect (which re-runs
+        // whenever the layout recreates its internal loader) reads the
+        // latest month/year when it invokes our loader.
+        monthRef.current = period.month
+        yearRef.current = period.year
+
+        return (
+          <ReportTable
+            columns={COLUMNS}
+            rows={rows as ReportIncomeItem[] as unknown as Record<string, unknown>[]}
+            filename={`ingresos_${period.month}_${period.year}.xlsx`}
+            sheetName="Ingresos"
+            withHyperlinks
+          />
+        )
+      }}
+    </ReportLayout>
+  )
+}

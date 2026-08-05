@@ -38,6 +38,15 @@ const fullNavigation = [
       { to: '/cms/pagos/cuotas', label: 'Todas las cuotas' },
     ],
   },
+  {
+    label: 'Reportes',
+    children: [
+      { to: '/cms/reportes/clientes', label: 'Clientes' },
+      { to: '/cms/reportes/prospectos', label: 'Prospectos' },
+      { to: '/cms/reportes/ingresos', label: 'Ingresos' },
+      { to: '/cms/reportes/gastos', label: 'Gastos' },
+    ],
+  },
   { to: '/cms/notificaciones', label: 'Notificaciones' },
   {
     label: 'Gestion de sucursales',
