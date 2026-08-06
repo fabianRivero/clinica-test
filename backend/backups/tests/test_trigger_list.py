@@ -14,6 +14,7 @@ a temporary ``BACKUPS_DIR`` so they do not touch the real backups tree.
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -154,5 +155,43 @@ class TriggerListEndpointTests(TestCase):
         for row in payload["results"]:
             self.assertEqual(
                 set(row.keys()),
-                {"id", "name", "size", "modified_at", "is_weekly"},
+                {"id", "name", "size", "modified_at", "age_label", "is_weekly"},
             )
+
+    def test_list_age_label_in_spanish(self):
+        """Spec requires the list to surface an ``age`` field in Spanish.
+
+        Backdate a single file by ~3 days using ``os.utime`` (since
+        ``freezegun`` is not available) and confirm the response includes
+        an ``age_label`` that matches the docstring of
+        ``_format_age_label``. The reference point is
+        ``datetime.now(UTC)``; with a 3-day-old file the bucket falls in
+        ``days >= 1 and < 30`` so the label is "hace N dias".
+        """
+        name = "clinica_2026-08-03_120000.weekly.dump"
+        path = self.tmp / name
+        path.write_bytes(b"x")
+        # 3 days, 4 hours, 5 minutes and 6 seconds in the past.
+        now = datetime.now(tz=timezone.utc).timestamp()
+        three_days_ago = now - (3 * 86400 + 4 * 3600 + 5 * 60 + 6)
+        os.utime(path, (three_days_ago, three_days_ago))
+
+        c = self._login(self.principal)
+        response = c.get("/api/admin/backups/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 1)
+        row = payload["results"][0]
+        self.assertIn("age_label", row)
+        # The reference bucket falls in [1d, 30d). Allow the off-by-one
+        # caused by elapsed wall time during the test (could land on
+        # either side of the 3-day threshold).
+        self.assertIn(row["age_label"], {"hace 3 dias", "hace 2 dias", "hace 4 dias"})
+
+    def test_list_age_label_recent(self):
+        """Files modified less than a minute ago get the ``recien`` label."""
+        from backups.views import _format_age_label
+
+        now = datetime.now(tz=timezone.utc)
+        self.assertEqual(_format_age_label(now), "recien")
+        self.assertEqual(_format_age_label(now.replace(tzinfo=None)), "recien")

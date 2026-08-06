@@ -61,6 +61,7 @@ export function BackupTable({ rows, pendingDeleteName, onRequestDelete }: Backup
       { key: 'name', label: 'Nombre' },
       { key: 'size', label: 'Tamaño' },
       { key: 'modifiedAt', label: 'Fecha' },
+      { key: 'ageLabel', label: 'Hace' },
       { key: 'isWeekly', label: 'Tipo' },
       { key: 'actions', label: 'Acciones' },
     ],
@@ -90,6 +91,7 @@ export function BackupTable({ rows, pendingDeleteName, onRequestDelete }: Backup
                 </td>
                 <td>{formatBytes(row.size)}</td>
                 <td>{formatBackupDate(row.modifiedAt)}</td>
+                <td>{row.ageLabel || '-'}</td>
                 <td>
                   {row.isWeekly ? (
                     <StatusBadge tone="primary">Semanal</StatusBadge>

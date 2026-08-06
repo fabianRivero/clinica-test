@@ -73,17 +73,59 @@ def _serialize_entry(path: Path) -> dict[str, Any]:
             "name": path.name,
             "size": 0,
             "modified_at": "",
+            "age_label": "hace mas de 1 mes",
             "is_weekly": path.name.endswith(".weekly.dump"),
         }
+    modified_at = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
     return {
         "id": path.name,
         "name": path.name,
         "size": stat.st_size,
-        "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
-        .isoformat()
-        .replace("+00:00", "Z"),
+        "modified_at": modified_at.isoformat().replace("+00:00", "Z"),
+        "age_label": _format_age_label(modified_at),
         "is_weekly": path.name.endswith(".weekly.dump"),
     }
+
+
+def _format_age_label(modified_at: datetime) -> str:
+    """Return a Spanish relative-time phrase ("recién", "hace 2 días").
+
+    Reference point is ``datetime.now(timezone.utc)`` so the labels
+    match the UTC ``modified_at`` stamp (the spec requires UTC
+    timestamps and a server-computed age). The buckets are:
+
+    * < 60s              -> ``"recién"``
+    * < 60min            -> ``"hace N minutos"`` (singular at 1)
+    * < 24h              -> ``"hace N horas"``   (singular at 1)
+    * < 30d              -> ``"hace N dias"``     (singular at 1)
+    * >= 30d             -> ``"hace mas de 1 mes"``
+    """
+    if modified_at.tzinfo is None:
+        modified_at = modified_at.replace(tzinfo=timezone.utc)
+    delta = datetime.now(timezone.utc) - modified_at
+    seconds = int(delta.total_seconds())
+
+    if seconds < 60:
+        return "recien"
+    minutes = seconds // 60
+    if minutes < 60:
+        if minutes == 1:
+            return "hace 1 minuto"
+        return f"hace {minutes} minutos"
+
+    hours = minutes // 60
+    if hours < 24:
+        if hours == 1:
+            return "hace 1 hora"
+        return f"hace {hours} horas"
+
+    days = hours // 24
+    if days < 30:
+        if days == 1:
+            return "hace 1 dia"
+        return f"hace {days} dias"
+
+    return "hace mas de 1 mes"
 
 
 # ---------------------------------------------------------------------------

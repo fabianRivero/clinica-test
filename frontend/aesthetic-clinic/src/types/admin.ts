@@ -796,6 +796,12 @@ export type BackupFile = {
   name: string
   size: number
   modifiedAt: string
+  /**
+   * Server-computed Spanish relative-time label ("recien", "hace 2 dias",
+   * "hace mas de 1 mes"). The table renders this as its own "Hace" column
+   * so the operator can scan the freshness of every dump at a glance.
+   */
+  ageLabel: string
   isWeekly: boolean
 }
 

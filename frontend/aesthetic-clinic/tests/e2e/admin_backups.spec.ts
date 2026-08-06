@@ -30,6 +30,7 @@ type BackupFixture = {
   name: string;
   size: number;
   modified_at: string;
+  age_label: string;
   is_weekly: boolean;
 };
 
@@ -38,6 +39,7 @@ const DAILY_FIXTURE: BackupFixture = {
   name: 'clinica_2026-08-05_103000.dump',
   size: 4_194_304,
   modified_at: '2026-08-05T10:30:00Z',
+  age_label: 'hace 1 dia',
   is_weekly: false,
 };
 
@@ -46,6 +48,7 @@ const WEEKLY_FIXTURE: BackupFixture = {
   name: 'clinica_2026-08-01_020000.weekly.dump',
   size: 16_777_216,
   modified_at: '2026-08-01T02:00:00Z',
+  age_label: 'hace 5 dias',
   is_weekly: true,
 };
 
@@ -103,6 +106,12 @@ test.describe('Admin Backups page', () => {
     await expect(page.getByTestId(`backup-download-${WEEKLY_FIXTURE.id}`)).toBeVisible();
     await expect(page.getByText(/Semanal/i)).toBeVisible();
     await expect(page.getByText(/Diario/i)).toBeVisible();
+    // The "Hace" header is rendered between "Fecha" and "Tipo" (C-2).
+    await expect(page.getByRole('columnheader', { name: /^Hace$/ })).toBeVisible();
+    // Each seeded row exposes its server-side `age_label` as the cell body.
+    await expect(
+      page.getByRole('cell', { name: WEEKLY_FIXTURE.age_label }),
+    ).toBeVisible();
   });
 
   test('trigger flow opens the modal, confirms and triggers a download', async ({ page, context }) => {
