@@ -18,9 +18,9 @@ from pathlib import Path
 from typing import Any
 
 from django.conf import settings
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from config.api_helpers import json_response
 
@@ -51,6 +51,14 @@ def _audit(*, request, action: str, filename: str = "", metadata: dict | None = 
         )
     except Exception:  # pragma: no cover - audit must never crash
         pass
+
+
+def _resolve_target(filename: str) -> Path | None:
+    """Return the safe ``Path`` for *filename* or ``None`` if it fails."""
+    try:
+        return services._safe_path(Path(settings.BACKUPS_DIR), filename)
+    except (ValueError, TypeError):
+        return None
 
 
 def _serialize_entry(path: Path) -> dict[str, Any]:
@@ -153,23 +161,101 @@ def admin_backup_list(request):
 
 
 # ---------------------------------------------------------------------------
-# GET /api/admin/backups/<str:filename>/download/  (PR #2 commit 3)
+# GET /api/admin/backups/<str:filename>/download/
 # ---------------------------------------------------------------------------
 
 
 @require_GET
 @require_admin_principal
 def admin_backup_download(request, filename: str):
-    """Stream the dump file as an attachment (filled in by commit 3)."""
-    return json_response({"detail": "No implementado."}, status=501)
+    """Stream the dump file as an attachment."""
+    allowed, denial = check_rate_limit("download", request.user.pk, 30)
+    if not allowed:
+        return denial
+
+    if not services.validate_filename(filename):
+        _audit(
+            request=request,
+            action=BackupAuditLog.Action.DOWNLOAD_DENIED,
+            filename=filename[:255],
+            metadata={"reason": "invalid_filename"},
+        )
+        return json_response({"detail": "No encontrado."}, status=404)
+
+    target = _resolve_target(filename)
+    if target is None or not target.exists() or not target.is_file():
+        _audit(
+            request=request,
+            action=BackupAuditLog.Action.DOWNLOAD_DENIED,
+            filename=filename[:255],
+            metadata={"reason": "not_found_or_escape"},
+        )
+        return json_response({"detail": "No encontrado."}, status=404)
+
+    _audit(
+        request=request,
+        action=BackupAuditLog.Action.DOWNLOAD_SERVER_BACKUP,
+        filename=filename,
+        metadata={"size_bytes": target.stat().st_size},
+    )
+    response = FileResponse(
+        open(target, "rb"),
+        as_attachment=True,
+        filename=target.name,
+        content_type="application/octet-stream",
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------
-# DELETE /api/admin/backups/<str:filename>/  (PR #2 commit 3)
+# DELETE /api/admin/backups/<str:filename>/
 # ---------------------------------------------------------------------------
 
 
+@csrf_exempt
+@require_http_methods(["DELETE"])
 @require_admin_principal
 def admin_backup_delete(request, filename: str):
-    """Remove a dump from ``BACKUPS_DIR`` (filled in by commit 3)."""
-    return json_response({"detail": "No implementado."}, status=501)
+    """Remove a dump from ``BACKUPS_DIR``."""
+    allowed, denial = check_rate_limit("delete", request.user.pk, 10)
+    if not allowed:
+        _audit(
+            request=request,
+            action=BackupAuditLog.Action.RATE_LIMIT_DENIED,
+            filename=filename[:255],
+            metadata={"scope": "delete"},
+        )
+        return denial
+
+    if not services.validate_filename(filename):
+        _audit(
+            request=request,
+            action=BackupAuditLog.Action.DELETE_DENIED,
+            filename=filename[:255],
+            metadata={"reason": "invalid_filename"},
+        )
+        return json_response({"detail": "No encontrado."}, status=404)
+
+    target = _resolve_target(filename)
+    if target is None or not target.exists() or not target.is_file():
+        _audit(
+            request=request,
+            action=BackupAuditLog.Action.DELETE_DENIED,
+            filename=filename[:255],
+            metadata={"reason": "not_found_or_escape"},
+        )
+        return json_response({"detail": "No encontrado."}, status=404)
+
+    try:
+        target.unlink()
+    except OSError:
+        return json_response(
+            {"detail": "No se pudo eliminar el respaldo."}, status=500
+        )
+
+    _audit(
+        request=request,
+        action=BackupAuditLog.Action.DELETE_SERVER_BACKUP,
+        filename=filename,
+    )
+    return HttpResponse(status=204)
