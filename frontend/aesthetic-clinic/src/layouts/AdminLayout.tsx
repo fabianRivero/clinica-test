@@ -95,6 +95,13 @@ const fullNavigation = [
       { to: '/cms/catalogos/sectores', label: 'Sectores' },
     ],
   },
+  {
+    label: 'Respaldos',
+    mainAdminOnly: true,
+    children: [
+      { to: '/cms/backups', label: 'Respaldos de base de datos' },
+    ],
+  },
 ] as const
 
 type NavItem = (typeof fullNavigation)[number]
