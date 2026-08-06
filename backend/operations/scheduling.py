@@ -71,10 +71,11 @@ def check_specialist_presence(especialista_id, sucursal_id, fecha, hora_inicio, 
         especialista_id=especialista_id,
         sucursal_id=sucursal_id,
         fecha_inicio__lte=fecha,
-        fecha_fin__gte=fecha,
         activo=True,
         dias__dia_semana=dia_semana_django,
         hora_inicio__lte=hora_inicio,
+    ).filter(
+        Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=fecha)
     )
     
     if hora_inicio == hora_fin:
@@ -220,14 +221,16 @@ def get_available_dates(sucursal_id, start_date, end_date):
     habitual = AgendaHabitualEspecialista.objects.filter(
         sucursal_id=sucursal_id,
         fecha_inicio__lte=end_date,
-        fecha_fin__gte=start_date,
         activo=True,
+    ).filter(
+        Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=start_date)
     ).prefetch_related('dias')
     
     for h in habitual:
         # Calculate intersection of [start_date, end_date] and [h.fecha_inicio, h.fecha_fin]
         actual_start = max(start_date, h.fecha_inicio)
-        actual_end = min(end_date, h.fecha_fin)
+        # h.fecha_fin NULL = agenda "abierta": cubre hasta end_date
+        actual_end = min(end_date, h.fecha_fin) if h.fecha_fin else end_date
         
         allowed_weekdays = set(h.dias.values_list('dia_semana', flat=True))
         
@@ -268,8 +271,9 @@ def get_available_dates(sucursal_id, start_date, end_date):
                 especialista_id=specialist_id,
                 sucursal_id=sucursal_id,
                 fecha_inicio__lte=current_date,
-                fecha_fin__gte=current_date,
                 activo=True,
+            ).filter(
+                Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=current_date)
             ).prefetch_related("dias")
 
             dia_semana_python = current_date.weekday()

@@ -473,7 +473,7 @@ class AgendaHabitualEspecialista(TimeStampedModel):
         related_name="agendas_habituales",
     )
     fecha_inicio = models.DateField()
-    fecha_fin = models.DateField()
+    fecha_fin = models.DateField(null=True, blank=True)
     hora_inicio = models.TimeField(null=True, blank=True)
     hora_fin = models.TimeField(null=True, blank=True)
     activo = models.BooleanField(default=True)
@@ -503,7 +503,7 @@ class AgendaHabitualEspecialista(TimeStampedModel):
         return list(self.dias.values_list("dia_semana", flat=True).order_by("dia_semana"))
 
     def clean(self):
-        if self.fecha_fin < self.fecha_inicio:
+        if self.fecha_fin is not None and self.fecha_fin < self.fecha_inicio:
             raise ValidationError(
                 {"fecha_fin": "La fecha final no puede ser anterior a la fecha inicial."}
             )

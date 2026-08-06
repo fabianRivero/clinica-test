@@ -73,7 +73,8 @@ def worker_availability(request):
                 especialista=especialista,
                 activo=True,
                 fecha_inicio__lte=current_date,
-                fecha_fin__gte=current_date,
+            ).filter(
+                Q(fecha_fin__isnull=True) | Q(fecha_fin__gte=current_date)
             ).prefetch_related("dias")
 
             for agenda in habitual_agendas:
