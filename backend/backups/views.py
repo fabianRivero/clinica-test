@@ -13,42 +13,163 @@ and stream responses use :class:`django.http.FileResponse`.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from django.conf import settings
+from django.http import FileResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_POST
+
 from config.api_helpers import json_response
 
-from .decorators import require_admin_principal
+from . import services
+from .decorators import check_rate_limit, require_admin_principal
+from .models import BackupAuditLog
 
 
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+
+def _audit(*, request, action: str, filename: str = "", metadata: dict | None = None):
+    """Write an audit row, swallowing errors so views never crash on audit."""
+    try:
+        user = (
+            request.user
+            if getattr(request, "user", None) and request.user.is_authenticated
+            else None
+        )
+        services.log_backup_audit(
+            action=action,
+            filename=filename[:255],
+            request=request,
+            user=user,
+            metadata=metadata,
+        )
+    except Exception:  # pragma: no cover - audit must never crash
+        pass
+
+
+def _serialize_entry(path: Path) -> dict[str, Any]:
+    """Build the JSON shape returned by the list endpoint."""
+    try:
+        stat = path.stat()
+    except OSError:
+        stat = None
+    if stat is None:
+        return {
+            "id": path.name,
+            "name": path.name,
+            "size": 0,
+            "modified_at": "",
+            "is_weekly": path.name.endswith(".weekly.dump"),
+        }
+    return {
+        "id": path.name,
+        "name": path.name,
+        "size": stat.st_size,
+        "modified_at": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z"),
+        "is_weekly": path.name.endswith(".weekly.dump"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/admin/backups/trigger/
+# ---------------------------------------------------------------------------
+
+
+@csrf_exempt
+@require_POST
 @require_admin_principal
 def admin_backup_trigger(request):
-    """Create a fresh dump and stream it back as an attachment.
+    """Create a fresh dump and stream it back as an attachment."""
+    allowed, denial = check_rate_limit("trigger", request.user.pk, 60)
+    if not allowed:
+        _audit(
+            request=request,
+            action=BackupAuditLog.Action.RATE_LIMIT_DENIED,
+            metadata={"scope": "trigger"},
+        )
+        return denial
 
-    Implemented in PR #2 commit 2 (trigger + list).
-    """
-    return json_response({"detail": "No implementado."}, status=501)
+    try:
+        target = services.BackupService().create_backup(
+            actor=f"user:{request.user.pk}",
+            request=request,
+            user=request.user,
+        )
+    except services.BackupAlreadyRunningError:
+        _audit(
+            request=request,
+            action=BackupAuditLog.Action.RATE_LIMIT_DENIED,
+            metadata={"scope": "trigger", "reason": "backup_busy"},
+        )
+        return json_response(
+            {"detail": "Ya hay un respaldo en curso."}, status=409
+        )
+    except services.BackupServiceError:
+        _audit(
+            request=request,
+            action=BackupAuditLog.Action.TRIGGER_FAILED,
+            metadata={"reason": "service_error"},
+        )
+        return json_response(
+            {"detail": "No se pudo generar el respaldo."}, status=500
+        )
+
+    response = FileResponse(
+        open(target, "rb"),
+        as_attachment=True,
+        filename=target.name,
+        content_type="application/octet-stream",
+    )
+    return response
 
 
+# ---------------------------------------------------------------------------
+# GET /api/admin/backups/
+# ---------------------------------------------------------------------------
+
+
+@require_GET
 @require_admin_principal
 def admin_backup_list(request):
-    """Return JSON listing of dumps in ``BACKUPS_DIR``.
+    """Return JSON listing of dumps in ``BACKUPS_DIR``."""
+    backups_dir = Path(settings.BACKUPS_DIR)
+    if not backups_dir.exists():
+        return json_response({"results": []})
 
-    Implemented in PR #2 commit 2 (trigger + list).
-    """
-    return json_response({"detail": "No implementado."}, status=501)
+    entries: list[dict[str, Any]] = []
+    for p in backups_dir.glob("clinica_*.dump"):
+        entries.append(_serialize_entry(p))
+
+    entries.sort(key=lambda e: e["modified_at"], reverse=True)
+    return json_response({"results": entries})
 
 
+# ---------------------------------------------------------------------------
+# GET /api/admin/backups/<str:filename>/download/  (PR #2 commit 3)
+# ---------------------------------------------------------------------------
+
+
+@require_GET
 @require_admin_principal
 def admin_backup_download(request, filename: str):
-    """Stream the dump file as an attachment.
-
-    Implemented in PR #2 commit 3 (download + delete).
-    """
+    """Stream the dump file as an attachment (filled in by commit 3)."""
     return json_response({"detail": "No implementado."}, status=501)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/admin/backups/<str:filename>/  (PR #2 commit 3)
+# ---------------------------------------------------------------------------
 
 
 @require_admin_principal
 def admin_backup_delete(request, filename: str):
-    """Remove a dump from ``BACKUPS_DIR``.
-
-    Implemented in PR #2 commit 3 (download + delete).
-    """
+    """Remove a dump from ``BACKUPS_DIR`` (filled in by commit 3)."""
     return json_response({"detail": "No implementado."}, status=501)
