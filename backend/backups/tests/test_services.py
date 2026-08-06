@@ -2,9 +2,6 @@
 
 Covers filename validation, path-traversal rejection, retention,
 engine-branching (PostgreSQL + sqlite3) and the fcntl dump lock.
-
-All tests rely on ``tmp_path`` + ``@override_settings`` so they
-leave no state behind on the real ``BACKUPS_DIR``.
 """
 
 from __future__ import annotations
@@ -62,7 +59,6 @@ class FilenameValidationTests(SimpleTestCase):
         self.assertFalse(validate_filename("clinicaX2026-08-06_120000.dump"))
 
     def test_rejects_when_weekly_in_wrong_place(self):
-        # weekly must immediately precede .dump
         self.assertFalse(validate_filename("clinica_weekly_2026-08-06_120000.dump"))
 
 
@@ -92,10 +88,11 @@ class SafePathTests(SimpleTestCase):
             self.assertEqual(result, tmp / "clinica_2026-08-06_120000.dump")
             self.assertTrue(str(result).startswith(str(tmp)))
         finally:
-            try:
-                (tmp / "clinica_2026-08-06_120000.dump").unlink()
-            except FileNotFoundError:
-                pass
+            for f in tmp.glob("*"):
+                try:
+                    f.unlink()
+                except FileNotFoundError:
+                    pass
             tmp.rmdir()
 
 
@@ -135,7 +132,6 @@ class RetentionTests(SimpleTestCase):
         return p
 
     def test_keeps_only_configured_daily_and_weekly(self):
-        # 4 dailies (keep 2), 3 weeklies (keep 1) → prune 2 + 2 = 4.
         for i in range(4):
             self._touch(f"clinica_2026-08-0{i + 1}_12000{i}.dump", 1_700_000_000 + i)
         for i in range(3):
@@ -172,14 +168,11 @@ class RetentionTests(SimpleTestCase):
     BACKUPS_DIR="/tmp/_unused_dump_branching_dir",
 )
 class EngineBranchingTests(SimpleTestCase):
-    """Subprocess is patched per branch; we assert argv shape."""
-
     def test_postgresql_branch_constructs_pg_dump_argv(self):
         target = Path("/tmp/pg_test.dump")
         if target.exists():
             target.unlink()
-        # pg_dump writes the file via -f; the mock has to do the same
-        # so the atomic rename at the end of _dump_to_path succeeds.
+
         def fake_run(cmd, *args, **kwargs):
             tmp = Path(cmd[cmd.index("-f") + 1])
             tmp.write_bytes(b"FAKE-PG-DUMP")
@@ -190,7 +183,6 @@ class EngineBranchingTests(SimpleTestCase):
                  mock.patch.object(services.shutil, "disk_usage"), \
                  mock.patch.dict(os.environ, {"DJANGO_DB_PASSWORD": "secret"},
                                   clear=False):
-                # Provide DB env so we don't fall back to empty settings.
                 with override_settings(DATABASES={
                     "default": {
                         "ENGINE": "django.db.backends.postgresql",
@@ -206,7 +198,6 @@ class EngineBranchingTests(SimpleTestCase):
                             "USER": "clinica", "NAME": "clinica",
                         },
                     )
-
             self.assertTrue(target.exists())
         finally:
             for p in (target, Path(str(target) + ".tmp")):
@@ -219,7 +210,6 @@ class EngineBranchingTests(SimpleTestCase):
             target.unlink()
 
         def fake_run(cmd, *args, **kwargs):
-            # cmd[2] is ``.backup '<tmp>'`` — extract the tmp path.
             import re
             m = re.search(r"'(.+?)'", cmd[2])
             tmp = Path(m.group(1))
@@ -235,7 +225,6 @@ class EngineBranchingTests(SimpleTestCase):
                         "NAME": "/tmp/test_db.sqlite3",
                     },
                 )
-
             self.assertTrue(target.exists())
         finally:
             for p in (target, Path(str(target) + ".tmp")):
@@ -258,9 +247,6 @@ class EngineBranchingTests(SimpleTestCase):
 
 @override_settings(BACKUPS_DIR="/tmp/_unused_lock_dir")
 class LockContentionTests(SimpleTestCase):
-    """Hold the lock in the main thread and assert the service rejects
-    a second invocation."""
-
     def test_second_invocation_raises_when_lock_held(self):
         svc = BackupService(backups_dir=Path("/tmp/_lock_test_dir"))
         try:
@@ -269,7 +255,6 @@ class LockContentionTests(SimpleTestCase):
             ctx.__enter__()
             try:
                 with self.assertRaises(BackupAlreadyRunningError):
-                    # The service acquires the same lock internally.
                     with services._with_dump_lock(svc.backups_dir):
                         pass
             finally:
@@ -284,7 +269,7 @@ class LockContentionTests(SimpleTestCase):
 
 
 # ---------------------------------------------------------------------------
-# create_backup — happy path uses sqlite (no pg_dump available in CI).
+# create_backup — happy path uses sqlite (no pg_dump on CI).
 # ---------------------------------------------------------------------------
 
 
@@ -294,8 +279,6 @@ class LockContentionTests(SimpleTestCase):
     BACKUP_KEEP_WEEKLY=4,
 )
 class CreateBackupHappyPathTests(TestCase):
-    """End-to-end happy path of ``BackupService.create_backup`` on sqlite."""
-
     def setUp(self):
         self.tmp = Path("/tmp/_create_backup_test_dir").resolve()
         if self.tmp.exists():
@@ -322,12 +305,11 @@ class CreateBackupHappyPathTests(TestCase):
             apellido_paterno="Principal",
         )
 
-        svc = BackupService(backups_dir=self.tmp, daily_keep=7, weekly_keep=4)
-
         def fake_dump(target, db_config=None):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"FAKE-DUMP")
 
+        svc = BackupService(backups_dir=self.tmp, daily_keep=7, weekly_keep=4)
         with mock.patch.object(services, "_dump_to_path", side_effect=fake_dump):
             target = svc.create_backup(actor="user:1", user=user)
 
@@ -351,12 +333,11 @@ class CreateBackupHappyPathTests(TestCase):
             p = self.tmp / f"clinica_2026-06-{i + 1:02d}_00000{i}.weekly.dump"
             p.write_bytes(b"x")
 
-        svc = BackupService(backups_dir=self.tmp, daily_keep=2, weekly_keep=1)
-
         def fake_dump(target, db_config=None):
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"FAKE-DUMP")
 
+        svc = BackupService(backups_dir=self.tmp, daily_keep=2, weekly_keep=1)
         with mock.patch.object(services, "_dump_to_path", side_effect=fake_dump):
             target = svc.create_backup(actor="system:cron")
 

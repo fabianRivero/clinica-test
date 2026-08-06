@@ -67,11 +67,11 @@ INSTALLED_APPS = [
     "operations",
     "billing",
     "clinical",
-"notifications",
+    "notifications",
     "biometric.apps.BiometricConfig",
     "backups.apps.BackupsConfig",
     "corsheaders",
-    ]
+]                      
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",

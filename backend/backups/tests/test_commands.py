@@ -19,8 +19,6 @@ from backups.services import (
 
 @override_settings(BACKUPS_DIR="/tmp/_unused_cmd_dir")
 class CreateBackupCommandTests(TestCase):
-    """End-to-end invocation of ``python manage.py create_backup``."""
-
     def setUp(self):
         self.tmp = Path("/tmp/_create_backup_cmd_test").resolve()
         if self.tmp.exists():
@@ -120,9 +118,7 @@ class CreateBackupCommandTests(TestCase):
             with self.assertRaises(CommandError) as ctx:
                 call_command("create_backup", stdout=out, stderr=err)
 
-        # Django's CommandError exposes ``returncode`` only when invoked
-        # from the CLI; in-process, the exception itself carries the
-        # contract — we just confirm it fired and the audit row exists.
+        # In-process, CommandError carries the contract — confirm it fired.
         self.assertIn("progress", str(ctx.exception).lower())
         denial_rows = BackupAuditLog.objects.filter(
             action=BackupAuditLog.Action.TRIGGER_FAILED,

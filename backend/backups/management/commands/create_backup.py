@@ -1,10 +1,9 @@
 """Management command: create a server-side database backup.
 
-Cron / systemd-timer entry point. The command intentionally has no
-positional arguments: the operator controls ``BACKUPS_DIR`` (and the
-optional ``--backups-dir`` override for ad-hoc runs) via settings.
-``--actor-label`` lets operators distinguish custom invocations
-from the default ``system:cron`` audit label.
+Cron / systemd-timer entry point. Operators control ``BACKUPS_DIR``
+via settings; ``--backups-dir`` is an ad-hoc override and
+``--actor-label`` distinguishes custom invocations from the
+default ``system:cron`` audit label.
 """
 
 from __future__ import annotations
@@ -32,12 +31,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--backups-dir",
             default=None,
-            help="Override BACKUPS_DIR for this invocation (operator convenience).",
+            help="Override BACKUPS_DIR for this invocation.",
         )
         parser.add_argument(
             "--actor-label",
             default="system:cron",
-            help="Audit-row actor label (defaults to 'system:cron').",
+            help="Audit-row actor label (default 'system:cron').",
         )
 
     def handle(self, *args, **options):

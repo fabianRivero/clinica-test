@@ -1,18 +1,8 @@
 """Backup service: dump + retention + lock + audit.
 
 Single source of truth for creating and pruning database backups.
-Both the HTTP layer (PR #2) and the ``create_backup`` management
-command (Phase 3 of this PR) call into ``BackupService``.
-
-Design references:
-- spec §"Server-side management command"
-- spec §"Audit log of admin backup actions"
-- spec §"Retention policy"
-- design §"Database Engine Branching — Exact Pattern"
-- design §"Authentication, Authorization, and Audit"
-- design §"Retention Algorithm"
-- design §"Concurrency Lock"
-- design §"Rate Limiting"
+The HTTP layer (PR #2) and the ``create_backup`` management
+command both call into ``BackupService``.
 """
 
 from __future__ import annotations
@@ -23,10 +13,9 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
 
 from django.conf import settings
 from django.core.cache import cache
@@ -47,7 +36,7 @@ class BackupServiceError(Exception):
 
 
 class BackupAlreadyRunningError(BackupServiceError):
-    """Another dump is already holding the directory lock."""
+    """Another dump is already holds the directory lock."""
 
 
 class BackupInvalidFilenameError(BackupServiceError):
@@ -59,18 +48,15 @@ class BackupInvalidFilenameError(BackupServiceError):
 # ---------------------------------------------------------------------------
 
 
-# Anchored regex: ``clinica_YYYY-MM-DD_HHMMSS.dump`` with an optional
-# ``.weekly`` infix. Keeping this strict lets us reject traversal payloads
-# (``..``), absolute prefixes, shell metacharacters and stray whitespace.
-# The fullmatch anchor ensures the entire string conforms — no trailing
-# newline, no extra extension, no surrounding garbage.
+# Strict anchored regex. ``fullmatch`` rejects ``..``, absolute
+# prefixes, shell metacharacters and stray whitespace (e.g. trailing
+# ``\n`` from a mis-encoded HTTP header).
 BACKUP_FILENAME_RE = re.compile(
     r"^clinica_\d{4}-\d{2}-\d{2}_\d{6}(\.weekly)?\.dump$"
 )
 
 
 def validate_filename(filename: str) -> bool:
-    """Return True iff *filename* matches the backup naming convention."""
     if not isinstance(filename, str) or not filename:
         return False
     return bool(BACKUP_FILENAME_RE.fullmatch(filename))
@@ -81,36 +67,30 @@ def validate_filename(filename: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+@contextmanager
 def _with_dump_lock(backups_dir: Path):
-    """Return a context manager that takes an exclusive fcntl lock.
+    """Exclusive fcntl lock on ``BACKUPS_DIR/.backup.lock``.
 
     Used to wrap the dump/rename/audit/retention sequence so a manual
     trigger mid-cron is rejected with ``BackupAlreadyRunningError``
     instead of stomping on the in-flight dump.
     """
-    from contextlib import contextmanager
-
-    lock_path = backups_dir / ".backup.lock"
     backups_dir.mkdir(parents=True, exist_ok=True)
-
-    @contextmanager
-    def _ctx():
-        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+    lock_path = backups_dir / ".backup.lock"
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+    try:
         try:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except (BlockingIOError, OSError) as exc:
-                raise BackupAlreadyRunningError(
-                    "Ya hay un respaldo en curso."
-                ) from exc
-            yield
-        finally:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-
-    return _ctx()
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, OSError) as exc:
+            raise BackupAlreadyRunningError(
+                "Ya hay un respaldo en curso."
+            ) from exc
+        yield
+    finally:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -121,13 +101,8 @@ def _with_dump_lock(backups_dir: Path):
 def _safe_path(backups_dir: Path, filename: str) -> Path:
     """Resolve *filename* under *backups_dir* and reject escapes.
 
-    Two layers of defense:
-
-    1. ``BACKUP_FILENAME_RE`` rejects ``..``, absolute prefixes,
-       shell metacharacters and anything outside the naming
-       convention.
-    2. ``Path.resolve()`` containment catches symlinks and any
-       residual escape that slipped through the regex.
+    Two layers: regex allowlist, then ``Path.resolve()`` containment
+    catches symlinks and any residual escape that slipped through.
     """
     if not validate_filename(filename):
         raise ValueError(f"Nombre de archivo invalido: {filename!r}")
@@ -227,7 +202,6 @@ def _dump_to_path(target: Path, db_config: dict | None = None) -> None:
         else:
             raise BackupServiceError(f"Motor de base de datos no soportado: {engine}")
     except Exception:
-        # Clean up any partial temp file on any failure.
         if tmp_path.exists():
             try:
                 tmp_path.unlink()
@@ -276,7 +250,7 @@ def log_backup_audit(
                 ip_address=ip_address,
                 metadata=metadata or {},
             )
-    except Exception:  # pragma: no cover - audit must never crash the caller
+    except Exception:  # pragma: no cover - audit must never crash
         logger.exception("Failed to persist BackupAuditLog row")
         return None
 
@@ -287,11 +261,7 @@ def log_backup_audit(
 
 
 def rate_limit(scope: str, user_id: int, ttl_seconds: int) -> bool:
-    """Return True if the action is allowed, False if it was just used.
-
-    Backed by the Django cache framework; operators can swap backends
-    (locmem in tests, redis in production) without touching this code.
-    """
+    """Return True if the action is allowed, False if it was just used."""
     key = f"backup_ratelimit:{scope}:{user_id}"
     if cache.get(key):
         return False
@@ -305,12 +275,7 @@ def rate_limit(scope: str, user_id: int, ttl_seconds: int) -> bool:
 
 
 class BackupService:
-    """Engine-aware dump, retention and audit facade.
-
-    Both the management command and (later) the HTTP layer call
-    ``create_backup`` and rely on it to write a single audit row
-    describing the outcome.
-    """
+    """Engine-aware dump, retention and audit facade."""
 
     def __init__(self, backups_dir: Path | None = None,
                  daily_keep: int | None = None,
@@ -324,15 +289,7 @@ class BackupService:
 
     def create_backup(self, actor: str = "system:cron", *, request=None,
                       user=None, weekly: bool | None = None) -> Path:
-        """Create a fresh dump, prune, audit and return the final path.
-
-        * ``actor`` labels the audit row (``"system:cron"`` from cron,
-          ``"user:N"`` from the HTTP layer once PR #2 lands).
-        * When ``weekly`` is None, the service classifies the dump by
-          the current weekday in the project's timezone (Sunday ->
-          weekly). The HTTP trigger can override the rule by passing
-          ``weekly=True/False`` directly.
-        """
+        """Create a fresh dump, prune, audit and return the final path."""
         is_weekly = self._is_weekly_today() if weekly is None else bool(weekly)
         timestamp = datetime.now(timezone.utc)
         filename = self._build_filename(timestamp, weekly=is_weekly)
@@ -346,11 +303,9 @@ class BackupService:
             metadata["user_id"] = user.id
 
         with _with_dump_lock(self.backups_dir):
-            # Disk-space gate (refuse if free < 2 * last_dump_size, or < 1 GiB).
             self._check_disk_space()
             _dump_to_path(target)
 
-            # Atomic rename succeeded — record size and run retention.
             try:
                 size = target.stat().st_size
             except OSError:
@@ -396,9 +351,8 @@ class BackupService:
 
     @staticmethod
     def _is_weekly_today() -> bool:
-        """Sunday (weekday 6) is treated as the weekly snapshot."""
-        from datetime import datetime as _dt
-        return _dt.now().weekday() == 6
+        """Sunday (weekday 6) is the weekly snapshot."""
+        return datetime.now().weekday() == 6
 
     def _check_disk_space(self) -> None:
         try:
