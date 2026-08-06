@@ -203,6 +203,32 @@ STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "local")  # default to local de
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
+# ---------------------------------------------------------------------------
+# Database backups (admin-db-backups, PR #1)
+#
+# BACKUPS_DIR holds server-side dumps created by ``BackupService`` and the
+# ``create_backup`` management command. Operators may override the path via
+# the ``BACKUPS_DIR`` env var; on Linux the convention is
+# ``/var/backups/clinica`` (see design §"Deployment Notes"). The directory is
+# created at startup if missing so cron / systemd-timer invocations never see
+# a missing path; failures on read-only filesystems are tolerated so the
+# web app still boots (the service raises ``BackupServiceError`` instead).
+#
+# BACKUP_KEEP_DAILY / BACKUP_KEEP_WEEKLY mirror the retention rule from the
+# spec: keep the last 7 daily + 4 weekly dumps, prune the rest. The dump
+# command timeout caps a single pg_dump / sqlite3 .backup at 30 minutes.
+# ---------------------------------------------------------------------------
+BACKUPS_DIR = Path(os.getenv("BACKUPS_DIR", str(BASE_DIR / "backups")))
+BACKUP_KEEP_DAILY = int(os.getenv("BACKUP_KEEP_DAILY", "7"))
+BACKUP_KEEP_WEEKLY = int(os.getenv("BACKUP_KEEP_WEEKLY", "4"))
+BACKUP_DUMP_TIMEOUT = int(os.getenv("BACKUP_DUMP_TIMEOUT", "1800"))
+BACKUP_LOCK_PATH = BACKUPS_DIR / ".lock"
+try:
+    BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    # Read-only filesystems (e.g. ephemeral CI): service raises at runtime.
+    pass
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.Usuario"
 
