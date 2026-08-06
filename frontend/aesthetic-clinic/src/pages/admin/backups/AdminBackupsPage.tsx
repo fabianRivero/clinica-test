@@ -175,7 +175,7 @@ export function AdminBackupsPage() {
                 setIsTriggerModalOpen(true)
               }}
             >
-              {isTriggering ? 'Generando...' : 'Descargar respaldo ahora'}
+              {isTriggering ? 'Generando...' : 'Crear respaldo'}
             </button>
           }
         >

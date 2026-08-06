@@ -221,6 +221,12 @@ def admin_backup_download(request, filename: str):
         settings.BACKUP_RATE_LIMIT_DOWNLOAD_SECONDS,
     )
     if not allowed:
+        _audit(
+            request=request,
+            action=BackupAuditLog.Action.RATE_LIMIT_DENIED,
+            filename=filename[:255],
+            metadata={"scope": "download"},
+        )
         return denial
 
     if not services.validate_filename(filename):

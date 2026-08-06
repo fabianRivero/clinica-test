@@ -163,13 +163,39 @@ class DownloadDeleteEndpointTests(TestCase):
         self.assertEqual([r["name"] for r in listed], [])
 
     def test_delete_rate_limit_returns_429(self):
-        for name in [
-            "clinica_2026-08-06_120000.dump",
-            "clinica_2026-08-06_120001.dump",
-        ]:
-            self._seed(name)
+        """Two deletes within the spec-mandated 30s window: only the first
+        succeeds. The setting is forced via ``override_settings`` so the
+        test stays deterministic independent of the operator's ``.env``.
+        """
+        with override_settings(BACKUP_RATE_LIMIT_DELETE_SECONDS=30):
+            for name in [
+                "clinica_2026-08-06_120000.dump",
+                "clinica_2026-08-06_120001.dump",
+            ]:
+                self._seed(name)
+            c = self._login(self.principal)
+            first = c.delete("/api/admin/backups/clinica_2026-08-06_120000.dump/")
+            second = c.delete("/api/admin/backups/clinica_2026-08-06_120001.dump/")
+            self.assertEqual(first.status_code, 204)
+            self.assertEqual(second.status_code, 429)
+
+    def test_download_rate_limit_writes_audit_row(self):
+        """W-2: the download 429 branch must persist a RATE_LIMIT_DENIED
+        row so an investigator can spot a download flood against a
+        principal. Mirrors the trigger / delete flows.
+        """
+        seeded = self._seed("clinica_2026-08-06_120000.dump")
         c = self._login(self.principal)
-        first = c.delete("/api/admin/backups/clinica_2026-08-06_120000.dump/")
-        second = c.delete("/api/admin/backups/clinica_2026-08-06_120001.dump/")
-        self.assertEqual(first.status_code, 204)
+        first = c.get(f"/api/admin/backups/{seeded.name}/download/")
+        second = c.get(f"/api/admin/backups/{seeded.name}/download/")
+        self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 429)
+        denial_rows = BackupAuditLog.objects.filter(
+            action=BackupAuditLog.Action.RATE_LIMIT_DENIED
+        )
+        self.assertEqual(denial_rows.count(), 1)
+        row = denial_rows.first()
+        self.assertEqual(row.filename, seeded.name)
+        # ``metadata["scope"]`` follows the trigger/delete convention so
+        # an investigator can pivot on the rate-limit map.
+        self.assertEqual(row.metadata.get("scope"), "download")
