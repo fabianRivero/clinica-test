@@ -51,21 +51,26 @@ export function buildReportExcelExport({
     const ws = XLSX.utils.aoa_to_sheet(aoa)
 
     if (withHyperlinks) {
-      rows.forEach((row, rowIndex) => {
-        const invoiceUrl = row.invoiceUrl
-        if (typeof invoiceUrl !== 'string' || invoiceUrl.trim().length === 0) {
-          return
-        }
-        const excelRow = rowIndex + 2
-        const labelField =
-          typeof row.invoiceName === 'string' && row.invoiceName
-            ? row.invoiceName
-            : 'Ver factura'
-        const targetCell = ws[XLSX.utils.encode_cell({ r: excelRow - 1, c: 0 })]
-        // Build a HYPERLINK formula Excel recognizes and renders as clickable.
-        targetCell.f = `HYPERLINK("${invoiceUrl.replace(/"/g, '""')}","${labelField.replace(/"/g, '""')}")`
-        targetCell.t = 's'
-      })
+      // Resolve the column index for `invoiceUrl` from the column config so
+      // the formula lands in the right cell regardless of column order.
+      const invoiceColIndex = columns.findIndex((c) => c.key === 'invoiceUrl')
+      if (invoiceColIndex >= 0) {
+        rows.forEach((row, rowIndex) => {
+          const invoiceUrl = row.invoiceUrl
+          if (typeof invoiceUrl !== 'string' || invoiceUrl.trim().length === 0) {
+            return
+          }
+          const excelRow = rowIndex + 2
+          const labelField =
+            typeof row.invoiceName === 'string' && row.invoiceName
+              ? row.invoiceName
+              : 'Ver factura'
+          const targetCell = ws[XLSX.utils.encode_cell({ r: excelRow - 1, c: invoiceColIndex })]
+          // Build a HYPERLINK formula Excel recognizes and renders as clickable.
+          targetCell.f = `HYPERLINK("${invoiceUrl.replace(/"/g, '""')}","${labelField.replace(/"/g, '""')}")`
+          targetCell.t = 's'
+        })
+      }
     }
 
     const wb = XLSX.utils.book_new()

@@ -13,22 +13,6 @@ const COLUMNS: ReportTableColumn[] = [
   { key: 'clientName', label: 'Cliente' },
   { key: 'serviceName', label: 'Servicio' },
   { key: 'status', label: 'Estado' },
-  {
-    key: 'invoiceUrl',
-    label: 'Factura',
-    // Render as an anchor in the table; `ReportTable` also writes a
-    // `HYPERLINK` formula into the exported sheet so Excel renders a
-    // clickable link for the same row (mirrors `AdminExpenseListPage`).
-    render: (row) => {
-      const url = typeof row.invoiceUrl === 'string' ? row.invoiceUrl : ''
-      if (!url) return 'Sin factura'
-      return (
-        <a href={url} rel="noreferrer" target="_blank">
-          Ver factura
-        </a>
-      )
-    },
-  },
 ]
 
 /**
