@@ -48,8 +48,8 @@ def _audit_count(action: str, filename: str | None = None) -> int:
 
 @override_settings(
     BACKUPS_DIR="/tmp/_unused_download_delete_setup",
-    BACKUP_KEEP_DAILY=7,
-    BACKUP_KEEP_WEEKLY=4,
+    BACKUP_DAILY_KEEP=7,
+    BACKUP_WEEKLY_KEEP=4,
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
 )
 class DownloadDeleteEndpointTests(TestCase):
@@ -58,8 +58,8 @@ class DownloadDeleteEndpointTests(TestCase):
         self.tmp = _fresh_dir("_backup_download_delete_test")
         self.override = override_settings(
             BACKUPS_DIR=str(self.tmp),
-            BACKUP_KEEP_DAILY=7,
-            BACKUP_KEEP_WEEKLY=4,
+            BACKUP_DAILY_KEEP=7,
+            BACKUP_WEEKLY_KEEP=4,
             CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
         )
         self.override.enable()

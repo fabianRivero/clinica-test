@@ -96,7 +96,11 @@ def _serialize_entry(path: Path) -> dict[str, Any]:
 @require_admin_principal
 def admin_backup_trigger(request):
     """Create a fresh dump and stream it back as an attachment."""
-    allowed, denial = check_rate_limit("trigger", request.user.pk, 60)
+    allowed, denial = check_rate_limit(
+        "trigger",
+        request.user.pk,
+        settings.BACKUP_RATE_LIMIT_TRIGGER_SECONDS,
+    )
     if not allowed:
         _audit(
             request=request,
@@ -169,7 +173,11 @@ def admin_backup_list(request):
 @require_admin_principal
 def admin_backup_download(request, filename: str):
     """Stream the dump file as an attachment."""
-    allowed, denial = check_rate_limit("download", request.user.pk, 30)
+    allowed, denial = check_rate_limit(
+        "download",
+        request.user.pk,
+        settings.BACKUP_RATE_LIMIT_DOWNLOAD_SECONDS,
+    )
     if not allowed:
         return denial
 
@@ -217,7 +225,11 @@ def admin_backup_download(request, filename: str):
 @require_admin_principal
 def admin_backup_delete(request, filename: str):
     """Remove a dump from ``BACKUPS_DIR``."""
-    allowed, denial = check_rate_limit("delete", request.user.pk, 10)
+    allowed, denial = check_rate_limit(
+        "delete",
+        request.user.pk,
+        settings.BACKUP_RATE_LIMIT_DELETE_SECONDS,
+    )
     if not allowed:
         _audit(
             request=request,

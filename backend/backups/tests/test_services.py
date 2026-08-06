@@ -103,8 +103,8 @@ class SafePathTests(SimpleTestCase):
 
 @override_settings(
     BACKUPS_DIR=Path("/tmp/_unused_retention_dir"),
-    BACKUP_KEEP_DAILY=2,
-    BACKUP_KEEP_WEEKLY=1,
+    BACKUP_DAILY_KEEP=2,
+    BACKUP_WEEKLY_KEEP=1,
 )
 class RetentionTests(SimpleTestCase):
     """Retention is a pure function over the filesystem; SimpleTestCase
@@ -275,8 +275,8 @@ class LockContentionTests(SimpleTestCase):
 
 @override_settings(
     BACKUPS_DIR="/tmp/_unused_create_dir",
-    BACKUP_KEEP_DAILY=7,
-    BACKUP_KEEP_WEEKLY=4,
+    BACKUP_DAILY_KEEP=7,
+    BACKUP_WEEKLY_KEEP=4,
 )
 class CreateBackupHappyPathTests(TestCase):
     def setUp(self):

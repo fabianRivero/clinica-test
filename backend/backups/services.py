@@ -281,8 +281,8 @@ class BackupService:
                  daily_keep: int | None = None,
                  weekly_keep: int | None = None) -> None:
         self.backups_dir = Path(backups_dir or settings.BACKUPS_DIR)
-        self.daily_keep = int(daily_keep if daily_keep is not None else settings.BACKUP_KEEP_DAILY)
-        self.weekly_keep = int(weekly_keep if weekly_keep is not None else settings.BACKUP_KEEP_WEEKLY)
+        self.daily_keep = int(daily_keep if daily_keep is not None else settings.BACKUP_DAILY_KEEP)
+        self.weekly_keep = int(weekly_keep if weekly_keep is not None else settings.BACKUP_WEEKLY_KEEP)
         self.backups_dir.mkdir(parents=True, exist_ok=True)
 
     # -- public --------------------------------------------------------

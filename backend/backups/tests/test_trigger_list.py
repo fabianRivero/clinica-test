@@ -40,8 +40,8 @@ def _fresh_dir(name: str) -> Path:
 
 @override_settings(
     BACKUPS_DIR="/tmp/_unused_trigger_list_setup",
-    BACKUP_KEEP_DAILY=7,
-    BACKUP_KEEP_WEEKLY=4,
+    BACKUP_DAILY_KEEP=7,
+    BACKUP_WEEKLY_KEEP=4,
     CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
 )
 class TriggerListEndpointTests(TestCase):
@@ -52,8 +52,8 @@ class TriggerListEndpointTests(TestCase):
         self.tmp = _fresh_dir("_backup_trigger_list_test")
         self.override = override_settings(
             BACKUPS_DIR=str(self.tmp),
-            BACKUP_KEEP_DAILY=7,
-            BACKUP_KEEP_WEEKLY=4,
+            BACKUP_DAILY_KEEP=7,
+            BACKUP_WEEKLY_KEEP=4,
             CACHES={"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}},
         )
         self.override.enable()

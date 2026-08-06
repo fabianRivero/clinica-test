@@ -214,15 +214,31 @@ MEDIA_ROOT = BASE_DIR / "media"
 # a missing path; failures on read-only filesystems are tolerated so the
 # web app still boots (the service raises ``BackupServiceError`` instead).
 #
-# BACKUP_KEEP_DAILY / BACKUP_KEEP_WEEKLY mirror the retention rule from the
+# BACKUP_DAILY_KEEP / BACKUP_WEEKLY_KEEP mirror the retention rule from the
 # spec: keep the last 7 daily + 4 weekly dumps, prune the rest. The dump
 # command timeout caps a single pg_dump / sqlite3 .backup at 30 minutes.
+# The rate-limit windows are operator-overridable so a deployment can relax
+# them without a code change (see ``.env.example`` for the canonical names).
 # ---------------------------------------------------------------------------
 BACKUPS_DIR = Path(os.getenv("BACKUPS_DIR", str(BASE_DIR / "backups")))
-BACKUP_KEEP_DAILY = int(os.getenv("BACKUP_KEEP_DAILY", "7"))
-BACKUP_KEEP_WEEKLY = int(os.getenv("BACKUP_KEEP_WEEKLY", "4"))
+BACKUP_DAILY_KEEP = int(os.getenv("BACKUP_DAILY_KEEP", "7"))
+BACKUP_WEEKLY_KEEP = int(os.getenv("BACKUP_WEEKLY_KEEP", "4"))
 BACKUP_DUMP_TIMEOUT = int(os.getenv("BACKUP_DUMP_TIMEOUT", "1800"))
 BACKUP_LOCK_PATH = BACKUPS_DIR / ".lock"
+# ---------------------------------------------------------------------------
+# Backup rate-limit windows (seconds, per principal). Operator-overridable via
+# the same env vars documented in ``.env.example``. Defaults match the spec
+# table (trigger 1/60s, download 1/30s, delete 1/30s).
+# ---------------------------------------------------------------------------
+BACKUP_RATE_LIMIT_TRIGGER_SECONDS = int(
+    os.getenv("BACKUP_RATE_LIMIT_TRIGGER_SECONDS", "60")
+)
+BACKUP_RATE_LIMIT_DOWNLOAD_SECONDS = int(
+    os.getenv("BACKUP_RATE_LIMIT_DOWNLOAD_SECONDS", "30")
+)
+BACKUP_RATE_LIMIT_DELETE_SECONDS = int(
+    os.getenv("BACKUP_RATE_LIMIT_DELETE_SECONDS", "30")
+)
 try:
     BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
 except OSError:
