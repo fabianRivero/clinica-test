@@ -169,3 +169,68 @@ export async function postForm<T>(path: string, formData: FormData): Promise<T> 
   if (!response.ok) throw new Error((data as { detail?: string })?.detail || `Error ${response.status}`)
   return data as T
 }
+
+/**
+ * POST request that returns a binary payload as a `Blob` together with the
+ * filename advertised by `Content-Disposition: attachment`. Used by the
+ * backup trigger endpoint, which streams a freshly-created dump as
+ * `application/octet-stream`. Throws on non-OK responses using the body's
+ * `detail` field (when JSON) or a generic status-based message.
+ */
+export async function requestBlob(
+  path: string,
+  body: unknown = {},
+): Promise<{ blob: Blob; filename: string | null }> {
+  const csrf = await ensureCsrfCookie()
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: buildHeaders({
+      'Accept': 'application/octet-stream, application/json, */*',
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrf,
+    }),
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    const errorBody = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(errorBody?.detail || `No se pudo completar ${path} (${response.status})`)
+  }
+
+  const blob = await response.blob()
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)
+  const filename = match && match[1] ? decodeURIComponent(match[1]) : null
+  return { blob, filename }
+}
+
+/**
+ * DELETE request. The current admin SPA only POSTs, but the backup endpoints
+ * follow REST semantics: `DELETE /api/admin/backups/<id>/`. CSRF is required
+ * via `X-CSRFToken`. Returns the parsed JSON body when present, otherwise
+ * `null` (the backup delete endpoint answers `204 No Content`).
+ */
+export async function requestDelete<T = null>(path: string): Promise<T> {
+  const csrf = await ensureCsrfCookie()
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: buildHeaders({
+      'Accept': 'application/json',
+      'X-CSRFToken': csrf,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorBody = (await response.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(errorBody?.detail || `No se pudo completar ${path} (${response.status})`)
+  }
+
+  if (response.status === 204) {
+    return null as T
+  }
+
+  const data = (await response.json().catch(() => null)) as T | null
+  return (data ?? null) as T
+}
