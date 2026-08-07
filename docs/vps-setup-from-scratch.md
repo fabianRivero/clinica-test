@@ -66,6 +66,14 @@ apt install -y python3 python3-pip python3-venv python3.12-venv \
 # Verificá que sea Node 20+ (Vite 8 lo requiere):
 node -v   # tiene que decir v20.x.x o superior
 
+# ⚠️ Pre-crear directorios del home de www-data. Por default /var/www/ es
+# root:root (no www-data). Si no los creamos, `sudo -u www-data npm ...`
+# revienta con EACCES cuando intenta escribir /var/www/.npm, /var/www/.npmrc
+# y /var/www/.config durante el build del frontend.
+sudo mkdir -p /var/www/.npm /var/www/.config
+sudo touch /var/www/.npmrc
+sudo chown -R www-data:www-data /var/www/.npm /var/www/.config /var/www/.npmrc
+
 # Crear usuario de aplicación (NO usar root para la app)
 adduser --disabled-password --gecos "" deploy
 usermod -aG sudo deploy
@@ -196,6 +204,28 @@ sudo chown -R deploy:www-data /var/www/clinica
 sudo chmod -R g+rwX /var/www/clinica
 find /var/www/clinica -type d -exec sudo chmod 2775 {} \;
 ```
+
+> ⚠️ **Git safe.directory para www-data.** Git 2.35+ rechaza operaciones sobre repos cuyo owner no es el usuario que corre `git`. Cuando `scripts/deploy.sh` ejecuta `sudo -u www-data git pull`, va a tirar:
+>
+> ```
+> fatal: detected dubious ownership in repository at '/var/www/clinica'
+> ```
+>
+> Solución: agregar `/var/www/clinica` al `safe.directory` global de www-data. Como `/var/www/.gitconfig` no existe por default, hay que crearlo:
+>
+> ```bash
+> sudo touch /var/www/.gitconfig
+> sudo chown www-data:www-data /var/www/.gitconfig
+> sudo -u www-data git config --file /var/www/.gitconfig --add safe.directory /var/www/clinica
+> ```
+>
+> Verificá:
+>
+> ```bash
+> sudo -u www-data cat /var/www/.gitconfig
+> # [safe]
+> #         directory = /var/www/clinica
+> ```
 
 ---
 
@@ -1057,6 +1087,77 @@ OOM. Ver sección 6 — agregar swap temporal de 2–3 GB.
 ### Error: `sudo: command not found` o `sudo: unable to resolve host`
 
 Normal en droplets recién creados. Andá a sección 2 — agregar `deploy` al grupo `sudo` y la línea NOPASSWD.
+
+### Error: `fatal: detected dubious ownership in repository at '/var/www/clinica'` durante `deploy.sh`
+
+El primer deploy falla en el paso 1 (`git pull`) porque Git 2.35+ rechaza operaciones sobre un repo cuyo owner no es el usuario que ejecuta `git`. `scripts/deploy.sh` corre `sudo -u www-data git pull`, pero el owner del repo es `deploy`.
+
+Solución: agregar `/var/www/clinica` al `safe.directory` global de `www-data`. Ver sección 4.1.
+
+```bash
+sudo touch /var/www/.gitconfig
+sudo chown www-data:www-data /var/www/.gitconfig
+sudo -u www-data git config --file /var/www/.gitconfig --add safe.directory /var/www/clinica
+```
+
+### Error: `npm error code EACCES` durante el build del frontend en el deploy
+
+El paso 6 del deploy (`npm ci && npm run build`) corre con `sudo -u www-data npm ...`. Si `www-data` no puede escribir en `/var/www/.npm`, `/var/www/.npmrc` o `/var/www/.config`, npm tira `EACCES: permission denied`.
+
+Causa: `/var/www/` está owned por `root:root` por default (lo crea Nginx/Apache al instalar). Hay que pre-crear los directorios de npm con owner `www-data` ANTES del primer deploy. Ver sección 2.
+
+```bash
+sudo mkdir -p /var/www/.npm /var/www/.config
+sudo touch /var/www/.npmrc
+sudo chown -R www-data:www-data /var/www/.npm /var/www/.config /var/www/.npmrc
+```
+
+### Error: `npm run build` muestra `CustomEvent is not defined` o `ReferenceError` en `vite/cli.js`
+
+Estás corriendo Node 18 (default de Ubuntu 24.04), pero Vite 8 requiere Node ≥20.19. El error se ve así:
+
+```
+You are using Node.js 18.19.1. Vite requires Node.js version 20.19+ or 22.12+. Please upgrade your Node.js version.
+ReferenceError: CustomEvent is not defined
+```
+
+Solución: instalar Node 20 desde NodeSource en lugar del `nodejs` del repo de Ubuntu. Ver sección 2.
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+node -v   # tiene que decir v20.x.x
+```
+
+### Error: `deploy.sh` aborta con `El campo 'DOMAIN' es obligatorio`
+
+Bug del script: aunque la guía dice que el dominio es opcional, `scripts/deploy.sh` aborta si la respuesta está vacía. Workaround: pasar un dominio placeholder cualquiera (no se usa para nada crítico en deploys sin HTTPS):
+
+```bash
+DOMAIN="disabled.example.com" ./scripts/deploy.sh
+```
+
+El script después intenta hacer `curl https://disabled.example.com/` que falla con `HTTP 000000`, pero como vos entrás por IP directa al VPS, no te afecta.
+
+### Error: `deploy.sh` se saltea las preguntas y usa defaults incorrectos
+
+El script detecta "no TTY" cuando lo corrés desde CI/CD, pipes o `bash tool`. En ese caso usa los defaults de cada pregunta sin preguntarte, lo cual puede dar valores equivocados.
+
+Solución: pre-setear todas las variables como env vars antes de invocar el script (modo no-interactivo):
+
+```bash
+VPS_HOST="167.99.147.60" \
+VPS_USER="deploy" \
+PROJECT_PATH="/var/www/clinica" \
+GIT_BRANCH="main" \
+DOMAIN="disabled.example.com" \
+GIT_REPO="https://github.com/fabianRivero/clinica-test.git" \
+BIOMETRIC_SUSPENDED="0" \
+VITE_BIOMETRIC_SUSPENDED="false" \
+./scripts/deploy.sh
+```
+
+`BIOMETRIC_SUSPENDED=0` significa "no suspender mutaciones biométricas" (correcto para deploys que no usan biometría).
 
 ### `certbot` o `nginx` no encontrados
 
