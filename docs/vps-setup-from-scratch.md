@@ -1105,14 +1105,29 @@ En lugar de `sudo systemctl restart sshd`. Verificá que esté corriendo con `su
 
 `/var/www/` debe estar owned por `root:root`, no `deploy:deploy`. Si la sección 4 (`chown deploy:deploy /var/www`) cambió el owner, `www-data` no puede escribir sus configs en `/var/www/.gitconfig`, `/var/www/.npmrc`, `/var/www/.config`, etc.
 
-Fix:
+Fix de ownership:
 
 ```bash
 sudo chown root:root /var/www
 sudo chmod 755 /var/www
 ```
 
-Después configurá `safe.directory` correctamente (ver sección 4.1). Con `/var/www/` en `root:root`, el comando `sudo -u www-data git config --file /var/www/.gitconfig ...` ya tiene permiso para crear el archivo.
+**Pero esto solo no alcanza.** Aunque `/var/www/` esté en `root:root 755`, el comando `sudo -u www-data git config --file /var/www/.gitconfig --add ...` sigue fallando porque git quiere **crear un `.lock` file al lado**, y www-data no tiene write en `/var/www/`.
+
+Fix correcto: ejecutar el comando como root (que sí tiene write en el directorio) y después chownear el archivo a www-data para que sea legible:
+
+```bash
+sudo bash -c "git config --file /var/www/.gitconfig --add safe.directory /var/www/clinica"
+sudo chown www-data:www-data /var/www/.gitconfig
+```
+
+Verificá que www-data lo ve:
+
+```bash
+sudo -u www-data cat /var/www/.gitconfig
+# [safe]
+#         directory = /var/www/clinica
+```
 
 ### Error: `fatal: detected dubious ownership in repository at '/var/www/clinica'` durante `deploy.sh`
 
