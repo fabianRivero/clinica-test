@@ -723,7 +723,9 @@ sudo journalctl -u gunicorn --no-pager -n 50
 
 ---
 
-## 10. Deploy desde la máquina local
+## 10. Actualizar el sistema en producción (deploy de cambios)
+
+> ⚠️ **Esta sección es para deploys posteriores al setup inicial.** Las secciones 0–9 se ejecutan **una sola vez** cuando creás el VPS desde cero. La sección 10 se ejecuta **cada vez que quieras subir cambios de código al VPS ya configurado** (bugfixes, features, migraciones nuevas, etc.).
 
 Una vez que el VPS está corriendo, mantener el sistema actualizado es automático con `scripts/deploy.sh`.
 
