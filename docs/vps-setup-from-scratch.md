@@ -102,6 +102,8 @@ sudo -u postgres psql
 
 Dentro de `psql` (cada línea es un comando separado, esperaba el `;` o el prompt antes de la siguiente):
 
+> ⚠️ **`CAMBIAR_ESTA_PASSWORD` es un placeholder, no una contraseña real.** Reemplazá ambas apariciones (línea 107 y línea 142) por una contraseña **alfanumérica** (solo letras y números, sin `@`, `#`, `!`, `$`, `%`, `&`). Postgres 16 interpreta mal los caracteres especiales en algunos clientes. **Las dos apariciones deben ser idénticas** — es la misma contraseña que va en `DJANGO_DB_PASSWORD` del `.env` del backend.
+
 ```sql
 CREATE DATABASE clinica;
 CREATE USER clinica_app WITH PASSWORD 'CAMBIAR_ESTA_PASSWORD';
@@ -237,6 +239,21 @@ DJANGO_CSRF_TRUSTED_ORIGINS=https://<tu-dominio.com>
 DJANGO_CSRF_COOKIE_SECURE=1
 DJANGO_SESSION_COOKIE_SECURE=1
 
+> ⚠️ **Estas variables tienen dependencias cruzadas que no son obvias:** `DJANGO_CSRF_COOKIE_SECURE` y `DJANGO_SESSION_COOKIE_SECURE` dependen de tener HTTPS. Si entrás por HTTP (sin dominio o sin certbot), los browsers **rechazan los cookies con `Secure=1`** y no podés loguear (login devuelve `403 CSRF verification failed` aunque el endpoint funcione con `curl`).
+>
+> **Regla práctica:**
+>
+> | Setup | `DJANGO_CSRF_COOKIE_SECURE` | `DJANGO_SESSION_COOKIE_SECURE` | `DJANGO_CORS_ALLOWED_ORIGINS` | `DJANGO_CSRF_TRUSTED_ORIGINS` |
+> |---|---|---|---|---|
+> | HTTP (sin dominio, prueba local) | `0` | `0` | `http://<VPS_IP>` | `http://<VPS_IP>` |
+> | HTTPS (producción con dominio + certbot) | `1` | `1` | `https://<tu-dominio.com>` | `https://<tu-dominio.com>` |
+>
+> **Síntomas típicos de `Secure=1` mal configurado sin HTTPS:**
+>
+> - Login devuelve `403 Forbidden` con mensaje `La verificación CSRF ha fallado. Solicitud abortada.` desde el browser.
+> - El mismo login anda perfecto si lo probás con `curl` (curl no aplica la política de `Secure`).
+> - En DevTools → Network, el request POST se manda **sin** cookie `csrftoken` aunque el backend lo setee.
+
 # Seeds (opcional): URL del footer de los comandos de seed y guard de entorno.
 # DJANGO_BASE_URL=https://<tu-dominio.com>          # default http://localhost:8000
 # DJANGO_SEED_ADMIN_URL=https://admin.<tu-dominio.com/admin>   # toma precedencia sobre BASE_URL
@@ -244,6 +261,16 @@ DJANGO_SESSION_COOKIE_SECURE=1
 ```
 
 **Generar `DJANGO_SECRET_KEY`:**
+
+> ⚠️ **Este comando se ejecuta adentro del servidor, con el virtualenv activado.** No en tu máquina local (ahí no está Django instalado y vas a ver `ModuleNotFoundError: No module named 'django'`). El flujo esperado:
+>
+> ```bash
+> ssh deploy@<VPS_IP>
+> cd /var/www/clinica/backend
+> source env/bin/activate
+> # El prompt tiene que empezar con "(env)"
+> python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+> ```
 
 ```bash
 python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
@@ -536,6 +563,16 @@ sudo nano /etc/nginx/sites-available/clinica
 
 Pegá esta configuración (reemplazá `tu-dominio.com`):
 
+> ⚠️ **Reemplazá `tu-dominio.com` por tu dominio real, o por la IP del VPS si todavía no compraste dominio.** Si dejás el placeholder literal, Nginx no resuelve el `Host:` header y vas a ver `500 Internal Server Error` o loops de rewrite en `nginx -t` (mensaje: `rewrite or internal redirection cycle while internally redirecting to "/index.html"`).
+>
+> Si entrás solo por IP (sin dominio), usá:
+>
+> ```nginx
+> server_name <VPS_IP> _;
+> ```
+>
+> El `_` es el catch-all que matchea cualquier `Host:` que Nginx reciba. Sin esto, todo request al VPS falla con loop de rewrite.
+
 ```nginx
 server {
     server_name tu-dominio.com www.tu-dominio.com;
@@ -640,6 +677,8 @@ sudo systemctl status certbot.timer
 
 ## 9. Gunicorn como servicio systemd
 
+> ⚠️ **El servicio se crea en este paso.** Si intentás `sudo systemctl restart gunicorn` antes de llegar acá (por ejemplo, después de editar el `.env` en la sección 5.1), te va a tirar `Unit gunicorn.service not found`. Es esperable, no es un error de tu setup. El servicio no existe hasta que lo crees con los pasos de abajo.
+
 ```bash
 sudo nano /etc/systemd/system/gunicorn.service
 ```
@@ -688,6 +727,8 @@ sudo journalctl -u gunicorn --no-pager -n 50
 
 Una vez que el VPS está corriendo, mantener el sistema actualizado es automático con `scripts/deploy.sh`.
 
+### 10.1. Deploy normal (pull + restart)
+
 **La primera vez**, copiá la plantilla y dale permisos. El script te va a preguntar los datos del VPS y los guarda en `scripts/.deploy-config` (gitignored) para no volver a preguntarlos:
 
 ```bash
@@ -733,10 +774,69 @@ O borrá el archivo y volvé a correr el script.
 1. Hace `git pull` en el VPS.
 2. Actualiza dependencias Python.
 3. Reconstruye el frontend (`npm ci` + `npm run build`).
-4. Aplica migraciones.
+4. Aplica migraciones (todas las pendientes, incluyendo `biometric/0001-0003`, `customers/0010-0012`, `catalogs/0007` y `operations/0025` si aún no se aplicaron — no requiere acción manual).
 5. Recolecta estáticos.
 6. Reinicia Gunicorn.
 7. Verifica Nginx y (si hay dominio) hace un `curl` al sitio.
+
+### 10.2. Suspender la integración biométrica (forward)
+
+Si necesitás frenar temporalmente las operaciones de huella (captura, verificación, enrollment, agent lifecycle) sin tocar el código ni borrar datos, el flujo es:
+
+1. **Backend**: setear `BIOMETRIC_SUSPENDED=1` en `backend/.env` del VPS. Mientras esté activo, los endpoints de mutación biométricos devuelven `HTTP 503` con código `BIOMETRIC_SUSPENDED`; los GETs administrativos (listado de agentes, historial) siguen funcionando por diseño.
+2. **Frontend**: reconstruir el bundle con `VITE_BIOMETRIC_SUSPENDED=true`. El frontend oculta los controles de huella y no emite requests a `/api/biometric/*`.
+3. **Orden**: backend-first, frontend-second. El script de deploy materializa la suspensión en el backend, valida el endpoint gateado, y solo después rebuilda el frontend.
+
+Para ejecutar el forward, desde tu máquina local:
+
+```bash
+./scripts/deploy.sh
+```
+
+El script pregunta una vez por el estado de la suspensión y guarda la respuesta para futuras corridas. Si ya está en `1`, no pregunta.
+
+**Atajo (helper `biometric_suspension.sh`):** el script `scripts/biometric_suspension.sh` envuelve este flujo con subcomandos más legibles:
+
+```bash
+./scripts/biometric_suspension.sh prod on   # suspender en el VPS
+./scripts/biometric_suspension.sh prod off  # re-habilitar en el VPS
+./scripts/biometric_suspension.sh status    # ver estado actual
+```
+
+**Validación post-deploy** (opcional pero recomendada): con sesión de admin iniciada y cookies/CSRF exportadas en `$COOKIE_JAR`/`$CSRF`, un POST a `https://$DOMAIN/api/biometric/citas/<id>/huella/verify-init/` debe devolver `HTTP 503` con `code: BIOMETRIC_SUSPENDED`. Reemplazá `<id>` por una cita real en estado `REALIZADA_PENDIENTE_VERIFICACION`. Los GETs a `/api/biometric/agents/` NO sirven para validar porque NO se gatean por diseño.
+
+**PC del lector (operador):** adicionalmente, en la PC de recepción donde corre el lector DigitalPersona 4500:
+
+```bash
+sudo systemctl disable --now fingerprint-agent
+sudo systemctl disable --now cloudflared
+sudo systemctl status fingerprint-agent --no-pager
+```
+
+`disable --now` no borra unidades ni archivos — sólo detiene y deshabilita el agente y el túnel. Para volver a habilitar: `sudo systemctl enable --now fingerprint-agent cloudflared`.
+
+### 10.3. Re-habilitar la integración biométrica (rollback)
+
+El flag está horneado en el bundle del frontend, así que el rebuild es **obligatorio** — no alcanza con cambiar el `.env` del backend. Para revertir:
+
+```bash
+BIOMETRIC_SUSPENDED=0 VITE_BIOMETRIC_SUSPENDED=false ./scripts/deploy.sh
+```
+
+Equivalente con el helper:
+
+```bash
+./scripts/biometric_suspension.sh prod off
+```
+
+**Contrato backend-frontend**: si los flags divergen, gana el `503` del backend. Por eso es importante que ambos se cambien en el mismo deploy. `scripts/deploy.sh` se encarga de mantenerlos sincronizados — no los cambies a mano en `.env` sin redesplegar.
+
+**Re-habilitar el lector físico**: en la PC de recepción:
+
+```bash
+sudo systemctl enable --now fingerprint-agent cloudflared
+sudo systemctl status fingerprint-agent --no-pager
+```
 
 ---
 
@@ -1016,6 +1116,7 @@ sudo systemctl restart gunicorn
 | `3332186` | Deploy script interactivo: pide VPS_HOST, PROJECT_PATH, etc. la primera vez y los guarda en `scripts/.deploy-config`. Arregla bug de paths hardcoded en el heredoc SSH. |
 | `33d67c4` | Changelog footer en la guía. |
 | `7f47e40` | Reorganiza la sección 5.2 con una sección dedicada "Cómo poblar la base de datos" con tabla comparativa de los 4 seeds. Corrige gaps del deploy en DO: `sudo` NOPASSWD para `deploy`, `pg_hba.conf` md5, `GRANT ON SCHEMA public`, `python3.12-venv`, swap para Node build, DNS antes de certbot, troubleshooting extendido. |
+| `b4945b3` + cambios posteriores | Sección 10 dividida en 10.1 (deploy normal), 10.2 (suspender biométrica) y 10.3 (rollback). Documenta el flujo `BIOMETRIC_SUSPENDED` + `VITE_BIOMETRIC_SUSPENDED`, el helper `scripts/biometric_suspension.sh`, la validación post-deploy con `curl` + cookie/CSRF, y los comandos systemd de la PC del lector. Menciona las migraciones nuevas que se aplican automáticamente (`biometric/0001-0003`, `customers/0010-0012`, `catalogs/0007`, `operations/0025`). |
 
 Si la guía quedó desactualizada respecto al código, este es el bloque a actualizar. Buscá la sección correspondiente en la tabla de arriba y en el diff del commit.
 
