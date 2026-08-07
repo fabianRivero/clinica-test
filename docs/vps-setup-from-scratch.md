@@ -107,7 +107,7 @@ ssh deploy@<VPS_IP>
 
 # Deshabilitar login root por SSH (opcional pero recomendado)
 sudo sed -i 's/^PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
-sudo systemctl restart sshd
+sudo systemctl restart ssh
 ```
 
 > **⚠️ Si tenés problemas para entrar como `deploy` con `ssh-copy-id`**: abrí la consola web del proveedor (DigitalOcean, Hetzner, etc.) como root, y ejecutá los pasos de creación de `deploy` + copia de `authorized_keys` directamente ahí. A veces la key que subiste al crear el droplet no es la misma que tenés ahora en tu máquina local.
@@ -184,7 +184,8 @@ GRANT ALL ON DATABASE clinica TO clinica_app;
 
 ```bash
 sudo mkdir -p /var/www
-sudo chown deploy:deploy /var/www
+sudo chown root:root /var/www
+sudo chmod 755 /var/www
 cd /var/www
 
 # HTTPS (te pide usuario + PAT/token de GitHub)
@@ -1087,6 +1088,31 @@ OOM. Ver sección 6 — agregar swap temporal de 2–3 GB.
 ### Error: `sudo: command not found` o `sudo: unable to resolve host`
 
 Normal en droplets recién creados. Andá a sección 2 — agregar `deploy` al grupo `sudo` y la línea NOPASSWD.
+
+### Error: `Failed to restart sshd.service: Unit sshd.service not found`
+
+En Ubuntu 24.04+, el servicio de SSH se llama `ssh` (sin la `d` final). El archivo de config sigue siendo `/etc/ssh/sshd_config`, pero el servicio systemd es `ssh.service`. Cambio silencioso en Ubuntu reciente (el sistema usa `ssh.socket` para socket activation).
+
+Solución:
+
+```bash
+sudo systemctl restart ssh
+```
+
+En lugar de `sudo systemctl restart sshd`. Verificá que esté corriendo con `sudo systemctl status ssh`.
+
+### Error: `error: could not lock config file /var/www/.gitconfig: Permission denied` al configurar safe.directory
+
+`/var/www/` debe estar owned por `root:root`, no `deploy:deploy`. Si la sección 4 (`chown deploy:deploy /var/www`) cambió el owner, `www-data` no puede escribir sus configs en `/var/www/.gitconfig`, `/var/www/.npmrc`, `/var/www/.config`, etc.
+
+Fix:
+
+```bash
+sudo chown root:root /var/www
+sudo chmod 755 /var/www
+```
+
+Después configurá `safe.directory` correctamente (ver sección 4.1). Con `/var/www/` en `root:root`, el comando `sudo -u www-data git config --file /var/www/.gitconfig ...` ya tiene permiso para crear el archivo.
 
 ### Error: `fatal: detected dubious ownership in repository at '/var/www/clinica'` durante `deploy.sh`
 
