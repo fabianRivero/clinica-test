@@ -47,12 +47,24 @@ apt update && apt upgrade -y
 
 # Instalar paquetes base. En Ubuntu 24.04, los nombres de los paquetes
 # cambiaron respecto a 22.04: hay que agregar python3-pip y python3.12-venv
-# explícitamente, y nodejs está en el repo de Ubuntu (no en NodeSource).
+# explícitamente.
+#
+# ⚠️ Node.js NO se instala desde el repo de Ubuntu. El paquete `nodejs`
+# de Ubuntu 24.04 es Node 18, y Vite 8 (frontend) requiere Node ≥20.19.
+# Si instalás el Node 18 de Ubuntu, `npm run build` falla con
+# `CustomEvent is not defined` y ReferenceError en vite/cli.js.
+#
+# Instalá Node 20 desde NodeSource ANTES del resto:
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+
 apt install -y python3 python3-pip python3-venv python3.12-venv \
                nginx certbot python3-certbot-nginx \
                postgresql postgresql-contrib \
                ufw fail2ban curl git \
-               nodejs npm
+               nodejs
+
+# Verificá que sea Node 20+ (Vite 8 lo requiere):
+node -v   # tiene que decir v20.x.x o superior
 
 # Crear usuario de aplicación (NO usar root para la app)
 adduser --disabled-password --gecos "" deploy
@@ -732,6 +744,22 @@ Una vez que el VPS está corriendo, mantener el sistema actualizado es automáti
 ### 10.1. Deploy normal (pull + restart)
 
 **La primera vez**, copiá la plantilla y dale permisos. El script te va a preguntar los datos del VPS y los guarda en `scripts/.deploy-config` (gitignored) para no volver a preguntarlos:
+
+> ⚠️ **Sobre la pregunta `BIOMETRIC_SUSPENDED (1=forward, 0=rollback) [1]`:**
+>
+> - El default es `1` (suspende mutaciones biométricas).
+> - Si tu deploy **NO usa biometría** (caso normal en este proyecto si no activaste el flujo de huellas), respondé `0` para no inyectar flags que no necesitás en `backend/.env`.
+> - El script después valida un endpoint biométrico con `curl` esperando `HTTP 503`. Si no tenés biometría, esa validación va a devolver otro código (401/403/404) y el script loguea un warning, **no aborta**.
+> - Para rollback explícito: `BIOMETRIC_SUSPENDED=0 ./scripts/deploy.sh`.
+
+> ⚠️ **¿Te equivocaste en alguna respuesta del wizard?** El config se guarda en `scripts/.deploy-config`. Para volver al wizard desde cero:
+>
+> ```bash
+> rm scripts/.deploy-config
+> ./scripts/deploy.sh
+> ```
+>
+> El archivo está en `.gitignore`, así que se puede borrar y regenerar sin afectar el repo. No hay confirmación previa — el próximo `./scripts/deploy.sh` te pregunta todo de nuevo.
 
 ```bash
 cp scripts/deploy.sh.example scripts/deploy.sh
