@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Backup helper for cron and operator checks.
+# Run from the repository root or call it by absolute path.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+BACKEND_DIR="$REPO_ROOT/backend"
+ENV_FILE="$BACKEND_DIR/.env"
+
+if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+fi
+
+PYTHON_BIN="${PYTHON_BIN:-$BACKEND_DIR/env/bin/python}"
+if [[ ! -x "$PYTHON_BIN" ]]; then
+    PYTHON_BIN="${PYTHON:-python3}"
+fi
+
+BACKUPS_DIR="${BACKUPS_DIR:-$BACKEND_DIR/backups}"
+
+run_backup() {
+    local weekly_marker="$1"
+    cd "$BACKEND_DIR"
+    WEEKLY="$weekly_marker" "$PYTHON_BIN" manage.py create_backup
+}
+
+show_status() {
+    if [[ ! -d "$BACKUPS_DIR" ]]; then
+        printf 'Backup directory does not exist: %s\n' "$BACKUPS_DIR"
+        exit 1
+    fi
+
+    printf 'Backup directory: %s\n' "$BACKUPS_DIR"
+    df -h "$BACKUPS_DIR"
+    printf 'Backup files: '
+    find "$BACKUPS_DIR" -maxdepth 1 -type f -name 'clinica_*.dump' -printf '.' | wc -c
+}
+
+case "${1:-}" in
+    daily)
+        run_backup 0
+        ;;
+    weekly)
+        run_backup 1
+        ;;
+    status)
+        show_status
+        ;;
+    *)
+        printf 'Usage: %s {daily|weekly|status}\n' "$0" >&2
+        exit 2
+        ;;
+esac

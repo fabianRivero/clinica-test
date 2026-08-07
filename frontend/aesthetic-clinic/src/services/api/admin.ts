@@ -14,6 +14,7 @@ import type {
   AdminClientInactivateResponse,
   AdminClientReservationAvailabilityResponse,
   AdminProspectMedicalAvailabilityResponse,
+  BackupListResponse,
   CancelAdminProspectMedicalAppointmentResponse,
   CatalogsResponse,
   CreateAdminClientFreeMedicalAppointmentResponse,
@@ -60,7 +61,14 @@ import type {
   ProspectConversionResponse,
   ProspectConversionUserData,
 } from '../../types/prospectConversion'
-import { requestJson, requestJsonWithBody, requestJsonWithBodyIdempotent, requestFormDataWithBody } from './apiClient'
+import {
+  requestJson,
+  requestJsonWithBody,
+  requestJsonWithBodyIdempotent,
+  requestFormDataWithBody,
+  requestBlob,
+  requestDelete,
+} from './apiClient'
 
 export function getAdminDashboard() {
   return requestJson<DashboardResponse>('/api/admin/dashboard/')
@@ -893,4 +901,32 @@ export async function changeAdminStaffBranch(userId: string | number, branchId: 
     `/api/admin/equipo/${userId}/cambiar-sucursal/`,
     { branchId }
   )
+}
+
+// --- Admin Database Backups ---
+// Principal-only endpoints that mirror the `Backups` admin page. The trigger
+// streams a freshly-created dump as `application/octet-stream` so the
+// frontend saves the bytes as-is; the download endpoint is a normal GET
+// reused via `<a href ... download>` (no extra CSRF token because GETs are
+// exempt). Delete follows REST semantics (`DELETE`).
+
+export function listAdminBackups() {
+  return requestJson<BackupListResponse>('/api/admin/backups/')
+}
+
+export function triggerAdminBackup() {
+  return requestBlob('/api/admin/backups/trigger/', {})
+}
+
+/**
+ * Build a download URL for an existing backup file. Used as the `href` for a
+ * plain `<a download>` so the browser handles the file save via session
+ * cookie (no CSRF token required for GETs).
+ */
+export function adminBackupDownloadLink(filename: string) {
+  return `/api/admin/backups/${encodeURIComponent(filename)}/download/`
+}
+
+export function deleteAdminBackup(filename: string) {
+  return requestDelete(`/api/admin/backups/${encodeURIComponent(filename)}/`)
 }

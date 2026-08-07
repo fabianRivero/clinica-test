@@ -783,3 +783,28 @@ export type AdminCancelAppointmentResponse = {
   detail: string
   appointment: ClientScheduledAppointment
 }
+
+// --- Admin Database Backups ---
+// Shapes returned by the `/api/admin/backups/*` endpoints. The list endpoint
+// returns `{ results: BackupFile[] }`; the trigger endpoint streams the dump
+// (octet-stream) so the frontend receives a `Blob`. `BackupFile.id` is the
+// opaque server-side filename (also usable as `name`) and acts as the only
+// stable identifier surfaced to the table.
+
+export type BackupFile = {
+  id: string
+  name: string
+  size: number
+  modifiedAt: string
+  /**
+   * Server-computed Spanish relative-time label ("recien", "hace 2 dias",
+   * "hace mas de 1 mes"). The table renders this as its own "Hace" column
+   * so the operator can scan the freshness of every dump at a glance.
+   */
+  ageLabel: string
+  isWeekly: boolean
+}
+
+export type BackupListResponse = {
+  results: BackupFile[]
+}

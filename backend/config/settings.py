@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "clinical",
     "notifications",
     "biometric.apps.BiometricConfig",
+    "backups.apps.BackupsConfig",
     "corsheaders",
 ]                      
 
@@ -201,6 +202,48 @@ STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "local")  # default to local de
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# ---------------------------------------------------------------------------
+# Database backups (admin-db-backups, PR #1)
+#
+# BACKUPS_DIR holds server-side dumps created by ``BackupService`` and the
+# ``create_backup`` management command. Operators may override the path via
+# the ``BACKUPS_DIR`` env var; on Linux the convention is
+# ``/var/backups/clinica`` (see design §"Deployment Notes"). The directory is
+# created at startup if missing so cron / systemd-timer invocations never see
+# a missing path; failures on read-only filesystems are tolerated so the
+# web app still boots (the service raises ``BackupServiceError`` instead).
+#
+# BACKUP_DAILY_KEEP / BACKUP_WEEKLY_KEEP mirror the retention rule from the
+# spec: keep the last 7 daily + 4 weekly dumps, prune the rest. The dump
+# command timeout caps a single pg_dump / sqlite3 .backup at 30 minutes.
+# The rate-limit windows are operator-overridable so a deployment can relax
+# them without a code change (see ``.env.example`` for the canonical names).
+# ---------------------------------------------------------------------------
+BACKUPS_DIR = Path(os.getenv("BACKUPS_DIR", str(BASE_DIR / "backups")))
+BACKUP_DAILY_KEEP = int(os.getenv("BACKUP_DAILY_KEEP", "7"))
+BACKUP_WEEKLY_KEEP = int(os.getenv("BACKUP_WEEKLY_KEEP", "4"))
+BACKUP_DUMP_TIMEOUT = int(os.getenv("BACKUP_DUMP_TIMEOUT", "1800"))
+BACKUP_LOCK_PATH = BACKUPS_DIR / ".lock"
+# ---------------------------------------------------------------------------
+# Backup rate-limit windows (seconds, per principal). Operator-overridable via
+# the same env vars documented in ``.env.example``. Defaults match the spec
+# table (trigger 1/60s, download 1/30s, delete 1/30s).
+# ---------------------------------------------------------------------------
+BACKUP_RATE_LIMIT_TRIGGER_SECONDS = int(
+    os.getenv("BACKUP_RATE_LIMIT_TRIGGER_SECONDS", "60")
+)
+BACKUP_RATE_LIMIT_DOWNLOAD_SECONDS = int(
+    os.getenv("BACKUP_RATE_LIMIT_DOWNLOAD_SECONDS", "30")
+)
+BACKUP_RATE_LIMIT_DELETE_SECONDS = int(
+    os.getenv("BACKUP_RATE_LIMIT_DELETE_SECONDS", "30")
+)
+try:
+    BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    # Read-only filesystems (e.g. ephemeral CI): service raises at runtime.
+    pass
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 AUTH_USER_MODEL = "accounts.Usuario"

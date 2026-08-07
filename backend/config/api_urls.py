@@ -131,6 +131,8 @@ urlpatterns = [
     path("reportes/clientes/", admin_report_clients, name="admin-report-clients-api"),
     path("reportes/prospectos/", admin_report_prospects, name="admin-report-prospects-api"),
     path("reportes/ingresos/", admin_report_income, name="admin-report-income-api"),
+    # Admin Backups — principal-only dump trigger / list / download / delete.
+    path("backups/", include("backups.urls")),
     path("gastos/categorias/", admin_gastos_categorias, name="admin-gastos-categorias-api"),
     path("gastos/crear/", admin_gasto_crear, name="admin-gastos-crear-api"),
     path("gastos/<int:expense_id>/actualizar/", admin_gasto_actualizar, name="admin-gastos-actualizar-api"),

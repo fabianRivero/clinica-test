@@ -37,6 +37,7 @@ import { AdminReportProspectsPage } from './pages/admin/reports/AdminReportProsp
 import { AdminReportIncomePage } from './pages/admin/reports/AdminReportIncomePage'
 import { AdminReportExpensesPage } from './pages/admin/reports/AdminReportExpensesPage'
 import { AdminStaffCreatePage, AdminStaffManagePage } from './pages/admin/AdminStaffPage'
+import { AdminBackupsPage } from './pages/admin/backups/AdminBackupsPage'
 import { AdminBranchesPage } from './pages/admin/AdminBranchesPage'
 import { AdminBranchHistoryPage } from './pages/admin/AdminBranchHistoryPage'
 import { AdminBranchAdminsPage } from './pages/admin/AdminBranchAdminsPage'
@@ -150,6 +151,7 @@ function App() {
           <Route path="reportes/prospectos" element={<AdminReportProspectsPage />} />
           <Route path="reportes/ingresos" element={<AdminReportIncomePage />} />
           <Route path="reportes/gastos" element={<AdminReportExpensesPage />} />
+          <Route path="backups" element={<AdminBackupsPage />} />
           <Route path="mensajes" element={<Navigate to="/cms/mensajes/permisos" replace />} />
           <Route path="mensajes/permisos" element={<AdminMessagingPermissionsPage />} />
           <Route path="mensajes/fichas" element={<AdminMessagingTicketsPage />} />
