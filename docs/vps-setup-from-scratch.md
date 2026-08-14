@@ -577,24 +577,22 @@ npm run build
 
 El build genera `dist/` que Nginx va a servir.
 
-> **⚠️ Si tu droplet tiene 1 GB de RAM o menos**, el build puede tirarse por OOM (Out of Memory). Si `npm ci` o `npm run build` muestra `Killed` o `JavaScript heap out of memory`, agregá swap temporal:
+> **⚠️ Si tu droplet tiene 1 GB de RAM o menos**, el build puede tirarse por OOM (Out of Memory). Si `npm ci` o `npm run build` muestra `Killed` o `JavaScript heap out of memory`, agregá swap de 2 GiB:
 >
 > ```bash
 > sudo fallocate -l 2G /swapfile
 > sudo chmod 600 /swapfile
 > sudo mkswap /swapfile
 > sudo swapon /swapfile
-> free -h   # verificar que Swap muestre 2G
+> echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+> free -h   # verificar que Swap muestre 2.0Gi
 > ```
 >
-> Reintentá `npm ci` y `npm run build`. Al terminar, podés eliminar el swap:
+> **Recomendado dejarlo permanente** (la línea `echo` ya lo registra en `/etc/fstab`). En un disco de 8 GiB sobran ~3 GiB para el resto del sistema, y tener swap siempre presente previene OOMs en futuros deploys. Solo swapear bajo demanda es frágil: el próximo deploy con VPS saturado vuelve a caer igual.
 >
-> ```bash
-> sudo swapoff /swapfile
-> sudo rm /swapfile
-> ```
+> Si con 2 GiB sigue tirando OOM, probá con 3 GiB. Más de eso no ayuda porque el cuello pasa a ser disco, no RAM.
 >
-> Si con 2 GB de swap sigue tirando OOM, probá con 3 GB.
+> Esta misma receta aplica cada vez que corras `scripts/deploy.sh` en un VPS chico. Ver [sección 10.2 paso 1](#paso-1--si-tu-vps-tiene-menos-de-1-gib-de-ram-caso-real-frecuente-crear-swap-de-2-gib) y el [error de Killed](#error-npm-ci-o-npm-run-build-muestra-killed-o-javascript-heap-out-of-memory) en Troubleshooting.
 
 ---
 
@@ -642,6 +640,14 @@ server {
 
     # API
     location /api/ {
+        # Límite de tamaño de upload: 10 MiB. Sin esta línea, Nginx usa
+        # el default de 1m y rechaza comprobantes / documentos con
+        # HTTP 413 Request Entity Too Large. El default de Django
+        # (DATA_UPLOAD_MAX_MEMORY_SIZE 2.5 MiB) deja pasar más, así
+        # que Nginx es el cuello de botella. Subilo si tu clínica
+        # necesita videos o PDFs pesados; 10m cubre fotos decentes
+        # de celular y escaneos livianos.
+        client_max_body_size 10m;
         proxy_pass http://unix:/var/www/clinica/clinica.sock;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -842,31 +848,115 @@ O borrá el archivo y volvé a correr el script.
 
 ### 10.2. Suspender la integración biométrica (forward)
 
-Si necesitás frenar temporalmente las operaciones de huella (captura, verificación, enrollment, agent lifecycle) sin tocar el código ni borrar datos, el flujo es:
+**Cuándo usar esto.** El lector DigitalPersona 4500 no está conectado, está roto, o todavía no llegó el hardware. Mientras tanto, querés que el sistema siga funcionando: las conversiones de prospecto, los pasos 4 de huella y los `Confirmar con huella` en citas deben poder **saltarse** el bloque sin pedir captura.
 
-1. **Backend**: setear `BIOMETRIC_SUSPENDED=1` en `backend/.env` del VPS. Mientras esté activo, los endpoints de mutación biométricos devuelven `HTTP 503` con código `BIOMETRIC_SUSPENDED`; los GETs administrativos (listado de agentes, historial) siguen funcionando por diseño.
-2. **Frontend**: reconstruir el bundle con `VITE_BIOMETRIC_SUSPENDED=true`. El frontend oculta los controles de huella y no emite requests a `/api/biometric/*`.
-3. **Orden**: backend-first, frontend-second. El script de deploy materializa la suspensión en el backend, valida el endpoint gateado, y solo después rebuilda el frontend.
+**Qué cambia al activar el modo suspendido:**
 
-Para ejecutar el forward, desde tu máquina local:
+- **Frontend**: el botón *"Capturar huella"* desaparece del paso 4 del wizard de conversión. Aparece un banner amarillo *"Huella biometrica suspendida"*. "Guardar y continuar" avanza al paso 5 sin pedir template. En `client-detail`, las citas confirmables por huella siguen apareciendo pero el botón *"Confirmar con huella"* se reemplaza por el flujo manual.
+- **Backend**: cualquier `POST` a `/api/biometric/*` que intente mutar (enroll, verify-init, verify-confirm) responde `HTTP 503` con código `BIOMETRIC_SUSPENDED`. Los `GET` administrativos (listado de agentes, historial de intentos) siguen respondiendo.
+- **PC del lector**: si el lector y el agente local están conectados, conviene detenerlos para que no queden en estado zombie.
+
+**Tiempo total estimado:** 10–20 min si el VPS es chico (< 1 GiB RAM), 3–5 min si es normal.
+
+#### Procedimiento
+
+**Paso 1 — Si tu VPS tiene menos de 1 GiB de RAM (caso real frecuente), crear swap de 2 GiB.**
+
+Antes de correr el deploy, en el VPS vía SSH como `deploy` (con `sudo`):
 
 ```bash
-./scripts/deploy.sh
+ssh deploy@<VPS_IP>
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+free -h   # verificá que la línea Swap muestre 2.0Gi
 ```
 
-El script pregunta una vez por el estado de la suspensión y guarda la respuesta para futuras corridas. Si ya está en `1`, no pregunta.
+Salida esperada:
 
-**Atajo (helper `biometric_suspension.sh`):** el script `scripts/biometric_suspension.sh` envuelve este flujo con subcomandos más legibles:
+```
+Mem:           458Mi total
+Swap:          2.0Gi total
+NAME      TYPE SIZE
+/swapfile file 2G
+```
+
+> **¿Por qué?** El `npm run build` dentro del `deploy.sh` invoca `tsc -b && vite build`. Con menos de 1 GiB de RAM y sin swap, el OOM killer del kernel mata el proceso en mitad del build y deja `dist/` incompleto. El swap de 2 GiB es suficiente para sobrevivir el pico típico de `tsc -b` (1.5–2 GiB). **Dejarlo permanente vía fstab** es OK y recomendado: 2 GiB de swap en un disco de 8 GiB sobra espacio y solo se usa bajo presión de RAM.
+>
+> Si con 2 GiB sigue cayendo, ver [Troubleshooting / OOM al construir](#error-npm-ci-o-npm-run-build-muestra-killed-o-javascript-heap-out-of-memory) abajo.
+
+**Paso 2 — Disparar el deploy desde tu laptop.**
+
+En tu máquina local, en la raíz del repo:
 
 ```bash
-./scripts/biometric_suspension.sh prod on   # suspender en el VPS
-./scripts/biometric_suspension.sh prod off  # re-habilitar en el VPS
-./scripts/biometric_suspension.sh status    # ver estado actual
+cd /ruta/al/repo
+BIOMETRIC_SUSPENDED=1 VITE_BIOMETRIC_SUSPENDED=true ./scripts/deploy.sh
 ```
 
-**Validación post-deploy** (opcional pero recomendada): con sesión de admin iniciada y cookies/CSRF exportadas en `$COOKIE_JAR`/`$CSRF`, un POST a `https://$DOMAIN/api/biometric/citas/<id>/huella/verify-init/` debe devolver `HTTP 503` con `code: BIOMETRIC_SUSPENDED`. Reemplazá `<id>` por una cita real en estado `REALIZADA_PENDIENTE_VERIFICACION`. Los GETs a `/api/biometric/agents/` NO sirven para validar porque NO se gatean por diseño.
+> **Atajo:** el helper `scripts/biometric_suspension.sh` setea los flags por vos y emite el deploy:
+>
+> ```bash
+> ./scripts/biometric_suspension.sh prod on
+> ```
+>
+> Si querés ver el estado actual antes de tocar nada: `./scripts/biometric_suspension.sh status`.
 
-**PC del lector (operador):** adicionalmente, en la PC de recepción donde corre el lector DigitalPersona 4500:
+Salida esperada, en orden:
+
+```
+[STEP] BIOMETRIC_SUSPENDED=1 VITE_BIOMETRIC_SUSPENDED=true
+=== 1. Pull últimos cambios ===
+=== 3. Activar flag backend en backend/.env ===
+  -> BIOMETRIC_SUSPENDED=1 aplicado a backend/.env
+=== 4. Reiniciar Gunicorn ===
+=== 6. Build frontend ===
+... (tarda 5-15 min con swap, 1-3 min sin swap) ...
+✓ built in <tiempo>
+=== 7. Migraciones ===
+=== 9. Verificar Nginx ===
+[STEP] Sitio responde OK (HTTP 200)
+```
+
+**Tres líneas para mirar sí o sí:**
+
+- `BIOMETRIC_SUSPENDED=1 aplicado a backend/.env` — confirma que el backend tomó el flag.
+- `✓ built in <tiempo>` — confirma que el build del frontend terminó sin ser Killed.
+- `Sitio responde OK (HTTP 200)` — confirma que Nginx sigue sirviendo bien.
+
+**Si alguna falla:** ver [Troubleshooting / El deploy aborta en la fase 6](#error-npm-ci-o-npm-run-build-muestra-killed-o-javascript-heap-out-of-memory) abajo.
+
+**Paso 3 — Validar el bundle nuevo en el VPS.**
+
+Confirmá que el bundle del frontend tiene la suspensión horneada (Vite reemplaza `import.meta.env.VITE_BIOMETRIC_SUSPENDED` por el valor literal al build):
+
+```bash
+ssh deploy@<VPS_IP> -- '
+ls /var/www/clinica/frontend/aesthetic-clinic/dist/assets/*.js
+# Tomá el hash del archivo que aparece (ej: index-DVa20IfX.js), y verificá:
+grep -c "biometricSuspended" /var/www/clinica/frontend/aesthetic-clinic/dist/assets/index-<hash>.js
+# Esperado: un número ≥ 2
+'
+```
+
+**Paso 4 — Hard refresh en el navegador del admin.**
+
+`Ctrl+Shift+R` (Linux/Windows) o `Cmd+Shift+R` (Mac). Sin esto, el navegador puede seguir sirviendo el bundle viejo en caché y vas a ver el botón "Capturar huella" que ya no debería estar.
+
+**Paso 5 — Verificar el banner en pantalla.**
+
+Abrí el flujo `Convertir prospecto` → paso 4. Tendrías que ver:
+
+- Banner amarillo: *"Huella biometrica suspendida."*
+- El botón *"Capturar huella"* **NO aparece**.
+- El texto descriptivo dice *"Podes continuar y finalizar la conversion sin huella"*.
+- "Guardar y continuar" avanza al paso 5 sin pedir nada.
+
+**Paso 6 — (Opcional) Detener el lector físico en la PC de recepción.**
+
+Si hay una PC con el lector DigitalPersona y el agente local, conviene bajarlos para no acumular intentos fallidos:
 
 ```bash
 sudo systemctl disable --now fingerprint-agent
@@ -874,30 +964,113 @@ sudo systemctl disable --now cloudflared
 sudo systemctl status fingerprint-agent --no-pager
 ```
 
-`disable --now` no borra unidades ni archivos — sólo detiene y deshabilita el agente y el túnel. Para volver a habilitar: `sudo systemctl enable --now fingerprint-agent cloudflared`.
+`disable --now` **no borra** unidades ni archivos — sólo detiene y deshabilita. Para volver a habilitar: `sudo systemctl enable --now fingerprint-agent cloudflared`.
+
+> **Validación end-to-end del backend** (opcional): si tenés un cookie jar de admin válido (`/tmp/clinica-deploy-cookie`), un POST a `https://$DOMAIN/api/biometric/citas/<id>/huella/verify-init/` debe devolver `HTTP 503` con `code: BIOMETRIC_SUSPENDED`. Sin cookie jar o sin una cita en estado `REALIZADA_PENDIENTE_VERIFICACION`, el chequeo automatizado del `deploy.sh` se saltea — eso es esperado, no es un error.
 
 ### 10.3. Re-habilitar la integración biométrica (rollback)
 
-El flag está horneado en el bundle del frontend, así que el rebuild es **obligatorio** — no alcanza con cambiar el `.env` del backend. Para revertir:
+**Cuándo usar esto.** Ya tenés el lector DigitalPersona 4500 conectado y funcionando, o querés volver al flujo normal con captura obligatoria para un cliente o prospecto específico.
+
+**Qué cambia al desactivar el modo suspendido:**
+
+- **Frontend**: el botón *"Capturar huella"* vuelve al paso 4. El banner amarillo desaparece. "Guardar y continuar" exige un template válido (no se puede saltar).
+- **Backend**: los endpoints `/api/biometric/*` vuelven al comportamiento normal (200/4xx según estado del recurso).
+- **PC del lector**: el servicio `fingerprint-agent` y el túnel `cloudflared` se vuelven a iniciar.
+
+**Tiempo total estimado:** 3–10 min en un VPS chico (la build del frontend es lo que más tarda).
+
+> ⚠️ **El flag `VITE_BIOMETRIC_SUSPENDED` está horneado dentro del bundle del frontend.** Eso significa que cambiar solo el `.env` del backend **no alcanza**: el frontend seguiría compilado con el flag en `true`. Es obligatorio rebuildear.
+
+#### Procedimiento
+
+**Paso 1 — Disparar el deploy desde tu laptop con los flags en `0`/`false`.**
 
 ```bash
+cd /ruta/al/repo
 BIOMETRIC_SUSPENDED=0 VITE_BIOMETRIC_SUSPENDED=false ./scripts/deploy.sh
 ```
 
-Equivalente con el helper:
+> **Atajo:** `./scripts/biometric_suspension.sh prod off` (setea los flags por vos y emite el deploy).
+>
+> **Atajo reverso** si querés ver el estado actual antes de tocar nada: `./scripts/biometric_suspension.sh status`.
 
-```bash
-./scripts/biometric_suspension.sh prod off
+**Salida esperada**, igual que en 10.2 paso 2 pero con:
+
+```
+[STEP] BIOMETRIC_SUSPENDED=0 VITE_BIOMETRIC_SUSPENDED=false
+...
+  -> BIOMETRIC_SUSPENDED=0 aplicado a backend/.env
+...
+✓ built in <tiempo>
+...
+Sitio responde OK (HTTP 200)
 ```
 
-**Contrato backend-frontend**: si los flags divergen, gana el `503` del backend. Por eso es importante que ambos se cambien en el mismo deploy. `scripts/deploy.sh` se encarga de mantenerlos sincronizados — no los cambies a mano en `.env` sin redesplegar.
+**Tres líneas para mirar sí o sí:**
 
-**Re-habilitar el lector físico**: en la PC de recepción:
+- `BIOMETRIC_SUSPENDED=0 aplicado a backend/.env` — confirma que el backend levantó el rollback.
+- `✓ built in <tiempo>` — confirma build completo.
+- `Sitio responde OK (HTTP 200)` — confirma Nginx.
+
+> **Si tu VPS tiene < 1 GiB de RAM**, asegurate de tener el swap del Paso 1 de la sección 10.2 creado antes del deploy. Sin swap, `tsc -b` puede morir con `Killed` a mitad del build. Misma receta:
+>
+> ```bash
+> sudo fallocate -l 2G /swapfile
+> sudo chmod 600 /swapfile
+> sudo mkswap /swapfile
+> sudo swapon /swapfile
+> echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+> ```
+>
+> Recomendado dejarlo permanente (idéntico a 10.2).
+
+**Paso 2 — Hard refresh en el navegador del admin.**
+
+`Ctrl+Shift+R` (Linux/Windows) o `Cmd+Shift+R` (Mac). Sin esto, el navegador sirve el bundle viejo y el banner amarillo seguirá apareciendo aunque ya no debería.
+
+**Paso 3 — Verificar que el botón "Capturar huella" volvió al paso 4.**
+
+Abrí `Convertir prospecto` → paso 4. Tendrías que ver:
+
+- **No** aparece el banner amarillo *"Huella biometrica suspendida"*.
+- El botón *"Capturar huella"* **sí aparece**.
+- Si le das a "Guardar y continuar" sin capturar, el front valida y aparece *"Debes capturar la huella biometrica antes de continuar"* — eso confirma que la suspensión está completamente desactivada.
+
+**Paso 4 — (Si la PC del lector está en la clínica) Levantar el lector físico.**
+
+En la PC de recepción:
 
 ```bash
 sudo systemctl enable --now fingerprint-agent cloudflared
 sudo systemctl status fingerprint-agent --no-pager
+sudo systemctl status cloudflared --no-pager
 ```
+
+Ambas unidades deben mostrar `active (running)`.
+
+#### Contrato backend-frontend
+
+**Si los flags divergen**, gana el `503` del backend. Ejemplo: dejás el frontend con `VITE_BIOMETRIC_SUSPENDED=true` pero el backend con `BIOMETRIC_SUSPENDED=0` — el botón "Capturar huella" no aparece, pero si llamás al endpoint manualmente responde `200`. Inconsistencia peligrosa.
+
+Por eso **siempre se cambian ambos en el mismo deploy**. `scripts/deploy.sh` se encarga de mantenerlos sincronizados — **no los cambies a mano en `.env` sin redesplegar**.
+
+#### Tabla rápida de referencia
+
+| Acción | Comando desde la laptop | Tiempo | Swap requerido |
+|---|---|---|---|
+| Ver estado actual | `./scripts/biometric_suspension.sh status` | < 10 s | no |
+| Forward (suspender) | `./scripts/biometric_suspension.sh prod on` | 5–15 min | sí si VPS < 1 GiB RAM |
+| Rollback (re-habilitar) | `./scripts/biometric_suspension.sh prod off` | 5–15 min | sí si VPS < 1 GiB RAM |
+
+> **Equivalentes manuales** (sin helper), por si el helper no está disponible:
+>
+> ```bash
+> # Forward
+> BIOMETRIC_SUSPENDED=1 VITE_BIOMETRIC_SUSPENDED=true ./scripts/deploy.sh
+> # Rollback
+> BIOMETRIC_SUSPENDED=0 VITE_BIOMETRIC_SUSPENDED=false ./scripts/deploy.sh
+> ```
 
 ---
 
@@ -1083,7 +1256,45 @@ sudo apt install -y python3.12-venv
 
 ### Error: `npm ci` o `npm run build` muestra `Killed` o `JavaScript heap out of memory`
 
-OOM. Ver sección 6 — agregar swap temporal de 2–3 GB.
+OOM. Ver [sección 6, paso de swap](#%E2%9D%97-si-tu-droplet-tiene-1-gb-de-ram-o-menos-el-build-puede-tirarse-por-oom-out-of-memory-si-npm-ci-o-npm-run-build-muestra-killed-o-javascript-heap-out-of-memory-agreg%C3%A1-swap-de-2-gib) — agregar swap de 2 GiB. Recomendado dejarlo permanente vía `/etc/fstab` ([sección 10.2 paso 1](#paso-1--si-tu-vps-tiene-menos-de-1-gib-de-ram-caso-real-frecuente-crear-swap-de-2-gib)).
+
+### Error: `413 Request Entity Too Large` al subir comprobantes o documentos (Paso 5 de conversión, subir fotos de pacientes, etc.)
+
+Nginx está rechazando el `POST` antes de llegar al backend. Por default, Nginx corta cualquier body mayor a **1 MiB**, pero los comprobantes típicos de una clínica (fotos de transferencias bancarias desde celular, PDFs de recibos) suelen pasar ese umbral.
+
+**Diagnóstico rápido:**
+
+```bash
+# Mirá los logs de Nginx en el momento del error
+sudo tail -n 20 /var/log/nginx/clinica.error.log
+```
+
+Si ves líneas con `client intended to send too large body`, Nginx es efectivamente quien rechaza.
+
+**Fix permanente:** agregar `client_max_body_size 10m;` dentro del bloque `location /api/ {}` en `/etc/nginx/sites-available/clinica`. La [plantilla de la sección 7](#7-nginx) ya incluye esa línea (10 MiB es el default saludable). Si la config activa no la tiene (ej. setup viejo), agregarla manualmente:
+
+```bash
+sudo nano /etc/nginx/sites-available/clinica
+# agregar la línea dentro de location /api/ { ... }, junto a los proxy_set_header
+```
+
+Después recargar Nginx:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+**Tamaño recomendado:** 10m cubre fotos decentes de celular y PDFs normales sin permitir payloads abusivos. Subilo a 25m o 50m solo si necesitás videos cortos o escaneos pesados. Más de eso expone el VPS a DoS por uploads grandes.
+
+**Si querés ajustar el límite sin tocar Nginx**, también podés subir los de Django en el `.env` o el settings del backend:
+
+```python
+# settings.py del backend
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10 MiB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10 MiB
+```
+
+Pero recordá que Nginx rechaza **antes** que Django, así que el cuello de botella es Nginx. Si solo tocás Django y dejás Nginx en 1m, el 413 sigue siendo el de Nginx.
 
 ### Error: `sudo: command not found` o `sudo: unable to resolve host`
 
@@ -1289,6 +1500,7 @@ sudo systemctl restart gunicorn
 | `33d67c4` | Changelog footer en la guía. |
 | `7f47e40` | Reorganiza la sección 5.2 con una sección dedicada "Cómo poblar la base de datos" con tabla comparativa de los 4 seeds. Corrige gaps del deploy en DO: `sudo` NOPASSWD para `deploy`, `pg_hba.conf` md5, `GRANT ON SCHEMA public`, `python3.12-venv`, swap para Node build, DNS antes de certbot, troubleshooting extendido. |
 | `b4945b3` + cambios posteriores | Sección 10 dividida en 10.1 (deploy normal), 10.2 (suspender biométrica) y 10.3 (rollback). Documenta el flujo `BIOMETRIC_SUSPENDED` + `VITE_BIOMETRIC_SUSPENDED`, el helper `scripts/biometric_suspension.sh`, la validación post-deploy con `curl` + cookie/CSRF, y los comandos systemd de la PC del lector. Menciona las migraciones nuevas que se aplican automáticamente (`biometric/0001-0003`, `customers/0010-0012`, `catalogs/0007`, `operations/0025`). |
+| `en curso` | Sección 10.2 y 10.3 reescritas paso a paso (swap permanente, 6 pasos forward, 4 rollback, tabla de referencia). Bloque `location /api/ {}` de la sección 7 con `client_max_body_size 10m;` documentado. Nuevo ítem en Troubleshooting para `413 Request Entity Too Large` con receta de Nginx vs Django y tamaño recomendado. |
 
 Si la guía quedó desactualizada respecto al código, este es el bloque a actualizar. Buscá la sección correspondiente en la tabla de arriba y en el diff del commit.
 
