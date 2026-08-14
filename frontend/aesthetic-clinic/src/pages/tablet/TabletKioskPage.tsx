@@ -155,6 +155,7 @@ export function TabletKioskPage() {
   }
 
   function backToClientLogin() {
+    setClientUsername('')
     setClientPassword('')
     setError('')
     setSuccess('')
