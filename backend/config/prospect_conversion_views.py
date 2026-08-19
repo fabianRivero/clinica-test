@@ -514,6 +514,83 @@ def _serialize_service_configs():
     ]
 
 
+def _resolve_sector_sections(sector_id):
+    """Return the FichaSeccion list for a service resolved by sector.
+
+    The DEP sector has historically housed two PUNTO_D sections
+    (depilacion definitiva + manchas) seeded by
+    ``clean_baseline.seed_form_configuration``. Both have the same
+    ``codigo`` and identical field sets; only the parent
+    ``proc_estetico`` differs. When a service resolves its sections
+    by sector (e.g. a "Depilacion 2 x 1" promo that points to the
+    DEP sector to reuse the canonical ficha medica), only one
+    section per ``codigo`` is meaningful — the duplicate would
+    surface identical fields in the wizard and confuse the client.
+
+    This helper is the single source of truth for the dedup so the
+    serializer (``_serialize_medical_config``) and the validator
+    (``_validate_medical_step``) cannot disagree about which
+    section is "the canonical one". The ordering
+    ``(orden, nombre, id)`` is deterministic: when two sections
+    share the same orden and nombre, the lower ``id`` wins, which
+    matches the depilacion (id=1) vs manchas (id=2) historical
+    convention.
+
+    Returns a list of FichaSeccion instances. Caller is responsible
+    for the ``.prefetch_related(...)`` to avoid N+1.
+    """
+    sections_qs = (
+        FichaSeccion.objects
+        .filter(sector=sector_id, activo=True)
+        .order_by("orden", "nombre", "id")
+    )
+    seen_codigos = set()
+    deduped = []
+    for section in sections_qs:
+        if section.codigo in seen_codigos:
+            continue
+        seen_codigos.add(section.codigo)
+        deduped.append(section)
+    return deduped
+
+
+def _resolve_sector_campos(sector_id):
+    """Return the FichaCampo list for a service resolved by sector.
+
+    Same dedup logic as ``_resolve_sector_sections`` but at the
+    field level: keep every field of the first section that appears
+    in ``(seccion__id ASC)`` order, skip every field whose
+    ``seccion_id`` is a later section. The first-seccion-wins
+    ordering MUST match ``_resolve_sector_sections`` so the
+    serializer and validator see the same field set; otherwise the
+    client can be asked to fill fields the backend considers
+    "not in the procedure" (or vice versa) and the wizard refuses
+    to advance even when every visible field is filled.
+
+    Returns a list of FichaCampo instances with ``seccion`` and
+    ``grupo_opciones`` already selected / prefetched.
+    """
+    accepted_section_id = None
+    deduped = []
+    for field in (
+        FichaCampo.objects
+        .filter(
+            seccion__sector=sector_id,
+            seccion__activo=True,
+            activo=True,
+        )
+        .select_related("seccion", "grupo_opciones")
+        .prefetch_related("grupo_opciones__opciones")
+        .order_by("seccion__id", "seccion__orden", "seccion__nombre", "orden", "etiqueta")
+    ):
+        if accepted_section_id is None:
+            accepted_section_id = field.seccion_id
+        if field.seccion_id != accepted_section_id:
+            continue
+        deduped.append(field)
+    return deduped
+
+
 def _serialize_medical_config(service_config):
     shared_config = {
         "antecedentes": [
@@ -555,18 +632,25 @@ def _serialize_medical_config(service_config):
         }
 
     if service_config.sector_id is not None:
-        sections = (
+        # See ``_resolve_sector_sections`` for the dedup rationale.
+        # The helper is the single source of truth shared with the
+        # validator so the wizard's view of "valid fields" and the
+        # backend's view stay in lockstep.
+        sections = _resolve_sector_sections(service_config.sector_id)
+        # Re-fetch with the prefetch_related the serializer needs
+        # (the helper keeps the call cheap by deferring the join).
+        sections = list(
             FichaSeccion.objects
-            .filter(sector=service_config.sector_id, activo=True)
+            .filter(pk__in=[s.pk for s in sections])
             .prefetch_related("campos__grupo_opciones__opciones")
-            .order_by("orden", "nombre")
+            .order_by("orden", "nombre", "id")
         )
     elif service_config.proc_estetico_id is not None:
-        sections = (
+        sections = list(
             FichaSeccion.objects
             .filter(proc_estetico=service_config.proc_estetico_id, activo=True)
             .prefetch_related("campos__grupo_opciones__opciones")
-            .order_by("orden", "nombre")
+            .order_by("orden", "nombre", "id")
         )
     else:
         sections = []
@@ -1004,25 +1088,26 @@ def _validate_medical_step(payload, service_config):
     valid_option_ids = {}
     fields_by_id = {}
     if service_config and service_config.sector_id:
-        campos_qs = FichaCampo.objects.filter(
-            seccion__sector=service_config.sector_id,
-            seccion__activo=True,
-            activo=True,
-        )
+        # See ``_resolve_sector_campos`` for the dedup rationale.
+        # The helper is the single source of truth shared with the
+        # serializer so the wizard's view of "valid fields" and
+        # the backend's view stay in lockstep.
+        campos_list = _resolve_sector_campos(service_config.sector_id)
     elif service_config and service_config.proc_estetico_id:
-        campos_qs = FichaCampo.objects.filter(
-            seccion__proc_estetico=service_config.proc_estetico_id,
-            seccion__activo=True,
-            activo=True,
+        campos_list = list(
+            FichaCampo.objects
+            .filter(
+                seccion__proc_estetico=service_config.proc_estetico_id,
+                seccion__activo=True,
+                activo=True,
+            )
+            .select_related("grupo_opciones")
+            .prefetch_related("grupo_opciones__opciones")
         )
     else:
-        campos_qs = FichaCampo.objects.none()
+        campos_list = []
 
-    for field in (
-        campos_qs
-        .select_related("grupo_opciones")
-        .prefetch_related("grupo_opciones__opciones")
-    ):
+    for field in campos_list:
         valid_field_ids.add(field.id)
         fields_by_id[field.id] = field
         valid_option_ids[field.id] = set(

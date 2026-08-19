@@ -68,6 +68,41 @@ class MedicalFormBySectorTests(TestCase):
             orden=2,
         )
 
+        # Second PUNTO_D under the same DEP sector, mirroring the
+        # historical seed: ``Depilacion 2 x 1``-style promos point
+        # to the DEP sector and end up with two PUNTO_D sections
+        # in their lookup (depilacion + manchas). The serializer
+        # AND the validator must agree on which section's field set
+        # is "the canonical one" so the wizard's view of valid
+        # fields matches the backend's view. This fixture exercises
+        # that exact contract.
+        cls.manchas_proc = ProcEstetico.objects.create(
+            tipo_p_estetico=procedure_type,
+            proceso="Manchas sector test",
+        )
+        cls.manchas_section = FichaSeccion.objects.create(
+            proc_estetico=cls.manchas_proc,
+            sector=cls.dep_sector,
+            codigo="PUNTO_D",
+            nombre="Depilacion definitiva / Manchas",
+            orden=1,
+        )
+        FichaCampo.objects.create(
+            seccion=cls.manchas_section,
+            codigo="BRONCEADO",
+            etiqueta="Bronceado",
+            tipo_campo=FichaCampo.TipoCampo.SELECCION,
+            grupo_opciones=si_no,
+            orden=1,
+        )
+        FichaCampo.objects.create(
+            seccion=cls.manchas_section,
+            codigo="TIPO_VELLO",
+            etiqueta="Tipo de vello",
+            tipo_campo=FichaCampo.TipoCampo.TEXTO,
+            orden=2,
+        )
+
         cls.tat_section = FichaSeccion.objects.create(
             proc_estetico=cls.tat_proc,
             sector=cls.tat_sector,
@@ -151,10 +186,63 @@ class MedicalFormBySectorTests(TestCase):
             self._section_signature(config_existing),
             self._section_signature(config_new),
         )
-        # Only the DEP section is surfaced — not the legacy or tat sections.
+        # Two PUNTO_D sections live under the DEP sector (depilacion
+        # + manchas). The serializer dedupes by codigo so only one
+        # surfaces in the wizard. The legacy and tat sections are
+        # in different sectors and must NOT appear.
         self.assertEqual(len(config_existing["sections"]), 1)
         section_codes = {s["code"] for s in config_existing["sections"]}
         self.assertEqual(section_codes, {"PUNTO_D"})
+
+    def test_validator_uses_same_field_set_as_serializer_for_sector_service(self):
+        """Regression: validator must accept exactly the field IDs the
+        serializer shows. If they disagree, the wizard reports
+        "field not in procedure" or "field required" on every
+        duplicate-PUNTO_D field and the user can never advance.
+        """
+        from config.prospect_conversion_views import _validate_medical_step
+        serialized = self._serialize(self.existing_dep_service)
+        # The serializer emits one PUNTO_D; collect the field IDs it
+        # tells the client to fill.
+        serialized_field_ids = {
+            f["id"] for section in serialized["sections"] for f in section["fields"]
+        }
+        # Build a minimal payload that fills every serialized field
+        # with a non-empty value and asks the validator to check.
+        payload = {
+            "fechaFicha": "2026-08-19",
+            "analisisEstetico": {
+                "tipoPielId": 1,
+                "gradoDeshidratacionId": 1,
+                "grosorPielId": 1,
+                "patologiaIds": [],
+            },
+            "antecedentes": [],
+            "implantes": [],
+            "cirugias": [],
+            "fieldResponses": {
+                fid: {"valueText": "ok", "optionIds": []}
+                for fid in serialized_field_ids
+            },
+        }
+        # Stub the catalog lookups the validator does for
+        # tipoPiel/grado/grosor so we don't have to seed them.
+        from catalogs.models import TipoPiel, GradoDeshidratacion, GrosorPiel
+        TipoPiel.objects.get_or_create(pk=1, defaults={"nombre": "Stub", "orden": 1, "activo": True})
+        GradoDeshidratacion.objects.get_or_create(pk=1, defaults={"nombre": "Stub", "orden": 1, "activo": True})
+        GrosorPiel.objects.get_or_create(pk=1, defaults={"nombre": "Stub", "orden": 1, "activo": True})
+
+        _, errors = _validate_medical_step(payload, self.existing_dep_service)
+        # The whole point: the validator must accept the
+        # serialized field set as valid. If it instead considers
+        # the duplicate-PUNTO_D field IDs (from the manchas
+        # section) "not in procedure", this dict will be
+        # non-empty.
+        not_in_procedure = {
+            key: value for key, value in errors.items()
+            if "no pertenece" in value
+        }
+        self.assertEqual(not_in_procedure, {})
 
     def test_new_service_with_sector_returns_identical_sections_to_existing_dep_service(self):
         existing_config = self._serialize(self.existing_dep_service)
