@@ -780,23 +780,9 @@ Una vez que el VPS está corriendo, mantener el sistema actualizado es automáti
 
 ### 10.1. Deploy normal (pull + restart)
 
+**El estado por defecto de este proyecto es producción estable**: biometría activa, sin flags de suspensión inyectados. Antes de fixear esto el script activaba el flag `BIOMETRIC_SUSPENDED=1` por defecto; ahora **el default es `0`** (producción normal) y `BIOMETRIC_SUSPENDED=1` es una elección **explícita** del operador (ver 10.2). Si tu deploy no toca biometría, podés correr el script tal como está.
+
 **La primera vez**, copiá la plantilla y dale permisos. El script te va a preguntar los datos del VPS y los guarda en `scripts/.deploy-config` (gitignored) para no volver a preguntarlos:
-
-> ⚠️ **Sobre la pregunta `BIOMETRIC_SUSPENDED (1=forward, 0=rollback) [1]`:**
->
-> - El default es `1` (suspende mutaciones biométricas).
-> - Si tu deploy **NO usa biometría** (caso normal en este proyecto si no activaste el flujo de huellas), respondé `0` para no inyectar flags que no necesitás en `backend/.env`.
-> - El script después valida un endpoint biométrico con `curl` esperando `HTTP 503`. Si no tenés biometría, esa validación va a devolver otro código (401/403/404) y el script loguea un warning, **no aborta**.
-> - Para rollback explícito: `BIOMETRIC_SUSPENDED=0 ./scripts/deploy.sh`.
-
-> ⚠️ **¿Te equivocaste en alguna respuesta del wizard?** El config se guarda en `scripts/.deploy-config`. Para volver al wizard desde cero:
->
-> ```bash
-> rm scripts/.deploy-config
-> ./scripts/deploy.sh
-> ```
->
-> El archivo está en `.gitignore`, así que se puede borrar y regenerar sin afectar el repo. No hay confirmación previa — el próximo `./scripts/deploy.sh` te pregunta todo de nuevo.
 
 ```bash
 cp scripts/deploy.sh.example scripts/deploy.sh
@@ -813,7 +799,17 @@ Usuario SSH en el VPS [deploy]: <enter>
 Dominio principal (sin https://) []: tu-dominio.com
 Rama a desplegar [main]: <enter>
 URL del repo (para validar el remote) []: <enter>
+BIOMETRIC_SUSPENDED (1=forward, 0=produccion) [0]: <enter>
 ```
+
+> ⚠️ **¿Te equivocaste en alguna respuesta del wizard?** El config se guarda en `scripts/.deploy-config`. Para volver al wizard desde cero:
+>
+> ```bash
+> rm scripts/.deploy-config
+> ./scripts/deploy.sh
+> ```
+>
+> El archivo está en `.gitignore`, así que se puede borrar y regenerar sin afectar el repo. No hay confirmación previa — el próximo `./scripts/deploy.sh` te pregunta todo de nuevo.
 
 Después de la primera corrida, los valores quedan en `scripts/.deploy-config` y no se vuelven a preguntar. Para cambiar uno:
 
@@ -823,7 +819,7 @@ nano scripts/.deploy-config
 
 O borrá el archivo y volvé a correr el script.
 
-**Variables que podés querer editar** (todas opcionales, todas con default razonable):
+**Variables guardadas en `scripts/.deploy-config`:**
 
 | Variable | Default | Cuándo cambiarla |
 |---|---|---|
@@ -833,20 +829,33 @@ O borrá el archivo y volvé a correr el script.
 | `DOMAIN` | (vacío) | Para que el script verifique HTTP 200 al final. |
 | `GIT_BRANCH` | `main` | Si deployás desde otra rama. |
 | `GIT_REPO` | (vacío) | Si querés que valide que el remote coincida. |
+| `BIOMETRIC_SUSPENDED` | `0` | Solo si vas a hacer forward de la suspensión (ver 10.2). |
+| `VITE_BIOMETRIC_SUSPENDED` | derivado de `BIOMETRIC_SUSPENDED` | Casi nunca. Solo si necesitás divergir ambos flags. |
 
-**Modo no-interactivo** (para CI o scripts automatizados): si `scripts/.deploy-config` ya existe con todos los valores, el script no pregunta nada.
+**Modo no-interactivo** (para CI o scripts automatizados): si `scripts/.deploy-config` ya existe con todos los valores (incluido `VPS_HOST`), el script no pregunta nada. Si lo invocás desde un entorno sin TTY sin config previa, usa los defaults sin preguntar — `VPS_HOST` queda vacío y el SSH falla con error claro, no se inventa nada.
 
-**Lo que hace el deploy:**
+**Lo que hace el deploy, en orden:**
 
-1. Hace `git pull` en el VPS.
-2. Actualiza dependencias Python.
-3. Reconstruye el frontend (`npm ci` + `npm run build`).
-4. Aplica migraciones (todas las pendientes, incluyendo `biometric/0001-0003`, `customers/0010-0012`, `catalogs/0007` y `operations/0025` si aún no se aplicaron — no requiere acción manual).
-5. Recolecta estáticos.
-6. Reinicia Gunicorn.
-7. Verifica Nginx y (si hay dominio) hace un `curl` al sitio.
+1. `git pull` en el VPS a la rama configurada.
+2. `pip install -r requirements.txt` (dependencias Python del backend).
+3. Setea el flag de `BIOMETRIC_SUSPENDED` en `backend/.env` (idempotente: si ya tiene el mismo valor, no hace nada; si difiere, lo edita in-place con `sed`).
+4. Reinicia Gunicorn.
+5. **Validación gateada del backend** (ver 10.4): si hay cookie jar de admin, hace un POST al endpoint biométrico y compara contra el código HTTP esperado (503 si forward, ≠503 si rollback). **Si la validación se ejecuta y el código no coincide con lo esperado, aborta el deploy con `exit 1`.** Si no hay cookie jar, la validación se saltea.
+6. `npm ci` + `npm run build` del frontend con `VITE_BIOMETRIC_SUSPENDED` horneado en el bundle.
+7. `manage.py migrate --noinput` (aplica todas las pendientes — no requiere acción manual).
+8. `manage.py collectstatic --noinput`.
+9. `nginx -t` para verificar la config.
+10. (Si `DOMAIN` está seteado) `curl https://$DOMAIN/` y reporta HTTP 200/!200.
+11. Imprime la rama desplegada, el SHA local, y los flags usados como footer.
+
+**Advertencia sobre el paso 5 (validación que aborta):** Si vas a hacer **forward** (ver 10.2) y la cookie jar de admin no se generó o venció, la validación gateada puede devolver 401, 403 o 404. El script aborta con `exit 1` y `Deploy remoto` se interrumpe. El bundle del frontend y el `migrate/collectstatic` no llegan a ejecutarse. Soluciones:
+
+- No uses forward si no tenés biometría activa (10.2 es opcional hoy).
+- Generá el cookie jar antes con `curl -c /tmp/clinica-deploy-cookie -X POST ... /api/auth/login/ ...`.
 
 ### 10.2. Suspender la integración biométrica (forward)
+
+> ⚠️ **Este es un escenario opcional de rollout.** El default del proyecto es `BIOMETRIC_SUSPENDED=0`, es decir, biometría activa. Pasalo a `1` solo si necesitás que la PC del lector no participe en el flujo temporalmente.
 
 **Cuándo usar esto.** El lector DigitalPersona 4500 no está conectado, está roto, o todavía no llegó el hardware. Mientras tanto, querés que el sistema siga funcionando: las conversiones de prospecto, los pasos 4 de huella y los `Confirmar con huella` en citas deben poder **saltarse** el bloque sin pedir captura.
 
@@ -857,6 +866,8 @@ O borrá el archivo y volvé a correr el script.
 - **PC del lector**: si el lector y el agente local están conectados, conviene detenerlos para que no queden en estado zombie.
 
 **Tiempo total estimado:** 10–20 min si el VPS es chico (< 1 GiB RAM), 3–5 min si es normal.
+
+> ⚠️ **El flag `VITE_BIOMETRIC_SUSPENDED` está horneado dentro del bundle del frontend.** Eso significa que cambiar solo el `.env` del backend **no alcanza**: el frontend seguiría compilado con el flag en `false`. El script se encarga de mantenerlos sincronizados — **no los cambies a mano en `.env` sin redesplegar**.
 
 #### Procedimiento
 
@@ -912,21 +923,28 @@ Salida esperada, en orden:
 === 3. Activar flag backend en backend/.env ===
   -> BIOMETRIC_SUSPENDED=1 aplicado a backend/.env
 === 4. Reiniciar Gunicorn ===
+=== 5. Validación gateada (POST /api/biometric/citas/<id>/huella/verify-init/) ===
+  HTTP 503
+  {"detail":"...","code":"BIOMETRIC_SUSPENDED",...}
+  -> OK: gate activo, 503 BIOMETRIC_SUSPENDED
 === 6. Build frontend ===
 ... (tarda 5-15 min con swap, 1-3 min sin swap) ...
 ✓ built in <tiempo>
 === 7. Migraciones ===
 === 9. Verificar Nginx ===
 [STEP] Sitio responde OK (HTTP 200)
+  Rama desplegada: main
+  SHA local:       <hash>
+  BIOMETRIC_SUSPENDED=1 VITE_BIOMETRIC_SUSPENDED=true
 ```
 
 **Tres líneas para mirar sí o sí:**
 
-- `BIOMETRIC_SUSPENDED=1 aplicado a backend/.env` — confirma que el backend tomó el flag.
-- `✓ built in <tiempo>` — confirma que el build del frontend terminó sin ser Killed.
+- `-> OK: gate activo, 503 BIOMETRIC_SUSPENDED` (en el paso 5) — confirma que el backend está rechazando mutaciones como se espera.
+- `BIOMETRIC_SUSPENDED=1 aplicado a backend/.env` — confirma que el flag se escribió.
 - `Sitio responde OK (HTTP 200)` — confirma que Nginx sigue sirviendo bien.
 
-**Si alguna falla:** ver [Troubleshooting / El deploy aborta en la fase 6](#error-npm-ci-o-npm-run-build-muestra-killed-o-javascript-heap-out-of-memory) abajo.
+**Si alguna falla:** ver [Troubleshooting / El deploy aborta en la fase 6](#error-npm-ci-o-npm-run-build-muestra-killed-o-javascript-heap-out-of-memory) abajo. Si la falla es en el paso 5 (validación), ver 10.4.
 
 **Paso 3 — Validar el bundle nuevo en el VPS.**
 
@@ -966,8 +984,6 @@ sudo systemctl status fingerprint-agent --no-pager
 
 `disable --now` **no borra** unidades ni archivos — sólo detiene y deshabilita. Para volver a habilitar: `sudo systemctl enable --now fingerprint-agent cloudflared`.
 
-> **Validación end-to-end del backend** (opcional): si tenés un cookie jar de admin válido (`/tmp/clinica-deploy-cookie`), un POST a `https://$DOMAIN/api/biometric/citas/<id>/huella/verify-init/` debe devolver `HTTP 503` con `code: BIOMETRIC_SUSPENDED`. Sin cookie jar o sin una cita en estado `REALIZADA_PENDIENTE_VERIFICACION`, el chequeo automatizado del `deploy.sh` se saltea — eso es esperado, no es un error.
-
 ### 10.3. Re-habilitar la integración biométrica (rollback)
 
 **Cuándo usar esto.** Ya tenés el lector DigitalPersona 4500 conectado y funcionando, o querés volver al flujo normal con captura obligatoria para un cliente o prospecto específico.
@@ -979,8 +995,6 @@ sudo systemctl status fingerprint-agent --no-pager
 - **PC del lector**: el servicio `fingerprint-agent` y el túnel `cloudflared` se vuelven a iniciar.
 
 **Tiempo total estimado:** 3–10 min en un VPS chico (la build del frontend es lo que más tarda).
-
-> ⚠️ **El flag `VITE_BIOMETRIC_SUSPENDED` está horneado dentro del bundle del frontend.** Eso significa que cambiar solo el `.env` del backend **no alcanza**: el frontend seguiría compilado con el flag en `true`. Es obligatorio rebuildear.
 
 #### Procedimiento
 
@@ -1001,6 +1015,9 @@ BIOMETRIC_SUSPENDED=0 VITE_BIOMETRIC_SUSPENDED=false ./scripts/deploy.sh
 [STEP] BIOMETRIC_SUSPENDED=0 VITE_BIOMETRIC_SUSPENDED=false
 ...
   -> BIOMETRIC_SUSPENDED=0 aplicado a backend/.env
+=== 5. Validación gateada (POST /api/biometric/citas/<id>/huella/verify-init/) ===
+  HTTP 404
+  -> OK: gate inactivo, respuesta 404
 ...
 ✓ built in <tiempo>
 ...
@@ -1009,8 +1026,8 @@ Sitio responde OK (HTTP 200)
 
 **Tres líneas para mirar sí o sí:**
 
-- `BIOMETRIC_SUSPENDED=0 aplicado a backend/.env` — confirma que el backend levantó el rollback.
-- `✓ built in <tiempo>` — confirma build completo.
+- `-> OK: gate inactivo, respuesta <código>` — confirma que el backend ya NO está rechazando mutaciones.
+- `BIOMETRIC_SUSPENDED=0 aplicado a backend/.env` — confirma que el flag se volvió a 0.
 - `Sitio responde OK (HTTP 200)` — confirma Nginx.
 
 > **Si tu VPS tiene < 1 GiB de RAM**, asegurate de tener el swap del Paso 1 de la sección 10.2 creado antes del deploy. Sin swap, `tsc -b` puede morir con `Killed` a mitad del build. Misma receta:
@@ -1049,28 +1066,59 @@ sudo systemctl status cloudflared --no-pager
 
 Ambas unidades deben mostrar `active (running)`.
 
-#### Contrato backend-frontend
+### 10.4. Validación gateada del backend (paso 5)
+
+> 📌 **Esta es la pieza que cambió.** Antes: si el chequeo fallaba solo se logueaba un warning. Ahora: si el chequeo se ejecutó (porque había cookie jar) y la respuesta no coincide con lo esperado, el deploy aborta. El chequeo también se puede pasar por alto si no hay cookie jar — esa parte sigue siendo SKIP silencioso.
+
+El script hace, en el VPS, un `POST` a `http://127.0.0.1:8000/api/biometric/citas/<id>/huella/verify-init/` con la sesión de un admin si `/tmp/clinica-deploy-cookie` existe. Usa el header `Origin: https://$DOMAIN` (no `PROJECT_PATH` — el nombre de dominio, no la ruta).
+
+**Lo que se considera éxito:**
+
+| Forward (`BIOMETRIC_SUSPENDED=1`) | Rollback (`BIOMETRIC_SUSPENDED=0`) |
+|---|---|
+| HTTP 503 con `code: BIOMETRIC_SUSPENDED` | Cualquier respuesta ≠ 503 (típicamente 200 si el flujo llega a la lógica de negocio, 404 si no hay cita con `REALIZADA_PENDIENTE_VERIFICACION`, 401/403 si sesión inválida) |
+
+**Generar el cookie jar antes del deploy:**
+
+```bash
+# En la laptop, contra el dominio real:
+ssh deploy@<VPS_IP> -- '
+  curl -sS -c /tmp/clinica-deploy-cookie \
+    -H "Origin: https://tu-dominio.com" \
+    -H "Referer: https://tu-dominio.com/" \
+    -X POST "https://tu-dominio.com/api/auth/login/" \
+    -d "username=admin.x&password=..." \
+    -o /dev/null
+  ls -la /tmp/clinica-deploy-cookie
+'
+```
+
+**Posibles respuestas y qué hacer:**
+
+| Código de respuesta | Forward | Rollback | Diagnóstico |
+|---|---|---|---|
+| `503` con `code: BIOMETRIC_SUSPENDED` | ✅ OK | 🚫 Aborta | Gate activo o fuera de servicio. |
+| `200` o `4xx` ≠ 503 | 🚫 Aborta | ✅ OK | Gate inactivo. |
+| `401` | 🚫 Aborta (forward) / ✅ OK (rollback) | Cookie vencida o mal armada. Re-generar el cookie jar. |
+| `403` | 🚫 Aborta (forward) / ✅ OK (rollback) | CSRF rechazado. Verificar que `Origin` coincide con el dominio. |
+| `404` | 🚫 Aborta (forward) / ✅ OK (rollback) | No hay cita con `REALIZADA_PENDIENTE_VERIFICACION`. Ajustar `CITA_ID_REMOTA=...` antes del deploy. |
+
+**Si querés saltarte la validación** (no recomendable): borrá el cookie jar del VPS con `ssh deploy@<VPS_IP> 'sudo rm /tmp/clinica-deploy-cookie'`. Con el archivo ausente, el script hace SKIP y no aborta.
+
+### 10.5. Contrato backend-frontend
 
 **Si los flags divergen**, gana el `503` del backend. Ejemplo: dejás el frontend con `VITE_BIOMETRIC_SUSPENDED=true` pero el backend con `BIOMETRIC_SUSPENDED=0` — el botón "Capturar huella" no aparece, pero si llamás al endpoint manualmente responde `200`. Inconsistencia peligrosa.
 
 Por eso **siempre se cambian ambos en el mismo deploy**. `scripts/deploy.sh` se encarga de mantenerlos sincronizados — **no los cambies a mano en `.env` sin redesplegar**.
 
-#### Tabla rápida de referencia
+### 10.6. Tabla rápida de referencia
 
 | Acción | Comando desde la laptop | Tiempo | Swap requerido |
 |---|---|---|---|
+| Deploy normal (producción estable) | `./scripts/deploy.sh` (responde `0` o dejá el default vacío si no TTY) | 5–15 min | sí si VPS < 1 GiB RAM |
+| Forward (suspender biometría) | `./scripts/biometric_suspension.sh prod on` o `BIOMETRIC_SUSPENDED=1 VITE_BIOMETRIC_SUSPENDED=true ./scripts/deploy.sh` | 5–15 min | sí si VPS < 1 GiB RAM |
+| Rollback (re-habilitar) | `./scripts/biometric_suspension.sh prod off` o `BIOMETRIC_SUSPENDED=0 VITE_BIOMETRIC_SUSPENDED=false ./scripts/deploy.sh` | 5–15 min | sí si VPS < 1 GiB RAM |
 | Ver estado actual | `./scripts/biometric_suspension.sh status` | < 10 s | no |
-| Forward (suspender) | `./scripts/biometric_suspension.sh prod on` | 5–15 min | sí si VPS < 1 GiB RAM |
-| Rollback (re-habilitar) | `./scripts/biometric_suspension.sh prod off` | 5–15 min | sí si VPS < 1 GiB RAM |
-
-> **Equivalentes manuales** (sin helper), por si el helper no está disponible:
->
-> ```bash
-> # Forward
-> BIOMETRIC_SUSPENDED=1 VITE_BIOMETRIC_SUSPENDED=true ./scripts/deploy.sh
-> # Rollback
-> BIOMETRIC_SUSPENDED=0 VITE_BIOMETRIC_SUSPENDED=false ./scripts/deploy.sh
-> ```
 
 ---
 
