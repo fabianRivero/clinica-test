@@ -316,3 +316,64 @@ class MedicalFormBySectorTests(TestCase):
         section_codes = [s["code"] for s in config["sections"]]
         self.assertIn("PUNTO_D", section_codes)
         self.assertNotIn("PUNTO_INACTIVO", section_codes)
+
+    def test_promotional_service_with_only_sector_sees_canonical_fields(self):
+        """A service that points ONLY to a sector (no proc_estetico) must
+        see the same fields as the canonical procedure of that sector.
+
+        Example: a "Depilacion 2 x 1" promo with sector=DEP and a
+        new ProcEstetico (not the canonical Depilacion definitiva)
+        must surface the same PUNTO_D fields so the operator can
+        build promo services without rebuilding the ficha from
+        scratch. The same contract applies to MAN: a new service
+        with sector=MAN must see the Tratamiento de manchas PUNTO_D
+        fields.
+        """
+        from catalogs.models import TipoServicio
+
+        promo_tipo = TipoServicio.objects.create(tipo="Promo sector test")
+        # 1. Promo in DEP that points to a brand-new procedure.
+        promo_dep_proc = ProcEstetico.objects.create(
+            tipo_p_estetico=self.dep_proc.tipo_p_estetico,
+            proceso="Promo depilacion 2x1",
+        )
+        promo_dep_service = ServicioConfig.objects.create(
+            tipo_servicio=promo_tipo,
+            proc_estetico=promo_dep_proc,
+            sector=self.dep_sector,
+            precio_base=Decimal("400.00"),
+            activo=True,
+        )
+        # 2. Promo in MAN that points to a brand-new procedure.
+        promo_man_service = ServicioConfig.objects.create(
+            tipo_servicio=promo_tipo,
+            proc_estetico=promo_man_proc if hasattr(self, "promo_man_proc") else ProcEstetico.objects.create(
+                tipo_p_estetico=self.dep_proc.tipo_p_estetico,
+                proceso="Promo manchas navidad",
+            ),
+            sector=self.man_sector,
+            precio_base=Decimal("200.00"),
+            activo=True,
+        )
+
+        canonical_dep = self._serialize(self.existing_dep_service)
+        canonical_man = self._serialize(
+            ServicioConfig.objects.filter(
+                proc_estetico__proceso="Tratamiento de manchas",
+            ).first()
+        )
+        promo_dep_config = self._serialize(promo_dep_service)
+        promo_man_config = self._serialize(promo_man_service)
+
+        # Same field set as the canonical procedure of the same
+        # sector. This is the contract the admin UI depends on when
+        # the operator creates a new service that picks an existing
+        # sector.
+        self.assertEqual(
+            self._section_signature(canonical_dep),
+            self._section_signature(promo_dep_config),
+        )
+        self.assertEqual(
+            self._section_signature(canonical_man),
+            self._section_signature(promo_man_config),
+        )

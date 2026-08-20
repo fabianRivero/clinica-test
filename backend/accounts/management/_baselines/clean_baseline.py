@@ -255,7 +255,39 @@ def seed_aesthetic_catalog():
 
     procedure_by_key = {}
     servicio_by_key = {}
+    # Each canonical procedure belongs to a sector of ficha medica so
+    # that services resolved by ``sector`` (e.g. the "Depilacion 2 x 1"
+    # promo, or any new service that picks an existing sector) reuse
+    # the same field set as the canonical procedure. The
+    # ``PROCEDURE_SECTOR`` mapping is the single source of truth:
+    # adding a procedure to ``AESTHETIC_PROCEDURES`` without listing
+    # it here raises below.
+    PROCEDURE_SECTOR = {
+        "depilacion": "DEP",
+        "manchas": "MAN",
+        "tatuajes": "TAT",
+    }
+    sector_by_codigo = {
+        codigo: Sector.objects.update_or_create(
+            codigo=codigo,
+            defaults={"nombre": nombre, "descripcion": desc, "orden": orden, "activo": True},
+        )[0]
+        for codigo, nombre, desc, orden in (
+            ("DEP", "Depilacion",
+             "Secciones de ficha clinica para servicios de depilacion.", 1),
+            ("MAN", "Manchas",
+             "Secciones de ficha clinica para servicios especializados en manchas.", 2),
+            ("TAT", "Tatuajes",
+             "Secciones de ficha clinica para servicios de borrado de tatuajes.", 3),
+        )
+    }
     for key, name, description, order, price in AESTHETIC_PROCEDURES:
+        if key not in PROCEDURE_SECTOR:
+            raise RuntimeError(
+                f"AESTHETIC_PROCEDURES has procedure {key!r} but no entry "
+                f"in PROCEDURE_SECTOR. Every procedure must have a "
+                f"sector so services can resolve ficha medica by sector."
+            )
         procedure, _ = ProcEstetico.objects.update_or_create(
             tipo_p_estetico=procedure_type,
             proceso=name,
@@ -269,7 +301,11 @@ def seed_aesthetic_catalog():
         servicio, _ = ServicioConfig.objects.update_or_create(
             tipo_servicio=tipo_servicio_by_key["tratamiento"],
             proc_estetico=procedure,
-            defaults={"precio_base": price, "activo": True},
+            defaults={
+                "precio_base": price,
+                "sector": sector_by_codigo[PROCEDURE_SECTOR[key]],
+                "activo": True,
+            },
         )
         servicio_by_key[key] = servicio
 
@@ -525,7 +561,16 @@ def seed_form_configuration(procedures):
         sectors[codigo] = sector
 
     section_lookup = {}
-    for proc_key in ("depilacion", "manchas"):
+    # Each PUNTO_D lives under the sector of the procedure it
+    # belongs to. The depilacion PUNTO_D stays under DEP, the
+    # manchas PUNTO_D moves to MAN. Services that resolve by
+    # sector see the right field set without depending on which
+    # procedure they happened to point at.
+    PUNTO_D_SECTORS = {
+        "depilacion": "DEP",
+        "manchas": "MAN",
+    }
+    for proc_key, sector_codigo in PUNTO_D_SECTORS.items():
         section, _ = FichaSeccion.objects.update_or_create(
             proc_estetico=procedures[proc_key],
             codigo="PUNTO_D",
@@ -533,7 +578,7 @@ def seed_form_configuration(procedures):
                 "nombre": "Depilacion definitiva / Manchas",
                 "orden": 1,
                 "activo": True,
-                "sector": sectors["DEP"],
+                "sector": sectors[sector_codigo],
             },
         )
         section_lookup[(proc_key, "PUNTO_D")] = section
