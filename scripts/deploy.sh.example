@@ -202,9 +202,14 @@ ask_once VPS_USER "Usuario SSH en el VPS" "deploy"
 ask_once DOMAIN "Dominio principal (sin https://)" ""
 ask_once GIT_BRANCH "Rama a desplegar" "main"
 ask_once GIT_REPO "URL del repo (para validar el remote)" ""
-# Flag backend. `1` = suspender mutaciones biometricas (forward).
-# Rollback: BIOMETRIC_SUSPENDED=0 ./scripts/deploy.sh
-ask_once BIOMETRIC_SUSPENDED "BIOMETRIC_SUSPENDED (1=forward, 0=rollback)" "1"
+# Flag backend. `1` = suspender mutaciones biometricas (forward,
+#   usado durante el rollout de suspend-fingerprint-integration).
+# `0` = estado normal de producción hoy (default).
+#   Para hacer forward en nuevas rondas de suspensión:
+#     BIOMETRIC_SUSPENDED=1 ./scripts/deploy.sh
+#   Para rollback:
+#     BIOMETRIC_SUSPENDED=0 ./scripts/deploy.sh
+ask_once BIOMETRIC_SUSPENDED "BIOMETRIC_SUSPENDED (1=forward, 0=produccion)" "0"
 # Flag frontend. Se inicializa desde BIOMETRIC_SUSPENDED para que
 # ambos flags se muevan juntos; se puede sobreescribir pasando
 # VITE_BIOMETRIC_SUSPENDED=... antes de invocar el script.
@@ -252,6 +257,7 @@ PROJECT_PATH="$PROJECT_PATH"
 GIT_BRANCH="$GIT_BRANCH"
 BIOMETRIC_SUSPENDED="$BIOMETRIC_SUSPENDED"
 VITE_BIOMETRIC_SUSPENDED="$VITE_BIOMETRIC_SUSPENDED"
+DOMAIN="$DOMAIN"
 
 echo "=== 1. Pull últimos cambios ==="
 cd "\$PROJECT_PATH"
@@ -290,7 +296,8 @@ CITA_ID_REMOTA="\${CITA_ID_REMOTA:-1}"
 COOKIE_JAR_REMOTA="\${COOKIE_JAR_REMOTA:-/tmp/clinica-deploy-cookie}"
 if [ -f "\$COOKIE_JAR_REMOTA" ]; then
     CSRF=\$(sudo -u www-data cat "\$COOKIE_JAR_REMOTA" | grep csrftoken | awk '{print \$NF}')
-    ORIGIN="https://\$PROJECT_PATH"
+    DOMAIN="\${DOMAIN_REMOTA:-\$DOMAIN}"
+    ORIGIN="https://\$DOMAIN"
     RESP=\$(curl -sS -o /tmp/clinica-suspend-resp.json -w "%{http_code}" -X POST \
         -b "\$COOKIE_JAR_REMOTA" -H "X-CSRFToken: \$CSRF" \
         -H "Origin: \$ORIGIN" -H "Referer: \$ORIGIN/" \
@@ -303,14 +310,15 @@ if [ -f "\$COOKIE_JAR_REMOTA" ]; then
         if [ "\$RESP" = "503" ]; then
             echo "  -> OK: gate activo, 503 BIOMETRIC_SUSPENDED"
         else
-            echo "  -> ADVERTENCIA: gate no devolvió 503 (esperado 503)."
+            echo "  -> ERROR: forward fallo, gate no devolvio 503 (esperado 503, recibio \$RESP)."
             echo "     Si la respuesta es 401, falta cookie/CSRF o CITA_ID_REMOTA."
             echo "     Si la respuesta es 404, falta una CitaMedica en REALIZADA_PENDIENTE_VERIFICACION."
+            exit 1
         fi
     else
         # Rollback: esperamos 200 o 4xx de estado, NO 503.
         if [ "\$RESP" = "503" ]; then
-            echo "  -> ERROR: rollback falló, gate todavía activo"
+            echo "  -> ERROR: rollback fallo, gate todavia activo"
             exit 1
         else
             echo "  -> OK: gate inactivo, respuesta \$RESP"
@@ -362,3 +370,6 @@ fi
 
 echo ""
 log_step "Deploy finalizado."
+echo "  Rama desplegada: $GIT_BRANCH"
+echo "  SHA local:       $(git rev-parse HEAD 2>/dev/null || echo '(no se pudo leer)')"
+echo "  BIOMETRIC_SUSPENDED=$BIOMETRIC_SUSPENDED VITE_BIOMETRIC_SUSPENDED=$VITE_BIOMETRIC_SUSPENDED"
