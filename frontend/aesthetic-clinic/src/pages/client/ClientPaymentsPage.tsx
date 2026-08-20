@@ -206,14 +206,15 @@ export function ClientPaymentsPage() {
                       <form className="payment-upload-form" onSubmit={handleUploadReceipt}>
                         <div className="payment-upload-form__grid">
                           <label className="field">
-                            <span>Monto pagado</span>
+                            <span>Monto a pagar</span>
                             <input
                               className="input"
                               type="number"
                               min="0"
                               step="0.01"
                               value={paymentAmount}
-                              onChange={(event) => setPaymentAmount(event.target.value)}
+                              readOnly
+                              aria-readonly="true"
                             />
                           </label>
                           <label className="field">
