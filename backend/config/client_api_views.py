@@ -770,6 +770,8 @@ def client_upload_payment_receipt(request, quota_id):
             detalles_pago=details or "Comprobante enviado por el cliente desde el portal.",
         )
         paciente_user = payment.cuota.operacion.paciente.usuario
+        paciente_cliente = payment.cuota.operacion.paciente
+        identificador_cliente = paciente_cliente.ci or paciente_user.username
         procedimiento = payment.cuota.operacion.servicio_config.proc_estetico.proceso
         sucursal = payment.cuota.operacion.paciente.sucursal_registro
         operacion_id = payment.cuota.operacion.pk
@@ -783,7 +785,7 @@ def client_upload_payment_receipt(request, quota_id):
                 title="Nuevo pago pendiente de revisión",
                 message=(
                     f"El cliente {paciente_user.primer_nombre} {paciente_user.apellido_paterno} "
-                    f"({paciente_user.username}), envio el comprobante del pago de la cuota Nro {nro_cuota} "
+                    f"({identificador_cliente}), envio el comprobante del pago de la cuota Nro {nro_cuota} "
                     f"del procedimiento {procedimiento} con ID {operacion_id}. "
                     f"El monto de la cuota de pago es: Bs {monto_cuota}."
                 ),
