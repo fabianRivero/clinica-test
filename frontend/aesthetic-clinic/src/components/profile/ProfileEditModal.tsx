@@ -20,6 +20,7 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
   })
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [usernameError, setUsernameError] = useState<string | null>(null)
 
   useEffect(() => {
     if (isOpen && user) {
@@ -30,6 +31,7 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
         password: '',
       })
       setError(null)
+      setUsernameError(null)
       setIsSaving(false)
     }
   }, [isOpen, user])
@@ -37,6 +39,9 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target
     setForm((prev) => ({ ...prev, [name]: value }))
+    if (name === 'username' && usernameError) {
+      setUsernameError(null)
+    }
   }
 
   const handleSubmit = async (event: FormEvent) => {
@@ -44,6 +49,7 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
     if (isSaving) return
     setIsSaving(true)
     setError(null)
+    setUsernameError(null)
 
     const payload: ProfileUpdatePayload = {}
     if (form.username && form.username !== user?.username) payload.username = form.username
@@ -68,11 +74,25 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
       onClose()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'No se pudieron guardar los cambios.'
-      showNotification({
-        title: 'Error',
-        message,
-        tone: 'danger',
-      })
+      const usernameChanged = !!payload.username
+      // Backend rejects a colliding username with 409 and detail "El nombre de usuario ya esta en uso."
+      const isUsernameTaken =
+        usernameChanged &&
+        /nombre de usuario.*ya esta en uso/i.test(message)
+      if (isUsernameTaken) {
+        setUsernameError('Ese nombre de usuario no está disponible.')
+        showNotification({
+          title: 'Error',
+          message,
+          tone: 'danger',
+        })
+      } else {
+        showNotification({
+          title: 'Error',
+          message,
+          tone: 'danger',
+        })
+      }
       setIsSaving(false)
     }
   }
@@ -97,7 +117,9 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
                 name="username"
                 value={form.username}
                 onChange={handleChange}
+                aria-invalid={usernameError ? true : undefined}
               />
+              {usernameError && <small className="field__error">{usernameError}</small>}
             </label>
             <label className="field">
               <span>Email</span>
