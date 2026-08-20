@@ -137,7 +137,7 @@ export function ClientDashboardPage() {
                       <div className="agenda-item__content">
                         <strong>{appointment.operation}</strong>
                         <p>
-                          {appointment.specialist} | método verificación:{' '}
+                          método verificación:{' '}
                           {appointment.verificationMethod
                             ? verificationMethodLabel[appointment.verificationMethod]
                             : 'No especificado'}

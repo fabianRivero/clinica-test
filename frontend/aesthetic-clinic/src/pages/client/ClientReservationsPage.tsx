@@ -163,7 +163,6 @@ export function ClientReservationsPage() {
                 <thead>
                   <tr>
                     <th>Operación</th>
-                    <th>Especialista</th>
                     <th>Fecha</th>
                     <th>Estado</th>
                     <th>Confirmación</th>
@@ -176,7 +175,6 @@ export function ClientReservationsPage() {
                         <strong>{appointment.operation}</strong>
                         <span>{appointment.details}</span>
                       </td>
-                      <td>{appointment.specialist}</td>
                       <td>{appointment.dateTime}</td>
                       <td>
                         <StatusBadge tone={appointment.statusTone}>{appointment.status}</StatusBadge>
