@@ -26,6 +26,7 @@ export type AdminAlert = {
 export type VerificationPayment = {
   id: string
   rawId: number
+  clientId: number
   patient: string
   operation: string
   amount: string
@@ -474,6 +475,7 @@ export type PaymentsResponse = {
 export type AdminPaymentQuota = {
   id: string
   rawId: number
+  clientId: number
   patient: string
   operation: string
   quotaNumber: number

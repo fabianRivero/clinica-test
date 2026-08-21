@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 
 import { AdminPaymentsTabs } from '../../components/admin/AdminPaymentsTabs'
 
@@ -371,13 +372,17 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredPayments.map((payment) => (
-                      <tr key={payment.id}>
-                        <td>{payment.id}</td>
-                        <td>
-                          <strong>{payment.patient}</strong>
-                          <span>{payment.submittedAt}</span>
-                        </td>
+{filteredPayments.map((payment) => (
+                        <tr key={payment.id}>
+                          <td>{payment.id}</td>
+                          <td>
+                            <strong>
+                              <Link className="table-strong-link" to={`/cms/clientes/${payment.clientId}`}>
+                                {payment.patient}
+                              </Link>
+                            </strong>
+                            <span>{payment.submittedAt}</span>
+                          </td>
                         <td>{payment.operation}</td>
                         <td>{payment.quota}</td>
                         <td>{payment.amount}</td>
@@ -556,7 +561,11 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                       {filteredQuotas.map((quota) => (
                         <tr key={quota.id}>
                           <td>{quota.id}</td>
-                          <td>{quota.patient}</td>
+                          <td>
+                            <Link className="table-strong-link" to={`/cms/clientes/${quota.clientId}`}>
+                              {quota.patient}
+                            </Link>
+                          </td>
                           <td>{quota.operation}</td>
                           <td>{quota.quotaNumber}</td>
                           <td>{quota.amount}</td>
