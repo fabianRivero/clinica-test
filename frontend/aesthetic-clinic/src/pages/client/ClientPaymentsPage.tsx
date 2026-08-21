@@ -9,6 +9,25 @@ import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { getClientPayments, uploadClientPaymentReceipt } from '../../services/api/client'
 
+const PAGE_SIZE = 10
+
+const ALL_FILTERS = {
+  pagos: [
+    { value: '', label: 'Todos los estados' },
+    { value: 'pendiente', label: 'Pendiente' },
+    { value: 'aprobado', label: 'Aprobado' },
+    { value: 'observado', label: 'Observado' },
+    { value: 'cancelado', label: 'Cancelado' },
+  ],
+  cuotas: [
+    { value: '', label: 'Todos los estados' },
+    { value: 'Pendiente', label: 'Pendiente' },
+    { value: 'Vencida', label: 'Vencida' },
+    { value: 'Pagado', label: 'Pagado' },
+    { value: 'No pagada', label: 'No pagada' },
+  ],
+}
+
 export function ClientPaymentsPage() {
   const [selectedQuotaId, setSelectedQuotaId] = useState<number | null>(null)
   const [qrModalOpen, setQrModalOpen] = useState(false)
@@ -17,6 +36,10 @@ export function ClientPaymentsPage() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('')
+  const [paymentsVisibleCount, setPaymentsVisibleCount] = useState(PAGE_SIZE)
+  const [quotaStatusFilter, setQuotaStatusFilter] = useState('')
+  const [quotasVisibleCount, setQuotasVisibleCount] = useState(PAGE_SIZE)
   const { data, isLoading, error } = useApiResource(getClientPayments)
   const [pageData, setPageData] = useState(data)
   const { showNotification } = useNotifications()
@@ -26,6 +49,47 @@ export function ClientPaymentsPage() {
       setPageData(data)
     }
   }, [data])
+
+  // Filter helpers: status match is case-insensitive trimmed contains so that
+  // small backend label changes don't silently break the filter.
+  const filteredPayments = (pageData?.payments ?? []).filter((payment) => {
+    if (!paymentStatusFilter) return true
+    return payment.status.trim().toLowerCase() === paymentStatusFilter.toLowerCase()
+  })
+
+  const filteredQuotas = (pageData?.activeQuotas ?? []).filter((quota) => {
+    if (!quotaStatusFilter) return true
+    return quota.status.trim().toLowerCase() === quotaStatusFilter.toLowerCase()
+  })
+
+  const visiblePayments = filteredPayments.slice(0, paymentsVisibleCount)
+  const visibleQuotas = filteredQuotas.slice(0, quotasVisibleCount)
+
+  const handlePaymentStatusFilterChange = (value: string) => {
+    setPaymentStatusFilter(value)
+    setPaymentsVisibleCount(PAGE_SIZE)
+  }
+
+  const handleQuotaStatusFilterChange = (value: string) => {
+    setQuotaStatusFilter(value)
+    setQuotasVisibleCount(PAGE_SIZE)
+  }
+
+  const handleShowMorePayments = () => {
+    setPaymentsVisibleCount((current) => current + PAGE_SIZE)
+  }
+
+  const handleShowLessPayments = () => {
+    setPaymentsVisibleCount((current) => Math.max(current - PAGE_SIZE, PAGE_SIZE))
+  }
+
+  const handleShowMoreQuotas = () => {
+    setQuotasVisibleCount((current) => current + PAGE_SIZE)
+  }
+
+  const handleShowLessQuotas = () => {
+    setQuotasVisibleCount((current) => Math.max(current - PAGE_SIZE, PAGE_SIZE))
+  }
 
   const openQuotaPayment = (quotaId: number, amountValue: string) => {
     setSelectedQuotaId(quotaId)
@@ -169,10 +233,35 @@ export function ClientPaymentsPage() {
             eyebrow="Cuotas vigentes"
             title="Estado de cuotas"
             description="Resumen de montos estimados por cuota y del último comprobante asociado."
+            action={
+              <label className="field" style={{ minWidth: '12rem' }}>
+                <span className="visually-hidden">Estado de la cuota</span>
+                <select
+                  className="input"
+                  value={quotaStatusFilter}
+                  onChange={(event) => handleQuotaStatusFilterChange(event.target.value)}
+                >
+                  {ALL_FILTERS.cuotas.map((option) => (
+                    <option key={option.value || 'all'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            }
           >
-            {pageData.activeQuotas.length ? (
+            {filteredQuotas.length === 0 ? (
+              <DataState
+                title="Sin cuotas para mostrar"
+                message={
+                  quotaStatusFilter
+                    ? `No hay cuotas en estado "${quotaStatusFilter}" en este momento.`
+                    : 'No tienes cuotas pendientes o vencidas en este momento.'
+                }
+              />
+            ) : (
               <div className="capacity-list">
-                {pageData.activeQuotas.map((quota) => (
+                {visibleQuotas.map((quota) => (
                   <article className="capacity-item" key={quota.id}>
                     <div className="capacity-item__header">
                       <div>
@@ -263,17 +352,60 @@ export function ClientPaymentsPage() {
                   </article>
                 ))}
               </div>
-            ) : (
-              <DataState title="Sin cuotas activas" message="No tienes cuotas pendientes o vencidas en este momento." />
             )}
+            {filteredQuotas.length > PAGE_SIZE ? (
+              <div className="_mt-md" style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem' }}>
+                <button
+                  className="button button--ghost"
+                  type="button"
+                  onClick={handleShowLessQuotas}
+                  disabled={quotasVisibleCount <= PAGE_SIZE}
+                >
+                  Ver menos
+                </button>
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={handleShowMoreQuotas}
+                  disabled={quotasVisibleCount >= filteredQuotas.length}
+                >
+                  Ver más
+                </button>
+              </div>
+            ) : null}
           </SectionCard>
 
           <SectionCard
             eyebrow="Comprobantes"
             title="Historial de pagos"
             description="Incluye pagos pendientes, aprobados y observados, con comentarios de administración."
+            action={
+              <label className="field" style={{ minWidth: '12rem' }}>
+                <span className="visually-hidden">Estado del pago</span>
+                <select
+                  className="input"
+                  value={paymentStatusFilter}
+                  onChange={(event) => handlePaymentStatusFilterChange(event.target.value)}
+                >
+                  {ALL_FILTERS.pagos.map((option) => (
+                    <option key={option.value || 'all'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            }
           >
-            {pageData.payments.length ? (
+            {filteredPayments.length === 0 ? (
+              <DataState
+                title="Sin pagos para mostrar"
+                message={
+                  paymentStatusFilter
+                    ? `No hay pagos en estado "${paymentStatusFilter}" en este momento.`
+                    : 'Aun no se registran comprobantes dentro de esta cuenta.'
+                }
+              />
+            ) : (
               <>
                 <div className="table-card">
                   <table>
@@ -288,7 +420,7 @@ export function ClientPaymentsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {pageData.payments.slice(0, 10).map((payment) => (
+                      {visiblePayments.map((payment) => (
                         <tr key={payment.id}>
                           <td>
                             <strong>{payment.operation}</strong>
@@ -320,16 +452,32 @@ export function ClientPaymentsPage() {
                     </tbody>
                   </table>
                 </div>
-                {pageData.payments.length > 0 && (
-                  <div className="_mt-md" style={{ textAlign: 'center' }}>
-                    <Link className="button button--secondary" to="/cliente/pagos/historial">
-                      Ver todo el historial
-                    </Link>
+                {filteredPayments.length > PAGE_SIZE ? (
+                  <div className="_mt-md" style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem' }}>
+                    <button
+                      className="button button--ghost"
+                      type="button"
+                      onClick={handleShowLessPayments}
+                      disabled={paymentsVisibleCount <= PAGE_SIZE}
+                    >
+                      Ver menos
+                    </button>
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={handleShowMorePayments}
+                      disabled={paymentsVisibleCount >= filteredPayments.length}
+                    >
+                      Ver más
+                    </button>
                   </div>
-                )}
+                ) : null}
+                <div className="_mt-md" style={{ textAlign: 'center' }}>
+                  <Link className="button button--secondary" to="/cliente/pagos/historial">
+                    Ver todo el historial
+                  </Link>
+                </div>
               </>
-            ) : (
-              <DataState title="Sin pagos registrados" message="Aun no se registran comprobantes dentro de esta cuenta." />
             )}
           </SectionCard>
         </>
