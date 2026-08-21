@@ -2600,7 +2600,15 @@ def admin_dashboard_payments(request):
         estado__in=[CuotaPlanPago.Estado.PENDIENTE, CuotaPlanPago.Estado.VENCIDA]
     ).order_by("fecha_vencimiento")
     if branch:
-        upcoming_quotas = upcoming_quotas.filter(operacion__citas_medicas__sucursal=branch).distinct()
+        # Filter by the branch the client is registered in, NOT by where
+        # the appointments happen to be scheduled. Filtering on
+        # ``citas_medicas__sucursal`` hid cuotas whose operation had no
+        # appointments yet (e.g. brand-new clients whose only pending item
+        # is an unpaid due-today quota), which is the wrong semantics for a
+        # "what's coming up to collect" dashboard.
+        upcoming_quotas = upcoming_quotas.filter(
+            operacion__paciente__sucursal_registro=branch,
+        ).distinct()
 
     start_of_week = today - timedelta(days=today.weekday())
     end_of_week = start_of_week + timedelta(days=6)
