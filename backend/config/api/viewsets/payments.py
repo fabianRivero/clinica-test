@@ -3,6 +3,7 @@ Payment viewsets for DRF migration.
 Domain 3 of Phase 6.
 """
 
+import calendar
 import os
 
 from django.db.models import Q
@@ -53,6 +54,8 @@ class PagosViewSet(viewsets.ViewSet):
         status_filter = (request.query_params.get("status") or "").strip().upper()
         date_from = (request.query_params.get("dateFrom") or "").strip()
         date_to = (request.query_params.get("dateTo") or "").strip()
+        month_param = (request.query_params.get("month") or "").strip()
+        year_param = (request.query_params.get("year") or "").strip()
         search = (request.query_params.get("search") or "").strip()
 
         pagos_qs = (
@@ -74,6 +77,12 @@ class PagosViewSet(viewsets.ViewSet):
             pagos_qs = pagos_qs.filter(created_at__date__gte=date_from)
         if date_to:
             pagos_qs = pagos_qs.filter(created_at__date__lte=date_to)
+        # Month/year narrowing for payments: filter by created_at within the
+        # month. Coexists with date_from/date_to (filters AND-compose).
+        month_year_range = self._parse_month_year(month_param, year_param)
+        if month_year_range is not None:
+            month_start, month_end = month_year_range
+            pagos_qs = pagos_qs.filter(created_at__date__gte=month_start, created_at__date__lte=month_end)
         if search:
             pagos_qs = pagos_qs.filter(
                 Q(cuota__operacion__paciente__usuario__primer_nombre__icontains=search)
@@ -100,6 +109,12 @@ class PagosViewSet(viewsets.ViewSet):
         )
         if branch:
             cuotas_qs = cuotas_qs.filter(operacion__paciente__sucursal_registro=branch).distinct()
+        # Month/year narrowing for quotas: filter by fecha_vencimiento within
+        # the month. Same semantics as the "Cuotas de Julio 2026" header in
+        # /cms/pagos/cuotas.
+        if month_year_range is not None:
+            month_start, month_end = month_year_range
+            cuotas_qs = cuotas_qs.filter(fecha_vencimiento__gte=month_start, fecha_vencimiento__lte=month_end)
 
         config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
 
@@ -381,6 +396,26 @@ class PagosViewSet(viewsets.ViewSet):
     # -------------------------------------------------------------------------
     # Helpers
     # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_month_year(month_param: str, year_param: str):
+        """
+        Translate ?month=&year= query params into a (first_day, last_day)
+        tuple of dates that delimits the requested month. Returns None when
+        either param is missing or invalid, so the caller can fall through
+        to the unfiltered behaviour (dateFrom/dateTo or full history).
+        """
+        if not month_param or not year_param:
+            return None
+        try:
+            month = int(month_param)
+            year = int(year_param)
+        except (TypeError, ValueError):
+            return None
+        if month < 1 or month > 12 or year < 1970 or year > 9999:
+            return None
+        last_day = calendar.monthrange(year, month)[1]
+        return timezone.datetime(year, month, 1).date(), timezone.datetime(year, month, last_day).date()
 
     def _payment_qr_config_item(self, config, storage_provider=None):
         if not config:
