@@ -68,6 +68,7 @@ const fullNavigation = [
     children: [
       { to: '/cms/equipo/crear', label: 'Crear especialista' },
       { to: '/cms/equipo/gestionar', label: 'Gestionar especialistas' },
+      { to: '/cms/equipo/recuperar', label: 'Recuperar acceso' },
     ],
   },
   {
