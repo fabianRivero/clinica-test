@@ -11,10 +11,11 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useNotifications } from '../../providers/NotificationProvider'
-import { searchAdminUserRecovery } from '../../services/api/admin'
+import { searchAdminUserRecovery, postAdminUserRecoveryReset } from '../../services/api/admin'
 import type {
   AdminUserRecoveryItem,
   AdminUserRecoveryKind,
+  AdminUserRecoveryResetResponse,
   AdminUserRecoverySearchResponse,
 } from '../../types/admin'
 
@@ -56,6 +57,20 @@ type UsernameModalState = {
   open: boolean
   user: AdminUserRecoveryItem | null
 }
+
+/**
+ * Reset modal phases:
+ *  - 'confirm' — admin sees who they are about to reset and the
+ *    blast radius ("session cerrada, debera cambiar al entrar").
+ *  - 'result' — backend responded OK; the temporary password is
+ *    stored here only while the modal is open. The state is wiped
+ *    on close so the password never lingers in React state beyond
+ *    the lifetime of the modal.
+ */
+type ResetModalState =
+  | { phase: 'closed' }
+  | { phase: 'confirm'; user: AdminUserRecoveryItem; isSubmitting: boolean; error: string | null }
+  | { phase: 'result'; user: AdminUserRecoveryItem; response: AdminUserRecoveryResetResponse }
 
 export function AdminUserRecoveryPage() {
   const { showNotification } = useNotifications()
@@ -136,6 +151,59 @@ export function AdminUserRecoveryPage() {
         title: 'No se pudo copiar',
         message:
           'Tu navegador bloqueo el portapapeles. Copialo manualmente.',
+        tone: 'danger',
+      })
+    }
+  }
+
+  const [resetModal, setResetModal] = useState<ResetModalState>({ phase: 'closed' })
+
+  const handleOpenReset = (user: AdminUserRecoveryItem) => {
+    setResetModal({ phase: 'confirm', user, isSubmitting: false, error: null })
+  }
+
+  const handleCloseReset = () => {
+    // Wipe the state on close so the temporary password doesn't linger
+    // in React state beyond the modal's lifetime.
+    setResetModal({ phase: 'closed' })
+  }
+
+  const handleConfirmReset = async () => {
+    if (resetModal.phase !== 'confirm') return
+    setResetModal({ ...resetModal, isSubmitting: true, error: null })
+    try {
+      const response = await postAdminUserRecoveryReset(resetModal.user.id)
+      setResetModal({ phase: 'result', user: resetModal.user, response })
+      showNotification({
+        title: 'Contrasena temporal generada',
+        message: 'La cuenta fue marcada para forzar cambio en el proximo login.',
+        tone: 'success',
+      })
+    } catch (requestError) {
+      setResetModal({
+        ...resetModal,
+        isSubmitting: false,
+        error:
+          requestError instanceof Error
+            ? requestError.message
+            : 'No se pudo resetear la contrasena.',
+      })
+    }
+  }
+
+  const handleCopyTemporaryPassword = async (password: string) => {
+    try {
+      await navigator.clipboard.writeText(password)
+      showNotification({
+        title: 'Contrasena copiada',
+        message: 'Pegala en un canal seguro antes de cerrar esta pantalla.',
+        tone: 'success',
+      })
+    } catch {
+      showNotification({
+        title: 'No se pudo copiar',
+        message:
+          'Tu navegador bloqueo el portapapeles. Anotala manualmente.',
         tone: 'danger',
       })
     }
@@ -265,6 +333,13 @@ export function AdminUserRecoveryPage() {
                         >
                           Ver username
                         </button>
+                        <button
+                          className="button button--warning button--compact"
+                          type="button"
+                          onClick={() => handleOpenReset(user)}
+                        >
+                          Resetear contrasena
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -325,6 +400,165 @@ export function AdminUserRecoveryPage() {
               Este username no se guarda en esta pantalla. Anotalo si lo
               necesitas.
             </p>
+          </div>
+        </div>
+      ) : null}
+
+      {resetModal.phase !== 'closed' ? (
+        <div
+          className="qr-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Resetear contrasena"
+        >
+          <div
+            className="qr-modal__backdrop"
+            onClick={
+              resetModal.phase === 'confirm' && resetModal.isSubmitting
+                ? undefined
+                : handleCloseReset
+            }
+          />
+          <div className="qr-modal__content">
+            <header className="qr-modal__header">
+              <div>
+                {resetModal.phase === 'confirm' ? (
+                  <>
+                    <span>Resetear contrasena</span>
+                    <strong>{resetModal.user.fullName}</strong>
+                  </>
+                ) : (
+                  <>
+                    <span>Contrasena temporal generada</span>
+                    <strong>{resetModal.user.fullName}</strong>
+                  </>
+                )}
+              </div>
+              {!(
+                resetModal.phase === 'confirm' && resetModal.isSubmitting
+              ) ? (
+                <button
+                  className="button button--ghost button--compact"
+                  type="button"
+                  onClick={handleCloseReset}
+                >
+                  Cerrar
+                </button>
+              ) : null}
+            </header>
+
+            {resetModal.phase === 'confirm' ? (
+              <div style={{ marginTop: '1rem' }}>
+                <p>
+                  Vas a generar una contrasena temporal para este usuario. La
+                  cuenta sera marcada para forzar el cambio en el proximo
+                  inicio de sesion y todas las sesiones abiertas se cerraran.
+                </p>
+                <p
+                  className="field__hint"
+                  style={{
+                    background: 'rgba(245, 158, 11, 0.12)',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '0.375rem',
+                    marginTop: '0.75rem',
+                  }}
+                >
+                  El usuario debera cambiar la contrasena apenas entre.
+                  Anotala antes de cerrar esta pantalla — no la veras de
+                  nuevo.
+                </p>
+                {resetModal.error ? (
+                  <div
+                    className="form-error"
+                    style={{ marginTop: '0.75rem' }}
+                  >
+                    {resetModal.error}
+                  </div>
+                ) : null}
+                <div
+                  className="form-actions"
+                  style={{ marginTop: '1rem' }}
+                >
+                  <button
+                    className="button button--ghost"
+                    type="button"
+                    onClick={handleCloseReset}
+                    disabled={resetModal.isSubmitting}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={handleConfirmReset}
+                    disabled={resetModal.isSubmitting}
+                  >
+                    {resetModal.isSubmitting
+                      ? 'Generando...'
+                      : 'Generar contrasena temporal'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: '1rem' }}>
+                <div
+                  className="field__hint"
+                  style={{
+                    background: 'rgba(245, 158, 11, 0.12)',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: '0.375rem',
+                  }}
+                >
+                  Esta contrasena se muestra una sola vez. Se invalidaron
+                  todas las sesiones activas del usuario.
+                </div>
+                <label className="field" style={{ marginTop: '1rem' }}>
+                  <span>Contrasena temporal</span>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <input
+                      className="input"
+                      readOnly
+                      value={resetModal.response.temporaryPassword}
+                      aria-label="Contrasena temporal"
+                      onFocus={(event) =>
+                        event.currentTarget.select()
+                      }
+                      style={{ fontFamily: 'monospace', letterSpacing: '0.05em' }}
+                    />
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      onClick={() =>
+                        handleCopyTemporaryPassword(
+                          resetModal.response.temporaryPassword,
+                        )
+                      }
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                </label>
+                <p
+                  className="field__hint"
+                  style={{ marginTop: '0.75rem' }}
+                >
+                  Pegala en un canal seguro (presencial, telefono) antes de
+                  cerrar esta ventana.
+                </p>
+                <div
+                  className="form-actions"
+                  style={{ marginTop: '1rem' }}
+                >
+                  <button
+                    className="button"
+                    type="button"
+                    onClick={handleCloseReset}
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : null}
