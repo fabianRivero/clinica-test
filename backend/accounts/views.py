@@ -155,6 +155,22 @@ def usuario_recovery_search(request):
     Returns up to 25 matches. Empty ``q`` returns an empty list (the
     frontend uses this to reset the result panel when the operator
     clears the search box).
+
+    Query interpretation:
+    - A single token (no spaces) keeps the original OR semantics:
+      match any field that contains the token. ``fabian`` matches a
+      user whose ``primer_nombre`` contains "Fabian".
+    - Multiple tokens (whitespace-separated) switch to AND semantics
+      over the user's full name only. Each token must appear, in any
+      order, in the concatenation of ``primer_nombre``,
+      ``segundo_nombre``, ``apellido_paterno``, ``apellido_materno``
+      (case-insensitive). ``fabian rivero`` matches "Fabian Rivero
+      Lopez"; ``rivero fabian`` matches the same row. This matches
+      how an admin types a name into Google.
+
+    We don't try to combine per-field OR with per-token AND: a query
+    with spaces is treated as a name query (a "fabian r" looking for
+    the email is rare enough that we don't lose much by being strict).
     """
 
     q = (request.GET.get("q") or "").strip()
@@ -163,21 +179,37 @@ def usuario_recovery_search(request):
 
     base = _scoped_queryset(request)
 
-    # Build a single OR across every field the operator might search by.
-    # CI lives on the Cliente/Especialista side, so we need a second
-    # hop via the related models.
-    ci_q = Q(cliente__ci__icontains=q) | Q(especialista__ci__icontains=q)
-    text_match = (
-        Q(username__icontains=q)
-        | Q(primer_nombre__icontains=q)
-        | Q(segundo_nombre__icontains=q)
-        | Q(apellido_paterno__icontains=q)
-        | Q(apellido_materno__icontains=q)
-        | Q(email__icontains=q)
-        | Q(telefono__icontains=q)
-        | ci_q
-    )
-    matches = base.filter(text_match).distinct().order_by("username")[:MAX_SEARCH_RESULTS]
+    tokens = q.split()
+    if len(tokens) >= 2:
+        # AND across tokens on the full name (case-insensitive).
+        # Concatenate the name fields and require every token to be
+        # present. We use ``__icontains`` on each field individually so
+        # the query stays portable across the SQLite test backend
+        # and PostgreSQL in production.
+        for token in tokens:
+            base = base.filter(
+                Q(primer_nombre__icontains=token)
+                | Q(segundo_nombre__icontains=token)
+                | Q(apellido_paterno__icontains=token)
+                | Q(apellido_materno__icontains=token)
+            )
+    else:
+        # Single-token OR across every searchable field (original
+        # behaviour). CI lives on Cliente/Especialista.
+        ci_q = Q(cliente__ci__icontains=q) | Q(especialista__ci__icontains=q)
+        text_match = (
+            Q(username__icontains=q)
+            | Q(primer_nombre__icontains=q)
+            | Q(segundo_nombre__icontains=q)
+            | Q(apellido_paterno__icontains=q)
+            | Q(apellido_materno__icontains=q)
+            | Q(email__icontains=q)
+            | Q(telefono__icontains=q)
+            | ci_q
+        )
+        base = base.filter(text_match)
+
+    matches = base.distinct().order_by("username")[:MAX_SEARCH_RESULTS]
     return json_response({"users": [_serialize_recovery_user(u) for u in matches]})
 
 

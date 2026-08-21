@@ -131,6 +131,28 @@ class UserRecoverySearchTests(TestCase):
             primer_nombre="Sur",
             apellido_paterno="Cliente",
         )
+
+        # Dedicated fixture for the multi-token AND search tests:
+        # the worker above has apellido_paterno='Trabajador' which
+        # would make 'Maria Garcia' return empty. This user has a
+        # two-token full name and lives in Norte so it stays in
+        # scope for branch-admin tests too.
+        self.garcia_user = Usuario.objects.create_user(
+            username="maria.garcia.search",
+            password="password123",
+            rol=self.rol_trabajador,
+            sucursal=self.sucursal_norte,
+            telefono="72000002",
+            email="maria.garcia@example.com",
+            primer_nombre="Maria",
+            apellido_paterno="Garcia",
+            apellido_materno="Lopez",
+        )
+        Especialista.objects.create(
+            usuario=self.garcia_user,
+            telefono="72000002",
+            ci="8000001",
+        )
         Cliente.objects.create(
             usuario=self.sur_client,
             telefono="72000001",
@@ -161,11 +183,59 @@ class UserRecoverySearchTests(TestCase):
         self.assertIn("cliente.search", usernames)
 
     def test_search_by_nombre_y_apellido_finds_user(self):
+        # Single-token query keeps the original OR semantics: 'Maria'
+        # matches the worker whose primer_nombre is Maria.
         client = self._login(self.main_admin)
         response = client.get(SEARCH_URL, {"q": "Maria"})
         self.assertEqual(response.status_code, 200)
         usernames = [u["username"] for u in response.json()["users"]]
         self.assertIn("trabajador.search", usernames)
+
+    def test_search_by_full_name_with_two_tokens_finds_user(self):
+        # Multi-token AND on full name: 'Maria Garcia' must match the
+        # user whose primer_nombre='Maria' and apellido_paterno='Garcia'.
+        client = self._login(self.main_admin)
+        response = client.get(SEARCH_URL, {"q": "Maria Garcia"})
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        self.assertIn("maria.garcia.search", usernames)
+
+    def test_search_by_full_name_in_any_order_finds_user(self):
+        # Token order is irrelevant: 'Garcia Maria' is the same query.
+        client = self._login(self.main_admin)
+        response = client.get(SEARCH_URL, {"q": "Garcia Maria"})
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        self.assertIn("maria.garcia.search", usernames)
+
+    def test_search_by_full_name_requires_all_tokens(self):
+        # AND semantics: a query that includes a token no user has
+        # returns empty.
+        client = self._login(self.main_admin)
+        response = client.get(SEARCH_URL, {"q": "Maria Inexistente"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["users"], [])
+
+    def test_search_by_full_name_with_extra_tokens_does_not_drop_user(self):
+        # 3+ tokens where the user has at least 2 matching fields still
+        # match (the AND is per-token, not per-field). The Garcia
+        # user has 'Maria' + 'Garcia' on file; 'Maria Garcia Whatever'
+        # should NOT match because 'Whatever' is not in any name field.
+        client = self._login(self.main_admin)
+        response = client.get(SEARCH_URL, {"q": "Maria Garcia Whatever"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["users"], [])
+
+    def test_search_by_full_name_matches_across_separate_fields(self):
+        # 'Maria Lopez' must match when primer_nombre='Maria' and
+        # apellido_materno='Lopez' (the token does NOT have to live in
+        # the same field). Validates the per-token OR across name
+        # fields inside the multi-token branch.
+        client = self._login(self.main_admin)
+        response = client.get(SEARCH_URL, {"q": "Maria Lopez"})
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        self.assertIn("maria.garcia.search", usernames)
 
     def test_search_by_email_finds_user(self):
         client = self._login(self.main_admin)
