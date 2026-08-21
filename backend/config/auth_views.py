@@ -40,6 +40,7 @@ def _serialize_user(user):
         "isClient": bool(user.es_cliente),
         "branchId": user.sucursal_id,
         "branchName": user.sucursal.nombre if user.sucursal else "",
+        "mustChangePassword": user.must_change_password,
     }
 
 
@@ -93,6 +94,7 @@ def auth_me(request):
 
             if payload.get("password"):
                 user.set_password(payload["password"])
+                user.must_change_password = False
                 request.session.cycle_key()
 
             user.save()
