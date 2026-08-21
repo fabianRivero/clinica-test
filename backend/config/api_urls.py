@@ -18,6 +18,7 @@ from config.admin_availability_views import (
 )
 from accounts.views import (
     usuario_recovery_detail,
+    usuario_recovery_reset,
     usuario_recovery_search,
 )
 from config.api_views import (
@@ -417,6 +418,11 @@ urlpatterns = [
         "usuarios/<int:user_id>/",
         usuario_recovery_detail,
         name="admin-usuarios-detail-api",
+    ),
+    path(
+        "usuarios/<int:user_id>/reset-password/",
+        usuario_recovery_reset,
+        name="admin-usuarios-reset-api",
     ),
     path("", include(free_medical_router.urls)),
     path("", include(clientes_router.urls)),

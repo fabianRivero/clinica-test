@@ -17,16 +17,58 @@ this commit read-only.
 """
 
 import logging
+import secrets
+import string
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from django.db.models import Q
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 
 from config.api_helpers import admin_required, json_response
+from config.api_views import _invalidate_user_sessions
 
 logger = logging.getLogger(__name__)
 
 MAX_SEARCH_RESULTS = 25
+
+# Temporary password must satisfy Django's AUTH_PASSWORD_VALIDATORS
+# (MinimumLengthValidator default 8, plus the common-password and
+# numeric-only restrictions). We build 16 chars from a letter+digit
+# pool so the password has enough entropy to pass the CommonPassword
+# blacklist while staying legible for an admin who has to dictate
+# it over the phone.
+_TEMP_PWD_ALPHABET = string.ascii_letters + string.digits
+_TEMP_PWD_LENGTH = 16
+
+
+def _generate_temporary_password():
+    """Build a cryptographically-random password that clears every
+    validator configured in settings.AUTH_PASSWORD_VALIDATORS.
+
+    We reserve one slot for a digit so the output is guaranteed to
+    mix letters and digits (helps legibility when an admin dictates
+    it over the phone and avoids the rare all-letter draw). The
+    remaining 15 slots are drawn from the full letter+digit pool,
+    then the position of the guaranteed digit is randomised to
+    avoid positional bias. On the rare blacklist hit we roll again.
+    """
+
+    while True:
+        guaranteed_digit = secrets.choice(string.digits)
+        body = "".join(
+            secrets.choice(_TEMP_PWD_ALPHABET)
+            for _ in range(_TEMP_PWD_LENGTH - 1)
+        )
+        digit_position = secrets.randbelow(_TEMP_PWD_LENGTH)
+        candidate = (
+            body[:digit_position] + guaranteed_digit + body[digit_position:]
+        )
+        try:
+            validate_password(candidate)
+        except Exception:
+            continue
+        return candidate
 
 
 def _resolve_kind(user):
@@ -170,3 +212,77 @@ def usuario_recovery_detail(request, user_id):
     last_login = target.last_login
     payload["lastLogin"] = last_login.isoformat() if last_login else None
     return json_response(payload)
+
+
+@require_POST
+@admin_required
+def usuario_recovery_reset(request, user_id):
+    """Issue a temporary password for a user account.
+
+    The system generates a random password that satisfies every
+    AUTH_PASSWORD_VALIDATORS, marks the account with
+    ``must_change_password=True`` so the user is forced to pick a
+    real password on next login, and invalidates every active
+    session for that user. The temporary password is returned in
+    the response exactly once; the admin is expected to deliver it
+    out-of-band to the user.
+
+    Branch scoping: a branch admin cannot reset users in another
+    branch. Self-resets are blocked to prevent admins from locking
+    themselves out (the AuthProvider layer is the right path for
+    self-service password changes).
+    """
+
+    request_user = request.user
+    if int(user_id) == request_user.id:
+        return json_response(
+            {"detail": "No puedes resetear tu propia contraseña desde aqui."},
+            status=400,
+        )
+
+    User = get_user_model()
+    target = (
+        User.objects.select_related("rol", "sucursal")
+        .filter(pk=user_id)
+        .first()
+    )
+    if not target:
+        return json_response({"detail": "No encontramos al usuario solicitado."}, status=404)
+
+    if _branch_violation(request_user, target):
+        return json_response(
+            {"detail": "Este usuario pertenece a otra sucursal."},
+            status=403,
+        )
+
+    temporary_password = _generate_temporary_password()
+    target.set_password(temporary_password)
+    target.must_change_password = True
+    target.save(update_fields=["password", "must_change_password"])
+
+    _invalidate_user_sessions([target.id])
+
+    logger.warning(
+        "user_recovery_reset actor=%s target=%s target_username=%s target_branch=%s",
+        request_user.id,
+        target.id,
+        target.username,
+        target.sucursal_id,
+    )
+
+    return json_response(
+        {
+            "detail": (
+                "Contrasena temporal generada. La cuenta fue marcada para "
+                "forzar cambio en el proximo inicio de sesion."
+            ),
+            "user": {
+                "id": target.id,
+                "username": target.username,
+                "fullName": target.nombre_completo or target.username,
+            },
+            "temporaryPassword": temporary_password,
+            "mustChangePassword": True,
+            "sessionInvalidated": True,
+        }
+    )
