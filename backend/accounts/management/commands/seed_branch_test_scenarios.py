@@ -119,7 +119,7 @@ class Command(BaseCommand):
                     "segundo_nombre": segundo_nombre,
                     "apellido_paterno": apellido_paterno,
                     "apellido_materno": apellido_materno,
-                    "sucursal_origen": branch,
+                    "sucursal_registro": branch,
                     "estado": Prospecto.Estado.PASAJERO,
                     "observaciones": "Escenario local multi-sucursal.",
                 },

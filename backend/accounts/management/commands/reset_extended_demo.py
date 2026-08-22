@@ -609,7 +609,7 @@ class Command(BaseCommand):
                     "segundo_nombre": "",
                     "apellido_materno": "",
                     "telefono": telefono,
-                    "sucursal_origen": branches[branch_key],
+                    "sucursal_registro": branches[branch_key],
                     "estado": Prospecto.Estado.PASAJERO,
                 },
             )
@@ -679,7 +679,7 @@ class Command(BaseCommand):
                     "segundo_nombre": "",
                     "apellido_materno": "",
                     "telefono": telefono,
-                    "sucursal_origen": branch,
+                    "sucursal_registro": branch,
                     "estado": Prospecto.Estado.PASAJERO,
                 },
             )

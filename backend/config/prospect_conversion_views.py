@@ -1549,6 +1549,12 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         if not target_branch:
             return json_response({"detail": "No encontramos una sucursal activa para completar la conversión."}, status=400)
 
+        # Keep Usuario.sucursal in sync with Cliente.sucursal_origen at
+        # creation time. Subsequent branch moves (migrar) only touch
+        # Usuario.sucursal; sucursal_origen stays immutable.
+        user.sucursal = target_branch
+        user.save(update_fields=["sucursal", "updated_at"])
+
         cliente = Cliente.objects.create(
             usuario=user,
             sucursal_origen=target_branch,

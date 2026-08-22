@@ -74,7 +74,7 @@ class AdminReportEndpointSetupMixin:
             primer_nombre=primer_nombre,
             apellido_paterno=apellido_paterno,
             telefono=telefono,
-            sucursal_origen=branch,
+            sucursal_registro=branch,
         )
 
     def _create_payment(self, *, branch, cliente, fecha_vencimiento, monto):

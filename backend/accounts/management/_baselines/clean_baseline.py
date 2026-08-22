@@ -672,7 +672,7 @@ def seed_prospects(branches):
                 "segundo_nombre": "",
                 "apellido_materno": "",
                 "telefono": spec["telefono"],
-                "sucursal_origen": spec["sucursal"],
+                "sucursal_registro": spec["sucursal"],
                 "estado": Prospecto.Estado.PASAJERO,
             },
         )

@@ -88,7 +88,9 @@ class SuspensionGateTestBase(TestCase):
             sucursal=cls.sucursal,
         )
         cls.cliente = Cliente.objects.create(
-            usuario=cls.client_user, fecha_nacimiento=timezone.localdate()
+            usuario=cls.client_user,
+            sucursal_origen=cls.sucursal,
+            fecha_nacimiento=timezone.localdate(),
         )
         cls.operacion = Operacion.objects.create(
             paciente=cls.cliente,
