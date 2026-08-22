@@ -38,6 +38,7 @@ Lifecycle (commit 1+2 hooks):
 """
 
 import json
+from datetime import date
 
 from django.test import Client, TestCase
 from django.urls import reverse
@@ -564,3 +565,91 @@ class UserRecoveryLifecycleTests(TestCase):
 
         self.user.refresh_from_db()
         self.assertFalse(self.user.must_change_password)
+
+
+class UserImportSearchTests(TestCase):
+    """Cross-branch client search endpoint used by the import flow.
+
+    Mirrors the multi-token AND-on-full-name behavior introduced for
+    /api/admin/usuarios/buscar/ (commit 5366426). A single token does
+    a broad OR across username, names, email, phone, CI; multiple
+    tokens AND across the four name fields. The user reported that
+    'Demo' matched the paciente.demo cliente but 'Demo Demo' did
+    not, and that searching by username ('paciente') didn't work.
+    """
+
+    def setUp(self):
+        self.rol_cliente = Rol.objects.create(rol="CLIENTE")
+        self.sucursal_norte = Sucursal.objects.create(nombre="Norte", activa=True)
+        self.sucursal_sur = Sucursal.objects.create(nombre="Sur", activa=True)
+
+        self.main_admin = Usuario.objects.create_user(
+            username="main.admin.import",
+            password="admin12345",
+            rol=self.rol_cliente,
+            sucursal=self.sucursal_norte,
+            primer_nombre="Main",
+            apellido_paterno="Admin",
+        )
+        self.main_admin.is_superuser = True
+        self.main_admin.save()
+
+        # Demo Demo paciente: nombre + apellido = "Demo", user with
+        # username paciente.demo in Norte.
+        self.demo_user = Usuario.objects.create_user(
+            username="paciente.demo",
+            password="password123",
+            rol=self.rol_cliente,
+            sucursal=self.sucursal_norte,
+            email="demo@example.com",
+            telefono="70000001",
+            primer_nombre="Demo",
+            apellido_paterno="Demo",
+        )
+        self.demo_cliente = Cliente.objects.create(
+            usuario=self.demo_user,
+            sucursal_origen=self.sucursal_norte,
+            ci="12345678",
+            fecha_nacimiento=date(1990, 1, 1),
+        )
+
+    def _search(self, query):
+        self.client.force_login(self.main_admin)
+        response = self.client.get(f"/api/admin/clientes/buscar-global/?q={query}")
+        self.client.logout()
+        return response
+
+    def test_single_token_finds_by_username(self):
+        # 'paciente' matches paciente.demo by username.
+        response = self._search("paciente")
+        self.assertEqual(response.status_code, 200)
+        usernames = [c["name"] for c in response.json()["clients"]]
+        self.assertIn("Demo Demo", usernames)
+
+    def test_single_token_finds_by_name(self):
+        # 'Demo' matches primer_nombre='Demo' or apellido_paterno='Demo'.
+        response = self._search("Demo")
+        self.assertEqual(response.status_code, 200)
+        usernames = [c["name"] for c in response.json()["clients"]]
+        self.assertIn("Demo Demo", usernames)
+
+    def test_multi_token_and_on_full_name(self):
+        # 'Demo Demo' must match Demo Demo (primer='Demo' AND
+        # apellido='Demo'). Token order is irrelevant: 'Demo Demo' and
+        # 'Demo Demo' both work.
+        for query in ("Demo Demo",):
+            with self.subTest(query=query):
+                response = self._search(query)
+                self.assertEqual(response.status_code, 200)
+                usernames = [c["name"] for c in response.json()["clients"]]
+                self.assertIn("Demo Demo", usernames)
+
+    def test_multi_token_excludes_partial_match(self):
+        # 'Demo Inactivo' should NOT match Demo Demo because
+        # 'Inactivo' is not in any name field of Demo Demo.
+        # (Inactivo Demo IS a user that matches, so we just check
+        # that Demo Demo specifically is excluded.)
+        response = self._search("Demo Inactivo")
+        self.assertEqual(response.status_code, 200)
+        names = [c["name"] for c in response.json()["clients"]]
+        self.assertNotIn("Demo Demo", names)

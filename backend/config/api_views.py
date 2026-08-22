@@ -2759,23 +2759,73 @@ def admin_prospect_check_duplicates(request):
 @require_GET
 @admin_required
 def admin_clientes_global_search(request):
+    """
+    Cross-branch client search used by the import flow from a different
+    branch's list. Match semantics mirror /api/admin/usuarios/buscar/:
+
+    - A single token (no spaces) keeps the original OR semantics:
+      match any field that contains the token. ``paciente`` matches a
+      user whose username is "paciente.demo" or primer_nombre contains
+      "Paciente".
+    - Multiple tokens (whitespace-separated) switch to AND semantics
+      over the user's full name only. Each token must appear, in any
+      order, in the concatenation of primer_nombre, segundo_nombre,
+      apellido_paterno, apellido_materno (case-insensitive).
+      ``Maria Garcia`` matches "Maria Garcia Lopez"; ``Garcia Maria``
+      matches the same row.
+
+    We don't combine per-field OR with per-token AND: a query with
+    spaces is treated as a name query. CI/username/email/phone are
+    single-token fields; multi-token queries would not find "fabian
+    r" by email reliably, and we don't lose much by being strict.
+    """
     query = request.GET.get("q", "").strip()
     if len(query) < 3:
         return json_response({"clients": []})
 
-    # Buscamos en todos los clientes (global)
-    clients_qs = Cliente.objects.select_related("usuario", "sucursal_origen").filter(
-        Q(ci__icontains=query) |
-        Q(usuario__primer_nombre__icontains=query) |
-        Q(usuario__apellido_paterno__icontains=query) |
-        Q(usuario__username__icontains=query)
-    ).exclude(
+    base = Cliente.objects.select_related("usuario", "sucursal_origen")
+
+    tokens = query.split()
+    if len(tokens) >= 2:
+        # AND across tokens on the full name (case-insensitive). Each
+        # token is OR'd across the four name fields so the operator
+        # doesn't have to remember the order (Maria Garcia, Garcia
+        # Maria, both work). Other fields (username, email, phone, CI)
+        # are not searched for multi-token queries: a "fabian r"
+        # looking for the email is rare enough that we don't lose much
+        # by being strict.
+        for token in tokens:
+            base = base.filter(
+                Q(usuario__primer_nombre__icontains=token)
+                | Q(usuario__segundo_nombre__icontains=token)
+                | Q(usuario__apellido_paterno__icontains=token)
+                | Q(usuario__apellido_materno__icontains=token)
+            )
+    else:
+        # Single-token OR across every searchable field. Includes
+        # username so the operator can search by the account name
+        # directly (e.g. "paciente.demo" matches the paciente.demo
+        # Cliente profile).
+        ci_q = Q(ci__icontains=query) | Q(usuario__cliente__ci__icontains=query) | Q(usuario__especialista__ci__icontains=query)
+        text_match = (
+            Q(usuario__username__icontains=query)
+            | Q(usuario__primer_nombre__icontains=query)
+            | Q(usuario__segundo_nombre__icontains=query)
+            | Q(usuario__apellido_paterno__icontains=query)
+            | Q(usuario__apellido_materno__icontains=query)
+            | Q(usuario__email__icontains=query)
+            | Q(usuario__telefono__icontains=query)
+            | ci_q
+        )
+        base = base.filter(text_match)
+
+    clients_qs = base.exclude(
         operaciones__citas_medicas__estado=CitaMedica.Estado.PROGRAMADA,
         operaciones__citas_medicas__fecha_hora__gte=timezone.now(),
     ).exclude(
         citas_medicas_libres__estado=CitaClienteLibre.Estado.PROGRAMADA,
         citas_medicas_libres__fecha_hora__gte=timezone.now(),
-    ).distinct()[:10]
+    ).distinct().order_by("usuario__username")[:10]
 
     return json_response({
         "clients": [
