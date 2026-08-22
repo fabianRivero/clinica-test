@@ -133,12 +133,21 @@ class Cliente(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name="cliente",
     )
-    sucursal_registro = models.ForeignKey(
+    sucursal_origen = models.ForeignKey(
         "catalogs.Sucursal",
+        # on_delete=SET_NULL keeps historical records alive if the
+        # origin branch is ever deleted. Application-level validation
+        # (see views) prevents new Cliente rows without an origin
+        # branch.
         on_delete=models.SET_NULL,
-        related_name="clientes_registrados",
+        related_name="clientes_origen",
         null=True,
-        blank=True,
+        blank=False,
+        help_text=(
+            "Sucursal donde el cliente fue dado de alta originalmente. "
+            "No se modifica al migrar al cliente entre sucursales; el "
+            "branch operativo actual vive en Usuario.sucursal_id."
+        ),
     )
     ci = models.CharField(max_length=30, blank=True)
     estado_cliente = models.CharField(
