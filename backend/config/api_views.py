@@ -3754,7 +3754,7 @@ def admin_crear_prospecto(request):
         estado=estado,
         observaciones=observaciones,
         registrado_por=request.user,
-        sucursal_origen=branch,
+        sucursal_registro=branch,
     )
 
     return json_response(
