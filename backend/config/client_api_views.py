@@ -664,7 +664,7 @@ def client_treatments(request):
 def client_payments(request):
     _, payments_qs, _, quotas_qs = _base_client_queryset(request.cliente)
 
-    client_branch = getattr(request.cliente, "sucursal_origen", None)
+    client_branch = getattr(request.cliente.usuario, "sucursal", None)
     if not client_branch:
         return json_response({"detail": "No branch assigned to user"}, status=404)
 
@@ -773,7 +773,7 @@ def client_upload_payment_receipt(request, quota_id):
         paciente_cliente = payment.cuota.operacion.paciente
         identificador_cliente = paciente_cliente.ci or paciente_user.username
         procedimiento = payment.cuota.operacion.servicio_config.proc_estetico.proceso
-        sucursal = payment.cuota.operacion.paciente.sucursal_origen
+        sucursal = payment.cuota.operacion.paciente.usuario.sucursal
         operacion_id = payment.cuota.operacion.pk
         nro_cuota = payment.cuota.nro_cuota
         monto_cuota = payment.monto_pagado
@@ -990,7 +990,7 @@ def tablet_client_login(request):
         return json_response({"detail": "No existe un perfil de cliente para esta cuenta."}, status=404)
     # Validate the client belongs to this tablet's branch (data isolation)
     kiosk_sucursal = request.tablet_kiosk.sucursal
-    cliente_sucursal = getattr(cliente, "sucursal_origen", None)
+    cliente_sucursal = getattr(cliente.usuario, "sucursal", None)
     cliente_sucursal_id = cliente_sucursal.id if cliente_sucursal else None
     if cliente_sucursal_id is None or cliente_sucursal_id != kiosk_sucursal.id:
         return json_response({"detail": "Nombre de usuario y/o contraseña incorrecta."}, status=403)

@@ -60,6 +60,8 @@ class AdminReportEndpointSetupMixin:
             password="password123",
             primer_nombre=primer_nombre,
             apellido_paterno=apellido_paterno,
+            rol=self.rol_cliente,
+            sucursal=branch,
         )
         return Cliente.objects.create(
             usuario=usuario,
@@ -137,6 +139,7 @@ class AdminReportEndpointSetupMixin:
         self.rol_admin_principal = Rol.objects.create(rol="ADMIN_PRINCIPAL")
         self.rol_admin_sucursal = Rol.objects.create(rol="ADMIN_SUCURSAL")
         self.rol_trabajador = Rol.objects.create(rol="TRABAJADOR")
+        self.rol_cliente = Rol.objects.create(rol="CLIENTE")
 
         self.branch_a = self._create_branch("Sucursal A")
         self.branch_b = self._create_branch("Sucursal B", es_principal=True)
@@ -272,7 +275,7 @@ class AdminReportClientsTests(AdminReportEndpointSetupMixin, TestCase):
         operacion.citas_medicas.all().delete()
         CitaMedica.objects.create(
             operacion=operacion,
-            sucursal=ana.sucursal_origen,
+            sucursal=ana.usuario.sucursal,
             fecha_hora=future,
         )
 
@@ -319,6 +322,7 @@ class AdminReportClientsTests(AdminReportEndpointSetupMixin, TestCase):
                 username=f"bulk{i}",
                 primer_nombre=f"Bulk{i}",
                 apellido_paterno=f"Test{i}",
+                sucursal=self.branch_b,
             )
             for i in range(510)
         ]
@@ -491,6 +495,7 @@ class AdminReportIncomeTests(AdminReportEndpointSetupMixin, TestCase):
                 username=f"pcap{i}",
                 primer_nombre=f"Pcap{i}",
                 apellido_paterno=f"Y{i}",
+                sucursal=self.branch_b,
             )
             for i in range(510)
         ]

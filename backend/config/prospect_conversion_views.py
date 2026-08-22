@@ -717,7 +717,7 @@ def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
         cliente = Cliente.objects.select_related("usuario", "sucursal_origen").filter(pk=cliente_id).first()
         if not cliente:
             return None, "No encontramos el cliente solicitado."
-        if enforce_branch and cliente.sucursal_origen_id != branch.id:
+        if enforce_branch and cliente.usuario.sucursal_id != branch.id:
             return None, "No tienes permisos para procesar clientes de otra sucursal."
         draft, created = ProspectoConversionBorrador.objects.get_or_create(
             cliente=cliente,
@@ -817,7 +817,7 @@ def _validate_user_step(payload, draft):
         if existing_client:
             is_own_ci = draft.cliente and draft.cliente.pk == existing_client.pk
             if not is_own_ci:
-                branch_name = existing_client.sucursal_origen.nombre if existing_client.sucursal_origen else "el sistema"
+                branch_name = existing_client.usuario.sucursal.nombre if existing_client.usuario.sucursal else "el sistema"
                 errors["ci"] = f"Ya existe un cliente registrado con este CI en {branch_name}."
 
     existing_hash = (draft.datos_usuario or {}).get("passwordHash")

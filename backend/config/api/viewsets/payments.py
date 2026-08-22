@@ -67,7 +67,7 @@ class PagosViewSet(viewsets.ViewSet):
         )
         if branch:
             pagos_qs = pagos_qs.filter(
-                cuota__operacion__paciente__sucursal_origen=branch
+                cuota__operacion__paciente__usuario__sucursal_id=branch
             ).distinct()
 
         valid_statuses = {choice[0] for choice in PagoRealizado.EstadoVerificacion.choices}
@@ -108,7 +108,7 @@ class PagosViewSet(viewsets.ViewSet):
             .order_by("fecha_vencimiento", "nro_cuota")
         )
         if branch:
-            cuotas_qs = cuotas_qs.filter(operacion__paciente__sucursal_origen=branch).distinct()
+            cuotas_qs = cuotas_qs.filter(operacion__paciente__usuario__sucursal_id=branch).distinct()
         # Month/year narrowing for quotas: filter by fecha_vencimiento within
         # the month. Same semantics as the "Cuotas de Julio 2026" header in
         # /cms/pagos/cuotas.
@@ -314,7 +314,7 @@ class PagosViewSet(viewsets.ViewSet):
         if status_value == PagoRealizado.EstadoVerificacion.APROBADO:
             create_notification(
                 recipient=paciente_user,
-                branch=payment.cuota.operacion.paciente.sucursal_origen,
+                branch=payment.cuota.operacion.paciente.usuario.sucursal,
                 type=Notification.Type.CLIENT_PAYMENT_CONFIRMED,
                 title="Pago confirmado",
                 message=(
@@ -331,7 +331,7 @@ class PagosViewSet(viewsets.ViewSet):
         elif status_value == PagoRealizado.EstadoVerificacion.RECHAZADO:
             create_notification(
                 recipient=paciente_user,
-                branch=payment.cuota.operacion.paciente.sucursal_origen,
+                branch=payment.cuota.operacion.paciente.usuario.sucursal,
                 type=Notification.Type.CLIENT_PAYMENT_REJECTED,
                 title="Pago rechazado",
                 message=(
@@ -348,7 +348,7 @@ class PagosViewSet(viewsets.ViewSet):
         elif status_value == PagoRealizado.EstadoVerificacion.CANCELADO:
             create_notification(
                 recipient=paciente_user,
-                branch=payment.cuota.operacion.paciente.sucursal_origen,
+                branch=payment.cuota.operacion.paciente.usuario.sucursal,
                 type=Notification.Type.CLIENT_PAYMENT_CANCELLED,
                 title="Pago cancelado",
                 message=(
@@ -366,7 +366,7 @@ class PagosViewSet(viewsets.ViewSet):
             if old_state != PagoRealizado.EstadoVerificacion.PENDIENTE and old_state is not None:
                 create_notification(
                     recipient=paciente_user,
-                    branch=payment.cuota.operacion.paciente.sucursal_origen,
+                    branch=payment.cuota.operacion.paciente.usuario.sucursal,
                     type=Notification.Type.CLIENT_PAYMENT_PENDING_REVERSION,
                     title="Pago vuelto a pendiente",
                     message=(
