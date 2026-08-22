@@ -37,7 +37,7 @@ class QuotaStatusRulesTests(TestCase):
         self.user = Usuario.objects.create_user(username="paciente.test", password="password123")
         self.customer = Cliente.objects.create(
             usuario=self.user,
-            sucursal_registro=self.branch,
+            sucursal_origen=self.branch,
             fecha_nacimiento=timezone.localdate() - timedelta(days=9000),
             estado_cliente=Cliente.Estado.ACTIVO,
         )

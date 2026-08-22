@@ -609,7 +609,7 @@ class Command(BaseCommand):
                     "segundo_nombre": "",
                     "apellido_materno": "",
                     "telefono": telefono,
-                    "sucursal_registro": branches[branch_key],
+                    "sucursal_origen": branches[branch_key],
                     "estado": Prospecto.Estado.PASAJERO,
                 },
             )
@@ -663,7 +663,7 @@ class Command(BaseCommand):
             cliente, _ = Cliente.objects.update_or_create(
                 usuario=user,
                 defaults={
-                    "sucursal_registro": branch,
+                    "sucursal_origen": branch,
                     "ci": ci,
                     "estado_cliente": Cliente.Estado.INACTIVO,
                     "fecha_nacimiento": fecha_nacimiento,
@@ -679,7 +679,7 @@ class Command(BaseCommand):
                     "segundo_nombre": "",
                     "apellido_materno": "",
                     "telefono": telefono,
-                    "sucursal_registro": branch,
+                    "sucursal_origen": branch,
                     "estado": Prospecto.Estado.PASAJERO,
                 },
             )

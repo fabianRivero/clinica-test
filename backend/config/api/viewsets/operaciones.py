@@ -116,7 +116,7 @@ class OperacionesViewSet(viewsets.ViewSet):
             ).order_by("-created_at")
         )
         if branch:
-            operaciones_qs = operaciones_qs.filter(paciente__sucursal_registro=branch)
+            operaciones_qs = operaciones_qs.filter(paciente__sucursal_origen=branch)
 
         from customers.models import Prospecto
         prospect_appointments_qs = (

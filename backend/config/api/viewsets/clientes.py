@@ -421,8 +421,8 @@ class ClientesViewSet(viewsets.ViewSet):
                 status=400,
             )
 
-        cliente.sucursal_registro = branch
-        cliente.save(update_fields=["sucursal_registro", "updated_at"])
+        cliente.sucursal_origen = branch
+        cliente.save(update_fields=["sucursal_origen", "updated_at"])
 
         return Response({
             "detail": f"Cliente migrado exitosamente a {branch.nombre}.",

@@ -204,11 +204,11 @@ def _branch_deactivation_impact(branch):
         + CitaClienteLibre.objects.filter(sucursal=branch, fecha_hora__gte=now, estado=CitaClienteLibre.Estado.PROGRAMADA).count()
     )
     payments_pending = PagoRealizado.objects.filter(
-        cuota__operacion__paciente__sucursal_registro=branch,
+        cuota__operacion__paciente__sucursal_origen=branch,
         estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
     ).count()
     processes_pending = Operacion.objects.filter(
-        paciente__sucursal_registro=branch
+        paciente__sucursal_origen=branch
     ).exclude(estado=Operacion.Estado.CANCELADA).count()
     return {
         "appointments_pending": appointments_pending,
@@ -2526,10 +2526,10 @@ def admin_dashboard(request):
     )
 
     if branch:
-        operations_qs = operations_qs.filter(paciente__sucursal_registro=branch).distinct()
+        operations_qs = operations_qs.filter(paciente__sucursal_origen=branch).distinct()
         prospectos_qs = prospectos_qs.filter(sucursal_registro=branch)
-        payments_qs = payments_qs.filter(cuota__operacion__paciente__sucursal_registro=branch).distinct()
-        operations_started_qs = operations_started_qs.filter(paciente__sucursal_registro=branch).distinct()
+        payments_qs = payments_qs.filter(cuota__operacion__paciente__sucursal_origen=branch).distinct()
+        operations_started_qs = operations_started_qs.filter(paciente__sucursal_origen=branch).distinct()
 
     pending_payments_count = payments_qs.filter(
         estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE
@@ -2607,7 +2607,7 @@ def admin_dashboard_payments(request):
         # is an unpaid due-today quota), which is the wrong semantics for a
         # "what's coming up to collect" dashboard.
         upcoming_quotas = upcoming_quotas.filter(
-            operacion__paciente__sucursal_registro=branch,
+            operacion__paciente__sucursal_origen=branch,
         ).distinct()
 
     start_of_week = today - timedelta(days=today.weekday())
@@ -2764,7 +2764,7 @@ def admin_clientes_global_search(request):
         return json_response({"clients": []})
 
     # Buscamos en todos los clientes (global)
-    clients_qs = Cliente.objects.select_related("usuario", "sucursal_registro").filter(
+    clients_qs = Cliente.objects.select_related("usuario", "sucursal_origen").filter(
         Q(ci__icontains=query) |
         Q(usuario__primer_nombre__icontains=query) |
         Q(usuario__apellido_paterno__icontains=query) |
@@ -2784,9 +2784,9 @@ def admin_clientes_global_search(request):
                 "name": c.usuario.nombre_completo,
                 "ci": c.ci,
                 "phone": c.telefono,
-                "branchId": c.sucursal_registro_id,
-                "branchName": c.sucursal_registro.nombre if c.sucursal_registro else "Sin sucursal",
-                "cityName": c.sucursal_registro.ciudad if c.sucursal_registro else "Sin ciudad"
+                "branchId": c.sucursal_origen_id,
+                "branchName": c.sucursal_origen.nombre if c.sucursal_origen else "Sin sucursal",
+                "cityName": c.sucursal_origen.ciudad if c.sucursal_origen else "Sin ciudad"
             }
             for c in clients_qs
         ]
@@ -2831,7 +2831,7 @@ def admin_prospectos(request):
         ).order_by("usuario__primer_nombre", "usuario__apellido_paterno")
     )
     if branch:
-        clientes_qs = clientes_qs.filter(sucursal_registro=branch)
+        clientes_qs = clientes_qs.filter(sucursal_origen=branch)
 
     data = {
         "metrics": [
@@ -3754,7 +3754,7 @@ def admin_crear_prospecto(request):
         estado=estado,
         observaciones=observaciones,
         registrado_por=request.user,
-        sucursal_registro=branch,
+        sucursal_origen=branch,
     )
 
     return json_response(
@@ -3789,7 +3789,7 @@ def admin_operaciones(request):
         ).order_by("-created_at")
     )
     if branch:
-        operaciones_qs = operaciones_qs.filter(paciente__sucursal_registro=branch)
+        operaciones_qs = operaciones_qs.filter(paciente__sucursal_origen=branch)
 
     prospect_appointments_qs = CitaProspecto.objects.select_related("prospecto", "sucursal").order_by("-fecha_hora")
     if branch:
@@ -4057,7 +4057,7 @@ def admin_pagos(request):
     if branch:
         # Filtrar por la sucursal activa del cliente/operacion sin depender de citas,
         # para incluir pagos pendientes aunque la operacion aun no tenga agenda.
-        pagos_qs = pagos_qs.filter(cuota__operacion__paciente__sucursal_registro=branch).distinct()
+        pagos_qs = pagos_qs.filter(cuota__operacion__paciente__sucursal_origen=branch).distinct()
     valid_statuses = {choice[0] for choice in PagoRealizado.EstadoVerificacion.choices}
     if status_filter and status_filter in valid_statuses:
         pagos_qs = pagos_qs.filter(estado_verificacion=status_filter)
@@ -4080,7 +4080,7 @@ def admin_pagos(request):
         "operacion__servicio_config__proc_estetico",
     ).prefetch_related("pagos_realizados").filter(fecha_vencimiento__range=(start, end)).order_by("fecha_vencimiento", "nro_cuota")
     if branch:
-        cuotas_qs = cuotas_qs.filter(operacion__paciente__sucursal_registro=branch).distinct()
+        cuotas_qs = cuotas_qs.filter(operacion__paciente__sucursal_origen=branch).distinct()
 
     data = {
         "month": month,
@@ -4209,7 +4209,7 @@ def admin_update_payment_status(request, payment_id):
     if status_value == PagoRealizado.EstadoVerificacion.APROBADO:
         create_notification(
             recipient=paciente_user,
-            branch=payment.cuota.operacion.paciente.sucursal_registro,
+            branch=payment.cuota.operacion.paciente.sucursal_origen,
             type=Notification.Type.CLIENT_PAYMENT_CONFIRMED,
             title="Pago confirmado",
             message=f"El pago de la cuota Nro {nro_cuota} de monto Bs {monto_pago} del procedimiento {procedimiento} fue aprobado.",
@@ -4223,7 +4223,7 @@ def admin_update_payment_status(request, payment_id):
     elif status_value == PagoRealizado.EstadoVerificacion.RECHAZADO:
         create_notification(
             recipient=paciente_user,
-            branch=payment.cuota.operacion.paciente.sucursal_registro,
+            branch=payment.cuota.operacion.paciente.sucursal_origen,
             type=Notification.Type.CLIENT_PAYMENT_REJECTED,
             title="Pago rechazado",
             message=f"El pago de la cuota Nro {nro_cuota} de monto Bs {monto_pago} del procedimiento {procedimiento} fue rechazado.",
@@ -4968,8 +4968,8 @@ def admin_cliente_migrar(request, client_id):
             status=400,
         )
 
-    cliente.sucursal_registro = branch
-    cliente.save(update_fields=["sucursal_registro", "updated_at"])
+    cliente.sucursal_origen = branch
+    cliente.save(update_fields=["sucursal_origen", "updated_at"])
     
     return json_response({
         "detail": f"Cliente migrado exitosamente a {branch.nombre}.",
@@ -6056,7 +6056,7 @@ def admin_report_clients(request):
     branch = get_user_branch(request)
     clientes_qs = _admin_client_queryset()
     if branch:
-        clientes_qs = clientes_qs.filter(sucursal_registro=branch)
+        clientes_qs = clientes_qs.filter(sucursal_origen=branch)
 
     # Stable ordering so the same row set is returned across requests.
     clientes_qs = clientes_qs.order_by(
@@ -6139,7 +6139,7 @@ def admin_report_income(request):
     )
     if branch:
         pagos_qs = pagos_qs.filter(
-            cuota__operacion__paciente__sucursal_registro=branch
+            cuota__operacion__paciente__sucursal_origen=branch
         ).distinct()
 
     rows = [_report_income_row(payment) for payment in pagos_qs[:REPORT_ROW_CAP]]

@@ -63,7 +63,7 @@ class AdminReportEndpointSetupMixin:
         )
         return Cliente.objects.create(
             usuario=usuario,
-            sucursal_registro=branch,
+            sucursal_origen=branch,
             ci=ci,
             fecha_nacimiento=date(1990, 1, 1),
             estado_cliente=estado_cliente,
@@ -74,7 +74,7 @@ class AdminReportEndpointSetupMixin:
             primer_nombre=primer_nombre,
             apellido_paterno=apellido_paterno,
             telefono=telefono,
-            sucursal_registro=branch,
+            sucursal_origen=branch,
         )
 
     def _create_payment(self, *, branch, cliente, fecha_vencimiento, monto):
@@ -272,7 +272,7 @@ class AdminReportClientsTests(AdminReportEndpointSetupMixin, TestCase):
         operacion.citas_medicas.all().delete()
         CitaMedica.objects.create(
             operacion=operacion,
-            sucursal=ana.sucursal_registro,
+            sucursal=ana.sucursal_origen,
             fecha_hora=future,
         )
 
@@ -327,7 +327,7 @@ class AdminReportClientsTests(AdminReportEndpointSetupMixin, TestCase):
         clientes = [
             Cliente(
                 usuario_id=usuario.pk,
-                sucursal_registro=self.branch_b,
+                sucursal_origen=self.branch_b,
                 ci=f"9{i:04d}",
                 fecha_nacimiento=date(1990, 1, 1),
                 estado_cliente=Cliente.Estado.ACTIVO,
@@ -499,7 +499,7 @@ class AdminReportIncomeTests(AdminReportEndpointSetupMixin, TestCase):
         clientes = [
             Cliente(
                 usuario_id=usuario.pk,
-                sucursal_registro=self.branch_b,
+                sucursal_origen=self.branch_b,
                 ci=f"5{i:04d}",
                 fecha_nacimiento=date(1990, 1, 1),
                 estado_cliente=Cliente.Estado.ACTIVO,

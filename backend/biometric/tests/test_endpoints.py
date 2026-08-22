@@ -89,7 +89,7 @@ class BiometricEndpointBase(TestCase):
         cls.cliente = Cliente.objects.create(
             usuario=cls.cliente_usuario,
             fecha_nacimiento=cls.cliente_usuario.fecha_nacimiento,
-            sucursal_registro=cls.sucursal_a,
+            sucursal_origen=cls.sucursal_a,
         )
 
         cls.tipo_servicio = TipoServicio.objects.create(tipo="Consulta bio")

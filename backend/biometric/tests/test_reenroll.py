@@ -78,7 +78,7 @@ def _make_cliente(sucursal, username="cliente_reenroll"):
     user.save()
     cliente, _ = Cliente.objects.get_or_create(
         usuario=user,
-        defaults={"sucursal_registro": sucursal, "estado_cliente": "ACTIVO", "fecha_nacimiento": "1990-01-01"},
+        defaults={"sucursal_origen": sucursal, "estado_cliente": "ACTIVO", "fecha_nacimiento": "1990-01-01"},
     )
     return cliente
 

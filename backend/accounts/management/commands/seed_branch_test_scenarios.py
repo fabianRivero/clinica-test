@@ -119,7 +119,7 @@ class Command(BaseCommand):
                     "segundo_nombre": segundo_nombre,
                     "apellido_paterno": apellido_paterno,
                     "apellido_materno": apellido_materno,
-                    "sucursal_registro": branch,
+                    "sucursal_origen": branch,
                     "estado": Prospecto.Estado.PASAJERO,
                     "observaciones": "Escenario local multi-sucursal.",
                 },
@@ -272,7 +272,7 @@ class Command(BaseCommand):
         cliente, _ = Cliente.objects.update_or_create(
             usuario=user,
             defaults={
-                "sucursal_registro": branch,
+                "sucursal_origen": branch,
                 "telefono": phone,
                 "ci": ci,
                 "direccion_domicilio": f"Direccion demo {branch.nombre}",
