@@ -421,8 +421,12 @@ class ClientesViewSet(viewsets.ViewSet):
                 status=400,
             )
 
-        cliente.sucursal_origen = branch
-        cliente.save(update_fields=["sucursal_origen", "updated_at"])
+        # Update Usuario.sucursal_id (the operational branch). The
+        # origin branch (Cliente.sucursal_origen) stays untouched: a
+        # migrate only changes where the client is currently served
+        # from, not where they were born.
+        cliente.usuario.sucursal = branch
+        cliente.usuario.save(update_fields=["sucursal", "updated_at"])
 
         return Response({
             "detail": f"Cliente migrado exitosamente a {branch.nombre}.",
