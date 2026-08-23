@@ -142,7 +142,7 @@ export function AdminProspectCreatePage() {
       >
         <form className="form-grid" onSubmit={handleSubmit}>
           <label className="field">
-            <span>Primer nombre</span>
+            <span>Primer nombre <abbr title="obligatorio" className="required-mark">*</abbr></span>
             <input
               className="input"
               name="primerNombre"
@@ -165,7 +165,7 @@ export function AdminProspectCreatePage() {
           </label>
 
           <label className="field">
-            <span>Apellido paterno</span>
+            <span>Apellido paterno <abbr title="obligatorio" className="required-mark">*</abbr></span>
             <input
               className="input"
               name="apellidoPaterno"
