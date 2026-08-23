@@ -16,6 +16,11 @@ from config.admin_availability_views import (
     admin_check_concurrency,
     admin_get_branches,
 )
+from accounts.views import (
+    usuario_recovery_detail,
+    usuario_recovery_reset,
+    usuario_recovery_search,
+)
 from config.api_views import (
     admin_actualizar_especialista,
     admin_catalogo_actualizar,
@@ -403,6 +408,21 @@ urlpatterns = [
         "equipo/<int:user_id>/cambiar-sucursal/",
         admin_equipo_cambiar_sucursal,
         name="admin-equipo-change-branch-api",
+    ),
+    path(
+        "usuarios/buscar/",
+        usuario_recovery_search,
+        name="admin-usuarios-buscar-api",
+    ),
+    path(
+        "usuarios/<int:user_id>/",
+        usuario_recovery_detail,
+        name="admin-usuarios-detail-api",
+    ),
+    path(
+        "usuarios/<int:user_id>/reset-password/",
+        usuario_recovery_reset,
+        name="admin-usuarios-reset-api",
     ),
     path("", include(free_medical_router.urls)),
     path("", include(clientes_router.urls)),

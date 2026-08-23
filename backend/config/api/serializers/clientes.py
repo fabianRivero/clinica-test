@@ -30,7 +30,7 @@ class ClientSearchSerializer(serializers.Serializer):
     name = serializers.SerializerMethodField()
     ci = serializers.CharField()
     phone = serializers.SerializerMethodField()
-    branchId = serializers.IntegerField(source="sucursal_registro_id")
+    branchId = serializers.IntegerField(source="usuario.sucursal_id")
     branchName = serializers.SerializerMethodField()
     cityName = serializers.SerializerMethodField()
 
@@ -41,10 +41,10 @@ class ClientSearchSerializer(serializers.Serializer):
         return obj.telefono or "Sin teléfono"
 
     def get_branchName(self, obj):
-        return obj.sucursal_registro.nombre if obj.sucursal_registro else "Sin sucursal"
+        return obj.usuario.sucursal.nombre if obj.usuario.sucursal else "Sin sucursal"
 
     def get_cityName(self, obj):
-        return obj.sucursal_registro.ciudad if obj.sucursal_registro else "Sin ciudad"
+        return obj.usuario.sucursal.ciudad if obj.usuario.sucursal else "Sin ciudad"
 
 
 # =============================================================================

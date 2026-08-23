@@ -14,6 +14,9 @@ import type {
   AdminClientInactivateResponse,
   AdminClientReservationAvailabilityResponse,
   AdminProspectMedicalAvailabilityResponse,
+  AdminUserRecoveryDetail,
+  AdminUserRecoveryResetResponse,
+  AdminUserRecoverySearchResponse,
   BackupListResponse,
   CancelAdminProspectMedicalAppointmentResponse,
   CatalogsResponse,
@@ -900,6 +903,34 @@ export async function changeAdminStaffBranch(userId: string | number, branchId: 
   return requestJsonWithBody<{ detail: string; branch: { id: number; name: string } }>(
     `/api/admin/equipo/${userId}/cambiar-sucursal/`,
     { branchId }
+  )
+}
+
+// --- Admin User Recovery ---
+// Helper endpoints backing /cms/equipo/recuperar. Branch scoping is
+// enforced server-side: branch admins only see users from their own
+// branch. The reset endpoint returns a temporary password that the
+// admin must hand to the user out-of-band.
+
+export function searchAdminUserRecovery(query: string) {
+  const params = new URLSearchParams()
+  if (query.trim()) params.set('q', query.trim())
+  const qs = params.toString()
+  return requestJson<AdminUserRecoverySearchResponse>(
+    `/api/admin/usuarios/buscar/${qs ? `?${qs}` : ''}`,
+  )
+}
+
+export function getAdminUserRecoveryDetail(userId: number) {
+  return requestJson<AdminUserRecoveryDetail>(
+    `/api/admin/usuarios/${userId}/`,
+  )
+}
+
+export function postAdminUserRecoveryReset(userId: number) {
+  return requestJsonWithBody<AdminUserRecoveryResetResponse>(
+    `/api/admin/usuarios/${userId}/reset-password/`,
+    {},
   )
 }
 

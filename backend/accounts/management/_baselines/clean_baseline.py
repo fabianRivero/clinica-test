@@ -710,6 +710,7 @@ def seed_formal_patients(role, branches):
                 "direccion_domicilio": address,
                 "fecha_nacimiento": dob,
                 "estado_cliente": Cliente.Estado.INACTIVO,
+                "sucursal_origen": branches[branch_key],
             },
         )
         out.append(cliente)

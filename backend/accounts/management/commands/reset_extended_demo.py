@@ -663,7 +663,7 @@ class Command(BaseCommand):
             cliente, _ = Cliente.objects.update_or_create(
                 usuario=user,
                 defaults={
-                    "sucursal_registro": branch,
+                    "sucursal_origen": branch,
                     "ci": ci,
                     "estado_cliente": Cliente.Estado.INACTIVO,
                     "fecha_nacimiento": fecha_nacimiento,

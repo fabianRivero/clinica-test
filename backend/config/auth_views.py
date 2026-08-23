@@ -1,7 +1,12 @@
 import json
 import logging
 
-from django.contrib.auth import authenticate, login as django_login, logout as django_logout
+from django.contrib.auth import (
+    authenticate,
+    login as django_login,
+    logout as django_logout,
+    update_session_auth_hash,
+)
 from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
@@ -40,6 +45,7 @@ def _serialize_user(user):
         "isClient": bool(user.es_cliente),
         "branchId": user.sucursal_id,
         "branchName": user.sucursal.nombre if user.sucursal else "",
+        "mustChangePassword": user.must_change_password,
     }
 
 
@@ -93,7 +99,16 @@ def auth_me(request):
 
             if payload.get("password"):
                 user.set_password(payload["password"])
-                request.session.cycle_key()
+                user.must_change_password = False
+                # Use update_session_auth_hash rather than a raw
+                # cycle_key(): the helper also refreshes the
+                # session's stored auth_hash to match the new
+                # password, otherwise Django's get_user() detects
+                # the mismatch on the next request, calls
+                # request.session.flush(), and turns the user into
+                # AnonymousUser — which is why the FE used to see a
+                # 401 on every PATCH that updated the password.
+                update_session_auth_hash(request, user)
 
             user.save()
 

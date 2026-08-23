@@ -48,7 +48,7 @@ class ClientePortalTabletUnderSuspensionTests(TestCase):
         self.cliente = Cliente.objects.create(
             usuario=self.client_user,
             fecha_nacimiento=timezone.localdate(),
-            sucursal_registro=self.sucursal,
+            sucursal_origen=self.sucursal,
         )
         self.operacion = Operacion.objects.create(
             paciente=self.cliente,

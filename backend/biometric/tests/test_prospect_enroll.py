@@ -286,7 +286,7 @@ class HuellaCheckConstraintTests(TestCase):
         cls.cliente = Cliente.objects.create(
             usuario=cls.cliente_user,
             fecha_nacimiento=cls.cliente_user.fecha_nacimiento,
-            sucursal_registro=cls.sucursal,
+            sucursal_origen=cls.sucursal,
         )
         cls.prospecto = Prospecto.objects.create(
             primer_nombre="Pr",
@@ -382,7 +382,7 @@ class FinalizeAttachesProspectHuellaTests(TestCase):
         cls.cliente = Cliente.objects.create(
             usuario=cls.cliente_user,
             fecha_nacimiento=cls.cliente_user.fecha_nacimiento,
-            sucursal_registro=cls.sucursal,
+            sucursal_origen=cls.sucursal,
         )
 
     def test_finalize_attaches_prospect_huella_to_new_cliente(self):

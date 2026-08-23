@@ -15,6 +15,12 @@ export type AuthUser = {
   isClient: boolean
   branchId: number | null
   branchName: string
+  /**
+   * Set by the admin-assisted password reset flow. When true, the
+   * user must pick a new password before accessing any feature
+   * besides the change-password modal.
+   */
+  mustChangePassword: boolean
 }
 
 export type AuthResponse = {

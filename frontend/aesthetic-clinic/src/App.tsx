@@ -37,6 +37,8 @@ import { AdminReportProspectsPage } from './pages/admin/reports/AdminReportProsp
 import { AdminReportIncomePage } from './pages/admin/reports/AdminReportIncomePage'
 import { AdminReportExpensesPage } from './pages/admin/reports/AdminReportExpensesPage'
 import { AdminStaffCreatePage, AdminStaffManagePage } from './pages/admin/AdminStaffPage'
+import { AdminUserRecoveryPage } from './pages/admin/AdminUserRecoveryPage'
+import { ForcePasswordChange } from './components/profile/ForcePasswordChange'
 import { AdminBackupsPage } from './pages/admin/backups/AdminBackupsPage'
 import { AdminBranchesPage } from './pages/admin/AdminBranchesPage'
 import { AdminBranchHistoryPage } from './pages/admin/AdminBranchHistoryPage'
@@ -116,12 +118,13 @@ function RequireRole({ allowedRoles }: { allowedRoles: RoleKey[] }) {
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<RootRedirect />} />
-      <Route path="/login" element={<LoginRoute />} />
-      <Route path="/tablet" element={<TabletKioskPage />} />
+    <>
+      <Routes>
+        <Route path="/" element={<RootRedirect />} />
+        <Route path="/login" element={<LoginRoute />} />
+        <Route path="/tablet" element={<TabletKioskPage />} />
 
-      <Route element={<RequireRole allowedRoles={['ADMINISTRADOR']} />}>
+        <Route element={<RequireRole allowedRoles={['ADMINISTRADOR']} />}>
         <Route path="/cms" element={<AdminLayout />}>
           <Route index element={<AdminDashboardPage />} />
           <Route path="prospectos" element={<AdminProspectsPage />} />
@@ -177,6 +180,7 @@ function App() {
           <Route path="equipo/admin-sucursal/crear" element={<AdminBranchAdminsPage view="create" />} />
           <Route path="equipo/admin-sucursal/gestionar" element={<AdminBranchAdminsPage view="manage" />} />
           <Route path="equipo/admin-sucursal/:userId" element={<AdminBranchAdminDetailPage />} />
+          <Route path="equipo/recuperar" element={<AdminUserRecoveryPage />} />
           <Route path="notificaciones" element={<NotificationsPage />} />
           <Route path="sucursales" element={<Navigate to="/cms/sucursales/editar" replace />} />
           <Route path="sucursales/editar" element={<AdminBranchesPage view="edit" />} />
@@ -207,6 +211,8 @@ function App() {
       </Route>
       <Route path="*" element={<RootRedirect />} />
     </Routes>
+    <ForcePasswordChange />
+    </>
   )
 }
 

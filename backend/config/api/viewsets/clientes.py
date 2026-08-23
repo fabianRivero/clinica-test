@@ -54,9 +54,9 @@ def _client_item(cliente):
         "name": full_name(cliente.usuario),
         "ci": cliente.ci or "Sin CI",
         "phone": cliente.telefono or "Sin teléfono",
-        "branchId": cliente.sucursal_registro_id,
-        "branchName": cliente.sucursal_registro.nombre if cliente.sucursal_registro else "Sin sucursal",
-        "cityName": cliente.sucursal_registro.ciudad if cliente.sucursal_registro else "Sin ciudad",
+        "branchId": cliente.usuario.sucursal_id,
+        "branchName": cliente.usuario.sucursal.nombre if cliente.usuario.sucursal else "Sin sucursal",
+        "cityName": cliente.usuario.sucursal.ciudad if cliente.usuario.sucursal else "Sin ciudad",
     }
 
 
@@ -266,7 +266,7 @@ class ClientesViewSet(viewsets.ViewSet):
             return Response({"clients": []})
 
         clients_qs = (
-            Cliente.objects.select_related("usuario", "sucursal_registro")
+            Cliente.objects.select_related("usuario", "sucursal_origen")
             .filter(
                 Q(ci__icontains=query)
                 | Q(usuario__primer_nombre__icontains=query)
@@ -421,8 +421,12 @@ class ClientesViewSet(viewsets.ViewSet):
                 status=400,
             )
 
-        cliente.sucursal_registro = branch
-        cliente.save(update_fields=["sucursal_registro", "updated_at"])
+        # Update Usuario.sucursal_id (the operational branch). The
+        # origin branch (Cliente.sucursal_origen) stays untouched: a
+        # migrate only changes where the client is currently served
+        # from, not where they were born.
+        cliente.usuario.sucursal = branch
+        cliente.usuario.save(update_fields=["sucursal", "updated_at"])
 
         return Response({
             "detail": f"Cliente migrado exitosamente a {branch.nombre}.",

@@ -39,6 +39,14 @@ class Usuario(AbstractUser, TimeStampedModel):
         null=True,
         blank=True,
     )
+    must_change_password = models.BooleanField(
+        default=False,
+        help_text=(
+            "Flag set by admin-assisted password recovery to force the user "
+            "to set a new password on next login. Reset by the change-password "
+            "flow once the user picks a new password."
+        ),
+    )
 
     class Meta:
         db_table = "usuarios"

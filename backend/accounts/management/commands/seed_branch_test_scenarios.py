@@ -272,7 +272,7 @@ class Command(BaseCommand):
         cliente, _ = Cliente.objects.update_or_create(
             usuario=user,
             defaults={
-                "sucursal_registro": branch,
+                "sucursal_origen": branch,
                 "telefono": phone,
                 "ci": ci,
                 "direccion_domicilio": f"Direccion demo {branch.nombre}",

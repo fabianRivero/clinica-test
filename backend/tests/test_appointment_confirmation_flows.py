@@ -29,7 +29,10 @@ class AppointmentConfirmationFlowTests(TestCase):
             rol=self.rol_cliente,
             sucursal=self.sucursal,
         )
-        self.cliente = Cliente.objects.create(usuario=self.client_user)
+        self.cliente = Cliente.objects.create(
+            usuario=self.client_user,
+            sucursal_origen=self.sucursal,
+        )
         self.operacion = Operacion.objects.create(
             paciente=self.cliente,
             servicio_config=servicio,

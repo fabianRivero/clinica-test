@@ -786,6 +786,56 @@ export type AdminCancelAppointmentResponse = {
   appointment: ClientScheduledAppointment
 }
 
+// --- Admin User Recovery (assistant for forgotten username/password) ---
+// Shapes returned by `/api/admin/usuarios/*` endpoints. The search endpoint
+// returns the same `AdminUserRecoveryItem` shape as the detail endpoint,
+// plus a wrapper envelope. The reset endpoint returns the temporary
+// password plus a slim `user` subshape (the full payload is not echoed
+// back to keep the response surface narrow after a security-sensitive op).
+
+export type AdminUserRecoveryKind =
+  | 'admin_principal'
+  | 'admin_sucursal'
+  | 'trabajador'
+  | 'cliente'
+  | 'otro'
+
+export type AdminUserRecoveryItem = {
+  id: number
+  username: string
+  fullName: string
+  rol: string
+  kind: AdminUserRecoveryKind
+  email: string
+  telefono: string
+  ci: string
+  sucursal: string
+  sucursalId: number | null
+  isActive: boolean
+  mustChangePassword: boolean
+}
+
+export type AdminUserRecoveryDetail = AdminUserRecoveryItem & {
+  createdAt: string | null
+  lastLogin: string | null
+}
+
+export type AdminUserRecoverySearchResponse = {
+  users: AdminUserRecoveryItem[]
+}
+
+export type AdminUserRecoveryResetResponse = {
+  detail: string
+  user: {
+    id: number
+    username: string
+    fullName: string
+  }
+  temporaryPassword: string
+  mustChangePassword: boolean
+  sessionInvalidated: boolean
+}
+
 // --- Admin Database Backups ---
 // Shapes returned by the `/api/admin/backups/*` endpoints. The list endpoint
 // returns `{ results: BackupFile[] }`; the trigger endpoint streams the dump
