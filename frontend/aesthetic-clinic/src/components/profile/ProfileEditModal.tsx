@@ -12,6 +12,7 @@ type Props = {
 export function ProfileEditModal({ isOpen, onClose }: Props) {
   const { user, updateProfile } = useAuth()
   const { showNotification } = useNotifications()
+  const isReadOnly = user?.isClient ?? false
   const [form, setForm] = useState<ProfileUpdatePayload>({
     username: '',
     email: '',
@@ -103,7 +104,7 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
     <div className="booking-modal-overlay" onClick={onClose}>
       <div className="booking-modal-content" onClick={(e) => e.stopPropagation()}>
         <header className="booking-modal-header">
-          <h2>Editar perfil</h2>
+          <h2>{isReadOnly ? 'Mi perfil' : 'Editar perfil'}</h2>
           <button type="button" className="booking-modal-close" onClick={onClose}>
             ✕
           </button>
@@ -117,6 +118,7 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
                 name="username"
                 value={form.username}
                 onChange={handleChange}
+                readOnly={isReadOnly}
                 aria-invalid={usernameError ? true : undefined}
               />
               {usernameError && <small className="field__error">{usernameError}</small>}
@@ -129,6 +131,7 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
                 type="email"
                 value={form.email}
                 onChange={handleChange}
+                readOnly={isReadOnly}
               />
             </label>
             <label className="field">
@@ -139,27 +142,37 @@ export function ProfileEditModal({ isOpen, onClose }: Props) {
                 type="tel"
                 value={form.telefono}
                 onChange={handleChange}
+                readOnly={isReadOnly}
               />
             </label>
-            <label className="field">
-              <span>Nueva contraseña</span>
-              <input
-                className="input"
-                name="password"
-                type="password"
-                value={form.password}
-                onChange={handleChange}
-                placeholder="Dejar en blanco para no cambiar"
-              />
-            </label>
+            {!isReadOnly ? (
+              <label className="field">
+                <span>Nueva contraseña</span>
+                <input
+                  className="input"
+                  name="password"
+                  type="password"
+                  value={form.password}
+                  onChange={handleChange}
+                  placeholder="Dejar en blanco para no cambiar"
+                />
+              </label>
+            ) : null}
             {error && <p className="field__error _col-full">{error}</p>}
+            {isReadOnly ? (
+              <p className="field__hint _col-full">
+                Tus datos personales los gestiona la clínica. Si necesitas modificar algo, contacta al administrador.
+              </p>
+            ) : null}
             <div className="form-actions field--full">
               <button className="button button--ghost" type="button" onClick={onClose}>
-                Cancelar
+                {isReadOnly ? 'Cerrar' : 'Cancelar'}
               </button>
-              <button className="button" type="submit" disabled={isSaving}>
-                {isSaving ? 'Guardando...' : 'Guardar cambios'}
-              </button>
+              {!isReadOnly ? (
+                <button className="button" type="submit" disabled={isSaving}>
+                  {isSaving ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              ) : null}
             </div>
           </form>
         </div>
