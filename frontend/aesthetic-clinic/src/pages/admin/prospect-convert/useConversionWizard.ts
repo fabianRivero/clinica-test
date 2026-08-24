@@ -265,15 +265,17 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
   const handleUserChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (!userForm) return
     const { name, value } = event.target
-    const prevCi = userForm.ci
     const nextForm = { ...userForm, [name]: name === 'nroHijos' ? Number(value || 0) : value }
 
-    // CI path: when the admin first fills the CI we use it as username/password
-    // seed (legacy behaviour preserved). Only fires on empty→non-empty.
-    if (name === 'ci' && !prevCi && value) {
-      if (!userForm.username) nextForm.username = value
-      if (!password) setPassword(value)
-      if (!confirmPassword) setConfirmPassword(value)
+    // CI path: username + password + confirm-password mirror the current CI
+    // value on every keystroke. When the admin clears the CI we clear the
+    // three dependents so they don't keep stale values from a previous CI.
+    // Manual edits inside those fields are intentionally overwritten on the
+    // next CI change (single source of truth: the CI input).
+    if (name === 'ci') {
+      nextForm.username = value
+      setPassword(value)
+      setConfirmPassword(value)
     }
 
     // Name path: when either primerNombre or apellidoPaterno transitions from
