@@ -70,7 +70,7 @@ export function ConversionStepUser({
         {fieldErrors.ci ? <small className="field__error">{fieldErrors.ci}</small> : null}
       </label>
       <label className="field">
-        <span>Nombre de usuario</span>
+        <span>Nombre de usuario <abbr title="obligatorio" className="required-mark">*</abbr></span>
         <input className="input" name="username" value={userForm.username} onChange={onUserChange} />
         {fieldErrors.username ? <small className="field__error">{fieldErrors.username}</small> : null}
       </label>

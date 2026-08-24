@@ -245,16 +245,54 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     setFieldErrors({})
   }
 
+  /**
+   * Build a slug-safe username from the prospecto's first + last name when
+   * the prospect has no CI. The admin can still edit the input manually
+   * — this only seeds an empty field on the empty→non-empty transition of
+   * `primerNombre` or `apellidoPaterno`.
+   *
+   * Strips accents (NFD → drop combining marks), lowercases, and replaces
+   * any run of non-`[a-z0-9._@+-]` characters with `_`. Trims leading
+   * and trailing underscores so the value never starts or ends with a
+   * separator.
+   */
+  const buildUsernameFromName = (firstName: string, lastName: string) => {
+    const combined = `${firstName}${lastName}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    const slug = combined.replace(/[^a-z0-9._@+-]+/g, '_').replace(/^_+|_+$/g, '')
+    return slug
+  }
+
   const handleUserChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (!userForm) return
     const { name, value } = event.target
     const prevCi = userForm.ci
     const nextForm = { ...userForm, [name]: name === 'nroHijos' ? Number(value || 0) : value }
 
+    // CI path: when the admin first fills the CI we use it as username/password
+    // seed (legacy behaviour preserved). Only fires on empty→non-empty.
     if (name === 'ci' && !prevCi && value) {
       if (!userForm.username) nextForm.username = value
       if (!password) setPassword(value)
       if (!confirmPassword) setConfirmPassword(value)
+    }
+
+    // Name path: when either primerNombre or apellidoPaterno transitions from
+    // empty to non-empty AND both name parts are now filled AND no CI was
+    // provided AND username is still empty, seed username with the slug.
+    // Re-fires on each empty→non-empty so filling apellidoPaterno last
+    // produces the final value (the primerNombre→apellidoPaterno transition
+    // is what triggers it once both fields are populated).
+    if ((name === 'primerNombre' || name === 'apellidoPaterno') && value && !userForm.ci && !userForm.username) {
+      const prevFirst = userForm.primerNombre
+      const prevLast = userForm.apellidoPaterno
+      const transitioned =
+        (name === 'primerNombre' && !prevFirst) ||
+        (name === 'apellidoPaterno' && !prevLast)
+      const nextFirst = nextForm.primerNombre
+      const nextLast = nextForm.apellidoPaterno
+      if (transitioned && nextFirst && nextLast) {
+        nextForm.username = buildUsernameFromName(nextFirst, nextLast)
+      }
     }
 
     setUserForm(nextForm)
