@@ -256,23 +256,43 @@ class ClientesViewSet(viewsets.ViewSet):
     @action(detail=False, url_path="buscar-global", permission_classes=[])
     def buscar_global(self, request):
         """
-        GET /clientes/buscar-global/?q=<query>
-        Global client search — PUBLIC endpoint, no auth required.
-        Returns max 10 clients matching CI, name, or username.
-        Excludes clients with scheduled future appointments.
+        GET /clientes/buscar-global/?name=&ci=&phone=&email=&code=
+        Per-field client search — PUBLIC endpoint, no auth required.
+        Each non-empty value is tokenized on whitespace and AND-matched with
+        icontains per token; results are AND-composed across fields; capped at
+        10 distinct rows; excludes clients with future scheduled appointments.
         """
-        query = (request.query_params.get("q") or "").strip()
-        if len(query) < 3:
+        q_name = (request.query_params.get("name") or "").strip()
+        q_ci = (request.query_params.get("ci") or "").strip()
+        q_phone = (request.query_params.get("phone") or "").strip()
+        q_email = (request.query_params.get("email") or "").strip()
+        q_code = (request.query_params.get("code") or "").strip()
+
+        if not any([q_name, q_ci, q_phone, q_email, q_code]):
             return Response({"clients": []})
+
+        filters = Q()
+        if q_name:
+            for token in q_name.split():
+                filters &= (
+                    Q(usuario__primer_nombre__icontains=token)
+                    | Q(usuario__segundo_nombre__icontains=token)
+                    | Q(usuario__apellido_paterno__icontains=token)
+                    | Q(usuario__apellido_materno__icontains=token)
+                    | Q(usuario__username__icontains=token)
+                )
+        if q_ci:
+            filters &= Q(ci__icontains=q_ci)
+        if q_phone:
+            filters &= Q(telefono__icontains=q_phone)
+        if q_email:
+            filters &= Q(usuario__email__icontains=q_email)
+        if q_code:
+            filters &= Q(cliente_codigo__icontains=q_code)
 
         clients_qs = (
             Cliente.objects.select_related("usuario", "sucursal_origen")
-            .filter(
-                Q(ci__icontains=query)
-                | Q(usuario__primer_nombre__icontains=query)
-                | Q(usuario__apellido_paterno__icontains=query)
-                | Q(usuario__username__icontains=query)
-            )
+            .filter(filters)
             .exclude(
                 operaciones__citas_medicas__estado=CitaMedica.Estado.PROGRAMADA,
                 operaciones__citas_medicas__fecha_hora__gte=timezone.now(),

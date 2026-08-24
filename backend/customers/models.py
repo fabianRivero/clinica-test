@@ -1,8 +1,18 @@
+import secrets
+import string
+
 from django.conf import settings
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
 from common.models import TimeStampedModel
+
+# Alphabet for ``Cliente.cliente_codigo``. Excludes ``I``, ``L`` and ``O`` to
+# avoid visual ambiguity with ``1``, ``1`` and ``0`` when codes are read back
+# from printed forms or transcribed over the phone.
+_CLIENTE_CODIGO_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+_CLIENTE_CODIGO_SUFFIX_LEN = 6
+_CLIENTE_CODIGO_MAX_RETRIES = 8
 
 
 class Prospecto(TimeStampedModel):
@@ -150,6 +160,15 @@ class Cliente(TimeStampedModel):
         ),
     )
     ci = models.CharField(max_length=30, blank=True)
+    cliente_codigo = models.CharField(
+        max_length=12,
+        unique=True,
+        blank=True,
+        help_text=(
+            "Identificador universal del cliente en formato CLI-XXXXXX. "
+            "Se asigna automaticamente al guardar si esta vacio."
+        ),
+    )
     estado_cliente = models.CharField(
         max_length=20,
         choices=Estado.choices,
@@ -231,6 +250,36 @@ class Cliente(TimeStampedModel):
 
     def __str__(self):
         return self.usuario.nombre_completo
+
+    @staticmethod
+    def _generar_codigo_unico():
+        """Return a fresh ``CLI-XXXXXX`` codigo using the non-ambiguous
+        alphabet. Uniqueness is enforced by the DB-level ``unique=True``
+        constraint on the field; ``save()`` retries on ``IntegrityError``
+        so transient collisions never bubble up to callers.
+        """
+        suffix = "".join(
+            secrets.choice(_CLIENTE_CODIGO_ALPHABET)
+            for _ in range(_CLIENTE_CODIGO_SUFFIX_LEN)
+        )
+        return f"CLI-{suffix}"
+
+    def save(self, *args, **kwargs):
+        if not self.cliente_codigo:
+            for _attempt in range(_CLIENTE_CODIGO_MAX_RETRIES):
+                self.cliente_codigo = self._generar_codigo_unico()
+                try:
+                    with transaction.atomic():
+                        super().save(*args, **kwargs)
+                    return
+                except IntegrityError:
+                    self.cliente_codigo = ""
+                    continue
+            # All retries collided; let the DB error propagate so the caller
+            # sees the real failure rather than a silent stub.
+            super().save(*args, **kwargs)
+            return
+        super().save(*args, **kwargs)
 
 
 class HuellaBiometricaCliente(TimeStampedModel):

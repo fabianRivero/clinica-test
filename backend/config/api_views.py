@@ -643,6 +643,8 @@ def _client_item(cliente):
         "name": full_name(cliente.usuario),
         "phone": cliente.telefono or "Sin teléfono",
         "ci": cliente.ci or "Sin CI",
+        "email": cliente.usuario.email or "",
+        "clienteCodigo": cliente.cliente_codigo,
         "status": cliente.get_estado_cliente_display(),
         "activeOperations": cliente.operaciones.filter(estado=Operacion.Estado.EN_PROCESO).count(),
         "totalOperations": cliente.operaciones.count(),

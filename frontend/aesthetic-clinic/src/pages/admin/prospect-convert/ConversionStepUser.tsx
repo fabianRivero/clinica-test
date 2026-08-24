@@ -64,8 +64,9 @@ export function ConversionStepUser({
         <input className="input" name="apellidoMaterno" value={userForm.apellidoMaterno} onChange={onUserChange} />
       </label>
       <label className="field">
-        <span>CI <abbr title="obligatorio" className="required-mark">*</abbr></span>
+        <span>CI <small className="field__hint">(opcional)</small></span>
         <input className="input" name="ci" value={userForm.ci} onChange={onUserChange} />
+        <small className="field__hint">Si el cliente no recuerda su CI, podés dejarlo vacío. Se le asignará un código único al guardar.</small>
         {fieldErrors.ci ? <small className="field__error">{fieldErrors.ci}</small> : null}
       </label>
       <label className="field">

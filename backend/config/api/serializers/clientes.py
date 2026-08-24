@@ -30,6 +30,8 @@ class ClientSearchSerializer(serializers.Serializer):
     name = serializers.SerializerMethodField()
     ci = serializers.CharField()
     phone = serializers.SerializerMethodField()
+    email = serializers.CharField(source="usuario.email", default="")
+    clienteCodigo = serializers.CharField(default="")
     branchId = serializers.IntegerField(source="usuario.sucursal_id")
     branchName = serializers.SerializerMethodField()
     cityName = serializers.SerializerMethodField()

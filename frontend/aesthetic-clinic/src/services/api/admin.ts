@@ -627,9 +627,31 @@ export function getAdminProspectConversion(prospectId: string) {
   return requestJson<ProspectConversionResponse>(`/api/admin/prospectos/${prospectId}/conversion/`)
 }
 
-export function searchAdminClientsGlobal(query: string) {
-  return requestJson<{ clients: Array<{ id: number; name: string; ci: string; phone: string; branchName: string; cityName: string }> }>(
-    `/api/admin/clientes/buscar-global/?q=${encodeURIComponent(query)}`
+export function searchAdminClientsGlobal(filters: {
+  name?: string
+  ci?: string
+  phone?: string
+  email?: string
+  code?: string
+}) {
+  const params = new URLSearchParams()
+  if (filters.name) params.set('name', filters.name)
+  if (filters.ci) params.set('ci', filters.ci)
+  if (filters.phone) params.set('phone', filters.phone)
+  if (filters.email) params.set('email', filters.email)
+  if (filters.code) params.set('code', filters.code)
+
+  return requestJson<{ clients: Array<{
+    id: number
+    name: string
+    ci: string
+    phone: string
+    email?: string
+    clienteCodigo?: string
+    branchName: string
+    cityName: string
+  }> }>(
+    `/api/admin/clientes/buscar-global/?${params.toString()}`
   )
 }
 

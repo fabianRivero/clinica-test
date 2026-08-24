@@ -613,9 +613,13 @@ class UserImportSearchTests(TestCase):
             fecha_nacimiento=date(1990, 1, 1),
         )
 
-    def _search(self, query):
+    def _search(self, query, **extra):
         self.client.force_login(self.main_admin)
-        response = self.client.get(f"/api/admin/clientes/buscar-global/?q={query}")
+        params = {"name": query, **extra}
+        response = self.client.get(
+            "/api/admin/clientes/buscar-global/",
+            data=params,
+        )
         self.client.logout()
         return response
 

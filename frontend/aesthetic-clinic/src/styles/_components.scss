@@ -340,6 +340,19 @@
   }
 }
 
+.form-grid--five {
+  display: grid;
+  gap: var(--spacing-4);
+
+  @include respond(md) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  @include respond(lg) {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
 .form-actions {
   display: flex;
   flex-wrap: wrap;

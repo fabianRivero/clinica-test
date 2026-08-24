@@ -248,18 +248,13 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
   const handleUserChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (!userForm) return
     const { name, value } = event.target
+    const prevCi = userForm.ci
     const nextForm = { ...userForm, [name]: name === 'nroHijos' ? Number(value || 0) : value }
 
-    if (name === 'ci') {
-      if (!userForm.username || userForm.username === userForm.ci) {
-        nextForm.username = value
-      }
-      if (!password || password === userForm.ci) {
-        setPassword(value)
-      }
-      if (!confirmPassword || confirmPassword === userForm.ci) {
-        setConfirmPassword(value)
-      }
+    if (name === 'ci' && !prevCi && value) {
+      if (!userForm.username) nextForm.username = value
+      if (!password) setPassword(value)
+      if (!confirmPassword) setConfirmPassword(value)
     }
 
     setUserForm(nextForm)

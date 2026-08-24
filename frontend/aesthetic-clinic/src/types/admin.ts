@@ -302,6 +302,8 @@ export type ClientSnapshot = {
   lastAnalysis: string
   scheduledAppointments: ClientScheduledAppointment[]
   hasBiometricEnrollment?: boolean
+  email?: string
+  clienteCodigo?: string
 }
 
 export type ClientScheduledAppointment = {
