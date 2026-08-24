@@ -934,12 +934,30 @@ export async function changeAdminStaffBranch(userId: string | number, branchId: 
 // branch. The reset endpoint returns a temporary password that the
 // admin must hand to the user out-of-band.
 
-export function searchAdminUserRecovery(query: string) {
+/**
+ * Per-field filters consumed by `usuario_recovery_search`. At least
+ * one field should be non-empty; an empty object returns the empty
+ * payload the backend uses to reset the result panel.
+ *
+ * OR-within-field / AND-across-fields semantics live on the server.
+ */
+export interface AdminUserRecoveryFilters {
+  name?: string
+  username?: string
+  email?: string
+  phone?: string
+  ci?: string
+}
+
+export function searchAdminUserRecovery(filters: AdminUserRecoveryFilters) {
   const params = new URLSearchParams()
-  if (query.trim()) params.set('q', query.trim())
-  const qs = params.toString()
+  if (filters.name) params.set('name', filters.name)
+  if (filters.username) params.set('username', filters.username)
+  if (filters.email) params.set('email', filters.email)
+  if (filters.phone) params.set('phone', filters.phone)
+  if (filters.ci) params.set('ci', filters.ci)
   return requestJson<AdminUserRecoverySearchResponse>(
-    `/api/admin/usuarios/buscar/${qs ? `?${qs}` : ''}`,
+    `/api/admin/usuarios/buscar/${params.toString() ? `?${params.toString()}` : ''}`,
   )
 }
 

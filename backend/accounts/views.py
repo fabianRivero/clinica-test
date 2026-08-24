@@ -171,12 +171,82 @@ def usuario_recovery_search(request):
     We don't try to combine per-field OR with per-token AND: a query
     with spaces is treated as a name query (a "fabian r" looking for
     the email is rare enough that we don't lose much by being strict).
+
+    Per-field filtering (commit `cliente-codigo-buscar-equipo-recuperar`):
+    when ANY of the new params (``name``, ``username``, ``email``,
+    ``phone``, ``ci``) is non-empty, the view takes the per-field
+    branch instead of the legacy ``q`` path. Each non-empty field's
+    value is split on whitespace into tokens; tokens within one field
+    are OR-combined via ``__icontains``; non-empty fields are
+    AND-combined across fields. New params override ``?q=`` when
+    both are present (per spec scenario "New params override `?q=`").
+    Branch scoping via ``_scoped_queryset(request)`` applies in
+    both branches.
     """
 
     q = (request.GET.get("q") or "").strip()
-    if not q:
+    q_name = (request.GET.get("name") or "").strip()
+    q_username = (request.GET.get("username") or "").strip()
+    q_email = (request.GET.get("email") or "").strip()
+    q_phone = (request.GET.get("phone") or "").strip()
+    q_ci = (request.GET.get("ci") or "").strip()
+
+    use_field_search = any([q_name, q_username, q_email, q_phone, q_ci])
+
+    # Per-field branch wins over the legacy `?q=` path. When new params
+    # are all absent AND `?q=` is empty, the frontend gets the empty
+    # payload it uses to reset the result panel.
+    if not use_field_search and not q:
         return json_response({"users": []})
 
+    if use_field_search:
+        base = _scoped_queryset(request)
+        filters = Q()
+
+        # Each field: OR within (split tokens, OR each token's clause),
+        # AND across fields (`&=`).
+        if q_username:
+            username_q = Q()
+            for token in q_username.split():
+                username_q |= Q(username__icontains=token)
+            filters &= username_q
+
+        if q_name:
+            name_q = Q()
+            for token in q_name.split():
+                name_q |= (
+                    Q(primer_nombre__icontains=token)
+                    | Q(segundo_nombre__icontains=token)
+                    | Q(apellido_paterno__icontains=token)
+                    | Q(apellido_materno__icontains=token)
+                )
+            filters &= name_q
+
+        if q_email:
+            email_q = Q()
+            for token in q_email.split():
+                email_q |= Q(email__icontains=token)
+            filters &= email_q
+
+        if q_phone:
+            phone_q = Q()
+            for token in q_phone.split():
+                phone_q |= Q(telefono__icontains=token)
+            filters &= phone_q
+
+        if q_ci:
+            ci_q = Q()
+            for token in q_ci.split():
+                ci_q |= Q(cliente__ci__icontains=token) | Q(especialista__ci__icontains=token)
+            filters &= ci_q
+
+        base = base.filter(filters)
+        matches = base.distinct().order_by("username")[:MAX_SEARCH_RESULTS]
+        return json_response({"users": [_serialize_recovery_user(u) for u in matches]})
+
+    # Legacy `?q=` path — preserved verbatim from commit 6. Do not
+    # touch the byte-for-byte semantics: every existing test asserts on
+    # the single-token OR / multi-token AND-on-full-name contract.
     base = _scoped_queryset(request)
 
     tokens = q.split()

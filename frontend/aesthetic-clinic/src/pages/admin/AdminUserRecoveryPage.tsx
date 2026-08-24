@@ -2,11 +2,14 @@ import {
   useCallback,
   useMemo,
   useState,
-  type ChangeEvent,
   type FormEvent,
 } from 'react'
 
 import { DataState } from '../../components/admin/DataState'
+import {
+  MultiFieldSearch,
+  type MultiFieldSearchField,
+} from '../../components/admin/MultiFieldSearch'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
@@ -74,7 +77,11 @@ type ResetModalState =
 
 export function AdminUserRecoveryPage() {
   const { showNotification } = useNotifications()
-  const [query, setQuery] = useState('')
+  const [searchUsername, setSearchUsername] = useState('')
+  const [searchName, setSearchName] = useState('')
+  const [searchEmail, setSearchEmail] = useState('')
+  const [searchPhone, setSearchPhone] = useState('')
+  const [searchCi, setSearchCi] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState('')
   const [searchResults, setSearchResults] = useState<AdminUserRecoveryItem[]>([])
   const [isSearching, setIsSearching] = useState(false)
@@ -85,12 +92,57 @@ export function AdminUserRecoveryPage() {
     user: null,
   })
 
+  /**
+   * Field map for the multi-field search grid. Order matters: it
+   * drives the visual order in the form (Username, Nombre, Email,
+   * Telefono, CI). Placeholders mirror the values documented in the
+   * design / tasks for this change.
+   */
+  const searchFields: ReadonlyArray<MultiFieldSearchField> = [
+    { key: 'username', label: 'Username', placeholder: 'fabian.rivero' },
+    { key: 'name', label: 'Nombre', placeholder: 'Fabian Rivero' },
+    { key: 'email', label: 'Email', placeholder: 'fabian@ejemplo.com' },
+    { key: 'phone', label: 'Telefono', placeholder: '70000000' },
+    { key: 'ci', label: 'CI', placeholder: '1234567' },
+  ]
+
+  const searchValues: Record<string, string> = {
+    username: searchUsername,
+    name: searchName,
+    email: searchEmail,
+    phone: searchPhone,
+    ci: searchCi,
+  }
+
+  function handleSearchChange(key: string, value: string) {
+    if (key === 'username') setSearchUsername(value)
+    else if (key === 'name') setSearchName(value)
+    else if (key === 'email') setSearchEmail(value)
+    else if (key === 'phone') setSearchPhone(value)
+    else if (key === 'ci') setSearchCi(value)
+  }
+
   const runSearch = useCallback(
-    async (text: string) => {
-      const trimmed = text.trim()
-      setSubmittedQuery(trimmed)
+    async () => {
+      const filters = {
+        username: searchUsername.trim(),
+        name: searchName.trim(),
+        email: searchEmail.trim(),
+        phone: searchPhone.trim(),
+        ci: searchCi.trim(),
+      }
+      const summary = [
+        filters.username && `username=${filters.username}`,
+        filters.name && `nombre="${filters.name}"`,
+        filters.email && `email=${filters.email}`,
+        filters.phone && `telefono=${filters.phone}`,
+        filters.ci && `ci=${filters.ci}`,
+      ]
+        .filter(Boolean)
+        .join(', ')
+      setSubmittedQuery(summary)
       setHasSearched(true)
-      if (!trimmed) {
+      if (!summary) {
         setSearchResults([])
         setSearchError(null)
         return
@@ -99,7 +151,7 @@ export function AdminUserRecoveryPage() {
       setSearchError(null)
       try {
         const response: AdminUserRecoverySearchResponse =
-          await searchAdminUserRecovery(trimmed)
+          await searchAdminUserRecovery(filters)
         setSearchResults(response.users)
       } catch (requestError) {
         setSearchError(
@@ -112,22 +164,24 @@ export function AdminUserRecoveryPage() {
         setIsSearching(false)
       }
     },
-    [],
+    [searchUsername, searchName, searchEmail, searchPhone, searchCi],
   )
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
-    runSearch(query)
+    runSearch()
   }
 
-  const handleQueryChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const next = event.target.value
-    setQuery(next)
-    // Auto-trigger an empty search when the operator clears the input so
-    // the result panel stays in sync with the visible query.
-    if (next.trim() === '' && submittedQuery !== '') {
-      runSearch('')
-    }
+  function handleClearSearch() {
+    setSearchUsername('')
+    setSearchName('')
+    setSearchEmail('')
+    setSearchPhone('')
+    setSearchCi('')
+    setSubmittedQuery('')
+    setSearchResults([])
+    setSearchError(null)
+    setHasSearched(false)
   }
 
   const handleOpenUsername = (user: AdminUserRecoveryItem) => {
@@ -222,24 +276,23 @@ export function AdminUserRecoveryPage() {
       <SectionCard
         eyebrow="Busqueda"
         title="Buscar usuario"
-        description="Busca por nombre completo, email, telefono, CI o nombre de usuario."
+        description="Busca por username, nombre completo, email, telefono o CI. Combina campos con AND."
       >
         <form className="form-grid" onSubmit={handleSubmit}>
-          <label className="field field--full">
-            <span>Criterio de busqueda</span>
-            <input
-              className="input"
-              type="search"
-              name="q"
-              value={query}
-              onChange={handleQueryChange}
-              placeholder="Ej. Fabian Rivero, fabian.rivero, fabian@ejemplo.com, 70000000, 6777132"
-              autoComplete="off"
-              maxLength={120}
-              aria-label="Buscar usuario por nombre, email, telefono o CI"
-            />
-          </label>
+          <MultiFieldSearch
+            fields={searchFields}
+            values={searchValues}
+            onChange={handleSearchChange}
+            gridClassName="form-grid--five"
+          />
           <div className="form-actions field--full">
+            <button
+              className="button button--ghost"
+              type="button"
+              onClick={handleClearSearch}
+            >
+              Limpiar
+            </button>
             <button className="button" type="submit" disabled={isSearching}>
               {isSearching ? 'Buscando...' : 'Buscar'}
             </button>

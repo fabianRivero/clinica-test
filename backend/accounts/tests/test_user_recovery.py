@@ -306,6 +306,146 @@ class UserRecoverySearchTests(TestCase):
         ]
         self.assertIn("cliente.search", usernames_norte)
 
+    # ------------------------------------------------------------------ #
+    # Per-field search (commit cliente-codigo-buscar-equipo-recuperar).   #
+    # OR-within-field / AND-across-fields semantics, branch scoping       #
+    # preserved. The legacy `?q=` tests above stay untouched — these      #
+    # are additive coverage for the new param surface.                    #
+    # ------------------------------------------------------------------ #
+
+    def _field_search(self, **params):
+        """Helper for per-field requests. Forces login so callers
+        don't have to. Empty values are still passed so we can assert
+        the all-empty short-circuit returns `{"users": []}`.
+        """
+        client = self._login(self.main_admin)
+        response = client.get(SEARCH_URL, data=params)
+        client.logout()
+        return response
+
+    def test_per_field_username_finds_user(self):
+        response = self._field_search(username="cliente.search")
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        self.assertIn("cliente.search", usernames)
+
+    def test_per_field_username_does_not_cross_match_other_fields(self):
+        # `name=cliente.search` must NOT match — the token lives on
+        # username, not on any name field. AND across fields would
+        # still be empty because no name field contains it.
+        response = self._field_search(name="cliente.search")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["users"], [])
+
+    def test_per_field_name_single_token_finds_user(self):
+        # 'Demo' matches demo_cliente via name branch path.
+        response = self._field_search(name="Maria")
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        self.assertIn("maria.garcia.search", usernames)
+
+    def test_per_field_name_multiple_tokens_or_within_field(self):
+        # Two tokens within one field → OR: 'Maria Garcia' should match
+        # users whose name contains 'Maria' OR 'Garcia'.
+        response = self._field_search(name="Maria Garcia")
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        # Maria Garcia user has both tokens; Maria Trabajador user has
+        # only Maria; both must appear under OR semantics.
+        self.assertIn("maria.garcia.search", usernames)
+        self.assertIn("trabajador.search", usernames)
+
+    def test_per_field_and_across_fields(self):
+        # name=Maria AND email=maria.garcia@example.com must narrow to
+        # the user that owns both.
+        response = self._field_search(
+            name="Maria",
+            email="maria.garcia@example.com",
+        )
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        self.assertEqual(usernames, ["maria.garcia.search"])
+
+    def test_per_field_and_across_fields_no_match(self):
+        # name=Maria AND email=branch.admin@example.com → the AND is
+        # unsatisfiable because branch.admin has primer_nombre='Branch',
+        # not 'Maria'.
+        response = self._field_search(
+            name="Maria",
+            email="branch.admin@example.com",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["users"], [])
+
+    def test_per_field_email_finds_user(self):
+        response = self._field_search(email="branch.admin@example.com")
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        self.assertIn("branch.admin.search", usernames)
+
+    def test_per_field_phone_finds_user(self):
+        response = self._field_search(phone="71000001")
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        self.assertIn("trabajador.search", usernames)
+
+    def test_per_field_ci_finds_client(self):
+        response = self._field_search(ci="1234567")
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        self.assertIn("cliente.search", usernames)
+
+    def test_per_field_ci_finds_specialist(self):
+        response = self._field_search(ci="7654321")
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        self.assertIn("trabajador.search", usernames)
+
+    def test_per_field_empty_returns_empty(self):
+        # All new params absent and no `?q=` → short-circuit empty
+        # payload, identical to the legacy `?q=""` behavior.
+        response = self._field_search()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["users"], [])
+
+    def test_per_field_blank_strings_treated_as_empty(self):
+        # Whitespace-only params should NOT trigger the per-field
+        # branch — they get stripped to '' by the view.
+        response = self._field_search(username="   ", name=" ")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["users"], [])
+
+    def test_new_params_override_legacy_q(self):
+        # Per spec scenario "New params override `?q=`": when a new
+        # param is present, the new branch wins. `?q=fabian` would
+        # OR-match several users under the legacy path; with `name=x`
+        # we narrow to the new-branch behavior and `?q=` is ignored.
+        client = self._login(self.main_admin)
+        response = client.get(
+            SEARCH_URL,
+            {"q": "Maria", "name": "Inexistente"},
+        )
+        self.assertEqual(response.status_code, 200)
+        # New branch: name=Inexistente AND nothing else → empty.
+        self.assertEqual(response.json()["users"], [])
+
+    def test_per_field_branch_admin_only_sees_own_branch(self):
+        # Branch admin in Norte uses `?ci=9999999` (Sur-only). Branch
+        # scoping must still apply on the new branch.
+        client = self._login(self.branch_admin)
+        response = client.get(SEARCH_URL, {"ci": "9999999"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["users"], [])
+
+    def test_per_field_branch_admin_finds_own_branch(self):
+        # Branch admin in Norte uses `?username=cliente.search` —
+        # Norte user, so visible.
+        client = self._login(self.branch_admin)
+        response = client.get(SEARCH_URL, {"username": "cliente.search"})
+        self.assertEqual(response.status_code, 200)
+        usernames = [u["username"] for u in response.json()["users"]]
+        self.assertIn("cliente.search", usernames)
+
 
 class UserRecoveryDetailTests(TestCase):
     """Detail endpoint: branch scoping, 404 handling."""
