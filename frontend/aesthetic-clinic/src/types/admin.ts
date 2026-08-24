@@ -110,6 +110,7 @@ export type ExpensesResponse = {
 export type ReportClient = {
   id: string
   rawId: number
+  clienteCodigo?: string
   firstName: string
   lastName: string
   ci: string

@@ -4,6 +4,10 @@ import { Link } from 'react-router-dom'
 import { AdminPaymentsTabs } from '../../components/admin/AdminPaymentsTabs'
 
 import { DataState } from '../../components/admin/DataState'
+import {
+  MultiFieldSearch,
+  type MultiFieldSearchField,
+} from '../../components/admin/MultiFieldSearch'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
@@ -17,6 +21,11 @@ import {
   updateAdminPaymentStatus,
 } from '../../services/api/admin'
 import type { UpdateAdminPaymentStatusPayload } from '../../types/admin'
+import {
+  matchesFieldFilters,
+  type FieldDef,
+  type FieldFilters,
+} from '../../utils/matchesFieldFilters'
 import { monthNames } from './expenses/expenseUtils'
 
 export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuotas' }) {
@@ -32,8 +41,11 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
   const [paymentNotes, setPaymentNotes] = useState<Record<number, string>>({})
   const [paymentActionId, setPaymentActionId] = useState<number | null>(null)
   const [statusFilter, setStatusFilter] = useState<AdminPaymentsFilters['status']>('')
-  const [searchInput, setSearchInput] = useState('')
-  const [searchFilter, setSearchFilter] = useState('')
+  const [searchPatient, setSearchPatient] = useState('')
+  const [searchOperation, setSearchOperation] = useState('')
+  const [searchCodigo, setSearchCodigo] = useState('')
+  const [searchId, setSearchId] = useState('')
+  const [searchAmount, setSearchAmount] = useState('')
   const [quotaStatusFilter, setQuotaStatusFilter] = useState('')
   const [qrModalOpen, setQrModalOpen] = useState(false)
   const [qrModalImageUrl, setQrModalImageUrl] = useState('')
@@ -83,13 +95,37 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
     }
   }, [data])
 
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setSearchFilter(searchInput.trim())
-    }, 400)
+  const searchFields: ReadonlyArray<MultiFieldSearchField> = [
+    { key: 'patient', label: 'Paciente', placeholder: 'Ej. María López' },
+    { key: 'operation', label: 'Operación', placeholder: 'Procedimiento' },
+    { key: 'codigo', label: 'Código', placeholder: 'CLI-XXXXXX' },
+    { key: 'id', label: 'ID', placeholder: 'PAY-0042 / 0042' },
+    { key: 'amount', label: 'Monto', placeholder: 'Bs 150.00' },
+  ]
 
-  return () => window.clearTimeout(timeoutId)
-  }, [searchInput])
+  const searchValues: FieldFilters = {
+    patient: searchPatient,
+    operation: searchOperation,
+    codigo: searchCodigo,
+    id: searchId,
+    amount: searchAmount,
+  }
+
+  const searchFieldsByKey: Record<string, FieldDef> = {
+    patient: { key: 'patient', type: 'tokenized' },
+    operation: { key: 'operation', type: 'tokenized' },
+    codigo: { key: 'clienteCodigo', type: 'includes' },
+    id: { key: 'id', type: 'includes' },
+    amount: { key: 'amount', type: 'includes' },
+  }
+
+  function handleSearchChange(key: string, value: string) {
+    if (key === 'patient') setSearchPatient(value)
+    else if (key === 'operation') setSearchOperation(value)
+    else if (key === 'codigo') setSearchCodigo(value)
+    else if (key === 'id') setSearchId(value)
+    else if (key === 'amount') setSearchAmount(value)
+  }
 
   const handleQrFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     setQrFile(event.target.files?.[0] || null)
@@ -186,14 +222,11 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
       }
       if (statusMap[statusFilter] !== payment.status) return false
     }
-
-    if (searchFilter) {
-      const term = searchFilter.toLowerCase()
-      const haystack = `${payment.patient} ${payment.operation}`.toLowerCase()
-      if (!haystack.includes(term)) return false
-    }
-
-    return true
+    return matchesFieldFilters(
+      payment as unknown as Record<string, unknown>,
+      searchValues,
+      searchFieldsByKey,
+    )
   })
 
   const filteredQuotas = (data?.quotas ?? []).filter((quota) => {
@@ -210,13 +243,11 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
       if (!statusTokenMap[quotaStatusFilter]?.some((token) => normalizedStatus.includes(token))) return false
     }
 
-    if (searchFilter) {
-      const term = searchFilter.toLowerCase()
-      const haystack = `${quota.patient} ${quota.operation}`.toLowerCase()
-      if (!haystack.includes(term)) return false
-    }
-
-    return true
+    return matchesFieldFilters(
+      quota as unknown as Record<string, unknown>,
+      searchValues,
+      searchFieldsByKey,
+    )
   })
 
   return (
@@ -338,6 +369,13 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
               </div>
             }
           >
+            <div className="_mb-md">
+              <MultiFieldSearch
+                fields={searchFields}
+                values={searchValues}
+                onChange={handleSearchChange}
+              />
+            </div>
             <div className="form-grid _mb-md">
               <label className="field">
                 <span>Estado</span>
@@ -348,10 +386,6 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                   <option value="RECHAZADO">Observado</option>
                   <option value="CANCELADO">Cancelado</option>
                 </select>
-              </label>
-              <label className="field field--full">
-                <span>Buscar paciente/procedimiento</span>
-                <input className="input" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
               </label>
             </div>
             {filteredPayments.length ? (
@@ -524,6 +558,13 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                 </div>
               }
             >
+              <div className="_mb-md">
+                <MultiFieldSearch
+                  fields={searchFields}
+                  values={searchValues}
+                  onChange={handleSearchChange}
+                />
+              </div>
               <div className="form-grid _mb-md">
                 <label className="field">
                   <span>Estado</span>
@@ -536,10 +577,6 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                     <option value="OBSERVADO">Observado</option>
                     <option value="CANCELADO">Cancelado</option>
                   </select>
-                </label>
-                <label className="field field--full">
-                  <span>Buscar paciente/procedimiento</span>
-                  <input className="input" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} />
                 </label>
               </div>
               {filteredQuotas.length ? (

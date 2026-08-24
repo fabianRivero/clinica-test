@@ -6051,6 +6051,7 @@ def _report_client_row(cliente):
     return {
         "id": f"CLI-{cliente.pk:04d}",
         "rawId": cliente.pk,
+        "clienteCodigo": cliente.cliente_codigo,
         "firstName": primer_nombre,
         "lastName": f"{apellido_paterno} {(usuario.apellido_materno or '').strip()}".strip(),
         "ci": cliente.ci or "",

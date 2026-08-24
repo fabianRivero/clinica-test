@@ -24,6 +24,7 @@ class ReportClientSerializer(serializers.Serializer):
 
     id = serializers.CharField()
     rawId = serializers.IntegerField()
+    clienteCodigo = serializers.CharField(allow_blank=True, required=False)
     firstName = serializers.CharField()
     lastName = serializers.CharField()
     ci = serializers.CharField()

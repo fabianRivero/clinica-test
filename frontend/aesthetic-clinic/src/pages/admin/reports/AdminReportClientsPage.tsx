@@ -1,12 +1,19 @@
 import { useCallback, useState } from 'react'
 
+import {
+  MultiFieldSearch,
+  type MultiFieldSearchField,
+} from '../../../components/admin/MultiFieldSearch'
 import { useBranchContext } from '../../../providers/BranchProvider'
 import { getAdminReportClients } from '../../../services/api/admin'
 import type { ReportClient, ReportResponse } from '../../../types/admin'
+import {
+  matchesFieldFilters,
+  type FieldDef,
+  type FieldFilters,
+} from '../../../utils/matchesFieldFilters'
 import { branchNameToSlug, dateTimeCell } from './reportUtils'
 import { ReportLayout } from './ReportLayout'
-import { ReportSearch } from './ReportSearch'
-import { matchesReportSearch } from './reportSearchFilter'
 import { ReportTable, type ReportTableColumn } from './ReportTable'
 import { buildReportExcelExport } from './useReportExcelExport'
 
@@ -22,31 +29,29 @@ const COLUMNS: ReportTableColumn[] = [
 ]
 
 /**
- * Keys used for the client-side search filter. CI, first/last name, and
- * status cover the most common lookups for an admin triaging the list.
- */
-const SEARCH_KEYS = ['firstName', 'lastName', 'ci', 'status'] as const
-
-/**
  * Branch-scoped clients report.
  *
- * Reuses the new `/api/admin/reportes/clientes/` endpoint (added in Phase 1)
- * via `getAdminReportClients`. The endpoint returns a `ReportResponse<ReportClient>`
- * envelope so the page only needs to plug a `rowsSelector` and column list into
- * the shared `ReportLayout` shell.
+ * Reuses the `/api/admin/reportes/clientes/` endpoint via `getAdminReportClients`.
+ * The endpoint returns a `ReportResponse<ReportClient>` envelope so the page
+ * only needs to plug a `rowsSelector` and column list into the shared
+ * `ReportLayout` shell.
  *
- * Filtering: a client-side text filter narrows the dataset on `firstName`,
- * `lastName`, `ci`, and `status` so admins can locate a specific client
- * without re-hitting the API. The filter is purely visual — the export still
- * reflects the entire dataset so the workbook stays consistent with the
- * page header. To export the filtered subset only, extend `buildExport` to
- * use the same predicate.
+ * Filtering: a client-side multi-input search grid narrows the dataset on
+ * Nombre (tokenized across `firstName + " " + lastName`), CI, Estado, and
+ * Código cliente so admins can locate a specific client without re-hitting
+ * the API. The filter is purely visual — the export still reflects the
+ * entire dataset so the workbook stays consistent with the page header.
+ * To export the filtered subset only, extend `buildExport` to use the
+ * same predicate.
  *
  * Read-only by design: no edit/delete actions.
  */
 export function AdminReportClientsPage() {
   const { activeBranch } = useBranchContext()
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchName, setSearchName] = useState('')
+  const [searchCi, setSearchCi] = useState('')
+  const [searchStatus, setSearchStatus] = useState('')
+  const [searchCodigo, setSearchCodigo] = useState('')
 
   const loader = useCallback(() => getAdminReportClients(), [])
   const rowsSelector = useCallback(
@@ -57,23 +62,60 @@ export function AdminReportClientsPage() {
   const branchSuffix = activeBranch ? ` de ${activeBranch.nombre}` : ''
   const filename = `clientes_${branchNameToSlug(activeBranch?.nombre)}.xlsx`
 
+  const searchFields: ReadonlyArray<MultiFieldSearchField> = [
+    { key: 'name', label: 'Nombre', placeholder: 'María López' },
+    { key: 'ci', label: 'CI', placeholder: '1234567' },
+    { key: 'status', label: 'Estado', placeholder: 'Activo / Inactivo' },
+    { key: 'codigo', label: 'Código', placeholder: 'CLI-XXXXXX' },
+  ]
+
+  const searchValues: FieldFilters = {
+    name: searchName,
+    ci: searchCi,
+    status: searchStatus,
+    codigo: searchCodigo,
+  }
+
+  const searchFieldsByKey: Record<string, FieldDef> = {
+    name: { key: 'fullName', type: 'tokenized' },
+    ci: { key: 'ci', type: 'includes' },
+    status: { key: 'status', type: 'includes' },
+    codigo: { key: 'clienteCodigo', type: 'includes' },
+  }
+
+  function handleSearchChange(key: string, value: string) {
+    if (key === 'name') setSearchName(value)
+    else if (key === 'ci') setSearchCi(value)
+    else if (key === 'status') setSearchStatus(value)
+    else if (key === 'codigo') setSearchCodigo(value)
+  }
+
   /**
    * Filter callback exposed via the render prop so `ReportLayout`'s shell
    * can render both the unfiltered dataset (export) and the filtered one
-   * (table). The callback closes over `searchTerm` so the filter recomputes
-   * on every keystroke without forcing the layout to re-render.
+   * (table). The callback closes over the four search inputs so the filter
+   * recomputes on every keystroke without forcing the layout to re-render.
+   *
+   * The `fullName` synthesis lets `matchesFieldFilters` tokenize across
+   * `firstName + " " + lastName` without teaching the helper about composed
+   * keys.
    */
   const filterRows = useCallback(
     (rows: unknown[]) => {
-      if (!searchTerm.trim()) return rows
-      return rows.filter((row) =>
-        matchesReportSearch(searchTerm, row as Record<string, unknown>, SEARCH_KEYS),
-      )
+      if (!searchName && !searchCi && !searchStatus && !searchCodigo) return rows
+      const enriched = rows.map((r) => {
+        const row = r as Record<string, unknown>
+        const firstName = String(row.firstName ?? '')
+        const lastName = String(row.lastName ?? '')
+        return { ...row, fullName: `${firstName} ${lastName}`.trim() }
+      })
+      return enriched.filter((r) => matchesFieldFilters(r, searchValues, searchFieldsByKey))
     },
-    [searchTerm],
+    [searchName, searchCi, searchStatus, searchCodigo, searchValues],
   )
 
-  const hasActiveFilter = searchTerm.trim().length > 0
+  const hasActiveFilter =
+    searchName.length > 0 || searchCi.length > 0 || searchStatus.length > 0 || searchCodigo.length > 0
 
   return (
     <ReportLayout<ReportResponse<ReportClient>>
@@ -98,12 +140,14 @@ export function AdminReportClientsPage() {
         const tableRows = (filteredRows as ReportClient[] as unknown as Record<string, unknown>[])
         return (
           <>
-            <ReportSearch
-              value={searchTerm}
-              onChange={setSearchTerm}
-              placeholder="Nombre, apellido, CI o estado"
-              label="Buscar cliente"
-            />
+            <div className="_mb-md">
+              <MultiFieldSearch
+                fields={searchFields}
+                values={searchValues}
+                onChange={handleSearchChange}
+                gridClassName="form-grid--four"
+              />
+            </div>
             <ReportTable columns={COLUMNS} rows={tableRows} />
           </>
         )

@@ -145,6 +145,7 @@ def operation_card(operacion):
     return {
         "id": f"OP-{operacion.pk:04d}",
         "rawId": operacion.pk,
+        "clienteCodigo": operacion.paciente.cliente_codigo,
         "patient": full_name(operacion.paciente.usuario),
         "procedure": procedure_name(operacion),
         "branch": operation_branch(operacion),

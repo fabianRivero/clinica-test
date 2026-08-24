@@ -1,10 +1,19 @@
 import { DataState } from '../../components/admin/DataState'
+import {
+  MultiFieldSearch,
+  type MultiFieldSearchField,
+} from '../../components/admin/MultiFieldSearch'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { getAdminOperations } from '../../services/api/admin'
+import {
+  matchesFieldFilters,
+  type FieldDef,
+  type FieldFilters,
+} from '../../utils/matchesFieldFilters'
 import { Link } from 'react-router-dom'
 import { useCallback, useMemo, useState } from 'react'
 
@@ -17,7 +26,11 @@ export function AdminOperationsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loader = useCallback(() => getAdminOperations(), [branchId])
   const { data, isLoading, error } = useApiResource(loader)
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchPatient, setSearchPatient] = useState('')
+  const [searchProcedure, setSearchProcedure] = useState('')
+  const [searchBranch, setSearchBranch] = useState('')
+  const [searchOperationId, setSearchOperationId] = useState('')
+  const [searchCodigo, setSearchCodigo] = useState('')
   const [statusFilter, setStatusFilter] = useState(OPERATION_STATUS_ALL)
 
   const statusOptions = useMemo(() => {
@@ -25,20 +38,51 @@ export function AdminOperationsPage() {
     return [OPERATION_STATUS_ALL, ...Array.from(statuses)]
   }, [data])
 
+  const searchFields: ReadonlyArray<MultiFieldSearchField> = [
+    { key: 'patient', label: 'Paciente', placeholder: 'Ej. María López' },
+    { key: 'procedure', label: 'Procedimiento', placeholder: 'Depilación' },
+    { key: 'branch', label: 'Sucursal', placeholder: 'Sede Norte' },
+    { key: 'operationId', label: 'ID Operación', placeholder: 'OP-0042 / 0042' },
+    { key: 'codigo', label: 'Código cliente', placeholder: 'CLI-XXXXXX' },
+  ]
+
+  const searchValues: FieldFilters = {
+    patient: searchPatient,
+    procedure: searchProcedure,
+    branch: searchBranch,
+    operationId: searchOperationId,
+    codigo: searchCodigo,
+  }
+
+  const searchFieldsByKey: Record<string, FieldDef> = {
+    patient: { key: 'patient', type: 'tokenized' },
+    procedure: { key: 'procedure', type: 'tokenized' },
+    branch: { key: 'branch', type: 'tokenized' },
+    operationId: { key: 'id', type: 'includes' },
+    codigo: { key: 'clienteCodigo', type: 'includes' },
+  }
+
+  function handleSearchChange(key: string, value: string) {
+    if (key === 'patient') setSearchPatient(value)
+    else if (key === 'procedure') setSearchProcedure(value)
+    else if (key === 'branch') setSearchBranch(value)
+    else if (key === 'operationId') setSearchOperationId(value)
+    else if (key === 'codigo') setSearchCodigo(value)
+  }
+
   const filteredOperations = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase()
     return (data?.operations ?? []).filter((operation) => {
-      const matchesSearch =
-        !normalizedSearch ||
-        operation.patient.toLowerCase().includes(normalizedSearch) ||
-        operation.id.toLowerCase().includes(normalizedSearch) ||
-        String(operation.rawId).includes(normalizedSearch)
+      const matchesSearch = matchesFieldFilters(
+        operation as unknown as Record<string, unknown>,
+        searchValues,
+        searchFieldsByKey,
+      )
       const matchesStatus =
         statusFilter === OPERATION_STATUS_ALL ||
         (operation.status || '').toLowerCase() === statusFilter.toLowerCase()
       return matchesSearch && matchesStatus
     })
-  }, [data, searchTerm, statusFilter])
+  }, [data, searchValues, statusFilter])
 
   return (
     <div className="page-stack">
@@ -73,16 +117,14 @@ export function AdminOperationsPage() {
             title="Resumen de tratamientos"
             description="Lectura real de operaciones vigentes, sesiones disponibles y situación de cuotas."
           >
-            <div className="form-grid">
-              <label className="field">
-                <span>Buscar cliente</span>
-                <input
-                  className="input"
-                  placeholder="Nombre del cliente"
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                />
-              </label>
+            <div className="_mb-md">
+              <MultiFieldSearch
+                fields={searchFields}
+                values={searchValues}
+                onChange={handleSearchChange}
+              />
+            </div>
+            <div className="form-grid _mb-md">
               <label className="field">
                 <span>Estado</span>
                 <select

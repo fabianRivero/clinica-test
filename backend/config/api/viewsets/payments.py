@@ -462,6 +462,7 @@ class PagosViewSet(viewsets.ViewSet):
         return {
             "id": f"PAY-{payment.pk:04d}",
             "rawId": payment.pk,
+            "clienteCodigo": paciente.cliente_codigo,
             "clientId": paciente.pk,
             "patient": full_name(paciente.usuario) if paciente.usuario else "—",
             "operation": procedure_name(operacion),
@@ -481,6 +482,7 @@ class PagosViewSet(viewsets.ViewSet):
         paciente = operacion.paciente
         return {
             "id": cuota.pk,
+            "clienteCodigo": paciente.cliente_codigo,
             "clientId": paciente.pk,
             "patient": (
                 f"{paciente.usuario.primer_nombre} {paciente.usuario.apellido_paterno}"
