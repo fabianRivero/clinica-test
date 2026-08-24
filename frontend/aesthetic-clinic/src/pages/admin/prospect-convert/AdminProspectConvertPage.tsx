@@ -52,6 +52,7 @@ export function AdminProspectConvertPage() {
     today,
     hasPassword,
     handleUserChange,
+    handleNameBlur,
     handleOperationChange,
     updateDueDate,
     handleMedicalChange,
@@ -203,6 +204,7 @@ export function AdminProspectConvertPage() {
             onSubmit={handleSaveStep1}
             onCancel={handleCancelDraft}
             onUserChange={handleUserChange}
+            onNameBlur={handleNameBlur}
           />
         </SectionCard>
       )}

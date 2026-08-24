@@ -94,6 +94,7 @@ type UseConversionWizardReturn = {
   setFirstPaymentDetails: (value: string) => void
   setQrModalOpen: (value: boolean) => void
   handleUserChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void
+  handleNameBlur: () => void
   handleOperationChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void
   updateDueDate: (index: number, value: string) => void
   handleMedicalChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void
@@ -278,28 +279,26 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
       setConfirmPassword(value)
     }
 
-    // Name path: when either primerNombre or apellidoPaterno transitions from
-    // empty to non-empty AND both name parts are now filled AND no CI was
-    // provided AND username is still empty, seed username with the slug.
-    // Re-fires on each empty→non-empty so filling apellidoPaterno last
-    // produces the final value (the primerNombre→apellidoPaterno transition
-    // is what triggers it once both fields are populated).
-    if ((name === 'primerNombre' || name === 'apellidoPaterno') && value && !userForm.ci && !userForm.username) {
-      const prevFirst = userForm.primerNombre
-      const prevLast = userForm.apellidoPaterno
-      const transitioned =
-        (name === 'primerNombre' && !prevFirst) ||
-        (name === 'apellidoPaterno' && !prevLast)
-      const nextFirst = nextForm.primerNombre
-      const nextLast = nextForm.apellidoPaterno
-      if (transitioned && nextFirst && nextLast) {
-        nextForm.username = buildUsernameFromName(nextFirst, nextLast)
-      }
-    }
-
     setUserForm(nextForm)
     setFieldErrors((current) => ({ ...current, [name]: '' }))
     setSubmitError(null)
+  }
+
+  /**
+   * Fires when `primerNombre` or `apellidoPaterno` loses focus. Seeding the
+   * username on blur — not on every keystroke — avoids the slug getting
+   * frozen mid-typing (e.g. "Juan" + "G" producing "juang" before the
+   * admin finishes the last name). Only fills when username is empty AND
+   * CI is empty; a manual edit to the field is preserved.
+   */
+  const handleNameBlur = () => {
+    if (!userForm) return
+    if (userForm.ci) return
+    if (userForm.username) return
+    if (!userForm.primerNombre || !userForm.apellidoPaterno) return
+    const slug = buildUsernameFromName(userForm.primerNombre, userForm.apellidoPaterno)
+    if (!slug) return
+    setUserForm((current) => (current ? { ...current, username: slug } : current))
   }
 
   const handleOperationChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -793,6 +792,7 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     today,
     hasPassword,
     handleUserChange,
+    handleNameBlur,
     handleOperationChange,
     updateDueDate,
     handleMedicalChange,

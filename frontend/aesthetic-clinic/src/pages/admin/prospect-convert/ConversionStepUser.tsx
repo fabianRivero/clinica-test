@@ -22,6 +22,7 @@ type Props = {
   onSubmit: (event: FormEvent) => void
   onCancel: () => void
   onUserChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void
+  onNameBlur: () => void
 }
 
 export function ConversionStepUser({
@@ -42,12 +43,13 @@ export function ConversionStepUser({
   onSubmit,
   onCancel,
   onUserChange,
+  onNameBlur,
 }: Props) {
   return (
     <form className="form-grid" onSubmit={onSubmit}>
       <label className="field">
         <span>Primer nombre <abbr title="obligatorio" className="required-mark">*</abbr></span>
-        <input className="input" name="primerNombre" value={userForm.primerNombre} onChange={onUserChange} />
+        <input className="input" name="primerNombre" value={userForm.primerNombre} onChange={onUserChange} onBlur={onNameBlur} />
         {fieldErrors.primerNombre ? <small className="field__error">{fieldErrors.primerNombre}</small> : null}
       </label>
       <label className="field">
@@ -56,7 +58,7 @@ export function ConversionStepUser({
       </label>
       <label className="field">
         <span>Apellido paterno <abbr title="obligatorio" className="required-mark">*</abbr></span>
-        <input className="input" name="apellidoPaterno" value={userForm.apellidoPaterno} onChange={onUserChange} />
+        <input className="input" name="apellidoPaterno" value={userForm.apellidoPaterno} onChange={onUserChange} onBlur={onNameBlur} />
         {fieldErrors.apellidoPaterno ? <small className="field__error">{fieldErrors.apellidoPaterno}</small> : null}
       </label>
       <label className="field">
