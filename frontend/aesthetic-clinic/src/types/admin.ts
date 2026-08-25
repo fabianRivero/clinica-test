@@ -424,6 +424,19 @@ export type OperationDetailData = {
   id: string
   rawId: number
   patient: string
+  /**
+   * `paciente_id` (Cliente.pk). Lo expone la API para que la pagina
+   * de detalle de operacion pueda llamar al endpoint de reserva sin
+   * tener que navegar al detalle del cliente.
+   */
+  patientId?: number
+  /**
+   * Cupos que quedan para una nueva reserva segun el backend
+   * (mismo calculo que `operacion.sesiones_disponibles`). El frontend
+   * usa este numero directo para bloquear el formulario "Reservar
+   * nueva cita" sin parsear el string `sessions`.
+   */
+  availableAppointments?: number
   procedure: string
   serviceType: string
   procedureType: string
@@ -460,9 +473,22 @@ export type UpdateAdminOperationDetailsPayload = {
   sessionsTotal: number
 }
 
+export type OperationPricePlanQuotaEdit = {
+  nroCuota: number
+  montoProgramado: string
+  fechaVencimiento: string
+}
+
 export type UpdateAdminOperationPricePayload = {
   priceTotal: string
   quotaCount: number
+  /**
+   * Edicion opcional por cuota. Si se envia, cada item actualiza el
+   * monto y la fecha de la cuota indicada; la suma de los nuevos
+   * montos pendientes + lo ya pagado debe cerrar exacto con
+   * `priceTotal`.
+   */
+  quotas?: OperationPricePlanQuotaEdit[]
 }
 
 

@@ -6,9 +6,12 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useNotifications } from '../../providers/NotificationProvider'
 import {
   cancelAdminAppointment,
   checkAdminConcurrency,
+  createAdminClientReservation,
+  deleteAdminOperationQuota,
   getAdminOperationDetail,
   rescheduleAdminAppointment,
   updateAdminOperationDetails,
@@ -27,15 +30,23 @@ function numberFromCurrency(value: string) {
   return value.replace(/[^\d.]/g, '')
 }
 
-function parseSessions(value: string) {
-  const match = value.match(/^(\d+)/)
-  return match ? Number(match[1]) : 1
+/**
+ * Convierte el label localizado de fecha (`dd/mm/yyyy`) que devuelve la
+ * API a formato ISO (`YYYY-MM-DD`) que entiende `<input type="date">`.
+ * Si la cadena no encaja en el formato esperado, devuelve string vacio
+ * para no asumir valores incorrectos.
+ */
+function parseDueDate(label: string): string {
+  const match = label.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!match) return ''
+  return `${match[3]}-${match[2]}-${match[1]}`
 }
 
 export function AdminOperationDetailPage() {
   const { operationId = '' } = useParams()
   const loader = useMemo(() => () => getAdminOperationDetail(operationId), [operationId])
   const { data, isLoading, error, reload } = useApiResource(loader)
+  const { showNotification } = useNotifications()
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [selectedAppointment, setSelectedAppointment] = useState<number | null>(null)
@@ -44,18 +55,45 @@ export function AdminOperationDetailPage() {
   const [checkResult, setCheckResult] = useState<any | null>(null)
   const [isChecking, setIsChecking] = useState(false)
   const [isEditingDetails, setIsEditingDetails] = useState(false)
-  const [isEditingPrice, setIsEditingPrice] = useState(false)
   const [isSavingDetails, setIsSavingDetails] = useState(false)
   const [isSavingPrice, setIsSavingPrice] = useState(false)
   const [detailsForm, setDetailsForm] = useState({
     details: '',
     recommendations: '',
-    sessionsTotal: 1,
   })
-  const [priceForm, setPriceForm] = useState({
-    priceTotal: '',
-    quotaCount: 1,
-  })
+  // Estado para reservar una nueva cita dentro del bloque "Citas medicas".
+  const [reservationDate, setReservationDate] = useState('')
+  const [reservationTime, setReservationTime] = useState('')
+  const [reservationCheck, setReservationCheck] = useState<any | null>(null)
+  const [isCheckingReservation, setIsCheckingReservation] = useState(false)
+  const [isBookingReservation, setIsBookingReservation] = useState(false)
+  // Estado para editar el numero de sesiones desde el bloque "Citas medicas".
+  // `currentSessions` se deriva siempre de la respuesta del backend (sin
+  // setState en useEffect) y `sessionsDraft` guarda solo la edicion local
+  // del admin; al guardar y recargar `data`, `currentSessions` se
+  // actualiza automaticamente.
+  const [sessionsDraft, setSessionsDraft] = useState<string>('')
+  const [isSavingSessions, setIsSavingSessions] = useState(false)
+  // Estado para editar cuotas en modo batch ("Editar fechas y montos"):
+  // el admin edita varias a la vez y guarda todas juntas.
+  const [isEditingQuotas, setIsEditingQuotas] = useState(false)
+  const [quotasDraft, setQuotasDraft] = useState<Array<{ nroCuota: number; montoProgramado: string; fechaVencimiento: string }>>([])
+  const [quotasFormError, setQuotasFormError] = useState<string | null>(null)
+  // Estado para agregar UNA cuota sola ("Crear cuota" / "Crear la
+  // siguiente"). El admin llena monto/fecha y pulsa "Guardar" para
+  // crear solo esa fila; el backend no exige suma exacta en este modo,
+  // asi que el saldo restante se ira cubriendo con cuotas siguientes.
+  const [isAddingQuota, setIsAddingQuota] = useState(false)
+  const [newQuotaDraft, setNewQuotaDraft] = useState<{ nroCuota: number; montoProgramado: string; fechaVencimiento: string } | null>(null)
+  const [newQuotaFormError, setNewQuotaFormError] = useState<string | null>(null)
+  // ``deletingQuotaNumber`` indica cual cuota se esta eliminando
+  // (para deshabilitar el boton y mostrar "Eliminando..."). El backend
+  // bloquea PAGADAS y con comprobante en revision; el frontend oculta
+  // el boton en esos casos.
+  const [deletingQuotaNumber, setDeletingQuotaNumber] = useState<number | null>(null)
+  // El precio y los montos por cuota se editan desde el bloque "Citas y
+// cuotas" (sub-bloque Plan de pagos). El save reutiliza el mismo
+// endpoint `actualizar-precio` con la lista `quotas` opcional.
 
   const handleCancelAppointment = async (appointmentId: number) => {
     setAppointmentActionId(appointmentId)
@@ -105,20 +143,19 @@ export function AdminOperationDetailPage() {
     setDetailsForm({
       details: data.operation.detallesOperacion === 'Sin detalles registrados.' ? '' : data.operation.detallesOperacion,
       recommendations: data.operation.recomendaciones === 'Sin recomendaciones registradas.' ? '' : data.operation.recomendaciones,
-      sessionsTotal: parseSessions(data.operation.sessions),
     })
     setIsEditingDetails(true)
   }
 
-  const startEditingPrice = () => {
-    if (!data || !canEditPricePlan) return
-    setActionError(null)
-    setPriceForm({
-      priceTotal: numberFromCurrency(data.operation.price),
-      quotaCount: data.operation.quotas.length || 1,
-    })
-    setIsEditingPrice(true)
-  }
+  // Total de sesiones vigente segun el backend. Lo derivamos con useMemo
+  // para no llamar setState dentro de un effect; el admin edita en un
+  // input local (sessionsDraft) y al guardar + recargar el dato se
+  // actualiza solo.
+  const currentSessions = useMemo<number | null>(() => {
+    if (!data) return null
+    const match = data.operation.sessions.match(/^(\d+)/)
+    return match ? Number(match[1]) : null
+  }, [data])
 
   const handleSaveDetails = async (event: FormEvent) => {
     event.preventDefault()
@@ -137,18 +174,305 @@ export function AdminOperationDetailPage() {
     }
   }
 
-  const handleSavePrice = async (event: FormEvent) => {
-    event.preventDefault()
+  // -------- handlers del bloque "Citas y cuotas" ----------
+
+const handleSaveSessions = async () => {
     if (!data) return
+    const parsed = sessionsDraft.trim() === '' ? NaN : Number(sessionsDraft)
+    if (!Number.isFinite(parsed) || parsed < 1) return
+    setIsSavingSessions(true)
+    setActionError(null)
+    try {
+      await updateAdminOperationDetails(data.operation.rawId, {
+        details: data.operation.detallesOperacion,
+        recommendations: data.operation.recomendaciones,
+        sessionsTotal: parsed,
+      })
+      reload()
+      setSessionsDraft('')
+    } catch (requestError) {
+      setActionError(requestError instanceof Error ? requestError.message : 'No se pudo actualizar el numero de sesiones.')
+    } finally {
+      setIsSavingSessions(false)
+    }
+  }
+
+  const handleCheckReservation = async () => {
+    if (!data || !reservationDate || !reservationTime || !data.operation.branchId) return
+    setIsCheckingReservation(true)
+    setActionError(null)
+    try {
+      const result = await checkAdminConcurrency(
+        data.operation.branchId,
+        reservationDate,
+        reservationTime,
+        reservationTime,
+      )
+      setReservationCheck(result)
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : 'No se pudo verificar disponibilidad.'
+      setActionError(message)
+      showNotification({ title: 'No se pudo verificar disponibilidad', message, tone: 'danger' })
+    } finally {
+      setIsCheckingReservation(false)
+    }
+  }
+
+  const handleReserve = async () => {
+    if (!data || !reservationCheck) return
+    // El detail NO expone branchId en algunas rutas; caemos al campo
+    // anidado si llega a faltar en el futuro.
+    const branchId = data.operation.branchId
+    const patientId = data.operation.patientId
+    if (!branchId || !patientId) {
+      const message = 'Falta la sede o el cliente asociado a esta operacion.'
+      setActionError(message)
+      showNotification({ title: 'No se pudo registrar la reserva', message, tone: 'danger' })
+      return
+    }
+    setIsBookingReservation(true)
+    setActionError(null)
+    try {
+      const response = await createAdminClientReservation(patientId, data.operation.rawId, {
+        branchId,
+        dateTime: `${reservationDate}T${reservationTime}:00`,
+      })
+      setSelectedAppointment(null)
+      setReservationCheck(null)
+      setReservationDate('')
+      setReservationTime('')
+      reload()
+      const successMessage = (response as { detail?: string } | null)?.detail ?? 'La cita fue reservada correctamente.'
+      showNotification({ title: 'Reserva registrada', message: successMessage, tone: 'success' })
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : 'No se pudo registrar la reserva.'
+      setActionError(message)
+      showNotification({ title: 'No se pudo registrar la reserva', message, tone: 'danger' })
+    } finally {
+      setIsBookingReservation(false)
+    }
+  }
+
+  const startEditingQuotas = () => {
+    if (!data) return
+    // Abre el editor inline. Si ya habia cuotas, precarga el draft
+    // con esas; si no hay ninguna, precarga con un item vacio #1
+    // para que el admin pueda crear la primera cuota desde cero.
+    setIsEditingQuotas(true)
+    if (data.operation.quotas.length === 0) {
+      // Sin cuotas existentes: arrancamos con un item vacio #1 para
+      // que el admin pueda crear la primera cuota desde cero.
+      const today = new Date()
+      const due = new Date(today)
+      due.setDate(due.getDate() + 30)
+      setQuotasDraft([
+        {
+          nroCuota: 1,
+          montoProgramado: '',
+          fechaVencimiento: due.toISOString().slice(0, 10),
+        },
+      ])
+    } else {
+      setQuotasDraft(
+        data.operation.quotas.map((q) => ({
+          nroCuota: q.number,
+          montoProgramado: q.amountValue ?? '',
+          fechaVencimiento: parseDueDate(q.dueDate),
+        })),
+      )
+    }
+    setQuotasFormError(null)
+  }
+
+  const updateQuotaDraftField = (
+    index: number,
+    field: 'montoProgramado' | 'fechaVencimiento',
+    value: string,
+  ) => {
+    setQuotasDraft((current) =>
+      current.map((item, idx) => (idx === index ? { ...item, [field]: value } : item)),
+    )
+  }
+
+  // ---- Modo "agregar 1 sola cuota" ----
+
+  // Abre el formulario para crear UNA cuota nueva. Calculamos el
+  // siguiente nro libre con la lista ya refrescada (DB) + cualquier
+  // cuota recien creada en esta sesion via el mismo flujo (usamos
+  // data.operation.quotas como fuente de verdad porque reload() corre
+  // despues de cada guardado).
+  const startAddingQuota = () => {
+    if (!data) return
+    const maxExisting = Math.max(...data.operation.quotas.map((q) => q.number), 0)
+    const today = new Date()
+    const due = new Date(today)
+    due.setDate(due.getDate() + 30)
+    setNewQuotaDraft({
+      nroCuota: maxExisting + 1,
+      montoProgramado: '',
+      fechaVencimiento: due.toISOString().slice(0, 10),
+    })
+    setNewQuotaFormError(null)
+    setIsAddingQuota(true)
+  }
+
+  const cancelAddingQuota = () => {
+    setIsAddingQuota(false)
+    setNewQuotaDraft(null)
+    setNewQuotaFormError(null)
+  }
+
+  // Valida antes de mandar al backend. La validacion "fuerte" (suma
+  // exacta contra precio total) vive en el endpoint; aca solo
+  // protegemos UX: monto positivo, fecha valida y monto no mayor al
+  // precio total del tratamiento.
+  const handleSaveNewQuota = async () => {
+    if (!data || !newQuotaDraft) return
+    setNewQuotaFormError(null)
+
+    const precioTotal = Number(numberFromCurrency(data.operation.price))
+    if (!Number.isFinite(precioTotal) || precioTotal <= 0) {
+      setNewQuotaFormError('El precio total de la operacion no es valido.')
+      return
+    }
+    const monto = Number(newQuotaDraft.montoProgramado)
+    if (!Number.isFinite(monto) || monto < 0) {
+      setNewQuotaFormError('Ingresa un monto valido (mayor o igual a 0).')
+      return
+    }
+    if (monto > precioTotal) {
+      setNewQuotaFormError(
+        `El monto (Bs ${monto.toFixed(2)}) no puede ser mayor al precio total (Bs ${precioTotal.toFixed(2)}).`,
+      )
+      return
+    }
+    if (!newQuotaDraft.fechaVencimiento) {
+      setNewQuotaFormError('Indica la fecha de vencimiento.')
+      return
+    }
 
     setIsSavingPrice(true)
     setActionError(null)
     try {
-      await updateAdminOperationPricePlan(data.operation.rawId, priceForm)
-      setIsEditingPrice(false)
+      await updateAdminOperationPricePlan(data.operation.rawId, {
+        priceTotal: precioTotal.toFixed(2),
+        quotaCount: newQuotaDraft.nroCuota,
+        // Enviamos UNA sola cuota nueva; el backend detecta el modo
+        // "single-add" (item no existente en DB) y no exige suma
+        // exacta.
+        quotas: [
+          {
+            nroCuota: newQuotaDraft.nroCuota,
+            montoProgramado: newQuotaDraft.montoProgramado,
+            fechaVencimiento: newQuotaDraft.fechaVencimiento,
+          },
+        ],
+      })
+      // Cerramos el editor y volvemos a la lista de cuotas. El admin
+      // debe volver a pulsar "Agregar cuota" si quiere sumar otra;
+      // evitamos asi que una cuota quede persistida por accidente si
+      // el admin ya termino.
+      const savedNroCuota = newQuotaDraft.nroCuota
+      const savedMonto = newQuotaDraft.montoProgramado
+      setIsAddingQuota(false)
+      setNewQuotaDraft(null)
+      setNewQuotaFormError(null)
       reload()
+      showNotification({
+        title: 'Cuota creada',
+        message: `Cuota #${savedNroCuota} (Bs ${Number(savedMonto).toFixed(2)}) creada correctamente.`,
+        tone: 'success',
+      })
     } catch (requestError) {
-      setActionError(requestError instanceof Error ? requestError.message : 'No se pudo actualizar el precio pactado.')
+      // En error dejamos el editor abierto con los valores que el
+      // admin tipeo, asi puede corregir y volver a intentar.
+      const message = requestError instanceof Error ? requestError.message : 'No se pudo guardar la cuota.'
+      setNewQuotaFormError(message)
+      showNotification({ title: 'No se pudo crear la cuota', message, tone: 'danger' })
+    } finally {
+      setIsSavingPrice(false)
+    }
+  }
+
+  // Elimina una cuota del plan de pagos. El backend valida PAGADA /
+  // comprobante PENDIENTE; el frontend oculta el boton en esos casos
+  // y muestra ``window.confirm`` para evitar clicks accidentales.
+  const handleDeleteQuota = async (nroCuota: number) => {
+    if (!data) return
+    const confirmed = window.confirm(
+      `\u00bfEliminar la cuota #${nroCuota}? Las cuotas siguientes se renumeraran para mantener el orden. Esta accion no se puede deshacer.`,
+    )
+    if (!confirmed) return
+
+    setDeletingQuotaNumber(nroCuota)
+    setActionError(null)
+    try {
+      await deleteAdminOperationQuota(data.operation.rawId, { nroCuota })
+      reload()
+      showNotification({
+        title: 'Cuota eliminada',
+        message: `Cuota #${nroCuota} eliminada correctamente. Las demas cuotas se renumeraron.`,
+        tone: 'success',
+      })
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : 'No se pudo eliminar la cuota.'
+      setActionError(message)
+      showNotification({ title: 'No se pudo eliminar la cuota', message, tone: 'danger' })
+    } finally {
+      setDeletingQuotaNumber(null)
+    }
+  }
+
+  const handleSaveQuotas = async () => {
+    if (!data) return
+    setQuotasFormError(null)
+
+    // Validacion cliente basica: monto + fecha completos para todos
+    // los items que vamos a mandar. El backend luego valida suma
+    // exacta contra el saldo pendiente.
+    const editableItems = quotasDraft.filter(
+      (item) => operation.quotas.find((q) => q.number === item.nroCuota)?.status !== 'Pagado',
+    )
+    for (const item of editableItems) {
+      if (!item.montoProgramado || !item.fechaVencimiento) {
+        setQuotasFormError('Completa monto y fecha para cada cuota.')
+        return
+      }
+    }
+    if (editableItems.length === 0) {
+      setQuotasFormError('No hay cuotas editables para guardar.')
+      return
+    }
+
+    const priceTotal = Number(numberFromCurrency(data.operation.price))
+    setIsSavingPrice(true)
+    setActionError(null)
+    try {
+      await updateAdminOperationPricePlan(data.operation.rawId, {
+        priceTotal: priceTotal.toFixed(2),
+        quotaCount: data.operation.quotas.length,
+        // Modo batch: solo enviamos las cuotas NO pagadas (las pagadas
+        // no se pueden editar). El backend valida por item (PAGADA /
+        // comprobante PENDIENTE bloquean) y rechaza si la suma de los
+        // montos enviados SUPERA el precio total. Sumas menores pasan
+        // (saldo restante queda sin asignar).
+        quotas: editableItems.map((q) => ({
+          nroCuota: q.nroCuota,
+          montoProgramado: q.montoProgramado,
+          fechaVencimiento: q.fechaVencimiento,
+        })),
+      })
+      setIsEditingQuotas(false)
+      reload()
+      showNotification({
+        title: 'Plan de pagos guardado',
+        message: 'Las fechas y montos de las cuotas se actualizaron correctamente.',
+        tone: 'success',
+      })
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : 'No se pudo actualizar el plan de pagos.'
+      setQuotasFormError(message)
+      showNotification({ title: 'No se pudo guardar el plan', message, tone: 'danger' })
     } finally {
       setIsSavingPrice(false)
     }
@@ -195,6 +519,52 @@ export function AdminOperationDetailPage() {
 
   const { operation } = data
   const canEditPricePlan = operation.status.toLowerCase() === 'en proceso'
+
+  // Etiqueta que aclara que la reserva corresponde a la siguiente cita
+  // (en funcion de las que ya estan registradas) y, si el admin ya
+  // configuro el total de sesiones, tambien muestra el denominador.
+  const totalSesionesConfiguradas = currentSessions !== null && currentSessions > 0 ? currentSessions : null
+  const siguienteNumeroCita = operation.appointments.length + 1
+  const reservationCaption = totalSesionesConfiguradas !== null
+    ? `Esta reserva corresponde a la cita N\u00B0 ${siguienteNumeroCita} de ${totalSesionesConfiguradas} sesiones configuradas.`
+    : `Esta reserva corresponde a la cita N\u00B0 ${siguienteNumeroCita}.`
+  // Bloqueo del formulario de reserva: si el backend informa que no
+  // quedan cupos (o si la operacion aun no tiene sede), no se debe
+  // permitir cargar fecha/hora ni verificar disponibilidad. El backend
+  // ya rechaza el POST con un 400, pero bloqueamos en el cliente para
+  // evitar el ciclo "toco -> verifico -> reservo -> toast rojo".
+  const availableAppointments = operation.availableAppointments ?? null
+  const canBookNewAppointment =
+    operation.branchId !== null &&
+    operation.patientId !== undefined &&
+    availableAppointments !== null &&
+    availableAppointments > 0
+
+  // Editor batch de cuotas: cantidad de items que el admin puede
+  // editar (no Pagadas). Si es 0, deshabilitamos el boton "Guardar
+  // plan" para evitar un POST que retornaria 400 por suma/cuotas.
+  const editableQuotaCount = operation.quotas.filter((q) => q.status !== 'Pagado').length
+  // Hay cambios si algun item del draft difiere del estado actual
+  // (monto o fecha de vencimiento). Si no, no hay nada que guardar.
+  const batchHasChanges = quotasDraft.some((draft) => {
+    const live = operation.quotas.find((q) => q.number === draft.nroCuota)
+    if (!live) return true
+    if (draft.montoProgramado !== (live.amountValue ?? '')) return true
+    if (draft.fechaVencimiento !== parseDueDate(live.dueDate)) return true
+    return false
+  })
+
+  // Single-add: el monto tipeado + las pendientes existentes NO debe
+  // exceder el precio total. Lo calculamos aqui para deshabilitar el
+  // boton "Guardar" y mostrar un hint en vivo (rojo si excede).
+  const singleAddMonto = newQuotaDraft ? Number(newQuotaDraft.montoProgramado) || 0 : 0
+  const singleAddExcede =
+    isAddingQuota &&
+    singleAddMonto > 0 &&
+    Number.isFinite(Number(numberFromCurrency(operation.price))) &&
+    singleAddMonto +
+      operation.quotas.reduce((acc, q) => acc + (Number(q.amountValue) || 0), 0) >
+      Number(numberFromCurrency(operation.price))
 
   return (
     <div className="page-stack">
@@ -298,10 +668,7 @@ export function AdminOperationDetailPage() {
         </div>
         <div className="form-actions">
           <button className="button button--ghost" type="button" onClick={startEditingDetails} disabled={!canEditPricePlan}>
-            Cambiar detalles
-          </button>
-          <button className="button button--ghost" type="button" onClick={startEditingPrice} disabled={!canEditPricePlan}>
-            Cambiar precio pactado
+            Cambiar detalles y recomendaciones
           </button>
         </div>
 
@@ -325,16 +692,9 @@ export function AdminOperationDetailPage() {
                 onChange={(event) => setDetailsForm({ ...detailsForm, recommendations: event.target.value })}
               />
             </label>
-            <label className="field">
-              <span>Numero de sesiones</span>
-              <input
-                className="input"
-                min="1"
-                type="number"
-                value={detailsForm.sessionsTotal}
-                onChange={(event) => setDetailsForm({ ...detailsForm, sessionsTotal: Number(event.target.value || 1) })}
-              />
-            </label>
+            <small className="field__hint field--full">
+              El numero de sesiones se edita en el bloque "Citas y cuotas".
+            </small>
             <div className="form-actions field--full">
               <button className="button button--ghost" disabled={isSavingDetails} type="button" onClick={() => setIsEditingDetails(false)}>
                 Cancelar
@@ -347,46 +707,7 @@ export function AdminOperationDetailPage() {
         ) : null}
 
         {!canEditPricePlan ? (
-          <small className="field__hint">Solo las operaciones en proceso pueden cambiar el precio pactado y/o la cantidad de cuotas.</small>
-        ) : null}
-
-        {isEditingPrice && canEditPricePlan ? (
-          <form className="form-grid" onSubmit={handleSavePrice}>
-            <label className="field">
-              <span>Precio pactado</span>
-              <input
-                className="input"
-                min="0.01"
-                step="0.01"
-                type="number"
-                value={priceForm.priceTotal}
-                onChange={(event) => setPriceForm({ ...priceForm, priceTotal: event.target.value })}
-              />
-            </label>
-            <label className="field">
-              <span>Numero de cuotas</span>
-              <input
-                className="input"
-                min="1"
-                type="number"
-                value={priceForm.quotaCount}
-                onChange={(event) => setPriceForm({ ...priceForm, quotaCount: Number(event.target.value || 1) })}
-              />
-            </label>
-            <div className="field field--full">
-              <small className="field__hint">
-                El sistema respeta lo ya pagado y redistribuye solo el saldo restante entre las cuotas pendientes.
-              </small>
-            </div>
-            <div className="form-actions field--full">
-              <button className="button button--ghost" disabled={isSavingPrice} type="button" onClick={() => setIsEditingPrice(false)}>
-                Cancelar
-              </button>
-              <button className="button" disabled={isSavingPrice} type="submit">
-                {isSavingPrice ? 'Redistribuyendo...' : 'Guardar precio y cuotas'}
-              </button>
-            </div>
-          </form>
+          <small className="field__hint">Solo las operaciones en proceso permiten editar el plan de pagos y las sesiones.</small>
         ) : null}
       </SectionCard>
 
@@ -459,9 +780,12 @@ export function AdminOperationDetailPage() {
       <SectionCard
         eyebrow="Seguimiento"
         title="Citas y cuotas"
-        description="Resumen rápido del historial de reservas y del plan de pagos asociado a la operación."
+        description="Gestiona las sesiones de la operacion, las reservas de citas medicas y el plan de pagos asociado."
       >
         <div className="operation-detail-grid">
+          {/* ------------------------------------------------------------- */}
+          {/* Citas medicas: sesiones + reserva + reprogramacion/cancelacion */}
+          {/* ------------------------------------------------------------- */}
           <article className="operation-detail-panel">
             <div className="operation-detail-panel__header">
               <div>
@@ -469,8 +793,103 @@ export function AdminOperationDetailPage() {
                 <strong>{operation.appointments.length} registro(s)</strong>
               </div>
             </div>
+
+            {/* Editor del numero de sesiones, vive aca (no en Informacion principal) */}
+            <div className="form-grid _mt-md">
+              <label className="field">
+                <span>
+                  Numero de sesiones ({currentSessions ?? 'sin definir'} actual)
+                </span>
+                <input
+                  className="input"
+                  type="number"
+                  placeholder={currentSessions !== null ? String(currentSessions) : 'Sin definir'}
+                  value={sessionsDraft}
+                  disabled={!canEditPricePlan}
+                  onChange={(event) => setSessionsDraft(event.target.value)}
+                />
+              </label>
+              <div className="form-actions">
+                <button
+                  className="button button--ghost"
+                  type="button"
+                  disabled={
+                    !canEditPricePlan ||
+                    isSavingSessions ||
+                    sessionsDraft.trim() === '' ||
+                    Number(sessionsDraft) < 1
+                  }
+                  onClick={() => void handleSaveSessions()}
+                >
+                  {isSavingSessions ? 'Guardando...' : 'Actualizar sesiones'}
+                </button>
+              </div>
+            </div>
+
+            <h4 className="_mt-md">Reservar nueva cita</h4>
+            {canBookNewAppointment ? (
+              <small className="field__hint _mb-sm">{reservationCaption}</small>
+            ) : (
+              <small className="field__hint _mb-sm">
+                {availableAppointments !== null && availableAppointments <= 0
+                  ? 'Esta operacion no tiene mas sesiones disponibles.'
+                  : !operation.branchId
+                    ? 'Esta operacion aun no tiene una sede asignada; no se pueden reservar citas hasta que se asigne una.'
+                    : 'No se pueden reservar citas nuevas en este estado.'}
+              </small>
+            )}
+            <fieldset className="form-grid" disabled={!canBookNewAppointment}>
+              <label className="field">
+                <span>Fecha</span>
+                <input
+                  className="input"
+                  type="date"
+                  value={reservationDate}
+                  onChange={(event) => {
+                    setReservationDate(event.target.value)
+                    setReservationCheck(null)
+                  }}
+                />
+              </label>
+              <label className="field">
+                <span>Hora</span>
+                <input
+                  className="input"
+                  type="time"
+                  value={reservationTime}
+                  onChange={(event) => {
+                    setReservationTime(event.target.value)
+                    setReservationCheck(null)
+                  }}
+                />
+              </label>
+              <div className="form-actions field--full">
+                <button
+                  className="button button--ghost"
+                  type="button"
+                  disabled={!reservationDate || !reservationTime || isCheckingReservation}
+                  onClick={() => void handleCheckReservation()}
+                >
+                  {isCheckingReservation ? 'Verificando...' : 'Verificar disponibilidad'}
+                </button>
+                <button
+                  className="button"
+                  type="button"
+                  disabled={!reservationCheck || isBookingReservation}
+                  onClick={() => void handleReserve()}
+                >
+                  {isBookingReservation ? 'Reservando...' : 'Confirmar reserva'}
+                </button>
+              </div>
+              {reservationCheck ? (
+                <small className="field__hint field--full">
+                  Disponibilidad: {reservationCheck.concurrency} cita(s) entre {reservationCheck.hora_inicio} y {reservationCheck.hora_fin}. Especialistas en turno: {reservationCheck.presentes?.length ?? 0}.
+                </small>
+              ) : null}
+            </fieldset>
+
             {operation.appointments.length ? (
-              <div className="operation-detail-items">
+              <div className="operation-detail-items _mt-md">
                 {operation.appointments.map((appointment) => (
                   <article className="operation-detail-item" key={appointment.id}>
                     <strong>{appointment.dateTime}</strong>
@@ -483,9 +902,9 @@ export function AdminOperationDetailPage() {
                           Reprogramar reserva
                         </button>
                         {appointment.canManage ? (
-                        <button className="button button--ghost button--compact" disabled={appointmentActionId !== null} type="button" onClick={() => void handleCancelAppointment(appointment.rawId)}>
-                          {appointmentActionId === appointment.rawId ? 'Cancelando...' : 'Cancelar reserva'}
-                        </button>
+                          <button className="button button--ghost button--compact" disabled={appointmentActionId !== null} type="button" onClick={() => void handleCancelAppointment(appointment.rawId)}>
+                            {appointmentActionId === appointment.rawId ? 'Cancelando...' : 'Cancelar reserva'}
+                          </button>
                         ) : null}
                       </div>
                     ) : null}
@@ -500,23 +919,267 @@ export function AdminOperationDetailPage() {
             )}
           </article>
 
+          {/* ------------------------------------------------------------- */}
+          {/* Plan de pagos: editor por cuota (monto + fecha)                */}
+          {/* ------------------------------------------------------------- */}
           <article className="operation-detail-panel">
             <div className="operation-detail-panel__header">
               <div>
                 <span>Plan de pagos</span>
                 <strong>{operation.quotas.length} cuota(s)</strong>
               </div>
+              {isAddingQuota ? (
+                <div className="table-actions">
+                  <button
+                    className="button button--ghost button--compact"
+                    type="button"
+                    onClick={cancelAddingQuota}
+                    disabled={isSavingPrice}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    className="button button--compact"
+                    type="button"
+                    onClick={() => void handleSaveNewQuota()}
+                    disabled={isSavingPrice || !newQuotaDraft || singleAddExcede}
+                    title={
+                      singleAddExcede
+                        ? 'El monto excede el saldo del tratamiento. Ajustalo antes de guardar.'
+                        : undefined
+                    }
+                  >
+                    {isSavingPrice ? 'Guardando...' : 'Guardar'}
+                  </button>
+                </div>
+              ) : isEditingQuotas ? (
+                <div className="table-actions">
+                  <button
+                    className="button button--ghost button--compact"
+                    type="button"
+                    onClick={() => {
+                      setIsEditingQuotas(false)
+                      setQuotasFormError(null)
+                    }}
+                    disabled={isSavingPrice}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    className="button button--compact"
+                    type="button"
+                    onClick={() => void handleSaveQuotas()}
+                    disabled={isSavingPrice || editableQuotaCount === 0 || !batchHasChanges}
+                    title={
+                      editableQuotaCount === 0
+                        ? 'Todas las cuotas estan pagadas; no hay nada que editar.'
+                        : !batchHasChanges
+                          ? 'No has hecho cambios para guardar.'
+                          : undefined
+                    }
+                  >
+                    {isSavingPrice ? 'Guardando...' : 'Guardar plan'}
+                  </button>
+                </div>
+              ) : operation.quotas.length > 0 && canEditPricePlan ? (
+                <div className="table-actions">
+                  <button
+                    className="button button--ghost button--compact"
+                    type="button"
+                    onClick={startAddingQuota}
+                  >
+                    Agregar cuota
+                  </button>
+                  <button
+                    className="button button--ghost button--compact"
+                    type="button"
+                    onClick={startEditingQuotas}
+                  >
+                    Editar fechas y montos
+                  </button>
+                </div>
+              ) : canEditPricePlan ? (
+                <button
+                  className="button button--ghost button--compact"
+                  type="button"
+                  onClick={startAddingQuota}
+                >
+                  Crear primera cuota
+                </button>
+              ) : null}
             </div>
-            {operation.quotas.length ? (
-              <div className="operation-detail-items">
-                {operation.quotas.map((quota) => (
-                  <article className="operation-detail-item" key={quota.id}>
-                    <strong>Cuota {quota.number}</strong>
-                    <p>{quota.amount} | vence: {quota.dueDate}</p>
-                    <span>{quota.status}</span>
-                    <small>Pagos registrados: {quota.paymentsCount}</small>
-                  </article>
-                ))}
+
+            {quotasFormError && !isAddingQuota ? (
+              <small className="field__error _mt-sm">{quotasFormError}</small>
+            ) : null}
+            {newQuotaFormError && isAddingQuota ? (
+              <small className="field__error _mt-sm">{newQuotaFormError}</small>
+            ) : null}
+
+            {isAddingQuota && newQuotaDraft ? (
+              <div className="operation-detail-items _mt-md">
+                <article className="operation-detail-item">
+                  <div className="operation-detail-item__header">
+                    <strong>Cuota {newQuotaDraft.nroCuota} (nueva)</strong>
+                  </div>
+                  <div className="form-grid _mt-sm">
+                    <label className="field">
+                      <span>Monto (Bs)</span>
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={newQuotaDraft.montoProgramado}
+                        onChange={(event) =>
+                          setNewQuotaDraft({ ...newQuotaDraft, montoProgramado: event.target.value })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Fecha de vencimiento</span>
+                      <input
+                        className="input"
+                        type="date"
+                        value={newQuotaDraft.fechaVencimiento}
+                        onChange={(event) =>
+                          setNewQuotaDraft({ ...newQuotaDraft, fechaVencimiento: event.target.value })
+                        }
+                      />
+                    </label>
+                  </div>
+                  <small className="field__hint">
+                    {(() => {
+                      // Saldo restante = precio total - suma de montos ya
+                      // programados (los existentes + el nuevo que el admin
+                      // esta tipeando). Sirve de pista: despues de guardar
+                      // esta cuota, ese sera el monto que aun queda por
+                      // distribuir entre las siguientes cuotas. Si el
+                      // restante es negativo, la suma EXCEDE el precio
+                      // total y el backend rechazara el guardado.
+                      const precioTotal = Number(numberFromCurrency(operation.price))
+                      if (!Number.isFinite(precioTotal) || precioTotal <= 0) return null
+                      const programadoExistente = operation.quotas.reduce(
+                        (acc, q) => acc + (Number(q.amountValue) || 0),
+                        0,
+                      )
+                      const digitado = Number(newQuotaDraft.montoProgramado) || 0
+                      const restante = precioTotal - programadoExistente - digitado
+                      if (restante < 0) {
+                        return (
+                          <span className="field__error">
+                            La suma ({precioTotal.toFixed(2)} de precio + {digitado.toFixed(2)} de esta cuota menos lo ya programado de {programadoExistente.toFixed(2)}) excederia el precio total en Bs {Math.abs(restante).toFixed(2)}.
+                          </span>
+                        )
+                      }
+                      return (
+                        <>
+                          Saldo restante despues de esta cuota:{' '}
+                          <strong>Bs {restante.toFixed(2)}</strong> (de Bs {precioTotal.toFixed(2)}).
+                        </>
+                      )
+                    })()}
+                  </small>
+                </article>
+              </div>
+            ) : isEditingQuotas ? (
+              <div className="operation-detail-items _mt-md">
+                {quotasDraft.map((q, idx) => {
+                  // El editor batch SOLO contiene cuotas existentes (no
+                  // se permite agregar aqui). Las pagadas no se pueden
+                  // editar; las que tienen comprobante en revision
+                  // pueden pasar el frontend pero el backend dara el
+                  // error exacto al guardar.
+                  const backendQuota = operation.quotas.find((q2) => q2.number === q.nroCuota)
+                  const isPagada = backendQuota?.status === 'Pagado'
+                  const hasPayments = (backendQuota?.paymentsCount ?? 0) > 0
+                  const lockReason = isPagada
+                    ? 'Esta cuota ya fue pagada y no se puede editar.'
+                    : hasPayments
+                      ? 'Esta cuota tiene un comprobante registrado; el backend puede bloquear la edicion si esta en revision.'
+                      : null
+                  return (
+                    <article className="operation-detail-item" key={`quota-edit-${q.nroCuota}`}>
+                      <div className="operation-detail-item__header">
+                        <strong>Cuota {q.nroCuota}</strong>
+                        {lockReason ? (
+                          <StatusBadge tone={isPagada ? 'success' : 'warning'}>
+                            {isPagada ? 'Pagada' : 'Con comprobante'}
+                          </StatusBadge>
+                        ) : null}
+                      </div>
+                      <div className="form-grid _mt-sm">
+                        <label className="field">
+                          <span>Monto (Bs)</span>
+                          <input
+                            className="input"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={q.montoProgramado}
+                            disabled={isPagada || isSavingPrice}
+                            onChange={(event) => updateQuotaDraftField(idx, 'montoProgramado', event.target.value)}
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Fecha de vencimiento</span>
+                          <input
+                            className="input"
+                            type="date"
+                            value={q.fechaVencimiento}
+                            disabled={isPagada || isSavingPrice}
+                            onChange={(event) => updateQuotaDraftField(idx, 'fechaVencimiento', event.target.value)}
+                          />
+                        </label>
+                      </div>
+                      <small className={lockReason ? 'field__error' : 'field__hint'}>
+                        {lockReason ?? `Estado actual: ${backendQuota?.status ?? 'Pendiente'} | ${backendQuota?.paymentsCount ?? 0} pago(s) registrado(s)`}
+                      </small>
+                    </article>
+                  )
+                })}
+              </div>
+            ) : operation.quotas.length ? (
+              <div className="operation-detail-items _mt-md">
+                {operation.quotas.map((quota) => {
+                  // El backend bloquea PAGADAS y con comprobante
+                  // PENDIENTE. Aqui deshabilitamos el boton en esos
+                  // mismos casos para evitar enviar un POST que
+                  // retornaria 400.
+                  const isPagada = quota.status === 'Pagado'
+                  const hasPayments = (quota.paymentsCount ?? 0) > 0
+                  const canDelete = !isPagada && !hasPayments && canEditPricePlan
+                  const isDeleting = deletingQuotaNumber === quota.number
+                  return (
+                    <article className="operation-detail-item" key={quota.id}>
+                      <div className="operation-detail-item__header">
+                        <strong>Cuota {quota.number}</strong>
+                        {canDelete ? (
+                          <button
+                            className="button button--ghost button--compact"
+                            type="button"
+                            onClick={() => void handleDeleteQuota(quota.number)}
+                            disabled={isDeleting || deletingQuotaNumber !== null}
+                            aria-label={`Quitar cuota ${quota.number}`}
+                          >
+                            {isDeleting ? 'Eliminando...' : 'Quitar'}
+                          </button>
+                        ) : (
+                          <small className="field__hint">
+                            {isPagada
+                              ? 'Pagada: no se puede eliminar.'
+                              : hasPayments
+                                ? 'Con comprobante: revisar antes de eliminar.'
+                                : null}
+                          </small>
+                        )}
+                      </div>
+                      <p>{quota.amount} | vence: {quota.dueDate}</p>
+                      <span>{quota.status}</span>
+                      <small>Pagos registrados: {quota.paymentsCount}</small>
+                    </article>
+                  )
+                })}
               </div>
             ) : (
               <DataState
@@ -525,6 +1188,10 @@ export function AdminOperationDetailPage() {
               />
             )}
           </article>
+
+          {/* ------------------------------------------------------------- */}
+          {/* Reprogramar (panel condicional, igual que antes)               */}
+          {/* ------------------------------------------------------------- */}
           {selectedAppointment ? (
             <article className="operation-detail-panel">
               <div className="operation-detail-panel__header"><div><span>Reprogramar</span><strong>Antes y despues</strong></div></div>

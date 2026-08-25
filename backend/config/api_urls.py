@@ -66,6 +66,7 @@ from config.api_views import (
     admin_prospecto_migrar,
     admin_update_operation_details,
     admin_update_operation_price_plan,
+    admin_delete_operation_quota,
     admin_update_payment_status,
     admin_update_payment_qr_config,
     admin_update_prospect_medical_appointment,
@@ -280,6 +281,11 @@ urlpatterns = [
         "operaciones/<int:operacion_id>/actualizar-precio/",
         admin_update_operation_price_plan,
         name="admin-operation-update-price-api",
+    ),
+    path(
+        "operaciones/<int:operacion_id>/eliminar-cuota/",
+        admin_delete_operation_quota,
+        name="admin-operation-delete-quota-api",
     ),
     path("citas/<int:appointment_id>/cancelar/", admin_cancel_appointment, name="admin-appointment-cancel-api"),
     path(

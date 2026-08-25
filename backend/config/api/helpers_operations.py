@@ -36,19 +36,40 @@ def operation_reference_appointment(operacion):
 
 
 def operation_branch(operacion):
-    """Return the branch name for an operation as a formatted string."""
+    """Return the branch name for an operation as a formatted string.
+
+    Prioridad: primera cita reservada -> fallback a la sede de origen
+    del cliente (Cliente.sucursal_origen, ya persistida por el wizard
+    de conversion o por la alta inicial). Solo si ninguna de las dos
+    existe devolvemos "Por asignar".
+    """
     cita = operation_reference_appointment(operacion)
-    if not cita:
-        return "Por asignar"
-    return f"Sede: {cita.sucursal.nombre}"
+    if cita:
+        return f"Sede: {cita.sucursal.nombre}"
+
+    cliente = getattr(operacion, "paciente", None)
+    sucursal_origen = getattr(cliente, "sucursal_origen", None) if cliente else None
+    if sucursal_origen is not None:
+        return f"Sede: {sucursal_origen.nombre}"
+    return "Por asignar"
 
 
 def operation_branch_id(operacion):
-    """Return the branch ID for an operation, or None if no appointments."""
+    """Return the branch ID for an operation, or None if no appointments.
+
+    Misma prioridad que ``operation_branch``: primera cita reservada,
+    si no, sede de origen del cliente. Devuelve ``None`` si ninguna
+    esta disponible (caso borde historico).
+    """
     cita = operation_reference_appointment(operacion)
-    if not cita:
-        return None
-    return cita.sucursal_id
+    if cita:
+        return cita.sucursal_id
+
+    cliente = getattr(operacion, "paciente", None)
+    sucursal_origen = getattr(cliente, "sucursal_origen", None) if cliente else None
+    if sucursal_origen is not None:
+        return sucursal_origen.pk
+    return None
 
 
 def operation_next_appointment(operacion):

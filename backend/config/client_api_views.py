@@ -108,13 +108,21 @@ def _month_label(value):
 
 def _operation_branch(operacion):
     citas = list(operacion.citas_medicas.all())
-    if not citas:
-        return "Por asignar"
+    if citas:
+        now = timezone.now()
+        upcoming = [cita for cita in citas if cita.fecha_hora >= now]
+        cita = upcoming[0] if upcoming else citas[-1]
+        return f"Sede: {cita.sucursal.nombre}"
 
-    now = timezone.now()
-    upcoming = [cita for cita in citas if cita.fecha_hora >= now]
-    cita = upcoming[0] if upcoming else citas[-1]
-    return f"Sede: {cita.sucursal.nombre}"
+    # Sin citas reservadas todavia (caso normal en operaciones recien
+    # creadas por el wizard de conversion): caemos a la sede de origen del
+    # cliente, que el wizard ya persiste al crear el Cliente. Solo si el
+    # cliente tampoco tiene sede asignada mostramos "Por asignar".
+    cliente = getattr(operacion, "paciente", None)
+    sucursal_origen = getattr(cliente, "sucursal_origen", None) if cliente else None
+    if sucursal_origen is not None:
+        return f"Sede: {sucursal_origen.nombre}"
+    return "Por asignar"
 
 
 def _next_appointment(operacion):
@@ -190,6 +198,7 @@ def _operation_item(operacion):
     return {
         "id": f"OP-{operacion.pk:04d}",
         "rawId": operacion.pk,
+        "patientId": operacion.paciente_id,
         "procedure": procedure_name(operacion),
         "serviceType": operacion.servicio_config.tipo_servicio.tipo,
         "branch": _operation_branch(operacion),
@@ -206,6 +215,10 @@ def _operation_item(operacion):
         "price": currency(operacion.precio_total),
         "zone": zone,
         "startedAt": date_label(operacion.fecha_inicio),
+        # Version ISO (`YYYY-MM-DD`) de la fecha de inicio para que el front
+        # pueda filtrar la lista por mes/anio sin parsear el label
+        # localizado. `None` cuando la operacion aun no tiene fecha.
+        "startedAtIso": operacion.fecha_inicio.isoformat() if operacion.fecha_inicio else None,
         "endedAt": date_label(operacion.fecha_final) if operacion.fecha_final else "En curso",
         "nextAppointment": datetime_label(next_appointment.fecha_hora) if next_appointment else "Sin cita futura",
         "recommendations": operacion.recomendaciones or "Sin recomendaciones registradas.",
@@ -217,6 +230,11 @@ def _operation_item(operacion):
             "reserved": operacion.reservas_activas,
             "available": operacion.sesiones_disponibles,
         },
+        # Cupos que quedan para una nueva reserva. Tambien viene
+        # anidado en ``sessions.available``; lo exponemos al nivel raiz
+        # para que el frontend pueda bloquear el formulario "Reservar
+        # nueva cita" sin parsear el string localizado.
+        "availableAppointments": operacion.sesiones_disponibles,
         "canReserve": operacion.puede_reservar,
         "firstPaymentVerified": operacion.primer_pago_verificado,
         "reserveMessage": _reserve_message(operacion),

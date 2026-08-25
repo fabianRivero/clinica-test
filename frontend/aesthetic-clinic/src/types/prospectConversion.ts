@@ -25,8 +25,11 @@ export type ProspectConversionOperationData = {
   zonaGeneral: string
   zonaEspecifica: string
   precioTotal: string
-  cuotasTotales: number
-  sesionesTotales: number
+  // `cuotasTotales` y `sesionesTotales` pueden llegar `null` desde el
+  // backend cuando el admin aun no las definio en el paso 2; el plan de
+  // pagos y la cantidad de sesiones se completaran despues en otro flujo.
+  cuotasTotales: number | null
+  sesionesTotales: number | null
   fechaInicio: string
   fechaFinal: string
   estado: string

@@ -78,9 +78,11 @@ export function AdminClientDetailPage() {
 
     // Operation state
     operationStatusFilter,
+    setOperationStatusFilter,
+    operationPeriodFilter,
+    setOperationPeriodFilter,
     operationStatuses,
     filteredOperations,
-    setOperationStatusFilter,
 
     // Payments pagination
     visiblePayments,
@@ -439,9 +441,11 @@ export function AdminClientDetailPage() {
         hasLessOperations={hasLessOperations}
         operations={data.operations}
         operationStatusFilter={operationStatusFilter}
+        operationPeriodFilter={operationPeriodFilter}
         operationStatuses={operationStatuses}
         filteredOperations={filteredOperations}
         onFilterChange={setOperationStatusFilter}
+        onPeriodFilterChange={setOperationPeriodFilter}
       />
 
       <ConfirmDialogModal />

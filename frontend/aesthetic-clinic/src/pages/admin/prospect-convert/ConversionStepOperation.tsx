@@ -66,8 +66,14 @@ export function ConversionStepOperation({
       </label>
 
       <label className="field">
-        <span>Sesiones totales <span className="_text-danger">*</span></span>
-        <input className="input" min="1" name="sesionesTotales" type="number" value={operationForm.sesionesTotales} onChange={onChange} />
+        <span>Sesiones totales</span>
+        <input
+          className="input"
+          name="sesionesTotales"
+          type="number"
+          value={operationForm.sesionesTotales ?? ''}
+          onChange={onChange}
+        />
         {fieldErrors.sesionesTotales ? <small className="field__error">{fieldErrors.sesionesTotales}</small> : null}
       </label>
       <label className="field">
@@ -105,15 +111,25 @@ export function ConversionStepOperation({
       </label>
 
       <label className="field">
-        <span>Cuotas totales <span className="_text-danger">*</span></span>
-        <input className="input" min="1" name="cuotasTotales" type="number" value={operationForm.cuotasTotales} onChange={onChange} />
+        <span>Cuotas totales</span>
+        <input
+          className="input"
+          name="cuotasTotales"
+          type="number"
+          value={operationForm.cuotasTotales ?? ''}
+          onChange={onChange}
+        />
         {fieldErrors.cuotasTotales ? <small className="field__error">{fieldErrors.cuotasTotales}</small> : null}
       </label>
 
       <div className="field field--full">
         <span>Fechas de vencimiento por cuota</span>
+        <small className="field__hint">
+          Opcionales. Si defines el numero de cuotas podes dejar las fechas vacias y
+          completarlas despues.
+        </small>
         <div className="wizard-list">
-          {buildDueDateList(operationForm.cuotasTotales, operationForm.fechasVencimientoCuotas).map((dueDate, index) => (
+          {buildDueDateList(operationForm.cuotasTotales ?? 0, operationForm.fechasVencimientoCuotas).map((dueDate, index) => (
             <div className="wizard-list__item" key={`cuota-vencimiento-${index}`}>
               <label className="field">
                 <span>{`Cuota ${index + 1}`}</span>

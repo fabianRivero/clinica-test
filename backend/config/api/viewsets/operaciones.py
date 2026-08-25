@@ -101,6 +101,10 @@ class OperacionesViewSet(viewsets.ViewSet):
         operaciones_qs = (
             Operacion.objects.select_related(
                 "paciente__usuario",
+                # Para que `operation_branch` pueda hacer fallback a la
+                # sede de origen del cliente sin una query extra por
+                # operacion (N+1).
+                "paciente__sucursal_origen",
                 "servicio_config__tipo_servicio",
                 "servicio_config__proc_estetico",
             )
@@ -178,6 +182,7 @@ class OperacionesViewSet(viewsets.ViewSet):
         operacion = (
             Operacion.objects.select_related(
                 "paciente__usuario",
+                "paciente__sucursal_origen",
                 "servicio_config__tipo_servicio",
                 "servicio_config__proc_estetico__tipo_p_estetico",
                 "ficha_clinica",
@@ -268,83 +273,219 @@ class OperacionesViewSet(viewsets.ViewSet):
     def actualizar_precio(self, request, pk=None):
         """
         POST /operaciones/<int:operacion_id>/actualizar-precio/
-        Update operation price and payment plan (redistribute quotas).
+        Update operation price and payment plan.
+
+        Modes:
+
+        * Sin ``quotas``: redistribucion automatica sobre el saldo
+          restante entre las cuotas pendientes (comportamiento previo).
+        * Con ``quotas``: cada elemento ``{nroCuota, montoProgramado,
+          fechaVencimiento}`` edita una cuota individual. Solo se pueden
+          editar cuotas NO pagadas y sin comprobantes. La suma de los
+          nuevos montos pendientes + lo ya pagado debe ser igual al
+          ``priceTotal`` nuevo.
         """
+        from config.api.serializers.operaciones import OperationQuotaItemSerializer
+
         serializer = OperationUpdatePricePlanSerializer(data=request.data)
         if not serializer.is_valid():
             return Response({"detail": "Corrige los datos del plan de pagos.", "errors": serializer.errors}, status=400)
 
-        operacion = (
-            Operacion.objects.select_for_update(of=("self",))
-            .prefetch_related("cuotas_plan_pagos__pagos_realizados")
-            .filter(pk=pk)
-            .first()
-        )
-        if not operacion:
-            return Response({"detail": "No encontramos la operacion solicitada."}, status=404)
-
-        data = serializer.validated_data
-        new_price = data["priceTotal"]
-        new_quota_count = data["quotaCount"]
-
-        cuotas = list(operacion.cuotas_plan_pagos.all())
-        paid_total = sum(
-            pago.monto_pagado
-            for cuota in cuotas
-            for pago in cuota.pagos_realizados.all()
-            if pago.estado_verificacion == PagoRealizado.EstadoVerificacion.APROBADO
-        )
-        paid_quotas = [cuota for cuota in cuotas if cuota.estado == CuotaPlanPago.Estado.PAGADO]
-        unpaid_quotas = [cuota for cuota in cuotas if cuota.estado != CuotaPlanPago.Estado.PAGADO]
-        locked_unpaid = [
-            cuota for cuota in unpaid_quotas if cuota.pagos_realizados.exists()
-        ]
-
-        errors = {}
-        if new_price < paid_total:
-            errors["priceTotal"] = f"El nuevo precio no puede ser menor a lo ya pagado: {currency(paid_total)}."
-        if new_quota_count < len(paid_quotas):
-            errors["quotaCount"] = f"El numero de cuotas no puede ser menor a las {len(paid_quotas)} cuota(s) ya pagadas."
-        if locked_unpaid:
-            errors["quotaCount"] = "Hay cuotas no pagadas con comprobantes registrados. Resuelve o retira esos comprobantes antes."
-        if errors:
-            return Response({"detail": "No se pudo redistribuir el plan de pagos.", "errors": errors}, status=400)
-
-        remaining_amount = (new_price - paid_total).quantize(Decimal("0.01"))
-        remaining_quota_count = new_quota_count - len(paid_quotas)
-        if remaining_quota_count == 0 and remaining_amount > 0:
-            return Response(
-                {
-                    "detail": "No se pudo redistribuir el plan de pagos.",
-                    "errors": {"quotaCount": "Necesitas al menos una cuota pendiente para el saldo restante."},
-                },
-                status=400,
+        with transaction.atomic():
+            operacion = (
+                Operacion.objects.select_for_update(of=("self",))
+                .prefetch_related("cuotas_plan_pagos__pagos_realizados")
+                .filter(pk=pk)
+                .first()
             )
+            if not operacion:
+                return Response({"detail": "No encontramos la operacion solicitada."}, status=404)
 
-        existing_due_dates = [cuota.fecha_vencimiento for cuota in sorted(unpaid_quotas, key=lambda item: item.nro_cuota)]
-        latest_due_date = max([cuota.fecha_vencimiento for cuota in cuotas], default=timezone.localdate())
-        while len(existing_due_dates) < remaining_quota_count:
-            latest_due_date = latest_due_date + datetime_timedelta(days=30)
-            existing_due_dates.append(latest_due_date)
+            data = serializer.validated_data
+            new_price: Decimal = data["priceTotal"]
+            new_quota_count = data["quotaCount"]
+            incoming_quotas = data.get("quotas") or []
 
-        for cuota in unpaid_quotas:
-            cuota.delete()
-
-        next_quota_number = max([cuota.nro_cuota for cuota in paid_quotas], default=0) + 1
-        for index, amount in enumerate(split_amount(remaining_amount, remaining_quota_count)):
-            CuotaPlanPago.objects.create(
-                operacion=operacion,
-                nro_cuota=next_quota_number + index,
-                fecha_vencimiento=existing_due_dates[index],
-                monto_programado=amount,
+            cuotas = list(operacion.cuotas_plan_pagos.all())
+            paid_total = sum(
+                pago.monto_pagado
+                for cuota in cuotas
+                for pago in cuota.pagos_realizados.all()
+                if pago.estado_verificacion == PagoRealizado.EstadoVerificacion.APROBADO
             )
+            paid_quotas = [cuota for cuota in cuotas if cuota.estado == CuotaPlanPago.Estado.PAGADO]
+            unpaid_quotas = [cuota for cuota in cuotas if cuota.estado != CuotaPlanPago.Estado.PAGADO]
+            locked_unpaid = [
+                cuota for cuota in unpaid_quotas if cuota.pagos_realizados.exists()
+            ]
 
-        operacion.precio_total = new_price
-        operacion.cuotas_totales = new_quota_count
-        operacion.save(update_fields=["precio_total", "cuotas_totales", "updated_at"])
-        operacion.paciente.actualizar_estado_automaticamente()
+            errors = {}
+            if new_price < paid_total:
+                errors["priceTotal"] = f"El nuevo precio no puede ser menor a lo ya pagado: {currency(paid_total)}."
+            if new_quota_count < len(paid_quotas):
+                errors["quotaCount"] = (
+                    f"El numero de cuotas no puede ser menor a las {len(paid_quotas)} cuota(s) ya pagadas."
+                )
+            if locked_unpaid:
+                errors["quotaCount"] = (
+                    "Hay cuotas no pagadas con comprobantes registrados. Resuelve o retira esos comprobantes antes."
+                )
+            if errors:
+                return Response(
+                    {"detail": "No se pudo redistribuir el plan de pagos.", "errors": errors},
+                    status=400,
+                )
 
-        # Refetch
+            # -------------------------------------------------------
+            # Modo "edicion por cuota" (lista incoming_quotas presente)
+            # -------------------------------------------------------
+            if incoming_quotas:
+                # 1) Validar el shape de cada item con el serializer dedicado.
+                items_serializer = OperationQuotaItemSerializer(data=incoming_quotas, many=True)
+                if not items_serializer.is_valid():
+                    return Response(
+                        {
+                            "detail": "Corrige los datos de las cuotas.",
+                            "errors": items_serializer.errors,
+                        },
+                        status=400,
+                    )
+                items = items_serializer.validated_data
+
+                # 2) Construir un mapa de cuotas existentes por nro_cuota y
+                # verificar que cada item apunte a una cuota editable.
+                cuotas_by_number = {cuota.nro_cuota: cuota for cuota in cuotas}
+                field_errors = {}
+                new_pending_sum = Decimal("0.00")
+                for index, item in enumerate(items):
+                    nro = item["nroCuota"]
+                    cuota = cuotas_by_number.get(nro)
+                    if cuota is None:
+                        field_errors[f"quotas.{index}.nroCuota"] = (
+                            f"No existe la cuota #{nro} en esta operacion."
+                        )
+                        continue
+                    if cuota.estado == CuotaPlanPago.Estado.PAGADO:
+                        field_errors[f"quotas.{index}.nroCuota"] = (
+                            f"La cuota #{nro} ya fue pagada y no se puede editar."
+                        )
+                        continue
+                    if cuota.pagos_realizados.exists():
+                        field_errors[f"quotas.{index}.nroCuota"] = (
+                            f"La cuota #{nro} tiene comprobantes registrados y no se puede editar."
+                        )
+                        continue
+                    new_pending_sum += item["montoProgramado"]
+                if field_errors:
+                    return Response(
+                        {"detail": "No se pudo actualizar el plan de pagos.", "errors": field_errors},
+                        status=400,
+                    )
+
+                # 3) La suma de pendientes editados + pagado debe cerrar exacto
+                # con el nuevo precio. Usamos quantize para evitar falsos
+                # positivos por precision binaria.
+                expected_pending = (new_price - paid_total).quantize(Decimal("0.01"))
+                if new_pending_sum.quantize(Decimal("0.01")) != expected_pending:
+                    return Response(
+                        {
+                            "detail": "La suma de las cuotas editadas no coincide con el precio total.",
+                            "errors": {
+                                "quotas": (
+                                    f"La suma de las cuotas pendientes debe ser {currency(expected_pending)} "
+                                    f"para cerrar con el precio total {currency(new_price)} (ya pagado: {currency(paid_total)})."
+                                )
+                            },
+                        },
+                        status=400,
+                    )
+
+                # 4) Validar que las cuotas editadas, mas las que NO se
+                # editaron pero no estan pagadas, sumen exactamente las
+                # cuotas pendientes esperadas. Las cuotas no incluidas en
+                # `incoming_quotas` mantienen su monto/fecha actual.
+                incoming_numbers = {item["nroCuota"] for item in items}
+                edited_items_by_number = {item["nroCuota"]: item for item in items}
+                for cuota in unpaid_quotas:
+                    if cuota.nro_cuota in incoming_numbers:
+                        continue
+                    # Mantenemos el monto actual; lo sumamos como pendiente.
+                    new_pending_sum += cuota.monto_programado or Decimal("0.00")
+                if new_pending_sum.quantize(Decimal("0.01")) != expected_pending:
+                    return Response(
+                        {
+                            "detail": "El conjunto de cuotas editadas no cubre todas las pendientes.",
+                            "errors": {
+                                "quotas": (
+                                    "Edita cada cuota pendiente (o ninguna) para que la suma "
+                                    f"cierre en {currency(expected_pending)}."
+                                )
+                            },
+                        },
+                        status=400,
+                    )
+
+                # 5) Aplicar cambios: persistir nuevos monto/fecha para las
+                # cuotas editadas. Las cuotas pendientes no incluidas en la
+                # lista conservan su estado actual.
+                for nro, item in edited_items_by_number.items():
+                    cuota = cuotas_by_number[nro]
+                    cuota.monto_programado = item["montoProgramado"]
+                    cuota.fecha_vencimiento = item["fechaVencimiento"]
+                    cuota.save(update_fields=["monto_programado", "fecha_vencimiento", "updated_at"])
+
+                operacion.precio_total = new_price
+                # Si la operacion aun no tenia cuotas (caso nuevo), respeta
+                # el numero total enviado por el admin aunque no haya
+                # redistribucion automatica.
+                if operacion.cuotas_totales != new_quota_count:
+                    operacion.cuotas_totales = new_quota_count
+                operacion.save(update_fields=["precio_total", "cuotas_totales", "updated_at"])
+                operacion.paciente.actualizar_estado_automaticamente()
+            else:
+                # -------------------------------------------------------
+                # Modo "redistribucion automatica" (sin lista de cuotas)
+                # -------------------------------------------------------
+                remaining_amount = (new_price - paid_total).quantize(Decimal("0.01"))
+                remaining_quota_count = new_quota_count - len(paid_quotas)
+                if remaining_quota_count == 0 and remaining_amount > 0:
+                    return Response(
+                        {
+                            "detail": "No se pudo redistribuir el plan de pagos.",
+                            "errors": {"quotaCount": "Necesitas al menos una cuota pendiente para el saldo restante."},
+                        },
+                        status=400,
+                    )
+
+                existing_due_dates = [
+                    cuota.fecha_vencimiento for cuota in sorted(unpaid_quotas, key=lambda item: item.nro_cuota)
+                ]
+                latest_due_date = max(
+                    [cuota.fecha_vencimiento for cuota in cuotas],
+                    default=timezone.localdate(),
+                )
+                while len(existing_due_dates) < remaining_quota_count:
+                    latest_due_date = latest_due_date + datetime_timedelta(days=30)
+                    existing_due_dates.append(latest_due_date)
+
+                for cuota in unpaid_quotas:
+                    cuota.delete()
+
+                next_quota_number = max([cuota.nro_cuota for cuota in paid_quotas], default=0) + 1
+                for index, amount in enumerate(split_amount(remaining_amount, remaining_quota_count)):
+                    CuotaPlanPago.objects.create(
+                        operacion=operacion,
+                        nro_cuota=next_quota_number + index,
+                        fecha_vencimiento=existing_due_dates[index],
+                        monto_programado=amount,
+                    )
+
+                operacion.precio_total = new_price
+                operacion.cuotas_totales = new_quota_count
+                operacion.save(update_fields=["precio_total", "cuotas_totales", "updated_at"])
+                operacion.paciente.actualizar_estado_automaticamente()
+
+        # Refetch (fuera del lock) y responder con el shape del card.
         operacion = (
             Operacion.objects.select_related(
                 "paciente__usuario",
@@ -365,7 +506,7 @@ class OperacionesViewSet(viewsets.ViewSet):
             .get(pk=pk)
         )
         return Response({
-            "detail": "El precio y las cuotas fueron redistribuidos correctamente.",
+            "detail": "El precio y las cuotas fueron actualizados correctamente.",
             "operation": _client_operation_item(operacion),
         })
 

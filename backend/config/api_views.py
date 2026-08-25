@@ -434,6 +434,7 @@ def _operation_detail(operacion):
     return {
         "id": f"OP-{operacion.pk:04d}",
         "rawId": operacion.pk,
+        "patientId": operacion.paciente_id,
         "patient": full_name(operacion.paciente.usuario),
         "procedure": procedure_name(operacion),
         "serviceType": operacion.servicio_config.tipo_servicio.tipo,
@@ -446,6 +447,10 @@ def _operation_detail(operacion):
             f"{operacion.reservas_activas} reservadas | "
             f"{operacion.sesiones_disponibles} libres"
         ),
+        # Cupos que quedan para una nueva reserva. El frontend usa este
+        # numero directo para bloquear el formulario "Reservar nueva
+        # cita" sin parsear el string localizado de ``sessions``.
+        "availableAppointments": operacion.sesiones_disponibles,
         "nextAppointment": _operation_next_appointment(operacion),
         "quotaStatus": _quota_status(operacion),
         "status": operacion.get_estado_display(),
@@ -3974,88 +3979,358 @@ def admin_update_operation_details(request, operacion_id):
 @admin_required
 @transaction.atomic
 def admin_update_operation_price_plan(request, operacion_id):
+    """Update the price and payment plan of an operation.
+
+    Modes:
+
+    * Sin ``quotas``: redistribucion automatica del saldo restante entre
+      las cuotas pendientes (comportamiento historico).
+    * Con ``quotas`` (``[{nroCuota, montoProgramado, fechaVencimiento}, ...]``):
+      edicion por cuota individual. Solo se permite editar cuotas no
+      pagadas y sin comprobantes; la suma del nuevo monto pendiente + lo
+      ya pagado debe cerrar exactamente con ``priceTotal``.
+    """
     payload = load_payload(request)
     if payload is None:
         return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
-    operacion = (
-        Operacion.objects.select_for_update(of=("self",))
-        .prefetch_related("cuotas_plan_pagos__pagos_realizados")
-        .filter(pk=operacion_id)
-        .first()
-    )
-    if not operacion:
-        return json_response({"detail": "No encontramos la operacion solicitada."}, status=404)
-
-    errors = {}
-    new_price = _parse_payload_decimal(payload, "priceTotal", errors, min_value=Decimal("0.01"))
-    new_quota_count = _parse_payload_int(payload, "quotaCount", errors, min_value=1)
-    if errors:
-        return json_response({"detail": "Corrige los datos del plan de pagos.", "errors": errors}, status=400)
-
-    cuotas = list(operacion.cuotas_plan_pagos.all())
-    paid_total = sum(
-        (
-            pago.monto_pagado
-            for cuota in cuotas
-            for pago in cuota.pagos_realizados.all()
-            if pago.estado_verificacion == PagoRealizado.EstadoVerificacion.APROBADO
-        ),
-        Decimal("0.00"),
-    ).quantize(Decimal("0.01"))
-    paid_quotas = [cuota for cuota in cuotas if cuota.estado == CuotaPlanPago.Estado.PAGADO]
-    unpaid_quotas = [cuota for cuota in cuotas if cuota.estado != CuotaPlanPago.Estado.PAGADO]
-    locked_unpaid = [
-        cuota
-        for cuota in unpaid_quotas
-        if cuota.pagos_realizados.exists()
-    ]
-
-    if new_price < paid_total:
-        errors["priceTotal"] = f"El nuevo precio no puede ser menor a lo ya pagado: Bs {paid_total:.2f}."
-    if new_quota_count < len(paid_quotas):
-        errors["quotaCount"] = f"El numero de cuotas no puede ser menor a las {len(paid_quotas)} cuota(s) ya pagadas."
-    if locked_unpaid:
-        errors["quotaCount"] = (
-            "Hay cuotas no pagadas con comprobantes registrados. "
-            "Resuelve o retira esos comprobantes antes de redistribuir el plan."
+    with transaction.atomic():
+        operacion = (
+            Operacion.objects.select_for_update(of=("self",))
+            .prefetch_related("cuotas_plan_pagos__pagos_realizados")
+            .filter(pk=operacion_id)
+            .first()
         )
-    if errors:
-        return json_response({"detail": "No se pudo redistribuir el plan de pagos.", "errors": errors}, status=400)
+        if not operacion:
+            return json_response({"detail": "No encontramos la operacion solicitada."}, status=404)
 
-    remaining_amount = (new_price - paid_total).quantize(Decimal("0.01"))
-    remaining_quota_count = new_quota_count - len(paid_quotas)
-    if remaining_quota_count == 0 and remaining_amount > 0:
-        return json_response(
-            {
-                "detail": "No se pudo redistribuir el plan de pagos.",
-                "errors": {"quotaCount": "Necesitas al menos una cuota pendiente para el saldo restante."},
-            },
-            status=400,
-        )
+        errors = {}
+        new_price = _parse_payload_decimal(payload, "priceTotal", errors, min_value=Decimal("0.01"))
+        new_quota_count = _parse_payload_int(payload, "quotaCount", errors, min_value=1)
+        if errors:
+            return json_response(
+                {"detail": "Corrige los datos del plan de pagos.", "errors": errors}, status=400
+            )
 
-    existing_due_dates = [cuota.fecha_vencimiento for cuota in sorted(unpaid_quotas, key=lambda item: item.nro_cuota)]
-    latest_due_date = max([cuota.fecha_vencimiento for cuota in cuotas], default=timezone.localdate())
-    while len(existing_due_dates) < remaining_quota_count:
-        latest_due_date = latest_due_date + timedelta(days=30)
-        existing_due_dates.append(latest_due_date)
+        incoming_quotas = payload.get("quotas") or []
 
-    for cuota in unpaid_quotas:
-        cuota.delete()
+        cuotas = list(operacion.cuotas_plan_pagos.all())
+        paid_total = sum(
+            (
+                pago.monto_pagado
+                for cuota in cuotas
+                for pago in cuota.pagos_realizados.all()
+                if pago.estado_verificacion == PagoRealizado.EstadoVerificacion.APROBADO
+            ),
+            Decimal("0.00"),
+        ).quantize(Decimal("0.01"))
+        paid_quotas = [cuota for cuota in cuotas if cuota.estado == CuotaPlanPago.Estado.PAGADO]
+        unpaid_quotas = [cuota for cuota in cuotas if cuota.estado != CuotaPlanPago.Estado.PAGADO]
+        # ``locked_unpaid`` son las cuotas que NO pueden editarse: estan
+        # pendientes y tienen un comprobante en revision. Comprobantes
+        # RECHAZADO o CANCELADO no cuentan (no hay revision abierta).
+        locked_unpaid = [
+            cuota
+            for cuota in unpaid_quotas
+            if cuota.pagos_realizados.filter(
+                estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
+            ).exists()
+        ]
 
-    next_quota_number = max([cuota.nro_cuota for cuota in paid_quotas], default=0) + 1
-    for index, amount in enumerate(split_amount(remaining_amount, remaining_quota_count)):
-        CuotaPlanPago.objects.create(
-            operacion=operacion,
-            nro_cuota=next_quota_number + index,
-            fecha_vencimiento=existing_due_dates[index],
-            monto_programado=amount,
-        )
+        if new_price < paid_total:
+            errors["priceTotal"] = f"El nuevo precio no puede ser menor a lo ya pagado: Bs {paid_total:.2f}."
+        if new_quota_count < len(paid_quotas):
+            errors["quotaCount"] = (
+                f"El numero de cuotas no puede ser menor a las {len(paid_quotas)} cuota(s) ya pagadas."
+            )
+        # ``locked_unpaid`` solo bloquea el modo automatico (sin
+        # ``quotas[]``): si hay un comprobante en revision pendiente,
+        # no redistribuimos el plan entero sin que el admin lo sepa.
+        # En el modo edicion por cuota, el bloqueo se aplica por item
+        # dentro del loop (mas granular: una cuota con comprobante
+        # pendiente no impide editar las demas).
+        if locked_unpaid and not incoming_quotas:
+            errors["quotaCount"] = (
+                "Hay cuotas no pagadas con comprobantes en revision. "
+                "Resuelve o retira esos comprobantes antes de redistribuir el plan."
+            )
+        if errors:
+            return json_response(
+                {"detail": "No se pudo redistribuir el plan de pagos.", "errors": errors},
+                status=400,
+            )
 
-    operacion.precio_total = new_price
-    operacion.cuotas_totales = new_quota_count
-    operacion.save(update_fields=["precio_total", "cuotas_totales", "updated_at"])
-    operacion.paciente.actualizar_estado_automaticamente()
+        # Modo edicion por cuota
+        if incoming_quotas:
+            if not isinstance(incoming_quotas, list):
+                return json_response(
+                    {"detail": "El campo 'quotas' debe ser una lista."},
+                    status=400,
+                )
+            # Validar el shape de cada item.
+            item_errors: dict[str, str] = {}
+            items: list[dict] = []
+            for index, raw_item in enumerate(incoming_quotas):
+                if not isinstance(raw_item, dict):
+                    item_errors[f"quotas.{index}"] = "Cada cuota debe ser un objeto."
+                    continue
+                item = {}
+                nro = _parse_payload_int(raw_item, "nroCuota", item_errors, min_value=1)
+                if not nro:
+                    continue
+                # Si el campo estaba mal, ya se reporto arriba; evitamos
+                # pisar la key con la del item.
+                item_errors.pop(f"quotas.{index}.nroCuota", None)
+                # Renombramos para mantener el traceback del campo
+                # correcto en la respuesta final.
+                if f"quotas.{index}.nroCuota" in item_errors:
+                    item_errors[f"quotas.{index}.nroCuota"] = item_errors.pop("nroCuota")
+
+                raw_monto = raw_item.get("montoProgramado")
+                try:
+                    monto = Decimal(str(raw_monto)) if raw_monto is not None else None
+                except (InvalidOperation, TypeError, ValueError):
+                    item_errors[f"quotas.{index}.montoProgramado"] = "Monto invalido."
+                    monto = None
+                if monto is not None and monto < Decimal("0"):
+                    item_errors[f"quotas.{index}.montoProgramado"] = (
+                        "El monto debe ser mayor o igual a 0."
+                    )
+
+                raw_fecha = raw_item.get("fechaVencimiento")
+                try:
+                    fecha = date.fromisoformat(str(raw_fecha)) if raw_fecha else None
+                except (TypeError, ValueError):
+                    item_errors[f"quotas.{index}.fechaVencimiento"] = "Fecha invalida (YYYY-MM-DD)."
+                    fecha = None
+                if not fecha and "fechaVencimiento" not in str(item_errors):
+                    item_errors[f"quotas.{index}.fechaVencimiento"] = "Fecha obligatoria (YYYY-MM-DD)."
+
+                if item_errors:
+                    continue
+                item = {"nroCuota": nro, "montoProgramado": monto, "fechaVencimiento": fecha}
+                items.append(item)
+            if item_errors:
+                return json_response(
+                    {"detail": "Corrige los datos de las cuotas.", "errors": item_errors},
+                    status=400,
+                )
+
+            # Verificar cada item. Hay dos tipos:
+            # - ``cuota existente editable``: nro_cuota esta en ``cuotas_by_number``
+            #   y la cuota esta pendiente y sin comprobantes. Se edita in-place.
+            # - ``cuota a crear``: el admin agrega UNA cuota nueva al final
+            #   del plan. El nro_cuota tiene que ser exactamente
+            #   ``max_existing_nro + 1`` (no permitimos huecos: facilita
+            #   futuras ediciones y elimina ambiguedad con quotas ya
+            #   borradas). Si el admin quiere agregar dos a la vez, lo
+            #   hara en dos llamadas separadas.
+            #
+            # Caso especial: si TODOS los items son nuevos Y hay
+            # exactamente UNO, es el flujo "agregar 1 sola cuota". En
+            # ese modo NO exigimos que la suma cierre con el precio
+            # total (el admin ira agregando mas cuotas despues); solo
+            # validamos que el monto de la cuota no supere el precio
+            # total y que la operacion tenga suficiente saldo pendiente
+            # para cubrirlo.
+            cuotas_by_number = {cuota.nro_cuota: cuota for cuota in cuotas}
+            max_existing_nro = max((c.nro_cuota for c in cuotas), default=0)
+            new_items_proposed = [it for it in items if it["nroCuota"] not in cuotas_by_number]
+            existing_items_proposed = [it for it in items if it["nroCuota"] in cuotas_by_number]
+            is_single_add_mode = (
+                len(items) == 1
+                and len(new_items_proposed) == 1
+                and len(existing_items_proposed) == 0
+            )
+
+            field_errors: dict[str, str] = {}
+            new_pending_sum = Decimal("0.00")
+            seen_numbers = set()
+            for index, item in enumerate(items):
+                nro = item["nroCuota"]
+                if nro in seen_numbers:
+                    field_errors[f"quotas.{index}.nroCuota"] = (
+                        f"La cuota #{nro} aparece mas de una vez."
+                    )
+                    continue
+                seen_numbers.add(nro)
+                cuota = cuotas_by_number.get(nro)
+                if cuota is None:
+                    # Cuota a crear: exactamente ``max + 1``.
+                    expected_nro = max_existing_nro + 1
+                    if nro != expected_nro:
+                        field_errors[f"quotas.{index}.nroCuota"] = (
+                            f"Para agregar una cuota nueva, su numero debe ser "
+                            f"{expected_nro} (el siguiente libre del plan)."
+                        )
+                        continue
+                else:
+                    if cuota.estado == CuotaPlanPago.Estado.PAGADO:
+                        field_errors[f"quotas.{index}.nroCuota"] = (
+                            f"La cuota #{nro} ya fue pagada y no se puede editar."
+                        )
+                        continue
+                    # Bloqueo solo si hay un comprobante en revision
+                    # (``PENDIENTE``). Los comprobantes RECHAZADO o
+                    # CANCELADO no bloquean la edicion: la cuota sigue
+                    # pendiente y el admin puede reasignar monto/fecha.
+                    has_pending_review = cuota.pagos_realizados.filter(
+                        estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
+                    ).exists()
+                    if has_pending_review:
+                        field_errors[f"quotas.{index}.nroCuota"] = (
+                            f"La cuota #{nro} tiene un comprobante pendiente de revision y no se puede editar."
+                        )
+                        continue
+                # Limite "no mayor al monto del tratamiento": cada item
+                # nuevo debe ser <= precio total (proteccion basica para
+                # que el admin no meta una sola cuota que ya supere el
+                # total del tratamiento por confusion).
+                if cuota is None and item["montoProgramado"] > new_price:
+                    field_errors[f"quotas.{index}.montoProgramado"] = (
+                        f"El monto (Bs {item['montoProgramado']:.2f}) no puede ser mayor "
+                        f"al precio total del tratamiento (Bs {new_price:.2f})."
+                    )
+                    continue
+                new_pending_sum += item["montoProgramado"].quantize(Decimal("0.01"))
+            if field_errors:
+                return json_response(
+                    {"detail": "No se pudo actualizar el plan de pagos.", "errors": field_errors},
+                    status=400,
+                )
+
+            # Modo batch: validamos por item individual arriba (PAGADA
+            # bloquea, comprobante PENDIENTE bloquea, monto > precio_total
+            # bloquea solo para cuotas NUEVAS). No exigimos que la suma
+            # de los items pendientes cierre con el saldo del tratamiento
+            # (``new_price - paid_total``): el admin puede editar una o
+            # varias cuotas libremente y el saldo restante queda
+            # "descubierto" hasta que agregue las cuotas que faltan via
+            # el flujo "Agregar cuota" (single-add). Esto refleja el uso
+            # real: el admin ajusta UNA cuota sin redistribuir todo el
+            # plan.
+            #
+            # Unico tope del batch: la suma de TODAS las pendientes
+            # (items del batch + cuotas pendientes existentes que el
+            # admin no toco) no puede EXCEDER el precio total. Si la
+            # suma lo supera, hay "sobrecuota" que no tiene sentido
+            # cubrir. Por debajo si se permite (saldo pendiente queda
+            # sin asignar).
+            #
+            # Esto cubre el caso de single-add: el item nuevo + las
+            # pendientes existentes se suman para validar el tope. Si
+            # el admin intenta meter una sola cuota de Bs 300 con un
+            # tratamiento de Bs 850 que ya tiene una cuota de Bs 600,
+            # la suma seria 900 > 850 y se rechaza.
+            incoming_nros = {item["nroCuota"] for item in items}
+            existing_untouched_sum = sum(
+                (cuota.monto_programado or Decimal("0.00"))
+                for cuota in unpaid_quotas
+                if cuota.nro_cuota not in incoming_nros
+            )
+            total_after_save = new_pending_sum + existing_untouched_sum
+            if total_after_save > new_price:
+                return json_response(
+                    {
+                        "detail": "La suma de los montos de las cuotas supera al precio total del tratamiento.",
+                        "errors": {
+                            "quotas": (
+                                f"La suma de las cuotas pendientes seria Bs {total_after_save:.2f} "
+                                f"y no puede ser mayor al precio total del tratamiento "
+                                f"(Bs {new_price:.2f})."
+                            )
+                        },
+                    },
+                    status=400,
+                )
+            # bloquea solo para cuotas NUEVAS). No exigimos que la suma
+            # de los items pendientes cierre con el saldo del tratamiento
+            # (``new_price - paid_total``): el admin puede editar una o
+            # varias cuotas libremente y el saldo restante queda
+            # "descubierto" hasta que agregue las cuotas que faltan via
+            # el flujo "Agregar cuota" (single-add). Esto refleja el uso
+            # real: el admin ajusta UNA cuota sin redistribuir todo el
+            # plan.
+            #
+            # El modo single-add sigue validando monto <= new_price
+            # arriba (el chequeo esta dentro del loop y se salta para
+            # items que no son nuevos).
+
+            # Aplicar los cambios. Para los items que apuntan a una cuota
+            # existente, editamos in-place; los que tienen ``nroCuota``
+            # nuevo los creamos como filas frescas. Los nuevos siempre
+            # arrancan como "Pendiente" (los pagos se registran despues).
+            edited_items_by_number = {item["nroCuota"]: item for item in items if item["nroCuota"] in cuotas_by_number}
+            for nro, item in edited_items_by_number.items():
+                cuota = cuotas_by_number[nro]
+                cuota.monto_programado = item["montoProgramado"]
+                cuota.fecha_vencimiento = item["fechaVencimiento"]
+                cuota.save(update_fields=["monto_programado", "fecha_vencimiento", "updated_at"])
+
+            new_items = [item for item in items if item["nroCuota"] not in cuotas_by_number]
+            for item in sorted(new_items, key=lambda it: it["nroCuota"]):
+                CuotaPlanPago.objects.create(
+                    operacion=operacion,
+                    nro_cuota=item["nroCuota"],
+                    monto_programado=item["montoProgramado"],
+                    fecha_vencimiento=item["fechaVencimiento"],
+                )
+
+            update_fields = []
+            if not is_single_add_mode:
+                operacion.precio_total = new_price
+                update_fields.append("precio_total")
+            # Las cuotas nuevas se numeran como max_existing + 1 (regla
+            # validada arriba), asi que el total nuevo es el nro maximo.
+            resulting_quota_count = max_existing_nro + len(new_items)
+            if operacion.cuotas_totales != resulting_quota_count:
+                operacion.cuotas_totales = resulting_quota_count
+                update_fields.append("cuotas_totales")
+            if update_fields:
+                update_fields.append("updated_at")
+                operacion.save(update_fields=update_fields)
+            operacion.paciente.actualizar_estado_automaticamente()
+        else:
+            # Redistribucion automatica sobre el saldo restante.
+            remaining_amount = (new_price - paid_total).quantize(Decimal("0.01"))
+            remaining_quota_count = new_quota_count - len(paid_quotas)
+            if remaining_quota_count == 0 and remaining_amount > 0:
+                return json_response(
+                    {
+                        "detail": "No se pudo redistribuir el plan de pagos.",
+                        "errors": {"quotaCount": "Necesitas al menos una cuota pendiente para el saldo restante."},
+                    },
+                    status=400,
+                )
+
+            existing_due_dates = [
+                cuota.fecha_vencimiento
+                for cuota in sorted(unpaid_quotas, key=lambda item: item.nro_cuota)
+            ]
+            latest_due_date = max(
+                [cuota.fecha_vencimiento for cuota in cuotas],
+                default=timezone.localdate(),
+            )
+            while len(existing_due_dates) < remaining_quota_count:
+                latest_due_date = latest_due_date + timedelta(days=30)
+                existing_due_dates.append(latest_due_date)
+
+            for cuota in unpaid_quotas:
+                cuota.delete()
+
+            next_quota_number = max([cuota.nro_cuota for cuota in paid_quotas], default=0) + 1
+            for index, amount in enumerate(split_amount(remaining_amount, remaining_quota_count)):
+                CuotaPlanPago.objects.create(
+                    operacion=operacion,
+                    nro_cuota=next_quota_number + index,
+                    fecha_vencimiento=existing_due_dates[index],
+                    monto_programado=amount,
+                )
+
+            operacion.precio_total = new_price
+            operacion.cuotas_totales = new_quota_count
+            operacion.save(update_fields=["precio_total", "cuotas_totales", "updated_at"])
+            operacion.paciente.actualizar_estado_automaticamente()
 
     operacion = (
         Operacion.objects.select_related(
@@ -4076,7 +4351,145 @@ def admin_update_operation_price_plan(request, operacion_id):
         )
         .get(pk=operacion.pk)
     )
-    return json_response({"detail": "El precio y las cuotas fueron redistribuidos correctamente.", "operation": _operation_detail(operacion)})
+    return json_response({
+        "detail": "El precio y las cuotas fueron actualizados correctamente.",
+        "operation": _operation_detail(operacion),
+    })
+
+
+@require_POST
+@admin_required
+@transaction.atomic
+def admin_delete_operation_quota(request, operacion_id):
+    """Elimina UNA cuota del plan de pagos.
+
+    Reglas (alineadas con la edicion batch de `actualizar-precio`):
+    - Solo cuotas no PAGADAS (las pagadas son inmutables).
+    - Solo cuotas sin comprobante en revision (PENDIENTE). Comprobantes
+      RECHAZADO o CANCELADO NO bloquean.
+    - Compacata la numeracion: si eliminas la cuota #2 de (1, 2, 3, 4, 5),
+      las demas se renumeran (3 -> 2, 4 -> 3, 5 -> 4) para mantener la
+      regla "cuotas nuevas = max + 1".
+    """
+    payload = load_payload(request)
+    if payload is None:
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    operacion = (
+        Operacion.objects.select_for_update(of=("self",))
+        .prefetch_related("cuotas_plan_pagos__pagos_realizados")
+        .filter(pk=operacion_id)
+        .first()
+    )
+    if not operacion:
+        return json_response({"detail": "No encontramos la operacion solicitada."}, status=404)
+
+    if operacion.estado != Operacion.Estado.EN_PROCESO:
+        return json_response(
+            {"detail": "Solo las operaciones en proceso pueden eliminar cuotas."},
+            status=400,
+        )
+
+    nro_cuota = _parse_payload_int(payload, "nroCuota", {}, min_value=1)
+    if nro_cuota is None:
+        return json_response(
+            {"detail": "Debes indicar el numero de cuota a eliminar.", "errors": {"nroCuota": "Numero de cuota obligatorio."}},
+            status=400,
+        )
+
+    cuota_a_eliminar = next(
+        (cuota for cuota in operacion.cuotas_plan_pagos.all() if cuota.nro_cuota == nro_cuota),
+        None,
+    )
+    if cuota_a_eliminar is None:
+        return json_response(
+            {"detail": f"No existe la cuota #{nro_cuota} en esta operacion."},
+            status=404,
+        )
+
+    if cuota_a_eliminar.estado == CuotaPlanPago.Estado.PAGADO:
+        return json_response(
+            {"detail": f"La cuota #{nro_cuota} ya fue pagada y no se puede eliminar."},
+            status=400,
+        )
+
+    has_pending_review = cuota_a_eliminar.pagos_realizados.filter(
+        estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
+    ).exists()
+    if has_pending_review:
+        return json_response(
+            {
+                "detail": (
+                    f"La cuota #{nro_cuota} tiene un comprobante pendiente de revision. "
+                    "Resolvelo o retiralo antes de eliminar la cuota."
+                )
+            },
+            status=400,
+        )
+
+    # Compactar numeracion: las cuotas con nro > nro_cuota se renumeran
+    # para llenar el hueco. Hacemos el DELETE primero para liberar el
+    # slot del nro_cuota; luego renumeramos de mayor a menor (cada save
+    # toma un slot que la iteracion anterior ya dejo libre) para no
+    # violar el UniqueConstraint("operacion", "nro_cuota") en SQLite.
+    cuota_a_eliminar.delete()
+
+    # Renumerar de menor a mayor: cada save toma el slot que la
+    # iteracion anterior dejo libre (la pk=N se renumera a N-1, y la
+    # pk=N+1 ocupa ese mismo N apenas N+1 ya no esta alli).
+    # ``list(...)`` materializa el queryset del prefetch para que las
+    # iteraciones siguientes no re-consulten la BD.
+    cuotas_a_renumerar = sorted(
+        list(
+            cuota
+            for cuota in operacion.cuotas_plan_pagos.all()
+            if cuota.nro_cuota > nro_cuota
+        ),
+        key=lambda c: c.nro_cuota,
+    )
+    for cuota in cuotas_a_renumerar:
+        cuota.nro_cuota = cuota.nro_cuota - 1
+        cuota.save(update_fields=["nro_cuota", "updated_at"])
+
+    # ``cuotas_totales`` se decrementa al nuevo maximo (post-compactacion).
+    # Filtramos por ``pk is not None`` porque el queryset del prefetch
+    # cacheado en la instancia puede seguir conteniendo la cuota
+    # eliminada (con pk=None) tras el delete().
+    restantes = [c for c in operacion.cuotas_plan_pagos.all() if c.pk is not None]
+    nuevo_max = max(
+        (c.nro_cuota for c in restantes),
+        default=0,
+    )
+    if operacion.cuotas_totales != nuevo_max:
+        operacion.cuotas_totales = nuevo_max
+        operacion.save(update_fields=["cuotas_totales", "updated_at"])
+
+    operacion.paciente.actualizar_estado_automaticamente()
+
+    # Refetch para devolver el shape consistente del detail.
+    operacion = (
+        Operacion.objects.select_related(
+            "paciente__usuario",
+            "servicio_config__tipo_servicio",
+            "servicio_config__proc_estetico__tipo_p_estetico",
+            "ficha_clinica",
+        )
+        .prefetch_related(
+            Prefetch(
+                "citas_medicas",
+                queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
+            ),
+            Prefetch(
+                "cuotas_plan_pagos",
+                queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados").order_by("nro_cuota"),
+            ),
+        )
+        .get(pk=operacion.pk)
+    )
+    return json_response({
+        "detail": f"Cuota #{nro_cuota} eliminada correctamente.",
+        "operation": _operation_detail(operacion),
+    })
 
 
 @require_GET

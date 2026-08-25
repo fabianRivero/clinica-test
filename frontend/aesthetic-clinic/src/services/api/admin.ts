@@ -250,6 +250,16 @@ export function updateAdminOperationPricePlan(
   )
 }
 
+export function deleteAdminOperationQuota(
+  operationId: number,
+  payload: { nroCuota: number },
+) {
+  return requestJsonWithBody<OperationDetailResponse>(
+    `/api/admin/operaciones/${operationId}/eliminar-cuota/`,
+    payload,
+  )
+}
+
 export function getAdminAvailability(_branchId?: number | null) {
   return requestJson<AdminAvailabilityResponse>('/api/admin/disponibilidad/')
 }

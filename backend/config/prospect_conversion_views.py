@@ -449,11 +449,24 @@ def _serialize_draft(draft):
             if not saved_medical_data.get(key):
                 saved_medical_data.pop(key, None)
     saved_operation_data = dict(draft.datos_operacion or {})
-    cuotas_totales = int(saved_operation_data.get("cuotasTotales") or 1)
+    # `cuotasTotales` y `sesionesTotales` pueden llegar como None si el admin
+    # aun no las definio; en ese caso las devolvemos tal cual para que el
+    # front muestre el campo vacio en vez de un "1" que no fue elegido.
+    def _load_optional_int(value):
+        if value in (None, ""):
+            return None
+        return int(value or 1)
+
+    cuotas_totales = _load_optional_int(saved_operation_data.get("cuotasTotales"))
+    sesiones_totales = _load_optional_int(saved_operation_data.get("sesionesTotales"))
     due_dates = saved_operation_data.get("fechasVencimientoCuotas")
     if due_dates is None:
         legacy_due_date = saved_operation_data.get("primeraFechaVencimiento") or ""
-        due_dates = [legacy_due_date] + [""] * max(cuotas_totales - 1, 0)
+        # Sin numero de cuotas no sembramos fechas por defecto.
+        if cuotas_totales is None:
+            due_dates = []
+        else:
+            due_dates = [legacy_due_date] + [""] * max(cuotas_totales - 1, 0)
 
     medical_data = {
         **default_medical_data,
@@ -479,14 +492,14 @@ def _serialize_draft(draft):
             "zonaGeneral": "",
             "zonaEspecifica": "",
             "precioTotal": "",
-            "cuotasTotales": 1,
-            "sesionesTotales": 1,
+            "cuotasTotales": None,
+            "sesionesTotales": None,
             "fechaInicio": "",
             "fechaFinal": "",
             "estado": Operacion.Estado.EN_PROCESO,
             "detallesOperacion": "",
             "recomendaciones": "",
-            "fechasVencimientoCuotas": [""],
+            "fechasVencimientoCuotas": [],
             **saved_operation_data,
             "fechasVencimientoCuotas": due_dates,
         },
@@ -853,8 +866,35 @@ def _validate_operation_step(payload):
 
     service_config_id = _parse_positive_int(payload.get("serviceConfigId"), "serviceConfigId", errors, min_value=1)
     precio_total = _parse_decimal(payload.get("precioTotal"), "precioTotal", errors, min_value=Decimal("0.01"))
-    cuotas_totales = _parse_positive_int(payload.get("cuotasTotales"), "cuotasTotales", errors, min_value=1)
-    sesiones_totales = _parse_positive_int(payload.get("sesionesTotales"), "sesionesTotales", errors, min_value=1)
+    # `cuotasTotales` y `fechasVencimientoCuotas` son opcionales en este paso.
+    # Si el admin define el numero de cuotas puede dejar las fechas vacias y
+    # configurarlas despues; si no define el numero de cuotas, tampoco debe
+    # enviar fechas de vencimiento. Aceptamos `0` como "aun sin definir"
+    # para que el frontend pueda enviar un campo numerico vacio.
+    raw_cuotas_totales = payload.get("cuotasTotales")
+    if raw_cuotas_totales in (None, "", 0):
+        cuotas_totales = None
+    else:
+        cuotas_totales = _parse_positive_int(
+            raw_cuotas_totales,
+            "cuotasTotales",
+            errors,
+            required=False,
+            min_value=1,
+        )
+    # `sesionesTotales` sigue la misma logica: opcional en este paso,
+    # aceptamos `0` como "aun sin definir" (campo numerico vacio del front).
+    raw_sesiones_totales = payload.get("sesionesTotales")
+    if raw_sesiones_totales in (None, "", 0):
+        sesiones_totales = None
+    else:
+        sesiones_totales = _parse_positive_int(
+            raw_sesiones_totales,
+            "sesionesTotales",
+            errors,
+            required=False,
+            min_value=1,
+        )
     fecha_inicio = _parse_date(payload.get("fechaInicio"), "fechaInicio", errors, required=True)
     today = timezone.localdate()
     fecha_final = _parse_date(payload.get("fechaFinal"), "fechaFinal", errors, required=False)
@@ -886,19 +926,19 @@ def _validate_operation_step(payload):
     raw_due_dates = payload.get("fechasVencimientoCuotas") or []
     due_dates = []
     seen_due_dates = set()
-    if cuotas_totales:
-        if len(raw_due_dates) != cuotas_totales:
-            errors["fechasVencimientoCuotas"] = (
-                "Debes indicar una fecha de vencimiento para cada cuota."
-            )
-
-        for index in range(cuotas_totales):
-            raw_value = raw_due_dates[index] if index < len(raw_due_dates) else ""
+    # Sin numero de cuotas no aceptamos fechas sueltas; las cuotas se
+    # configuraran despues en otro paso.
+    if not cuotas_totales and raw_due_dates:
+        errors["fechasVencimientoCuotas"] = (
+            "No puedes enviar fechas de vencimiento si no defines el numero de cuotas."
+        )
+    elif cuotas_totales:
+        for index, raw_value in enumerate(raw_due_dates):
             parsed_due_date = _parse_date(
                 raw_value,
                 f"fechasVencimientoCuotas.{index}",
                 errors,
-                required=True,
+                required=False,
             )
             if not parsed_due_date:
                 continue
@@ -1663,14 +1703,33 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             patologia_id=patologia_id,
         )
 
+    # `cuotasTotales` y `sesionesTotales` pueden venir `None` si el admin
+    # no las definio en el paso 2; el modelo `Operacion` exige un entero
+    # positivo, asi que usamos el default (1) en ese caso. Solo creamos
+    # `CuotaPlanPago` para las fechas que el admin haya enviado; las demas
+    # se configuraran despues.
+    raw_cuotas_totales = operation_data.get("cuotasTotales")
+    if raw_cuotas_totales in (None, ""):
+        cuotas_totales_value = 1
+        due_dates_to_create = []
+    else:
+        cuotas_totales_value = int(raw_cuotas_totales)
+        due_dates_to_create = operation_data.get("fechasVencimientoCuotas") or []
+
+    raw_sesiones_totales = operation_data.get("sesionesTotales")
+    if raw_sesiones_totales in (None, ""):
+        sesiones_totales_value = 1
+    else:
+        sesiones_totales_value = int(raw_sesiones_totales)
+
     operacion = Operacion.objects.create(
         paciente=cliente,
         servicio_config=service_config,
         zona_general=operation_data.get("zonaGeneral", ""),
         zona_especifica=operation_data.get("zonaEspecifica", ""),
         precio_total=Decimal(operation_data["precioTotal"]),
-        cuotas_totales=int(operation_data["cuotasTotales"]),
-        sesiones_totales=int(operation_data["sesionesTotales"]),
+        cuotas_totales=cuotas_totales_value,
+        sesiones_totales=sesiones_totales_value,
         fecha_inicio=date.fromisoformat(operation_data["fechaInicio"]) if operation_data.get("fechaInicio") else None,
         fecha_final=date.fromisoformat(operation_data["fechaFinal"]) if operation_data.get("fechaFinal") else None,
         estado=operation_data.get("estado") or Operacion.Estado.EN_PROCESO,
@@ -1678,14 +1737,15 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         recomendaciones=operation_data.get("recomendaciones", ""),
     )
 
-    quota_amounts = split_amount(Decimal(operation_data["precioTotal"]), int(operation_data["cuotasTotales"]))
-    for cuota_index, fecha_vencimiento in enumerate(operation_data.get("fechasVencimientoCuotas") or []):
-        CuotaPlanPago.objects.create(
-            operacion=operacion,
-            nro_cuota=cuota_index + 1,
-            fecha_vencimiento=date.fromisoformat(fecha_vencimiento),
-            monto_programado=quota_amounts[cuota_index] if cuota_index < len(quota_amounts) else Decimal("0.00"),
-        )
+    if due_dates_to_create:
+        quota_amounts = split_amount(Decimal(operation_data["precioTotal"]), cuotas_totales_value)
+        for cuota_index, fecha_vencimiento in enumerate(due_dates_to_create):
+            CuotaPlanPago.objects.create(
+                operacion=operacion,
+                nro_cuota=cuota_index + 1,
+                fecha_vencimiento=date.fromisoformat(fecha_vencimiento),
+                monto_programado=quota_amounts[cuota_index] if cuota_index < len(quota_amounts) else Decimal("0.00"),
+            )
     primer_pago_comprobante = request.FILES.get("primerPagoComprobante")
     primer_pago_monto = (request.POST.get("primerPagoMonto") or "").strip()
     primer_pago_detalle = (request.POST.get("primerPagoDetalle") or "").strip()

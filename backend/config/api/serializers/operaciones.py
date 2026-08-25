@@ -3,6 +3,8 @@ Serializers for operations and appointments DRF endpoints.
 Domain 8 of Phase 6 — Operations + Appointments + Offline Confirmation.
 """
 
+from decimal import Decimal
+
 from rest_framework import serializers
 
 
@@ -17,6 +19,24 @@ class OperationUpdatePricePlanSerializer(serializers.Serializer):
     """Input for updating operation price/payment plan."""
     priceTotal = serializers.DecimalField(max_digits=12, decimal_places=2, required=True, min_value=0.01)
     quotaCount = serializers.IntegerField(required=True, min_value=1)
+    # Edicion opcional por cuota. Si llega, cada elemento actualiza una
+    # cuota individual; si falta, se aplica la redistribucion automatica
+    # del saldo restante como antes. La validacion detallada de cada item
+    # ocurre dentro del endpoint via ``OperationQuotaItemSerializer``.
+    quotas = serializers.ListField(
+        child=serializers.JSONField(),
+        required=False,
+        allow_empty=True,
+    )
+
+
+class OperationQuotaItemSerializer(serializers.Serializer):
+    """Edicion individual de una cuota del plan de pagos."""
+    nroCuota = serializers.IntegerField(required=True, min_value=1)
+    montoProgramado = serializers.DecimalField(
+        max_digits=12, decimal_places=2, required=True, min_value=Decimal("0.00")
+    )
+    fechaVencimiento = serializers.DateField(required=True)
 
 
 class AppointmentStatusUpdateSerializer(serializers.Serializer):

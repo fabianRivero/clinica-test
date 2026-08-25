@@ -7,9 +7,11 @@ import { SectionCard } from '../../../components/admin/SectionCard'
 interface ClientOperationListProps {
   operations: any[]
   operationStatusFilter: string
+  operationPeriodFilter: string
   operationStatuses: string[]
   filteredOperations: any[]
   onFilterChange: (value: string) => void
+  onPeriodFilterChange: (value: string) => void
 
   // Pagination props (optional - fall back to internal if not provided)
   visibleOperations?: any[]
@@ -22,9 +24,11 @@ interface ClientOperationListProps {
 export function ClientOperationList({
   operations,
   operationStatusFilter,
+  operationPeriodFilter,
   operationStatuses,
   filteredOperations,
   onFilterChange,
+  onPeriodFilterChange,
 
   // Pagination props
   visibleOperations: externalVisibleOperations,
@@ -51,15 +55,26 @@ export function ClientOperationList({
     <SectionCard eyebrow="Tratamientos" title="Procedimientos del cliente" description="Resumen operativo de tratamientos activos e historicos.">
       {operations.length ? (
         <>
-          <label className="field _mb-sm">
-            <span>Filtrar por estado</span>
-            <select className="input" value={operationStatusFilter} onChange={(event) => onFilterChange(event.target.value)}>
-              <option value="">Todos los estados</option>
-              {operationStatuses.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </select>
-          </label>
+          <div className="form-grid _mb-sm">
+            <label className="field">
+              <span>Filtrar por estado</span>
+              <select className="input" value={operationStatusFilter} onChange={(event) => onFilterChange(event.target.value)}>
+                <option value="">Todos los estados</option>
+                {operationStatuses.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Filtrar por mes</span>
+              <input
+                className="input"
+                type="month"
+                value={operationPeriodFilter}
+                onChange={(event) => onPeriodFilterChange(event.target.value)}
+              />
+            </label>
+          </div>
           {filteredOperations.length ? (
             <>
               <div className="capacity-list">
@@ -97,7 +112,7 @@ export function ClientOperationList({
                 </div>
               )}
             </>
-          ) : <DataState title="Sin resultados" message="No hay procedimientos para el estado seleccionado." />}
+          ) : <DataState title="Sin resultados" message="No hay procedimientos que coincidan con los filtros seleccionados." />}
         </>
       ) : <DataState title="Sin procedimientos" message="No hay procedimientos asociados a este cliente." />}
     </SectionCard>

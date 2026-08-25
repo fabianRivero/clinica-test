@@ -71,6 +71,11 @@ def _admin_client_queryset():
                 queryset=Operacion.objects.select_related(
                     "servicio_config__tipo_servicio",
                     "servicio_config__proc_estetico",
+                    # `paciente__sucursal_origen` es el fallback que usa
+                    # `_operation_branch` cuando la operacion aun no tiene
+                    # citas reservadas; lo precargamos para evitar N+1.
+                    "paciente__sucursal_origen",
+                    "paciente__usuario",
                 )
                 .prefetch_related(
                     Prefetch(

@@ -59,6 +59,9 @@ export function useClientDetail(clientId: string) {
   const [paymentNotes, setPaymentNotes] = useState<Record<number, string>>({})
   const [paymentActionId, setPaymentActionId] = useState<number | null>(null)
   const [operationStatusFilter, setOperationStatusFilter] = useState<string>('')
+  // Filtro por mes/anio de inicio del tratamiento. `YYYY-MM` o `''` para
+  // "Todos los periodos".
+  const [operationPeriodFilter, setOperationPeriodFilter] = useState<string>('')
   const [pendingQuotaProcedureFilter, setPendingQuotaProcedureFilter] = useState<string>('')
   const [isMigrating, setIsMigrating] = useState(false)
   const { user } = useAuth()
@@ -592,11 +595,23 @@ export function useClientDetail(clientId: string) {
   const filteredOperations = useMemo(
     () =>
       data
-        ? data.operations.filter((operation) =>
-            operationStatusFilter ? operation.status === operationStatusFilter : true,
-          )
+        ? data.operations.filter((operation) => {
+            if (operationStatusFilter && operation.status !== operationStatusFilter) {
+              return false
+            }
+            if (operationPeriodFilter) {
+              // `startedAtIso` viene como `YYYY-MM-DD` desde el backend;
+              // comparamos los primeros 7 caracteres contra `YYYY-MM` del
+              // filtro. Las operaciones sin fecha de inicio no matchean.
+              const startedAtIso = (operation as { startedAtIso?: string | null }).startedAtIso
+              if (!startedAtIso || !startedAtIso.startsWith(operationPeriodFilter)) {
+                return false
+              }
+            }
+            return true
+          })
         : [],
-    [data, operationStatusFilter],
+    [data, operationStatusFilter, operationPeriodFilter],
   )
 
   // Operations pagination
@@ -673,6 +688,8 @@ export function useClientDetail(clientId: string) {
     // Operation state
     operationStatusFilter,
     setOperationStatusFilter,
+    operationPeriodFilter,
+    setOperationPeriodFilter,
     operationStatuses,
     filteredOperations,
 
