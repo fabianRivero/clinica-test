@@ -204,6 +204,10 @@ export function CloseAppointmentModal({
   async function handleSubmit() {
     setError(null)
     setSuccess(null)
+    if (!cita) {
+      setError('No hay una cita seleccionada.')
+      return
+    }
     if (!horaRealInicio || !horaRealFin) {
       setError('Completa la hora real de inicio y fin.')
       return
