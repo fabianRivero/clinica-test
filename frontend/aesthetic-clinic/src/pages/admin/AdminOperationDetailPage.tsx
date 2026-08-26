@@ -9,6 +9,8 @@ import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { ReservationModal } from './components/ReservationModal'
+import { CloseAppointmentModal, type CloseAppointmentCita } from './components/CloseAppointmentModal'
+import { AppointmentNotesPanel } from './components/AppointmentNotesPanel'
 import {
   cancelAdminAppointment,
   checkAdminConcurrency,
@@ -54,6 +56,7 @@ export function AdminOperationDetailPage() {
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [selectedAppointment, setSelectedAppointment] = useState<number | null>(null)
+  const [closingAppointmentId, setClosingAppointmentId] = useState<number | null>(null)
   const [rescheduleDate, setRescheduleDate] = useState('')
   const [rescheduleTime, setRescheduleTime] = useState('')
   const [checkResult, setCheckResult] = useState<any | null>(null)
@@ -860,6 +863,15 @@ const handleSaveSessions = async () => {
                             {appointmentActionId === appointment.rawId ? 'Cancelando...' : 'Cancelar reserva'}
                           </button>
                         ) : null}
+                        {appointment.canManage && appointment.status?.toLowerCase?.() === 'programada' ? (
+                          <button
+                            className="button button--primary button--compact"
+                            type="button"
+                            onClick={() => setClosingAppointmentId(appointment.rawId)}
+                          >
+                            Cerrar cita
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                   </article>
@@ -1172,6 +1184,33 @@ const handleSaveSessions = async () => {
         branchId={activeBranch?.id ?? data.operation.branchId ?? 0}
         onConfirm={handleReserve}
         isBooking={isBookingReservation}
+      />
+
+      <CloseAppointmentModal
+        isOpen={closingAppointmentId !== null}
+        onClose={() => setClosingAppointmentId(null)}
+        cita={
+          closingAppointmentId !== null
+            ? (data.operation.appointments.find(
+                (apt) => apt.rawId === closingAppointmentId,
+              ) as CloseAppointmentCita | undefined) ?? null
+            : null
+        }
+        branchId={activeBranch?.id ?? data.operation.branchId ?? 0}
+        onSuccess={() => {
+          setClosingAppointmentId(null)
+          reload()
+        }}
+      />
+
+      <AppointmentNotesPanel
+        cita={{
+          rawId: data.operation.rawId,
+          descripcionGeneral: (data.operation as { descripcionGeneral?: string }).descripcionGeneral,
+          notasPrevias: (data.operation as { notasPrevias?: string }).notasPrevias,
+          notasPost: (data.operation as { notasPost?: string }).notasPost,
+        }}
+        canEdit={true}
       />
     </div>
   )
