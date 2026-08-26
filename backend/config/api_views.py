@@ -13,7 +13,7 @@ from django.contrib.sessions.models import Session
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.core.cache import cache
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.conf import settings
 from biometric.serializers import verification_suspended_payload
 
@@ -3478,6 +3478,63 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
         },
         status=201,
     )
+
+
+@require_http_methods(["PATCH"])
+@admin_required
+@transaction.atomic
+def admin_update_appointment_notes(request, appointment_id):
+    """PATCH /api/admin/citas/<int:appointment_id>/notas/
+
+    Editable notes & photos for any cita. Accepts multipart so both text
+    fields and ImageField files share one endpoint. Allowed regardless of
+    cita state, per the appointment-reservation-redesign spec.
+
+    Fields (all optional, only present fields are updated):
+        descripcionGeneral (text), notasPrevias (text), notasPost (text)
+        fotoAntes (image, <= 5MB), fotoDespues (image, <= 5MB)
+
+    Returns 404 if the cita does not exist.
+    """
+    cita = CitaMedica.objects.filter(pk=appointment_id).first()
+    if not cita:
+        return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
+
+    errors = {}
+
+    text_fields = ("descripcionGeneral", "notasPrevias", "notasPost")
+    for field in text_fields:
+        if field in request.data:
+            value = request.data.get(field) or ""
+            cita.__setattr__(field, value)
+
+    image_fields = (
+        ("fotoAntes", "foto_antes"),
+        ("fotoDespues", "foto_despues"),
+    )
+    MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+    for request_key, attr in image_fields:
+        upload = request.FILES.get(request_key)
+        if not upload:
+            continue
+        if upload.size > MAX_IMAGE_BYTES:
+            errors[request_key] = (
+                f"La imagen no puede superar los 5 MB (tamano actual: {upload.size} bytes)."
+            )
+            continue
+        cita.__setattr__(attr, upload)
+
+    if errors:
+        return json_response(
+            {"detail": "Datos invalidos.", "errors": errors}, status=400
+        )
+
+    cita.save()
+    return json_response({
+        "detail": "Notas actualizadas correctamente.",
+        "cita": _client_appointment_item(cita),
+    })
 
 
 @require_POST

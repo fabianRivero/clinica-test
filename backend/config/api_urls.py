@@ -73,6 +73,7 @@ from config.api_views import (
     admin_update_payment_status,
     admin_update_payment_qr_config,
     admin_update_prospect_medical_appointment,
+    admin_update_appointment_notes,
     admin_update_appointment_status,
     admin_update_prospect,
     admin_prospect_check_duplicates,
@@ -295,6 +296,11 @@ urlpatterns = [
         "citas/<int:appointment_id>/pendiente-biometria/",
         admin_mark_appointment_pending_biometric,
         name="admin-appointment-pending-biometric-api",
+    ),
+    path(
+        "citas/<int:appointment_id>/notas/",
+        admin_update_appointment_notes,
+        name="admin-appointment-notes-api",
     ),
     path(
         "citas/<int:appointment_id>/actualizar/",
