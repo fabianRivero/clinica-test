@@ -24,7 +24,7 @@ import {
   isBiometricSuspended,
   type AgentListItem,
 } from '../../../services/fingerprint/biometricClient'
-import type { AdminConcurrencyCheckResponse } from '../../../types/admin'
+import type { AdminConcurrencyCheckResponse, AdminReservationExtendedPayload } from '../../../types/admin'
 import { useBranchContext } from '../../../providers/BranchProvider'
 import { migrateAdminClient } from '../../../services/api/admin'
 import { useAuth } from '../../../providers/AuthProvider'
@@ -419,29 +419,39 @@ export function useClientDetail(clientId: string) {
     }
   }
 
-  async function handleReserve() {
+  async function handleReserve(payload?: AdminReservationExtendedPayload) {
+    // El modal ya arma el payload completo; cuando se invoca sin argumentos
+    // (legacy) caemos a los inputs locales del componente inline.
     const operationId = selectedOperationId
     if (!data || !operationId || !activeBranch) {
       showNotification({ title: 'Atencion', message: 'Selecciona un procedimiento.', tone: 'warning' })
       return
     }
+    const finalPayload: AdminReservationExtendedPayload = payload ?? {
+      branchId: activeBranch.id,
+      dateTime: `${selectedDate}T${selectedTime}:00`,
+    }
+    if (payload) {
+      // Si la operacion vino en el payload, la tomamos del modal; si no,
+      // usamos la seleccion legacy del componente inline.
+      finalPayload.branchId = payload.branchId ?? activeBranch.id
+      finalPayload.dateTime = payload.dateTime ?? `${selectedDate}T${selectedTime}:00`
+    }
     setIsBookingKey('booking')
 
     try {
-      const response = await createAdminClientReservation(data.client.rawId, operationId, {
-        branchId: activeBranch.id,
-        dateTime: `${selectedDate}T${selectedTime}:00`
-      })
+      const response = await createAdminClientReservation(data.client.rawId, operationId, finalPayload)
       showNotification({ title: 'Reserva registrada', message: response.detail, tone: 'success' })
       reload()
       setSelectedOperationId('')
       setSelectedDate('')
       setSelectedTime('')
       setConcurrencyInfo(null)
-    } catch (requestError: any) {
+    } catch (requestError: unknown) {
+      const message = requestError instanceof Error ? requestError.message : 'No se pudo reservar.'
       showNotification({
         title: 'No se pudo reservar',
-        message: requestError.message,
+        message,
         tone: 'danger',
       })
     } finally {

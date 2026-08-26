@@ -7,6 +7,7 @@ import { SectionCard } from '../../../components/admin/SectionCard'
 import { StatusBadge } from '../../../components/admin/StatusBadge'
 import { DataState } from '../../../components/admin/DataState'
 import { useNotifications } from '../../../providers/NotificationProvider'
+import { useBranchContext } from '../../../providers/BranchProvider'
 import { useClientDetail } from './useClientDetail'
 import { ClientReservationSection } from './ClientReservationSection'
 import { ClientFreeMedicalAppointmentSection } from './ClientFreeMedicalAppointmentSection'
@@ -31,18 +32,9 @@ export function AdminClientDetailPage() {
     ConfirmDialogModal,
 
     // Reservation state
-    setSelectedOperationId,
-    selectedDate,
-    setSelectedDate,
-    selectedTime,
-    setSelectedTime,
-    concurrencyInfo,
-    setConcurrencyInfo,
     isChecking,
     isBookingKey,
-    effectiveOperationId,
     reservableOperations,
-    handleCheckConcurrency,
     handleReserve,
 
     // Free medical appointment state
@@ -138,6 +130,8 @@ export function AdminClientDetailPage() {
     biometricSuspended,
     hasBiometricEnrollment,
   } = useClientDetail(clientId)
+
+  const { activeBranch } = useBranchContext()
 
   const [profileModalOpen, setProfileModalOpen] = useState(false)
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
@@ -277,18 +271,11 @@ export function AdminClientDetailPage() {
 
       <section className="dashboard-grid">
         <ClientReservationSection
-          effectiveOperationId={effectiveOperationId}
+          effectiveOperationId={0}
           reservableOperations={reservableOperations}
-          selectedDate={selectedDate}
-          selectedTime={selectedTime}
-          concurrencyInfo={concurrencyInfo}
-          isChecking={isChecking}
-          isBookingKey={isBookingKey}
-          onOperationChange={setSelectedOperationId}
-          onDateChange={(v) => { setSelectedDate(v); setConcurrencyInfo(null) }}
-          onTimeChange={(v) => { setSelectedTime(v); setConcurrencyInfo(null) }}
-          onCheckConcurrency={handleCheckConcurrency}
+          branchId={activeBranch?.id ?? null}
           onReserve={handleReserve}
+          isBookingKey={isBookingKey}
         />
       </section>
 
