@@ -1,5 +1,5 @@
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.contrib.auth.hashers import check_password, identify_hasher, make_password
 from django.db.models.signals import post_delete, post_save
@@ -193,6 +193,38 @@ class CitaMedica(TimeStampedModel):
     )
     detalles_cita = models.TextField(blank=True)
 
+    # --- Appointment reservation redesign (planning fields) -----------------
+    # Captured at reservation time. All optional so legacy rows keep working.
+    duracion_estimada_minutos = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(480)],
+        help_text="Duracion estimada en minutos (1..480).",
+    )
+    descripcion_general = models.TextField(blank=True, default="")
+    notas_previas = models.TextField(blank=True, default="")
+    notas_post = models.TextField(blank=True, default="")
+    foto_antes = models.ImageField(
+        upload_to="citas/%Y/%m/%d/antes/",
+        null=True,
+        blank=True,
+    )
+    foto_despues = models.ImageField(
+        upload_to="citas/%Y/%m/%d/despues/",
+        null=True,
+        blank=True,
+    )
+    procedimiento_planificado = models.TextField(blank=True, default="")
+    zona_cuerpo_planificada = models.CharField(max_length=200, blank=True, default="")
+
+    # --- Appointment reservation redesign (real-time fields) ----------------
+    # Captured at close time, when the cita transitions to
+    # REALIZADA_PENDIENTE_VERIFICACION.
+    hora_real_inicio = models.DateTimeField(null=True, blank=True)
+    hora_real_fin = models.DateTimeField(null=True, blank=True)
+    procedimiento_realizado = models.TextField(blank=True, default="")
+    zona_cuerpo_realizada = models.CharField(max_length=200, blank=True, default="")
+
     class Meta:
         db_table = "citas_medicas"
         ordering = ("fecha_hora",)
@@ -271,6 +303,77 @@ class CitaMedica(TimeStampedModel):
 
     def __str__(self):
         return f"Cita #{self.pk} - {self.operacion}"
+
+
+class CitaMaquinaria(TimeStampedModel):
+    """Many-to-many between CitaMedica and Maquinaria with payload.
+
+    `planificada=True` rows are reserved at booking time; `planificada=False`
+    rows record the equipment actually used at close time. The UniqueConstraint
+    on (cita, maquinaria, planificada) prevents the same machinery row being
+    added twice in the same phase.
+    """
+
+    cita = models.ForeignKey(
+        "operations.CitaMedica",
+        on_delete=models.CASCADE,
+        related_name="maquinaria_items",
+    )
+    maquinaria = models.ForeignKey(
+        "catalogs.Maquinaria",
+        on_delete=models.PROTECT,
+        related_name="citas_items",
+    )
+    cantidad = models.PositiveIntegerField(default=1)
+    planificada = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "citas_maquinaria"
+        ordering = ("cita", "maquinaria")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("cita", "maquinaria", "planificada"),
+                name="uniq_cita_maquinaria_planificada",
+            ),
+        ]
+
+    def __str__(self):
+        fase = "planificada" if self.planificada else "usada"
+        return f"Cita #{self.cita_id} - {self.maquinaria} ({fase}, x{self.cantidad})"
+
+
+class CitaEspecialista(TimeStampedModel):
+    """Many-to-many between CitaMedica and Especialista with payload.
+
+    `planificada=True` rows are the specialists expected to attend;
+    `planificada=False` rows record who actually attended at close time.
+    """
+
+    cita = models.ForeignKey(
+        "operations.CitaMedica",
+        on_delete=models.CASCADE,
+        related_name="especialistas_items",
+    )
+    especialista = models.ForeignKey(
+        "staff.Especialista",
+        on_delete=models.PROTECT,
+        related_name="citas_items",
+    )
+    planificada = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "citas_especialistas"
+        ordering = ("cita", "especialista")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("cita", "especialista", "planificada"),
+                name="uniq_cita_especialista_planificada",
+            ),
+        ]
+
+    def __str__(self):
+        fase = "planificada" if self.planificada else "atendida"
+        return f"Cita #{self.cita_id} - {self.especialista} ({fase})"
 
 
 class CitaProspecto(TimeStampedModel):
