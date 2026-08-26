@@ -173,9 +173,41 @@ class OperationReservationAvailabilitySerializer(serializers.Serializer):
 
 
 class OperationReservationCreateSerializer(serializers.Serializer):
-    """Input for creating a reservation on an operation."""
+    """Input for creating a reservation on an operation.
+
+    All fields beyond ``branchId`` and ``dateTime`` are optional — see the
+    appointment-reservation-redesign spec. The reservation MUST succeed even
+    when none of the new fields are provided.
+    """
     branchId = serializers.IntegerField()
     dateTime = serializers.CharField()  # ISO datetime string
+
+    # Planning fields (all optional).
+    duracionEstimadaMinutos = serializers.IntegerField(
+        required=False, allow_null=True, min_value=1, max_value=480
+    )
+    descripcionGeneral = serializers.CharField(
+        required=False, allow_blank=True, max_length=10_000
+    )
+    notasPrevias = serializers.CharField(
+        required=False, allow_blank=True, max_length=10_000
+    )
+    procedimientoPlanificado = serializers.CharField(
+        required=False, allow_blank=True, max_length=10_000
+    )
+    zonaCuerpoPlanificada = serializers.CharField(
+        required=False, allow_blank=True, max_length=200
+    )
+    especialistasPlanificados = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        default=list,
+    )
+    maquinariaPlanificada = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        default=list,
+    )
 
     def validate_dateTime(self, value):
         from django.utils import dateparse
@@ -186,6 +218,38 @@ class OperationReservationCreateSerializer(serializers.Serializer):
         if not fecha_hora:
             raise serializers.ValidationError("Formato de fecha/hora inválido.")
         return value
+
+    def validate_maquinariaPlanificada(self, value):
+        cleaned = []
+        for idx, item in enumerate(value or []):
+            if not isinstance(item, dict):
+                raise serializers.ValidationError(
+                    f"maquinariaPlanificada[{idx}] debe ser un objeto."
+                )
+            mid = item.get("maquinariaId")
+            cant = item.get("cantidad", 1)
+            try:
+                mid = int(mid) if mid is not None else None
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(
+                    f"maquinariaPlanificada[{idx}].maquinariaId invalido."
+                )
+            try:
+                cant = int(cant)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(
+                    f"maquinariaPlanificada[{idx}].cantidad invalida."
+                )
+            if mid is None:
+                raise serializers.ValidationError(
+                    f"maquinariaPlanificada[{idx}].maquinariaId es obligatorio."
+                )
+            if cant < 1:
+                raise serializers.ValidationError(
+                    f"maquinariaPlanificada[{idx}].cantidad debe ser >= 1."
+                )
+            cleaned.append({"maquinariaId": mid, "cantidad": cant})
+        return cleaned
 
 
 # =============================================================================
