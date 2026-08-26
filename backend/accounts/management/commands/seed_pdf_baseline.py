@@ -42,6 +42,7 @@ from accounts.management._baselines import clean_baseline
 from accounts.management._baselines.env_guard import require_dev_or_test
 from accounts.models import Usuario
 from catalogs.models import (
+    Maquinaria,
     ProcEstetico,
     ServicioConfig,
     TipoServicio,
@@ -187,6 +188,49 @@ SPECIALISTS = (
 )
 
 
+# Deterministic demo Maquinaria catalog. Items are keyed on (nombre, sucursal)
+# so the same rows are produced on every re-run. ``sucursal=None`` means global
+# (visible to admin principal across all branches); the rest are scoped to the
+# principal branch so admin_sucursal users see them on the principal branch.
+MAQUINARIA_ITEMS = (
+    {
+        "nombre": "Laser diodo Alma",
+        "marca": "Alma",
+        "descripcion": "Equipo laser de diodo para depilacion definitiva.",
+        "cantidad_total": 2,
+        "sucursal": "principal",
+    },
+    {
+        "nombre": "Camilla electrica",
+        "marca": "Lemi",
+        "descripcion": "Camilla electrica multiposicion para procedimientos esteticos.",
+        "cantidad_total": 3,
+        "sucursal": "principal",
+    },
+    {
+        "nombre": "Equipo de ultrasonido",
+        "marca": "BTL",
+        "descripcion": "Equipo de ultrasonido focalizado para tratamientos esteticos.",
+        "cantidad_total": 1,
+        "sucursal": "principal",
+    },
+    {
+        "nombre": "Lampara lupa",
+        "marca": "Dazor",
+        "descripcion": "Lampara con lupa para procedimientos faciales.",
+        "cantidad_total": 4,
+        "sucursal": None,
+    },
+    {
+        "nombre": "Bano de parafina",
+        "marca": "Sibel",
+        "descripcion": "Equipo de bano de parafina para tratamientos de manos.",
+        "cantidad_total": 2,
+        "sucursal": None,
+    },
+)
+
+
 class Command(BaseCommand):
     """Create the PDF demo dataset on top of the shared baseline."""
 
@@ -268,8 +312,37 @@ class Command(BaseCommand):
 
         clean_baseline.seed_schedules(specialists_by_key)
         kiosks = clean_baseline.seed_tablet_kiosks(branches)
+        self._seed_maquinaria(branches)
 
         self._print_summary(branches_by_name, specialists_by_key, specialties, kiosks)
+
+    # -- Maquinaria --------------------------------------------------------
+
+    def _seed_maquinaria(self, branches):
+        """Seed the demo Maquinaria catalog.
+
+        Uses ``update_or_create`` keyed on ``(nombre, sucursal)`` so reruns are
+        idempotent. ``sucursal=None`` produces a global row visible to admin
+        principal across every branch; the rest are scoped to the principal
+        branch so admin_sucursal users see them in their catalog list.
+        """
+        principal = branches["principal"]
+        for spec in MAQUINARIA_ITEMS:
+            branch_key = spec["sucursal"]
+            sucursal = branches.get(branch_key) if branch_key else None
+            if branch_key and sucursal is None:
+                # Misconfigured key — fall back to principal to avoid an FK error.
+                sucursal = principal
+            Maquinaria.objects.update_or_create(
+                nombre=spec["nombre"],
+                sucursal=sucursal,
+                defaults={
+                    "marca": spec["marca"],
+                    "descripcion": spec["descripcion"],
+                    "cantidad_total": spec["cantidad_total"],
+                    "activo": True,
+                },
+            )
 
     # -- Summary ------------------------------------------------------------
 
@@ -285,7 +358,8 @@ class Command(BaseCommand):
             f"tipos_servicio={TipoServicio.objects.count()}, "
             f"procedimientos={ProcEstetico.objects.count()}, "
             f"servicios_config={ServicioConfig.objects.count()}, "
-            f"agendas_habituales={AgendaHabitualEspecialista.objects.count()}"
+            f"agendas_habituales={AgendaHabitualEspecialista.objects.count()}, "
+            f"maquinaria={Maquinaria.objects.count()}"
         )
         self.stdout.write(
             "Sucursales activas: "
