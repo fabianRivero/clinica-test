@@ -355,6 +355,21 @@ urlpatterns = [
     path("disponibilidad/sucursales/", admin_get_branches, name="admin-branches-api"),
     path("", include(pagos_router.urls)),
     path("catalogos/", admin_catalogos, name="admin-catalogos-api"),
+    # Dedicated Maquinaria endpoints — registered BEFORE the generic
+    # catalog patterns so Django's URL resolver routes these specific
+    # paths to admin_maquinaria_* (which use @admin_required) instead of
+    # matching admin_catalogo_crear/actualizar (which use
+    # @_admin_principal_required).
+    path(
+        "catalogos/maquinaria/crear/",
+        admin_maquinaria_crear,
+        name="admin-maquinaria-create-api",
+    ),
+    path(
+        "catalogos/maquinaria/<int:item_id>/actualizar/",
+        admin_maquinaria_actualizar,
+        name="admin-maquinaria-update-api",
+    ),
     path("catalogos/<slug:catalog_key>/", admin_catalogo_detalle, name="admin-catalogo-detail-api"),
     path("catalogos/<slug:catalog_key>/crear/", admin_catalogo_crear, name="admin-catalogo-create-api"),
     path(
@@ -366,19 +381,6 @@ urlpatterns = [
         "catalogos/<slug:catalog_key>/<int:item_id>/estado/",
         admin_catalogo_estado,
         name="admin-catalogo-state-api",
-    ),
-    # Dedicated Maquinaria endpoints — admin_sucursal can CRUD own branch,
-    # admin_principal can CRUD any (including globales). See appointment-
-    # reservation-redesign spec.
-    path(
-        "catalogos/maquinaria/crear/",
-        admin_maquinaria_crear,
-        name="admin-maquinaria-create-api",
-    ),
-    path(
-        "catalogos/maquinaria/<int:item_id>/actualizar/",
-        admin_maquinaria_actualizar,
-        name="admin-maquinaria-update-api",
     ),
     # Nested OpcionCatalogo endpoints under grupos-opciones — used by the
     # option management modal in the admin catalog page. Routes are added

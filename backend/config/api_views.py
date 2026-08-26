@@ -29,6 +29,7 @@ from accounts.models import Rol, Usuario
 from billing.models import CategoriaGasto, ConfiguracionPagoQR, CuotaPlanPago, GastoSucursal, PagoRealizado
 from catalogs.models import (
     GrupoOpciones,
+    Maquinaria,
     OpcionCatalogo,
     PatologiaCutanea,
     ProcEstetico,
@@ -1870,8 +1871,6 @@ def _catalog_page_data(catalog_key, q="", active="all", request=None, **filters)
         }
 
     if catalog_key == "maquinaria":
-        from catalogs.models import Maquinaria
-
         user = request.user if request is not None else None
         queryset = Maquinaria.objects.select_related("sucursal").order_by("nombre")
 
@@ -1909,34 +1908,32 @@ def _catalog_page_data(catalog_key, q="", active="all", request=None, **filters)
                 _catalog_field(
                     "nombre",
                     "Nombre",
-                    value_type="text",
+                    "text",
                     required=True,
-                    max_length=120,
                 ),
                 _catalog_field(
                     "marca",
                     "Marca",
-                    value_type="text",
+                    "text",
                     required=False,
-                    max_length=120,
                 ),
                 _catalog_field(
                     "descripcion",
                     "Descripcion",
-                    value_type="textarea",
+                    "textarea",
                     required=False,
                 ),
                 _catalog_field(
                     "cantidadTotal",
                     "Cantidad total",
-                    value_type="number",
+                    "number",
                     required=True,
                     min_value=1,
                 ),
                 _catalog_field(
                     "sucursalId",
                     "Sucursal",
-                    value_type="number",
+                    "number",
                     required=False,
                     allow_empty=True,
                     options=[
@@ -1948,7 +1945,7 @@ def _catalog_page_data(catalog_key, q="", active="all", request=None, **filters)
                 _catalog_field(
                     "activo",
                     "Activo",
-                    value_type="boolean",
+                    "boolean",
                     required=False,
                 ),
             ],
@@ -5142,8 +5139,6 @@ def _maquinaria_normalize_payload(payload, user):
     - admin sucursal: `sucursalId` is forced to user.sucursal_id; client-supplied
       values that disagree are rejected.
     """
-    from catalogs.models import Maquinaria, Sucursal
-
     errors = {}
     nombre = (payload.get("nombre") or "").strip()
     if not nombre:
