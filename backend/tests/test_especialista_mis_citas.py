@@ -207,6 +207,7 @@ class EspecialistaMisCitasTests(TestCase):
         self.assertEqual(item["descripcionGeneral"], "Sesion inicial")
         self.assertEqual(item["notasPrevias"], "Sin alergias")
         self.assertEqual(item["sucursal"], "Centro")
+        self.assertEqual(item["cliente"], "Ana P")
 
     def test_response_includes_maquinaria(self):
         self.client.force_login(self.esp1_user)

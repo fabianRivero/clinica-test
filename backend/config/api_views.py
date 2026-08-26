@@ -7175,8 +7175,20 @@ def _especialista_mis_cita_item(cita):
     from config.client_api_views import _appointment_item
 
     base = dict(_appointment_item(cita))
+
+    # Cliente full name (required by the spec for the specialist view).
+    cliente_nombre = "Sin cliente asignado"
+    if cita.operacion and getattr(cita.operacion, "paciente", None):
+        usuario = getattr(cita.operacion.paciente, "usuario", None)
+        if usuario:
+            partes = [usuario.primer_nombre or "", usuario.apellido_paterno or ""]
+            full = " ".join(p for p in partes if p).strip()
+            if full:
+                cliente_nombre = full
+
     base.update(
         {
+            "cliente": cliente_nombre,
             "fecha": timezone.localtime(cita.fecha_hora).strftime("%Y-%m-%d"),
             "horaInicio": timezone.localtime(cita.fecha_hora).strftime("%H:%M"),
             "duracionEstimadaMinutos": cita.duracion_estimada_minutos,

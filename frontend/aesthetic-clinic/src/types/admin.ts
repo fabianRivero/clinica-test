@@ -971,7 +971,7 @@ export type MisCitasMaquinariaItem = {
 export type MisCitasItem = {
   id: string
   rawId: number
-  cliente?: string
+  cliente: string
   fecha: string
   horaInicio: string
   duracionEstimadaMinutos: number | null
