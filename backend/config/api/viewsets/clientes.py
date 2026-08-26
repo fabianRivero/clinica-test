@@ -555,53 +555,13 @@ class OperacionesViewSet(viewsets.ViewSet):
         fecha_hora = timezone.make_aware(parse_datetime(serializer.validated_data["dateTime"]))
         sucursal_id = serializer.validated_data["branchId"]
 
-        # Optional planning fields (all may be absent — see spec).
-        v = serializer.validated_data
-        duracion_estimada = v.get("duracionEstimadaMinutos")
-        descripcion_general = v.get("descripcionGeneral", "") or ""
-        notas_previas = v.get("notasPrevias", "") or ""
-        procedimiento_planificado = v.get("procedimientoPlanificado", "") or ""
-        zona_cuerpo_planificada = v.get("zonaCuerpoPlanificada", "") or ""
-        especialistas_planificados = v.get("especialistasPlanificados", []) or []
-        maquinaria_planificada = v.get("maquinariaPlanificada", []) or []
-
         cita = CitaMedica.objects.create(
             operacion=operacion,
             sucursal_id=sucursal_id,
             fecha_hora=fecha_hora,
             estado=CitaMedica.Estado.PROGRAMADA,
             detalles_cita="Reserva creada desde administración.",
-            duracion_estimada_minutos=duracion_estimada,
-            descripcion_general=descripcion_general,
-            notas_previas=notas_previas,
-            procedimiento_planificado=procedimiento_planificado,
-            zona_cuerpo_planificada=zona_cuerpo_planificada,
         )
-
-        # Persist M2M rows. Use bulk_create for efficiency.
-        from operations.models import CitaEspecialista, CitaMaquinaria
-
-        if especialistas_planificados:
-            CitaEspecialista.objects.bulk_create(
-                [
-                    CitaEspecialista(
-                        cita=cita, especialista_id=esp_id, planificada=True
-                    )
-                    for esp_id in especialistas_planificados
-                ]
-            )
-        if maquinaria_planificada:
-            CitaMaquinaria.objects.bulk_create(
-                [
-                    CitaMaquinaria(
-                        cita=cita,
-                        maquinaria_id=item["maquinariaId"],
-                        cantidad=item["cantidad"],
-                        planificada=True,
-                    )
-                    for item in maquinaria_planificada
-                ]
-            )
 
         return Response(
             {

@@ -3395,12 +3395,23 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
     if payload is None:
         return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
 
-    sucursal_id = payload.get("branchId")
-    fecha_hora_str = payload.get("dateTime")
-    
-    if not sucursal_id or not fecha_hora_str:
-        return json_response({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
-        
+    # Use the OperationReservationCreateSerializer for validation, so the
+    # planning fields (duracionEstimadaMinutos, especialistasPlanificados,
+    # maquinariaPlanificada, ...) are accepted and validated per the
+    # appointment-reservation-redesign spec. Backward compatible: callers
+    # that only send branchId + dateTime continue to work.
+    from config.api.serializers.clientes import OperationReservationCreateSerializer
+
+    serializer = OperationReservationCreateSerializer(data=payload)
+    if not serializer.is_valid():
+        return json_response(
+            {"detail": "Datos invalidos.", "errors": serializer.errors}, status=400
+        )
+
+    v = serializer.validated_data
+    sucursal_id = v["branchId"]
+    fecha_hora_str = v["dateTime"]
+
     try:
         from django.utils import dateparse
         fecha_hora = dateparse.parse_datetime(fecha_hora_str)
@@ -3411,13 +3422,46 @@ def admin_cliente_create_reservation(request, client_id, operation_id):
     except Exception:
         return json_response({"detail": "Formato de fecha u hora invalido."}, status=400)
 
+    duracion_estimada = v.get("duracionEstimadaMinutos")
+    descripcion_general = v.get("descripcionGeneral", "") or ""
+    notas_previas = v.get("notasPrevias", "") or ""
+    procedimiento_planificado = v.get("procedimientoPlanificado", "") or ""
+    zona_cuerpo_planificada = v.get("zonaCuerpoPlanificada", "") or ""
+    especialistas_planificados = v.get("especialistasPlanificados", []) or []
+    maquinaria_planificada = v.get("maquinariaPlanificada", []) or []
+
     cita = CitaMedica.objects.create(
         operacion=operacion,
         sucursal_id=sucursal_id,
         fecha_hora=fecha_hora,
         estado=CitaMedica.Estado.PROGRAMADA,
         detalles_cita="Reserva creada libremente por administracion.",
+        duracion_estimada_minutos=duracion_estimada,
+        descripcion_general=descripcion_general,
+        notas_previas=notas_previas,
+        procedimiento_planificado=procedimiento_planificado,
+        zona_cuerpo_planificada=zona_cuerpo_planificada,
     )
+
+    # Persist M2M rows for planned specialists and machinery.
+    from operations.models import CitaEspecialista, CitaMaquinaria
+
+    if especialistas_planificados:
+        CitaEspecialista.objects.bulk_create([
+            CitaEspecialista(cita=cita, especialista_id=esp_id, planificada=True)
+            for esp_id in especialistas_planificados
+        ])
+    if maquinaria_planificada:
+        CitaMaquinaria.objects.bulk_create([
+            CitaMaquinaria(
+                cita=cita,
+                maquinaria_id=item["maquinariaId"],
+                cantidad=item["cantidad"],
+                planificada=True,
+            )
+            for item in maquinaria_planificada
+        ])
+
     _notify_client_appointment_scheduled(
         cliente=cliente,
         fecha_hora=cita.fecha_hora,

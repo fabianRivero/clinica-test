@@ -4,6 +4,7 @@ Domain 6 of Phase 6 — Clientes, Operaciones (reservations), CitasMedicasLibres
 """
 
 from rest_framework import serializers
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db.models import Prefetch
 from django.utils import timezone
 
@@ -184,7 +185,12 @@ class OperationReservationCreateSerializer(serializers.Serializer):
 
     # Planning fields (all optional).
     duracionEstimadaMinutos = serializers.IntegerField(
-        required=False, allow_null=True, min_value=1, max_value=480
+        required=False,
+        allow_null=True,
+        validators=[
+            MinValueValidator(1, message="La duracion estimada debe ser al menos 1 minuto."),
+            MaxValueValidator(480, message="La duracion estimada no puede superar los 480 minutos (8 horas)."),
+        ],
     )
     descripcionGeneral = serializers.CharField(
         required=False, allow_blank=True, max_length=10_000
