@@ -285,3 +285,35 @@ class GravedadAlergia(CatalogoEditableModel):
         return self.nombre
 
 # Create your models here.
+
+
+class Maquinaria(TimeStampedModel):
+    """Equipment or infrastructure item used by medical appointments.
+
+    When `sucursal` is null, the row is treated as a global resource visible
+    across every branch (admin principal only). Otherwise it is scoped to a
+    specific branch and follows the role-scoped visibility rules in the
+    appointment-reservation-redesign spec.
+    """
+
+    nombre = models.CharField(max_length=120)
+    marca = models.CharField(max_length=120, blank=True)
+    descripcion = models.TextField(blank=True)
+    cantidad_total = models.PositiveIntegerField(default=1)
+    sucursal = models.ForeignKey(
+        "catalogs.Sucursal",
+        on_delete=models.PROTECT,
+        related_name="maquinaria",
+        null=True,
+        blank=True,
+    )
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "maquinaria"
+        ordering = ("nombre",)
+
+    def __str__(self):
+        if self.marca:
+            return f"{self.nombre} ({self.marca})"
+        return self.nombre
