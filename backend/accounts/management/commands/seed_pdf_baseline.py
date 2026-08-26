@@ -48,7 +48,17 @@ from catalogs.models import (
     TipoServicio,
 )
 from operations.models import (
+    AgendaExcepcionEspecialista,
+    AgendaHabitualDia,
     AgendaHabitualEspecialista,
+    BranchAdminAuditLog,
+    CitaClienteLibre,
+    CitaEspecialista,
+    CitaMaquinaria,
+    CitaMedica,
+    CitaProspecto,
+    EventoConfirmacionCita,
+    Operacion,
     TabletKiosko,
 )
 from staff.models import Especialidad, Especialista
@@ -266,8 +276,10 @@ class Command(BaseCommand):
 
     help = (
         "Seeds the PDF demo dataset (shared clean baseline plus branches, "
-        "admins, specialists, prospects, formal patients, schedules, and "
-        "kiosks). Non-destructive; refuses to run outside development/test."
+        "admins, specialists, prospects, formal patients, schedules, kiosks, "
+        "and the Maquinaria catalog). DESTRUCTIVE — wipes every table this "
+        "command populates before repopulating, so reruns always start from a "
+        "known state. Refuses to run outside development/test."
     )
 
     @transaction.atomic
@@ -276,6 +288,12 @@ class Command(BaseCommand):
         # in {development, test}. This MUST run before any write so the
         # operator gets a clean failure on a misconfigured production run.
         require_dev_or_test()
+
+        # Wipe the database so the seed always starts from a known baseline.
+        # Idempotent + destructive: every table this command can populate is
+        # truncated in FK-safe order. Roles (referenced by Usuario) and the
+        # auth tables are intentionally left intact — clean_baseline owns them.
+        self._purge()
 
         roles = clean_baseline.seed_roles()
         branches_by_name = clean_baseline.seed_branches(BRANCHES)
@@ -347,6 +365,68 @@ class Command(BaseCommand):
         self._print_summary(branches_by_name, specialists_by_key, specialties, kiosks)
 
     # -- Maquinaria --------------------------------------------------------
+
+    def _purge(self):
+        """Truncate every table this command populates, in FK-safe order.
+
+        Tables referenced by other tables here are deleted first so the
+        foreign-key constraints never trip. Roles and the auth tables
+        (Usuario, Sucursal) are NOT touched here — those are owned by
+        ``clean_baseline`` and seeded right after this method returns.
+        """
+        # operations first — heavy FK graph
+        CitaMedica.objects.all().delete()
+        CitaClienteLibre.objects.all().delete()
+        CitaProspecto.objects.all().delete()
+        EventoConfirmacionCita.objects.all().delete()
+        CitaMaquinaria.objects.all().delete()
+        CitaEspecialista.objects.all().delete()
+        Operacion.objects.all().delete()
+        TabletKiosko.objects.all().delete()
+        AgendaExcepcionEspecialista.objects.all().delete()
+        AgendaHabitualDia.objects.all().delete()
+        AgendaHabitualEspecialista.objects.all().delete()
+
+        # payments / quotas
+        from billing.models import CuotaPlanPago, PagoRealizado
+        PagoRealizado.objects.all().delete()
+        CuotaPlanPago.objects.all().delete()
+
+        # customers (formal clients, biometric, medical history)
+        from customers.models import Cliente, Prospecto, HuellaBiometricaCliente
+        HuellaBiometricaCliente.objects.all().delete()
+        Cliente.objects.all().delete()
+        Prospecto.objects.all().delete()
+
+        # notifications + tickets + backups
+        from notifications.models import Notification, NotificationReadAudit, Ticket, TicketMessage
+        NotificationReadAudit.objects.all().delete()
+        TicketMessage.objects.all().delete()
+        Ticket.objects.all().delete()
+        Notification.objects.all().delete()
+        from backups.models import BackupAuditLog
+        BackupAuditLog.objects.all().delete()
+
+        # catalogs and staff
+        Maquinaria.objects.all().delete()
+        ServicioConfig.objects.all().delete()
+        ProcEstetico.objects.all().delete()
+        TipoServicio.objects.all().delete()
+        from catalogs.models import Sector
+        Sector.objects.all().delete()
+        Especialista.objects.all().delete()
+        from staff.models import EspecialistaEspecialidad
+        EspecialistaEspecialidad.objects.all().delete()
+        # Especialidad is FK target; clear last after all references.
+        Especialidad.objects.all().delete()
+
+        # clinical form schema
+        from clinical.models import FichaCampo, FichaSeccion
+        FichaCampo.objects.all().delete()
+        FichaSeccion.objects.all().delete()
+
+        # branch admin audit
+        BranchAdminAuditLog.objects.all().delete()
 
     def _seed_maquinaria(self, branches):
         """Seed the demo Maquinaria catalog.
