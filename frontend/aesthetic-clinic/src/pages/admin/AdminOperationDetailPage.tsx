@@ -7,6 +7,8 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
+import { useBranchContext } from '../../providers/BranchProvider'
+import { ReservationModal } from './components/ReservationModal'
 import {
   cancelAdminAppointment,
   checkAdminConcurrency,
@@ -17,6 +19,7 @@ import {
   updateAdminOperationDetails,
   updateAdminOperationPricePlan,
 } from '../../services/api/admin'
+import type { AdminReservationExtendedPayload } from '../../types/admin'
 
 function getStatusTone(status: string) {
   const normalized = status.toLowerCase()
@@ -47,6 +50,7 @@ export function AdminOperationDetailPage() {
   const loader = useMemo(() => () => getAdminOperationDetail(operationId), [operationId])
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
+  const { activeBranch } = useBranchContext()
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [selectedAppointment, setSelectedAppointment] = useState<number | null>(null)
@@ -62,10 +66,10 @@ export function AdminOperationDetailPage() {
     recommendations: '',
   })
   // Estado para reservar una nueva cita dentro del bloque "Citas medicas".
-  const [reservationDate, setReservationDate] = useState('')
-  const [reservationTime, setReservationTime] = useState('')
-  const [reservationCheck, setReservationCheck] = useState<any | null>(null)
-  const [isCheckingReservation, setIsCheckingReservation] = useState(false)
+  // El formulario inline se reemplazo por un `ReservationModal`; solo
+  // conservamos el flag que indica si la reserva esta en curso + el control
+  // de apertura/cierre del modal.
+  const [reservationModalOpen, setReservationModalOpen] = useState(false)
   const [isBookingReservation, setIsBookingReservation] = useState(false)
   // Estado para editar el numero de sesiones desde el bloque "Citas medicas".
   // `currentSessions` se deriva siempre de la respuesta del backend (sin
@@ -197,29 +201,12 @@ const handleSaveSessions = async () => {
     }
   }
 
-  const handleCheckReservation = async () => {
-    if (!data || !reservationDate || !reservationTime || !data.operation.branchId) return
-    setIsCheckingReservation(true)
-    setActionError(null)
-    try {
-      const result = await checkAdminConcurrency(
-        data.operation.branchId,
-        reservationDate,
-        reservationTime,
-        reservationTime,
-      )
-      setReservationCheck(result)
-    } catch (requestError) {
-      const message = requestError instanceof Error ? requestError.message : 'No se pudo verificar disponibilidad.'
-      setActionError(message)
-      showNotification({ title: 'No se pudo verificar disponibilidad', message, tone: 'danger' })
-    } finally {
-      setIsCheckingReservation(false)
-    }
-  }
+  // `handleCheckReservation` se elimino: la verificacion de disponibilidad
+  // ahora vive dentro del `ReservationModal` (que combina el chequeo de
+  // concurrencia existente con el nuevo `check-maquinaria`).
 
-  const handleReserve = async () => {
-    if (!data || !reservationCheck) return
+  const handleReserve = async (payload?: AdminReservationExtendedPayload) => {
+    if (!data) return
     // El detail NO expone branchId en algunas rutas; caemos al campo
     // anidado si llega a faltar en el futuro.
     const branchId = data.operation.branchId
@@ -230,18 +217,23 @@ const handleSaveSessions = async () => {
       showNotification({ title: 'No se pudo registrar la reserva', message, tone: 'danger' })
       return
     }
+    if (!payload) {
+      setActionError('Falta el payload de la reserva.')
+      return
+    }
+    // El modal ya armo el payload con `branchId` del context; si por
+    // algun motivo no lo trae, usamos el del detail.
+    const finalPayload: AdminReservationExtendedPayload = {
+      ...payload,
+      branchId: payload.branchId ?? branchId,
+    }
     setIsBookingReservation(true)
     setActionError(null)
     try {
-      const response = await createAdminClientReservation(patientId, data.operation.rawId, {
-        branchId,
-        dateTime: `${reservationDate}T${reservationTime}:00`,
-      })
+      const response = await createAdminClientReservation(patientId, data.operation.rawId, finalPayload)
       setSelectedAppointment(null)
-      setReservationCheck(null)
-      setReservationDate('')
-      setReservationTime('')
       reload()
+      setReservationModalOpen(false)
       const successMessage = (response as { detail?: string } | null)?.detail ?? 'La cita fue reservada correctamente.'
       showNotification({ title: 'Reserva registrada', message: successMessage, tone: 'success' })
     } catch (requestError) {
@@ -838,55 +830,17 @@ const handleSaveSessions = async () => {
                     : 'No se pueden reservar citas nuevas en este estado.'}
               </small>
             )}
-            <fieldset className="form-grid" disabled={!canBookNewAppointment}>
-              <label className="field">
-                <span>Fecha</span>
-                <input
-                  className="input"
-                  type="date"
-                  value={reservationDate}
-                  onChange={(event) => {
-                    setReservationDate(event.target.value)
-                    setReservationCheck(null)
-                  }}
-                />
-              </label>
-              <label className="field">
-                <span>Hora</span>
-                <input
-                  className="input"
-                  type="time"
-                  value={reservationTime}
-                  onChange={(event) => {
-                    setReservationTime(event.target.value)
-                    setReservationCheck(null)
-                  }}
-                />
-              </label>
-              <div className="form-actions field--full">
-                <button
-                  className="button button--ghost"
-                  type="button"
-                  disabled={!reservationDate || !reservationTime || isCheckingReservation}
-                  onClick={() => void handleCheckReservation()}
-                >
-                  {isCheckingReservation ? 'Verificando...' : 'Verificar disponibilidad'}
-                </button>
-                <button
-                  className="button"
-                  type="button"
-                  disabled={!reservationCheck || isBookingReservation}
-                  onClick={() => void handleReserve()}
-                >
-                  {isBookingReservation ? 'Reservando...' : 'Confirmar reserva'}
-                </button>
-              </div>
-              {reservationCheck ? (
-                <small className="field__hint field--full">
-                  Disponibilidad: {reservationCheck.concurrency} cita(s) entre {reservationCheck.hora_inicio} y {reservationCheck.hora_fin}. Especialistas en turno: {reservationCheck.presentes?.length ?? 0}.
-                </small>
-              ) : null}
-            </fieldset>
+            <div className="form-actions">
+              <button
+                className="button"
+                type="button"
+                onClick={() => setReservationModalOpen(true)}
+                disabled={!canBookNewAppointment || isBookingReservation}
+                data-testid="open-reservation-modal-operation"
+              >
+                {isBookingReservation ? 'Reservando...' : 'Reservar cita'}
+              </button>
+            </div>
 
             {operation.appointments.length ? (
               <div className="operation-detail-items _mt-md">
@@ -1208,6 +1162,17 @@ const handleSaveSessions = async () => {
           ) : null}
         </div>
       </SectionCard>
+
+      <ReservationModal
+        isOpen={reservationModalOpen}
+        onClose={() => setReservationModalOpen(false)}
+        reservableOperations={[
+          { id: data.operation.rawId, rawId: data.operation.rawId, selectLabel: data.operation.procedure },
+        ]}
+        branchId={activeBranch?.id ?? data.operation.branchId ?? 0}
+        onConfirm={handleReserve}
+        isBooking={isBookingReservation}
+      />
     </div>
   )
 }
