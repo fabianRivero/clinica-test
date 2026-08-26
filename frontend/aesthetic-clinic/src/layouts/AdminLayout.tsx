@@ -81,7 +81,6 @@ const fullNavigation = [
   },
     {
     label: 'Catalogos',
-    mainAdminOnly: true,
     children: [
       { to: '/cms/catalogos/todos-los-servicios', label: 'Todos los servicios' },
       { to: '/cms/catalogos/especialidades', label: 'Especialidades' },
@@ -94,6 +93,7 @@ const fullNavigation = [
       { to: '/cms/catalogos/grupos-opciones', label: 'Grupos de opciones' },
       { to: '/cms/catalogos/procedimientos-esteticos', label: 'Procedimientos estéticos' },
       { to: '/cms/catalogos/sectores', label: 'Sectores' },
+      { to: '/cms/catalogos/maquinaria', label: 'Maquinaria' },
     ],
   },
   {

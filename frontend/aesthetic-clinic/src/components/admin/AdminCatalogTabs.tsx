@@ -12,6 +12,7 @@ const tabs = [
   { to: '/cms/catalogos/grupos-opciones', label: 'Grupos de opciones' },
   { to: '/cms/catalogos/procedimientos-esteticos', label: 'Procedimientos estéticos' },
   { to: '/cms/catalogos/sectores', label: 'Sectores' },
+  { to: '/cms/catalogos/maquinaria', label: 'Maquinaria' },
 ] as const
 
 export function AdminCatalogTabs() {
