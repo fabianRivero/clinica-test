@@ -191,7 +191,7 @@ SPECIALISTS = (
 # Deterministic demo Maquinaria catalog. Items are keyed on (nombre, sucursal)
 # so the same rows are produced on every re-run. ``sucursal=None`` means global
 # (visible to admin principal across all branches); the rest are scoped to the
-# principal branch so admin_sucursal users see them on the principal branch.
+# named branch so admin_sucursal users see them on their catalog list.
 MAQUINARIA_ITEMS = (
     {
         "nombre": "Laser diodo Alma",
@@ -227,6 +227,36 @@ MAQUINARIA_ITEMS = (
         "descripcion": "Equipo de bano de parafina para tratamientos de manos.",
         "cantidad_total": 2,
         "sucursal": None,
+    },
+    # Sucursal Norte (A) — visible only to admin principal + admin_sucursal of A.
+    {
+        "nombre": "Radiofrecuencia",
+        "marca": "Alma",
+        "descripcion": "Equipo de radiofrecuencia para tratamientos de rejuvenecimiento.",
+        "cantidad_total": 2,
+        "sucursal": "A",
+    },
+    {
+        "nombre": "Vaporizador facial",
+        "marca": "SilverFox",
+        "descripcion": "Vaporizador facial con ozono para limpieza profunda.",
+        "cantidad_total": 3,
+        "sucursal": "A",
+    },
+    # Sucursal Sur (B) — visible only to admin principal + admin_sucursal of B.
+    {
+        "nombre": "Criolipolisis",
+        "marca": "Coolsculpting",
+        "descripcion": "Equipo de criolipolisis para reduccion de grasa no invasiva.",
+        "cantidad_total": 1,
+        "sucursal": "B",
+    },
+    {
+        "nombre": "Microdermoabrasion",
+        "marca": "DermaSweep",
+        "descripcion": "Equipo de microdermoabrasion para exfoliacion profunda.",
+        "cantidad_total": 2,
+        "sucursal": "B",
     },
 )
 
@@ -323,8 +353,11 @@ class Command(BaseCommand):
 
         Uses ``update_or_create`` keyed on ``(nombre, sucursal)`` so reruns are
         idempotent. ``sucursal=None`` produces a global row visible to admin
-        principal across every branch; the rest are scoped to the principal
-        branch so admin_sucursal users see them in their catalog list.
+        principal across every branch; the rest are scoped to the named
+        branch so admin_sucursal users see them on their catalog list.
+        Items reference ``branches`` keys by name: ``"principal"``, ``"A"``,
+        ``"B"``. Unknown keys fall back to the principal branch to avoid
+        an FK error if the seed ever runs against a trimmed baseline.
         """
         principal = branches["principal"]
         for spec in MAQUINARIA_ITEMS:
