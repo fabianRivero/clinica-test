@@ -6,6 +6,7 @@ import { ProfileEditModal } from '../components/profile/ProfileEditModal'
 
 const navigation = [
   { to: '/trabajador/agenda', label: 'Agenda semanal' },
+  { to: '/trabajador/mis-citas', label: 'Mis citas' },
   {
     label: 'Mensajeria interna',
     children: [

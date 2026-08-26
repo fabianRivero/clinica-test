@@ -53,6 +53,7 @@ import { ClientReservationsPage } from './pages/client/ClientReservationsPage'
 import { ClientTreatmentsPage } from './pages/client/ClientTreatmentsPage'
 import { SpecialistLayout } from './layouts/SpecialistLayout'
 import { SpecialistAgendaPage } from './pages/specialist/SpecialistAgendaPage'
+import { MyAppointmentsPage } from './pages/specialist/MyAppointmentsPage'
 import { SpecialistMessageDetailPage, SpecialistMessagesCreatePage, SpecialistMessagesTicketsPage } from './pages/specialist/SpecialistMessagesPage'
 import { useAuth } from './providers/AuthProvider'
 import { NotificationsPage } from './pages/shared/NotificationsPage'
@@ -192,6 +193,7 @@ function App() {
         <Route path="/trabajador" element={<SpecialistLayout />}>
           <Route index element={<Navigate to="/trabajador/agenda" replace />} />
           <Route path="agenda" element={<SpecialistAgendaPage />} />
+          <Route path="mis-citas" element={<MyAppointmentsPage />} />
           <Route path="mensajes" element={<Navigate to="/trabajador/mensajes/fichas" replace />} />
           <Route path="mensajes/fichas" element={<SpecialistMessagesTicketsPage />} />
           <Route path="mensajes/nueva" element={<SpecialistMessagesCreatePage />} />
