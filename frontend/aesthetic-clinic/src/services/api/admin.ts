@@ -194,6 +194,17 @@ export function checkAdminMaquinariaConflicts(params: {
   )
 }
 
+/**
+ * Catalogo de maquinaria expuesto por el dispatch generico de catalogos
+ * (`backend/config/api_views.py`). El backend devuelve la forma estandar
+ * `{ key, title, description, fields, items }`; el modal filtra los items
+ * por `active === true` y mapea `values.nombre` + `values.cantidadTotal`
+ * a las opciones que el admin puede seleccionar.
+ */
+export function getMaquinariaCatalog() {
+  return requestJson<AdminCatalogDetailResponse>('/api/admin/catalogos/maquinaria/')
+}
+
 export function markAppointmentPendingBiometricExtended(
   appointmentId: number,
   data: AdminCloseExtendedPayload,
