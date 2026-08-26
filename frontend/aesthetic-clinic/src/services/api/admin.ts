@@ -6,13 +6,17 @@ import type {
   AdminCatalogMutationResponse,
   AdminStaffMutationResponse,
   AdminAvailabilityMutationResponse,
+  AdminAppointmentNotesPatchPayload,
+  AdminAppointmentNotesPatchResponse,
   AdminCancelAppointmentResponse,
   AdminClientDetailResponse,
   AdminExpenseDeleteResponse,
   AdminExpenseMutationResponse,
   AdminClientFreeMedicalAvailabilityResponse,
   AdminClientInactivateResponse,
+  AdminCloseExtendedPayload,
   AdminClientReservationAvailabilityResponse,
+  AdminReservationExtendedPayload,
   AdminProspectMedicalAvailabilityResponse,
   AdminUserRecoveryDetail,
   AdminUserRecoveryResetResponse,
@@ -23,6 +27,7 @@ import type {
   CreateAdminClientFreeMedicalAppointmentResponse,
   CreateAdminClientReservationResponse,
   CreateAdminProspectMedicalAppointmentResponse,
+  MaquinariaConflictResponse,
   CreateAdminStaffPayload,
   CreateAdminAvailabilityExceptionPayload,
   CreateAdminProspectPayload,
@@ -159,10 +164,63 @@ export function getAdminClientFreeMedicalAvailability(clientId: number) {
   )
 }
 
-export function createAdminClientReservation(clientId: number, operationId: number, data: { branchId: number, dateTime: string }) {
+export function createAdminClientReservation(
+  clientId: number,
+  operationId: number,
+  data: AdminReservationExtendedPayload,
+) {
   return requestJsonWithBody<CreateAdminClientReservationResponse>(
     `/api/admin/clientes/${clientId}/operaciones/${operationId}/reservar/`,
     data,
+  )
+}
+
+export function checkAdminMaquinariaConflicts(params: {
+  sucursalId: number
+  fecha: string
+  hora: string
+  duracionMinutos: number
+  maquinariaIds: number[]
+}): Promise<MaquinariaConflictResponse> {
+  const search = new URLSearchParams({
+    sucursalId: String(params.sucursalId),
+    fecha: params.fecha,
+    hora: params.hora,
+    duracionMinutos: String(params.duracionMinutos),
+    maquinariaIds: params.maquinariaIds.join(","),
+  })
+  return requestJson<MaquinariaConflictResponse>(
+    `/api/admin/disponibilidad/check-maquinaria/?${search.toString()}`,
+  )
+}
+
+export function markAppointmentPendingBiometricExtended(
+  appointmentId: number,
+  data: AdminCloseExtendedPayload,
+) {
+  return requestJsonWithBody<unknown>(
+    `/api/admin/citas/${appointmentId}/pendiente-biometria/`,
+    data,
+  )
+}
+
+export function patchAppointmentNotes(
+  appointmentId: number,
+  data: AdminAppointmentNotesPatchPayload,
+): Promise<AdminAppointmentNotesPatchResponse> {
+  // Notes use multipart so photos can be uploaded.
+  const formData = new FormData()
+  Object.entries(data).forEach(([key, value]) => {
+    if (value === undefined || value === null) return
+    if (value instanceof File) {
+      formData.append(key, value)
+    } else {
+      formData.append(key, String(value))
+    }
+  })
+  return requestFormDataWithBody<AdminAppointmentNotesPatchResponse>(
+    `/api/admin/citas/${appointmentId}/notas/`,
+    formData,
   )
 }
 

@@ -889,3 +889,103 @@ export type BackupFile = {
 export type BackupListResponse = {
   results: BackupFile[]
 }
+
+// -----------------------------------------------------------------------------
+// Appointment Reservation Redesign
+// -----------------------------------------------------------------------------
+
+export type MaquinariaItem = {
+  id: number
+  nombre: string
+  marca: string
+  descripcion: string
+  cantidadTotal: number
+  sucursalId: number | null
+  sucursalNombre: string | null
+  activo: boolean
+}
+
+export type MaquinariaConflict = {
+  maquinariaId: number
+  nombre: string
+  cantidadSolicitada: number
+  cantidadDisponible: number
+  citasQueLaUsan: Array<{
+    citaId: number
+    cliente: string
+    fecha: string
+    horaInicio: string
+    horaFin: string
+    planificada: boolean
+  }>
+}
+
+export type MaquinariaConflictResponse = {
+  conflictos: MaquinariaConflict[]
+}
+
+// Body for createAdminClientReservation: existing {branchId, dateTime} is
+// kept for backward compat; all new fields are optional.
+export type AdminReservationExtendedPayload = {
+  branchId: number
+  dateTime: string
+  duracionEstimadaMinutos?: number | null
+  descripcionGeneral?: string
+  notasPrevias?: string
+  procedimientoPlanificado?: string
+  zonaCuerpoPlanificada?: string
+  especialistasPlanificados?: number[]
+  maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
+}
+
+// Body for pendiente-biometria (close). All fields optional.
+export type AdminCloseExtendedPayload = {
+  horaRealInicio?: string
+  horaRealFin?: string
+  procedimientoRealizado?: string
+  zonaCuerpoRealizada?: string
+  especialistasAtendieron?: number[]
+  maquinariaUtilizada?: Array<{ maquinariaId: number; cantidad: number }>
+}
+
+// PATCH /citas/<id>/notas/ — multipart; text fields and photos share one endpoint.
+export type AdminAppointmentNotesPatchPayload = {
+  descripcionGeneral?: string
+  notasPrevias?: string
+  notasPost?: string
+  fotoAntes?: File
+  fotoDespues?: File
+}
+
+export type AdminAppointmentNotesPatchResponse = {
+  detail: string
+  cita: unknown
+}
+
+export type MisCitasMaquinariaItem = {
+  nombre: string
+  cantidad: number
+  planificada: boolean
+}
+
+export type MisCitasItem = {
+  id: string
+  rawId: number
+  fecha: string
+  horaInicio: string
+  duracionEstimadaMinutos: number | null
+  procedimientoPlanificado: string
+  zonaCuerpoPlanificada: string
+  descripcionGeneral: string
+  notasPrevias: string
+  notasPost: string
+  sucursal: string | null
+  estado: string
+  status?: string
+  operation?: string
+  maquinaria: MisCitasMaquinariaItem[]
+}
+
+export type MisCitasResponse = {
+  citas: MisCitasItem[]
+}
