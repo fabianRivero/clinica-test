@@ -7151,3 +7151,97 @@ def admin_report_income(request):
             "truncated": pagos_qs.count() > REPORT_ROW_CAP,
         }
     )
+
+
+# -----------------------------------------------------------------------------
+# Specialist Mis Citas endpoint
+#
+# GET /api/especialista/mis-citas/
+# Returns every cita where the authenticated specialist appears in
+# CitaEspecialista (any planificada), excluding CANCELADA and NO_ASISTIO.
+# Read-only view consumed by the frontend /trabajador/mis-citas page.
+# -----------------------------------------------------------------------------
+
+
+def _especialista_mis_cita_item(cita):
+    """Shape a cita for the specialist mis-citas view.
+
+    Extends the standard _appointment_item with the rich planning data
+    introduced by the appointment-reservation-redesign spec: duracion,
+    procedimiento, zona, descripcion, notas previas, and the list of
+    maquinaría assigned to the cita. No actions / no biometric fields
+    (the view is read-only).
+    """
+    from config.client_api_views import _appointment_item
+
+    base = dict(_appointment_item(cita))
+    base.update(
+        {
+            "fecha": timezone.localtime(cita.fecha_hora).strftime("%Y-%m-%d"),
+            "horaInicio": timezone.localtime(cita.fecha_hora).strftime("%H:%M"),
+            "duracionEstimadaMinutos": cita.duracion_estimada_minutos,
+            "procedimientoPlanificado": cita.procedimiento_planificado or "",
+            "zonaCuerpoPlanificada": cita.zona_cuerpo_planificada or "",
+            "descripcionGeneral": cita.descripcion_general or "",
+            "notasPrevias": cita.notas_previas or "",
+            "notasPost": cita.notas_post or "",
+            "sucursal": cita.sucursal.nombre if cita.sucursal_id else None,
+            "maquinaria": [
+                {
+                    "nombre": str(item.maquinaria),
+                    "cantidad": item.cantidad,
+                    "planificada": item.planificada,
+                }
+                for item in cita.maquinaria_items.all()
+            ],
+        }
+    )
+    # Drop admin-only action flags the specialist does not need.
+    for key in ("canManage", "canMarkPendingBiometric", "canConfirmBiometric",
+                "canCancelFromVerification", "biometricMockTemplate"):
+        base.pop(key, None)
+    return base
+
+
+@require_GET
+@admin_required
+def especialista_mis_citas(request):
+    """GET /api/especialista/mis-citas/
+
+    Lists every cita where the authenticated user (specialist) appears in
+    CitaEspecialista (any planificada). CANCELADA and NO_ASISTIO are
+    excluded so the UI shows only relevant history + future appointments.
+    """
+    user = request.user
+    if not (user.is_authenticated and getattr(user, "es_trabajador", False)):
+        return json_response(
+            {"detail": "Solo los especialistas pueden acceder a esta vista."}, status=403
+        )
+
+    especialista = getattr(user, "especialista", None)
+    if not especialista:
+        return json_response(
+            {"detail": "Tu usuario no tiene un perfil de especialista asociado."}, status=403
+        )
+
+    citas_qs = (
+        CitaMedica.objects.filter(
+            especialistas_items__especialista=especialista,
+            estado__in=[
+                CitaMedica.Estado.PROGRAMADA,
+                CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
+                CitaMedica.Estado.CONFIRMADA,
+            ],
+        )
+        .select_related(
+            "operacion__paciente__usuario",
+            "operacion__servicio_config__tipo_servicio",
+            "sucursal",
+        )
+        .prefetch_related("maquinaria_items__maquinaria")
+        .distinct()
+        .order_by("fecha_hora")
+    )
+
+    items = [_especialista_mis_cita_item(c) for c in citas_qs]
+    return json_response({"citas": items})

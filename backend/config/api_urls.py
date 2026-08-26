@@ -75,6 +75,7 @@ from config.api_views import (
     admin_update_prospect_medical_appointment,
     admin_update_appointment_notes,
     admin_update_appointment_status,
+    especialista_mis_citas,
     admin_update_prospect,
     admin_prospect_check_duplicates,
     admin_clientes_global_search,
@@ -463,6 +464,12 @@ urlpatterns = [
         "usuarios/<int:user_id>/reset-password/",
         usuario_recovery_reset,
         name="admin-usuarios-reset-api",
+    ),
+    # Specialist read-only "Mis citas" view.
+    path(
+        "especialista/mis-citas/",
+        especialista_mis_citas,
+        name="especialista-mis-citas-api",
     ),
     path("", include(free_medical_router.urls)),
     path("", include(clientes_router.urls)),
