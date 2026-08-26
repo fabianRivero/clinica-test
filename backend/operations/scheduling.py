@@ -1,4 +1,4 @@
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from django.db.models import Q, Value, CharField, F, Case, When
 from django.db.models.functions import Coalesce, Concat
 from django.utils import timezone
@@ -7,6 +7,7 @@ from operations.models import (
     AgendaHabitualEspecialista,
     CitaClienteLibre,
     CitaMedica,
+    CitaMaquinaria,
     CitaProspecto,
 )
 from staff.models import Especialista
@@ -312,6 +313,150 @@ def get_available_dates(sucursal_id, start_date, end_date):
                 break
 
     return present_dates
+
+
+def get_maquinaria_conflicts(sucursal_id, fecha, hora_inicio, duracion_minutos, items):
+    """Detect overlapping reservations for a set of Maquinaria in a time window.
+
+    Args:
+        sucursal_id: branch where the new cita would be created.
+        fecha: date of the window.
+        hora_inicio: time of the window start.
+        duracion_minutos: window length in minutes.
+        items: iterable of ``{"maquinariaId": int, "cantidad": int}``.
+
+    Returns:
+        A list of conflicts, one entry per maquinaría that has at least one
+        overlapping reservation that, summed with the requested cantidad,
+        exceeds ``Maquinaria.cantidad_total``. Each entry is shaped as::
+
+            {
+                "maquinariaId": int,
+                "nombre": str,
+                "cantidadSolicitada": int,
+                "cantidadDisponible": int,
+                "citasQueLaUsan": [
+                    {
+                        "citaId": int,
+                        "cliente": str,
+                        "fecha": str (YYYY-MM-DD),
+                        "horaInicio": str (HH:MM),
+                        "horaFin": str (HH:MM),
+                        "planificada": bool,
+                    },
+                    ...
+                ],
+            }
+
+        Items in ``items`` without overlap are omitted from the result.
+    """
+    from catalogs.models import Maquinaria
+
+    if duracion_minutos <= 0:
+        return []
+    try:
+        duracion_minutos = int(duracion_minutos)
+    except (TypeError, ValueError):
+        return []
+
+    if not items:
+        return []
+
+    start_dt = timezone.make_aware(datetime.combine(fecha, hora_inicio))
+    end_dt = start_dt + timedelta(minutes=duracion_minutos)
+
+    # Pre-fetch maquinaría referenced by the items, scoped to the branch.
+    # Globlales (sucursal=None) and own-branch rows are both visible.
+    by_id = {
+        m.pk: m
+        for m in Maquinaria.objects.filter(
+            Q(sucursal_id=sucursal_id) | Q(sucursal__isnull=True)
+        )
+    }
+
+    conflicts = []
+    for item in items:
+        maquinaria_id = item.get("maquinariaId")
+        try:
+            cantidad_solicitada = int(item.get("cantidad") or 0)
+        except (TypeError, ValueError):
+            cantidad_solicitada = 0
+        if cantidad_solicitada <= 0:
+            continue
+
+        maquinaria = by_id.get(maquinaria_id)
+        if not maquinaria:
+            # Caller asked about a maquinaría outside the branch's scope;
+            # we cannot compute availability. Skip silently — the UI should
+            # have filtered it out before calling this helper.
+            continue
+
+        overlapping_rows = (
+            CitaMaquinaria.objects
+            .filter(maquinaria=maquinaria, planificada=True)
+            .select_related("cita", "cita__operacion__paciente__usuario")
+        )
+
+        citas_que_la_usan = []
+        suma = 0
+        for row in overlapping_rows:
+            cita = row.cita
+            # Consider only citas that block the slot:
+            #   - in the same branch
+            #   - in a non-blocking state
+            #   - whose fecha_hora falls inside the requested window
+            if cita.sucursal_id != sucursal_id:
+                continue
+            if cita.estado not in BLOCKING_RESERVATION_STATES:
+                continue
+            if not (start_dt <= cita.fecha_hora < end_dt):
+                continue
+
+            # Per-cita duration: cita.duracion_estimada_minutos defaults to
+            # None, so we use the explicit duration when present and a 0
+            # fallback otherwise (point-in-time).
+            cita_duracion = cita.duracion_estimada_minutos or 0
+            cita_fin = cita.fecha_hora + timedelta(minutes=cita_duracion)
+            cita_inicio_local = timezone.localtime(cita.fecha_hora)
+            cita_fin_local = timezone.localtime(cita_fin)
+
+            cliente_nombre = "Cliente no registrado"
+            if cita.operacion and getattr(cita.operacion, "paciente", None):
+                usuario = getattr(cita.operacion.paciente, "usuario", None)
+                if usuario:
+                    partes = [
+                        usuario.primer_nombre or "",
+                        usuario.apellido_paterno or "",
+                    ]
+                    full = " ".join(p for p in partes if p).strip()
+                    if full:
+                        cliente_nombre = full
+
+            citas_que_la_usan.append(
+                {
+                    "citaId": cita.pk,
+                    "cliente": cliente_nombre,
+                    "fecha": cita_inicio_local.strftime("%Y-%m-%d"),
+                    "horaInicio": cita_inicio_local.strftime("%H:%M"),
+                    "horaFin": cita_fin_local.strftime("%H:%M"),
+                    "planificada": row.planificada,
+                }
+            )
+            suma += row.cantidad
+
+        if cantidad_solicitada + suma > maquinaria.cantidad_total:
+            cantidad_disponible = max(maquinaria.cantidad_total - suma, 0)
+            conflicts.append(
+                {
+                    "maquinariaId": maquinaria.pk,
+                    "nombre": str(maquinaria),
+                    "cantidadSolicitada": cantidad_solicitada,
+                    "cantidadDisponible": cantidad_disponible,
+                    "citasQueLaUsan": citas_que_la_usan,
+                }
+            )
+
+    return conflicts
 
 
 def mark_expired_programmed_appointments_as_no_show(reference_time=None):
