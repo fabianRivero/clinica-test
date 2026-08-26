@@ -17,7 +17,7 @@ from operations.models import (
     DiaSemana,
 )
 from staff.models import Especialista
-from operations.scheduling import get_concurrency, get_concurrency_detail, get_specialists_present
+from operations.scheduling import get_concurrency, get_concurrency_detail, get_maquinaria_conflicts, get_specialists_present
 
 
 def _specialists_for_branch(branch):
@@ -386,6 +386,99 @@ def admin_check_concurrency(request):
         })
     except Exception as e:
         return json_response({"detail": str(e)}, status=400)
+
+
+@require_GET
+@admin_required
+def admin_check_maquinaria(request):
+    """Detect overlapping reservations for a set of Maquinaria in a time window.
+
+    Query params:
+        sucursalId (int): branch id.
+        fecha (YYYY-MM-DD): window date.
+        hora (HH:MM): window start time.
+        duracionMinutos (int): window length, 1..480.
+        maquinariaIds (comma-separated int ids).
+
+    Returns ``{"conflictos": [...]}``. Never blocks the reservation; the
+    admin uses the result as a visibility hint per the appointment-reservation-
+    redesign spec.
+    """
+    sucursal_id_raw = request.GET.get("sucursalId")
+    fecha_raw = request.GET.get("fecha")
+    hora_raw = request.GET.get("hora")
+    duracion_raw = request.GET.get("duracionMinutos")
+    maquinaria_raw = request.GET.get("maquinariaIds", "")
+
+    if not sucursal_id_raw:
+        return json_response({"detail": "Falta sucursalId."}, status=400)
+    if not fecha_raw:
+        return json_response({"detail": "Falta fecha."}, status=400)
+    if not hora_raw:
+        return json_response({"detail": "Falta hora."}, status=400)
+    if not duracion_raw:
+        return json_response({"detail": "Falta duracionMinutos."}, status=400)
+
+    try:
+        sucursal_id = int(sucursal_id_raw)
+    except (TypeError, ValueError):
+        return json_response({"detail": "sucursalId invalido."}, status=400)
+
+    try:
+        fecha = datetime.strptime(fecha_raw[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return json_response({"detail": "fecha invalida (YYYY-MM-DD)."}, status=400)
+
+    try:
+        hora = datetime.strptime(hora_raw[:5], "%H:%M").time()
+    except ValueError:
+        return json_response({"detail": "hora invalida (HH:MM)."}, status=400)
+
+    try:
+        duracion_minutos = int(duracion_raw)
+    except (TypeError, ValueError):
+        return json_response({"detail": "duracionMinutos invalido."}, status=400)
+    if duracion_minutos < 1 or duracion_minutos > 480:
+        return json_response(
+            {"detail": "duracionMinutos debe estar entre 1 y 480."}, status=400
+        )
+
+    try:
+        maquinaria_ids = [int(x) for x in maquinaria_raw.split(",") if x.strip()]
+    except ValueError:
+        return json_response({"detail": "maquinariaIds invalida."}, status=400)
+
+    if not maquinaria_ids:
+        return json_response({"conflictos": []})
+
+    # We expect items to be a list of {maquinariaId, cantidad}. The frontend
+    # can pass the cantidad via repeated params `cantidades=1,2,3` aligned to
+    # maquinariaIds; if absent, default to 1.
+    cantidades_raw = request.GET.get("cantidades", "")
+    if cantidades_raw:
+        try:
+            cantidades = [int(x) for x in cantidades_raw.split(",") if x.strip()]
+        except ValueError:
+            return json_response({"detail": "cantidades invalida."}, status=400)
+    else:
+        cantidades = [1] * len(maquinaria_ids)
+
+    if len(cantidades) < len(maquinaria_ids):
+        cantidades = list(cantidades) + [1] * (len(maquinaria_ids) - len(cantidades))
+
+    items = [
+        {"maquinariaId": mid, "cantidad": cant}
+        for mid, cant in zip(maquinaria_ids, cantidades)
+    ]
+
+    conflictos = get_maquinaria_conflicts(
+        sucursal_id=sucursal_id,
+        fecha=fecha,
+        hora_inicio=hora,
+        duracion_minutos=duracion_minutos,
+        items=items,
+    )
+    return json_response({"conflictos": conflictos})
 
 @admin_required
 def admin_get_branches(request):

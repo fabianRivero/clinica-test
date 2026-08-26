@@ -14,6 +14,7 @@ from config.admin_availability_views import (
     admin_manage_global_day,
     admin_update_habitual_schedule,
     admin_check_concurrency,
+    admin_check_maquinaria,
     admin_get_branches,
 )
 from accounts.views import (
@@ -351,6 +352,16 @@ urlpatterns = [
         "disponibilidad/concurrencia/",
         admin_check_concurrency,
         name="admin-availability-check-concurrency-api",
+    ),
+    path(
+        "disponibilidad/check-maquinaria/",
+        admin_check_maquinaria,
+        name="admin-availability-check-maquinaria-api",
+    ),
+    path(
+        "disponibilidad/check-maquinaria/",
+        admin_check_maquinaria,
+        name="admin-availability-check-maquinaria-api",
     ),
     path("disponibilidad/sucursales/", admin_get_branches, name="admin-branches-api"),
     path("", include(pagos_router.urls)),
