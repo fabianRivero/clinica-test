@@ -27,6 +27,8 @@ from config.api_views import (
     admin_catalogo_crear,
     admin_catalogo_detalle,
     admin_catalogo_estado,
+    admin_maquinaria_actualizar,
+    admin_maquinaria_crear,
     admin_cancel_appointment,
     admin_cancel_appointment_verification,
     admin_cliente_create_free_medical_appointment,
@@ -364,6 +366,19 @@ urlpatterns = [
         "catalogos/<slug:catalog_key>/<int:item_id>/estado/",
         admin_catalogo_estado,
         name="admin-catalogo-state-api",
+    ),
+    # Dedicated Maquinaria endpoints — admin_sucursal can CRUD own branch,
+    # admin_principal can CRUD any (including globales). See appointment-
+    # reservation-redesign spec.
+    path(
+        "catalogos/maquinaria/crear/",
+        admin_maquinaria_crear,
+        name="admin-maquinaria-create-api",
+    ),
+    path(
+        "catalogos/maquinaria/<int:item_id>/actualizar/",
+        admin_maquinaria_actualizar,
+        name="admin-maquinaria-update-api",
     ),
     # Nested OpcionCatalogo endpoints under grupos-opciones — used by the
     # option management modal in the admin catalog page. Routes are added

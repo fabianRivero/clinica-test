@@ -1018,6 +1018,7 @@ def _catalog_key_to_slug(catalog_key):
         "categorias-gasto",
         "sectores",
         "secciones-ficha",
+        "maquinaria",
     }:
         return catalog_key
     raise KeyError(catalog_key)
@@ -1083,7 +1084,7 @@ def _catalog_summary_descriptor():
     ]
 
 
-def _catalog_page_data(catalog_key, q="", active="all", **filters):
+def _catalog_page_data(catalog_key, q="", active="all", request=None, **filters):
     catalog_key = _catalog_key_to_slug(catalog_key)
 
     if catalog_key == "todos-los-servicios":
@@ -1868,6 +1869,92 @@ def _catalog_page_data(catalog_key, q="", active="all", **filters):
             "items": items,
         }
 
+    if catalog_key == "maquinaria":
+        from catalogs.models import Maquinaria
+
+        user = request.user if request is not None else None
+        queryset = Maquinaria.objects.select_related("sucursal").order_by("nombre")
+
+        # Role-scoped visibility per appointment-reservation-redesign spec.
+        if getattr(user, "es_admin_principal", False):
+            pass  # admin principal sees everything
+        elif getattr(user, "es_admin_sucursal", False) and getattr(user, "sucursal_id", None):
+            queryset = queryset.filter(
+                models.Q(sucursal__isnull=True)
+                | models.Q(sucursal_id=user.sucursal_id)
+            )
+        elif getattr(user, "is_authenticated", False):
+            queryset = Maquinaria.objects.none()
+        else:
+            queryset = Maquinaria.objects.none()
+
+        items = [
+            {
+                "id": m.pk,
+                "nombre": m.nombre,
+                "marca": m.marca,
+                "descripcion": m.descripcion,
+                "cantidadTotal": m.cantidad_total,
+                "sucursalId": m.sucursal_id,
+                "sucursalNombre": m.sucursal.nombre if m.sucursal_id else None,
+                "activo": m.activo,
+            }
+            for m in queryset
+        ]
+        return {
+            "key": "maquinaria",
+            "title": "Maquinaria",
+            "description": "Equipos y recursos usados por las citas medicas.",
+            "fields": [
+                _catalog_field(
+                    "nombre",
+                    "Nombre",
+                    value_type="text",
+                    required=True,
+                    max_length=120,
+                ),
+                _catalog_field(
+                    "marca",
+                    "Marca",
+                    value_type="text",
+                    required=False,
+                    max_length=120,
+                ),
+                _catalog_field(
+                    "descripcion",
+                    "Descripcion",
+                    value_type="textarea",
+                    required=False,
+                ),
+                _catalog_field(
+                    "cantidadTotal",
+                    "Cantidad total",
+                    value_type="number",
+                    required=True,
+                    min_value=1,
+                ),
+                _catalog_field(
+                    "sucursalId",
+                    "Sucursal",
+                    value_type="number",
+                    required=False,
+                    allow_empty=True,
+                    options=[
+                        _catalog_option(s.pk, s.nombre)
+                        for s in Sucursal.objects.filter(activa=True).order_by("nombre")
+                    ],
+                    hint="Vacio = recurso global (solo admin principal).",
+                ),
+                _catalog_field(
+                    "activo",
+                    "Activo",
+                    value_type="boolean",
+                    required=False,
+                ),
+            ],
+            "items": items,
+        }
+
     raise KeyError(catalog_key)
 
 
@@ -2173,6 +2260,7 @@ def _catalog_get_instance(catalog_key, item_id):
         "categorias-gasto": CategoriaGasto,
         "sectores": Sector,
         "secciones-ficha": FichaSeccion,
+        "maquinaria": Maquinaria,
     }
     return model_map[catalog_key].objects.filter(pk=item_id).first()
 
@@ -4935,6 +5023,7 @@ def admin_catalogo_detalle(request, catalog_key):
             catalog_key,
             q=q,
             active=active,
+            request=request,
             sector_id=sector_id,
             proc_estetico_id=proc_estetico_id,
         )
@@ -4965,7 +5054,7 @@ def admin_catalogo_crear(request, catalog_key):
     return json_response(
         {
             "detail": "Registro creado correctamente.",
-            "item": next(item for item in _catalog_page_data(catalog_key)["items"] if item["id"] == obj.pk),
+            "item": next(item for item in _catalog_page_data(catalog_key, request=request)["items"] if item["id"] == obj.pk),
         },
         status=201,
     )
@@ -4997,7 +5086,7 @@ def admin_catalogo_actualizar(request, catalog_key, item_id):
     return json_response(
         {
             "detail": "Registro actualizado correctamente.",
-            "item": next(item for item in _catalog_page_data(catalog_key)["items"] if item["id"] == obj.pk),
+            "item": next(item for item in _catalog_page_data(catalog_key, request=request)["items"] if item["id"] == obj.pk),
         }
     )
 
@@ -5024,7 +5113,182 @@ def admin_catalogo_estado(request, catalog_key, item_id):
     return json_response(
         {
             "detail": "Estado actualizado correctamente.",
-            "item": next(item for item in _catalog_page_data(catalog_key)["items"] if item["id"] == instance.pk),
+            "item": next(item for item in _catalog_page_data(catalog_key, request=request)["items"] if item["id"] == instance.pk),
+        }
+    )
+
+
+# -----------------------------------------------------------------------------
+# Maquinaria dedicated endpoints
+#
+# The generic catalog create/update endpoints above use @_admin_principal_required.
+# Maquinaria is intentionally branch-scoped (admin_sucursal can CRUD resources of
+# their own branch), so we expose dedicated endpoints with @admin_required and a
+# scope check on the sucursal payload. See appointment-reservation-redesign spec.
+# -----------------------------------------------------------------------------
+
+
+def _maquinaria_scope_check(user):
+    """Returns True when the user can manage at least one Maquinaria row."""
+    return getattr(user, "es_admin_principal", False) or (
+        getattr(user, "es_admin_sucursal", False) and getattr(user, "sucursal_id", None)
+    )
+
+
+def _maquinaria_normalize_payload(payload, user):
+    """Parse + scope-check a Maquinaria payload. Returns (instance, errors_dict).
+
+    - admin principal: may set `sucursalId` to None (global) or any Sucursal.
+    - admin sucursal: `sucursalId` is forced to user.sucursal_id; client-supplied
+      values that disagree are rejected.
+    """
+    from catalogs.models import Maquinaria, Sucursal
+
+    errors = {}
+    nombre = (payload.get("nombre") or "").strip()
+    if not nombre:
+        errors["nombre"] = "Debes indicar un nombre."
+    elif len(nombre) > 120:
+        errors["nombre"] = "El nombre no puede superar los 120 caracteres."
+
+    marca = (payload.get("marca") or "").strip()
+    if len(marca) > 120:
+        errors["marca"] = "La marca no puede superar los 120 caracteres."
+
+    descripcion = (payload.get("descripcion") or "").strip()
+
+    try:
+        cantidad_total = int(payload.get("cantidadTotal") or 0)
+    except (TypeError, ValueError):
+        cantidad_total = 0
+    if cantidad_total < 1:
+        errors["cantidadTotal"] = "La cantidad total debe ser al menos 1."
+
+    sucursal_id = payload.get("sucursalId")
+    sucursal = None
+    if sucursal_id in (None, "", "null"):
+        sucursal_id = None
+    else:
+        try:
+            sucursal_id = int(sucursal_id)
+        except (TypeError, ValueError):
+            errors["sucursalId"] = "Sucursal invalida."
+            sucursal_id = None
+        else:
+            sucursal = Sucursal.objects.filter(pk=sucursal_id).first()
+            if not sucursal:
+                errors["sucursalId"] = "La sucursal no existe."
+
+    if not getattr(user, "es_admin_principal", False):
+        # admin_sucursal: force own sucursal, reject attempts to write globals
+        # or to assign to a different branch.
+        if sucursal_id is None:
+            errors["sucursalId"] = "Solo el administrador principal puede crear maquinaria global."
+        elif getattr(user, "sucursal_id", None) and sucursal_id != user.sucursal_id:
+            errors["sucursalId"] = "No puedes asignar maquinaria a otra sucursal."
+
+    instance = Maquinaria(
+        nombre=nombre,
+        marca=marca,
+        descripcion=descripcion,
+        cantidad_total=cantidad_total,
+        sucursal=sucursal,
+        activo=bool(payload.get("activo", True)),
+    )
+    return instance, errors
+
+
+@require_POST
+@admin_required
+def admin_maquinaria_crear(request):
+    """Dedicated endpoint: admin_sucursal can create Maquinaria for own branch."""
+    if not _maquinaria_scope_check(request.user):
+        return json_response({"detail": "No tienes permisos para esta accion."}, status=403)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    instance, errors = _maquinaria_normalize_payload(payload, request.user)
+    if errors:
+        return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+
+    try:
+        instance.full_clean()
+        instance.save()
+    except ValidationError as exc:
+        return json_response({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+    except IntegrityError:
+        return json_response({"detail": "Ya existe un registro con esos datos clave."}, status=400)
+
+    return json_response(
+        {
+            "detail": "Maquinaria creada correctamente.",
+            "item": next(
+                item for item in _catalog_page_data("maquinaria", request=request)["items"]
+                if item["id"] == instance.pk
+            ),
+        },
+        status=201,
+    )
+
+
+@require_POST
+@admin_required
+def admin_maquinaria_actualizar(request, item_id):
+    """Dedicated endpoint: admin_sucursal can update Maquinaria of own branch."""
+    if not _maquinaria_scope_check(request.user):
+        return json_response({"detail": "No tienes permisos para esta accion."}, status=403)
+
+    instance = _catalog_get_instance("maquinaria", item_id)
+    if not instance:
+        return json_response({"detail": "No encontramos la maquinaria solicitada."}, status=404)
+
+    # admin_sucursal may only update own-branch machinery (not globales).
+    if not getattr(request.user, "es_admin_principal", False):
+        if instance.sucursal_id is None:
+            return json_response(
+                {"detail": "Solo el administrador principal puede editar maquinaria global."},
+                status=403,
+            )
+        if getattr(request.user, "sucursal_id", None) != instance.sucursal_id:
+            return json_response(
+                {"detail": "No puedes editar maquinaria de otra sucursal."},
+                status=403,
+            )
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
+
+    updated, errors = _maquinaria_normalize_payload(payload, request.user)
+    if errors:
+        return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+
+    instance.nombre = updated.nombre
+    instance.marca = updated.marca
+    instance.descripcion = updated.descripcion
+    instance.cantidad_total = updated.cantidad_total
+    instance.sucursal = updated.sucursal
+    instance.activo = updated.activo
+
+    try:
+        instance.full_clean()
+        instance.save()
+    except ValidationError as exc:
+        return json_response({"detail": "Hay errores en el formulario.", "errors": exc.message_dict}, status=400)
+    except IntegrityError:
+        return json_response({"detail": "Ya existe un registro con esos datos clave."}, status=400)
+
+    return json_response(
+        {
+            "detail": "Maquinaria actualizada correctamente.",
+            "item": next(
+                item for item in _catalog_page_data("maquinaria", request=request)["items"]
+                if item["id"] == instance.pk
+            ),
         }
     )
 
