@@ -7204,7 +7204,6 @@ def _especialista_mis_cita_item(cita):
 
 
 @require_GET
-@admin_required
 def especialista_mis_citas(request):
     """GET /api/especialista/mis-citas/
 
@@ -7213,7 +7212,9 @@ def especialista_mis_citas(request):
     excluded so the UI shows only relevant history + future appointments.
     """
     user = request.user
-    if not (user.is_authenticated and getattr(user, "es_trabajador", False)):
+    if not user.is_authenticated:
+        return json_response({"detail": "Autenticacion requerida."}, status=401)
+    if not (getattr(user, "es_trabajador", False)):
         return json_response(
             {"detail": "Solo los especialistas pueden acceder a esta vista."}, status=403
         )

@@ -14,6 +14,7 @@ urlpatterns = [
     path("api/tickets/", include("config.ticket_urls")),
     path("api/notifications/", include("config.notification_urls")),
     path("api/biometric/", include("biometric.urls")),
+    path("api/especialista/", include("config.especialista_urls")),
     path("health/", healthcheck, name="healthcheck"),
 ]                      
 
