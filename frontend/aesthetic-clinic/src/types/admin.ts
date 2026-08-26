@@ -546,6 +546,7 @@ export type AdminCatalogKey =
   | 'categorias-gasto'
   | 'sectores'
   | 'secciones-ficha'
+  | 'maquinaria'
 
 export type AdminCatalogFormValue = string | number | boolean | null
 

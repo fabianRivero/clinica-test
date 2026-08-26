@@ -65,6 +65,12 @@ const catalogFallbackInfo: Record<
       'Agrupa campos de ficha clínica por sector o procedimiento estético.',
     createLabel: 'Crear sección de ficha',
   },
+  'maquinaria': {
+    title: 'Maquinaria',
+    description:
+      'Equipos y recursos usados por las citas médicas. Las filas con sucursal nula son globales y solo el administrador principal puede crearlas o editarlas.',
+    createLabel: 'Crear maquinaria',
+  },
   'campos-ficha': {
     title: 'Campos de ficha',
     description:
@@ -724,6 +730,10 @@ export function AdminSectorsCatalogPage() {
 
 export function AdminSeccionesFichaCatalogPage() {
   return <CatalogPage catalogKey="secciones-ficha" />
+}
+
+export function AdminMaquinariaCatalogPage() {
+  return <CatalogPage catalogKey="maquinaria" />
 }
 
 /**

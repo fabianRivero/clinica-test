@@ -573,6 +573,15 @@ export function createAdminCatalogItem(
   catalogKey: AdminCatalogKey,
   payload: Record<string, unknown>,
 ) {
+  // Maquinaria uses dedicated endpoints (admin_required + scope check) so
+  // admin_sucursal can CRUD their own rows. All other catalogs use the
+  // generic dispatch (admin_principal_required).
+  if (catalogKey === 'maquinaria') {
+    return requestJsonWithBody<AdminCatalogMutationResponse>(
+      '/api/admin/catalogos/maquinaria/crear/',
+      payload,
+    )
+  }
   return requestJsonWithBody<AdminCatalogMutationResponse>(
     `/api/admin/catalogos/${catalogKey}/crear/`,
     payload,
@@ -584,6 +593,12 @@ export function updateAdminCatalogItem(
   itemId: number,
   payload: Record<string, unknown>,
 ) {
+  if (catalogKey === 'maquinaria') {
+    return requestJsonWithBody<AdminCatalogMutationResponse>(
+      `/api/admin/catalogos/maquinaria/${itemId}/actualizar/`,
+      payload,
+    )
+  }
   return requestJsonWithBody<AdminCatalogMutationResponse>(
     `/api/admin/catalogos/${catalogKey}/${itemId}/actualizar/`,
     payload,
