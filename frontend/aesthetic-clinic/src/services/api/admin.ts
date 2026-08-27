@@ -181,6 +181,12 @@ export function checkAdminMaquinariaConflicts(params: {
   hora: string
   duracionMinutos: number
   maquinariaIds: number[]
+  /**
+   * Per-row cantidad, aligned to `maquinariaIds`. Backend defaults to 1 per
+   * maquinaría when omitted; pass an explicit array to flag conflicts like
+   * "cantidad_total=1 vs solicitud=8" which the default would miss.
+   */
+  cantidades?: number[]
 }): Promise<MaquinariaConflictResponse> {
   const search = new URLSearchParams({
     sucursalId: String(params.sucursalId),
@@ -189,6 +195,9 @@ export function checkAdminMaquinariaConflicts(params: {
     duracionMinutos: String(params.duracionMinutos),
     maquinariaIds: params.maquinariaIds.join(","),
   })
+  if (params.cantidades && params.cantidades.length === params.maquinariaIds.length) {
+    search.set("cantidades", params.cantidades.join(","))
+  }
   return requestJson<MaquinariaConflictResponse>(
     `/api/admin/disponibilidad/check-maquinaria/?${search.toString()}`,
   )

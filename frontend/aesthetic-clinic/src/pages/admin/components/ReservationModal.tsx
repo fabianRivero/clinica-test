@@ -221,9 +221,11 @@ export function ReservationModal({
       setConcurrencyInfo(concurrency)
       // Solo pedimos conflictos de maquinaria si hay al menos una fila
       // con maquinaria elegida. Si no hay, la lista queda vacia.
-      const selectedIds = maquinariaRows
-        .map((row) => row.maquinariaId)
-        .filter((id): id is number => id !== null)
+      const selected = maquinariaRows
+        .filter((row): row is { rowId: string; maquinariaId: number; cantidad: number } =>
+          row.maquinariaId !== null && row.cantidad > 0,
+        )
+      const selectedIds = selected.map((row) => row.maquinariaId)
       if (selectedIds.length > 0) {
         const conflictResponse = await checkAdminMaquinariaConflicts({
           sucursalId: branchId,
@@ -231,6 +233,10 @@ export function ReservationModal({
           hora: time,
           duracionMinutos,
           maquinariaIds: selectedIds,
+          // Send the cantidad per row, aligned to maquinariaIds, so the
+  // backend flags the conflict (cantidad_total=1 vs solicitud=8)
+  // instead of silently defaulting to 1 per maquinaria.
+          cantidades: selected.map((row) => row.cantidad),
         })
         setConflicts(conflictResponse.conflictos ?? [])
       } else {
