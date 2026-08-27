@@ -41,6 +41,7 @@ from config.api_views import (
     admin_cliente_reservation_availability,
     admin_confirm_appointment_biometric,
     admin_mark_appointment_pending_biometric,
+    admin_cerrar_cita,
     admin_catalogos,
     admin_grupo_opciones_opciones_list,
     admin_grupo_opciones_opciones_crear,
@@ -297,6 +298,11 @@ urlpatterns = [
         "citas/<int:appointment_id>/pendiente-biometria/",
         admin_mark_appointment_pending_biometric,
         name="admin-appointment-pending-biometric-api",
+    ),
+    path(
+        "citas/<int:appointment_id>/cerrar/",
+        admin_cerrar_cita,
+        name="admin-appointment-cerrar-api",
     ),
     path(
         "citas/<int:appointment_id>/notas/",
