@@ -225,6 +225,27 @@ export function ReservationModal({
     0,
   )
 
+  // Per-row "is the requested cantidad above the catalog's stock?"
+  // Map of rowId -> { option, cantidad, cantidadTotal }. Lets us disable
+  // "Verificar disponibilidad" and surface an inline warning on the row.
+  const stockByRowId = new Map<
+    string,
+    { option: MaquinariaOption; cantidad: number; cantidadTotal: number }
+  >()
+  maquinariaRows.forEach((row) => {
+    if (row.maquinariaId === null) return
+    const option = maquinariaOptions.find((opt) => opt.id === row.maquinariaId)
+    if (!option) return
+    stockByRowId.set(row.rowId, {
+      option,
+      cantidad: row.cantidad,
+      cantidadTotal: option.cantidadTotal,
+    })
+  })
+  const hasInsufficientStock = Array.from(stockByRowId.values()).some(
+    (entry) => entry.cantidad > entry.cantidadTotal,
+  )
+
   function addMaquinariaRow() {
     setMaquinariaRows((rows) => [
       ...rows,
@@ -502,6 +523,9 @@ export function ReservationModal({
                           <input
                             type="number"
                             min={1}
+                            max={
+                              stockByRowId.get(row.rowId)?.cantidadTotal
+                            }
                             className="input"
                             value={row.cantidad}
                             onChange={(event) =>
@@ -510,6 +534,17 @@ export function ReservationModal({
                               })
                             }
                           />
+                          {(() => {
+                            const stock = stockByRowId.get(row.rowId)
+                            if (!stock) return null
+                            if (stock.cantidad <= stock.cantidadTotal) return null
+                            return (
+                              <small className="field__error">
+                                Excede el stock ({stock.cantidad} solicitados,
+                                {' '}{stock.cantidadTotal} disponibles).
+                              </small>
+                            )
+                          })()}
                         </label>
                         <button
                           type="button"
@@ -542,7 +577,14 @@ export function ReservationModal({
               <button
                 type="button"
                 className="button button--secondary"
-                disabled={!date || !time || isChecking}
+                disabled={
+                  !date || !time || isChecking || hasInsufficientStock
+                }
+                title={
+                  hasInsufficientStock
+                    ? 'Hay filas con cantidad solicitada mayor al stock disponible.'
+                    : undefined
+                }
                 onClick={() => void handleCheckAvailability()}
               >
                 {isChecking
@@ -551,8 +593,13 @@ export function ReservationModal({
                   ? 'Volver a verificar'
                   : 'Verificar disponibilidad'}
               </button>
-              {availabilityChecked ? (
+              {availabilityChecked && !hasInsufficientStock ? (
                 <small className="field__hint">Disponibilidad verificada</small>
+              ) : null}
+              {hasInsufficientStock ? (
+                <small className="field__error">
+                  Hay filas con cantidad superior al stock disponible.
+                </small>
               ) : null}
             </div>
           </div>
@@ -651,9 +698,11 @@ export function ReservationModal({
               type="button"
               className="button button--primary"
               onClick={() => void handleSubmit()}
-              disabled={isBooking || !availabilityChecked}
+              disabled={isBooking || !availabilityChecked || hasInsufficientStock}
               title={
-                !availabilityChecked
+                hasInsufficientStock
+                  ? 'Reduce la cantidad en las filas que exceden el stock.'
+                  : !availabilityChecked
                   ? 'Verifica la disponibilidad antes de confirmar.'
                   : undefined
               }
