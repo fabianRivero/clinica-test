@@ -1896,8 +1896,11 @@ def _catalog_page_data(catalog_key, q="", active="all", request=None, **filters)
                 subtitle=m.marca or "Sin marca",
                 active=m.activo,
                 metadata=[
-                    ("Cantidad", str(m.cantidad_total)),
-                    ("Sucursal", m.sucursal.nombre if m.sucursal_id else "Global"),
+                    {"label": "Cantidad", "value": str(m.cantidad_total)},
+                    {
+                        "label": "Sucursal",
+                        "value": m.sucursal.nombre if m.sucursal_id else "Global",
+                    },
                 ],
                 values={
                     "nombre": m.nombre,
