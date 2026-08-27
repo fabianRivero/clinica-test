@@ -214,7 +214,10 @@ class AdminCheckMaquinariaEndpointTests(TestCase):
             },
         )
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(response.json(), {"conflictos": []})
+        data = response.json()
+        self.assertEqual(data["conflictos"], [])
+        self.assertEqual(len(data["disponibilidad"]), 1)
+        self.assertEqual(data["disponibilidad"][0]["maquinariaId"], self.laser.pk)
 
     def test_endpoint_validates_required_params(self):
         self.client.force_login(self.admin)

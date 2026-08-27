@@ -17,7 +17,14 @@ from operations.models import (
     DiaSemana,
 )
 from staff.models import Especialista
-from operations.scheduling import get_concurrency, get_concurrency_detail, get_maquinaria_conflicts, get_specialists_present
+from operations.scheduling import (
+    get_concurrency,
+    get_concurrency_detail,
+    get_especialistas_disponibilidad,
+    get_maquinaria_conflicts,
+    get_maquinaria_disponibilidad,
+    get_specialists_present,
+)
 
 
 def _specialists_for_branch(branch):
@@ -478,9 +485,85 @@ def admin_check_maquinaria(request):
         duracion_minutos=duracion_minutos,
         items=items,
     )
-    return json_response({"conflictos": conflictos})
+    disponibilidad = get_maquinaria_disponibilidad(
+        sucursal_id=sucursal_id,
+        fecha=fecha,
+        hora_inicio=hora,
+        duracion_minutos=duracion_minutos,
+        items=items,
+    )
+    return json_response({
+        "conflictos": conflictos,
+        "disponibilidad": disponibilidad,
+    })
 
 @admin_required
 def admin_get_branches(request):
     sucursales = list(Sucursal.objects.values('id', 'nombre', 'es_principal'))
     return json_response({'branches': sucursales})
+
+
+@require_GET
+@admin_required
+def admin_check_especialistas(request):
+    """Per-specialist availability for the time window.
+
+    Query params:
+        sucursalId, fecha, hora, duracionMinutos, especialistaIds
+        (comma-separated).
+    """
+    sucursal_id_raw = request.GET.get("sucursalId")
+    fecha_raw = request.GET.get("fecha")
+    hora_raw = request.GET.get("hora")
+    duracion_raw = request.GET.get("duracionMinutos")
+    esp_ids_raw = request.GET.get("especialistaIds", "")
+
+    if not sucursal_id_raw:
+        return json_response({"detail": "Falta sucursalId."}, status=400)
+    if not fecha_raw:
+        return json_response({"detail": "Falta fecha."}, status=400)
+    if not hora_raw:
+        return json_response({"detail": "Falta hora."}, status=400)
+    if not duracion_raw:
+        return json_response({"detail": "Falta duracionMinutos."}, status=400)
+
+    try:
+        sucursal_id = int(sucursal_id_raw)
+    except (TypeError, ValueError):
+        return json_response({"detail": "sucursalId invalido."}, status=400)
+
+    try:
+        fecha = datetime.strptime(fecha_raw[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return json_response({"detail": "fecha invalida."}, status=400)
+
+    try:
+        hora = datetime.strptime(hora_raw[:5], "%H:%M").time()
+    except ValueError:
+        return json_response({"detail": "hora invalida."}, status=400)
+
+    try:
+        duracion_minutos = int(duracion_raw)
+    except (TypeError, ValueError):
+        return json_response({"detail": "duracionMinutos invalido."}, status=400)
+    if duracion_minutos < 1 or duracion_minutos > 480:
+        return json_response(
+            {"detail": "duracionMinutos debe estar entre 1 y 480."}, status=400
+        )
+
+    try:
+        especialista_ids = [int(x) for x in esp_ids_raw.split(",") if x.strip()]
+    except ValueError:
+        return json_response({"detail": "especialistaIds invalida."}, status=400)
+
+    if not especialista_ids:
+        return json_response({"disponibilidad": []})
+
+    disponibilidad = get_especialistas_disponibilidad(
+        sucursal_id=sucursal_id,
+        fecha=fecha,
+        hora_inicio=hora,
+        duracion_minutos=duracion_minutos,
+        especialista_ids=especialista_ids,
+    )
+    return json_response({"disponibilidad": disponibilidad})

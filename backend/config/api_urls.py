@@ -15,6 +15,7 @@ from config.admin_availability_views import (
     admin_update_habitual_schedule,
     admin_check_concurrency,
     admin_check_maquinaria,
+    admin_check_especialistas,
     admin_get_branches,
 )
 from accounts.views import (
@@ -365,9 +366,9 @@ urlpatterns = [
         name="admin-availability-check-maquinaria-api",
     ),
     path(
-        "disponibilidad/check-maquinaria/",
-        admin_check_maquinaria,
-        name="admin-availability-check-maquinaria-api",
+        "disponibilidad/check-especialistas/",
+        admin_check_especialistas,
+        name="admin-availability-check-especialistas-api",
     ),
     path("disponibilidad/sucursales/", admin_get_branches, name="admin-branches-api"),
     path("", include(pagos_router.urls)),

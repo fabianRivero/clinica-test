@@ -1,4 +1,5 @@
 from datetime import datetime, time, timedelta
+from django.db import models
 from django.db.models import Q, Value, CharField, F, Case, When
 from django.db.models.functions import Coalesce, Concat
 from django.utils import timezone
@@ -6,6 +7,7 @@ from operations.models import (
     AgendaExcepcionEspecialista,
     AgendaHabitualEspecialista,
     CitaClienteLibre,
+    CitaEspecialista,
     CitaMedica,
     CitaMaquinaria,
     CitaProspecto,
@@ -457,6 +459,214 @@ def get_maquinaria_conflicts(sucursal_id, fecha, hora_inicio, duracion_minutos, 
             )
 
     return conflicts
+
+
+def get_maquinaria_disponibilidad(sucursal_id, fecha, hora_inicio, duracion_minutos, items):
+    """Per-maquinaria availability for the time window.
+
+    Returns one entry per requested maquinaría (always, even when there
+    is no over-assignment) so the admin can see what is already booked.
+    Each entry carries:
+
+      - maquinariaId, nombre, cantidadTotal, cantidadSolicitada
+      - cantidadDisponible (after existing reservations in window)
+      - citasQueLaUsan: list of {citaId, cliente, fecha, horaInicio,
+        horaFin, planificada} for CitaMedica rows where this maquinaría
+        is reserved in the window AND the cita is in a blocking state.
+      - sobreAsignada: true when cantidadSolicitada > cantidadDisponible
+
+    Items where ``maquinariaId`` does not exist in the catalog or is
+    outside the caller's branch scope are silently skipped.
+    """
+    from catalogs.models import Maquinaria
+
+    if duracion_minutos <= 0 or not items:
+        return []
+
+    try:
+        duracion_minutos = int(duracion_minutos)
+    except (TypeError, ValueError):
+        return []
+
+    start_dt = timezone.make_aware(datetime.combine(fecha, hora_inicio))
+    end_dt = start_dt + timedelta(minutes=duracion_minutos)
+
+    by_id = {
+        m.pk: m
+        for m in Maquinaria.objects.filter(
+            Q(sucursal_id=sucursal_id) | Q(sucursal__isnull=True)
+        )
+    }
+
+    result = []
+    for item in items:
+        maquinaria_id = item.get("maquinariaId")
+        try:
+            cantidad_solicitada = int(item.get("cantidad") or 0)
+        except (TypeError, ValueError):
+            cantidad_solicitada = 0
+        if cantidad_solicitada <= 0:
+            continue
+
+        maquinaria = by_id.get(maquinaria_id)
+        if not maquinaria:
+            continue
+
+        # Mirror the row collection in get_maquinaria_conflicts so the two
+        # helpers stay in sync if the reservation rules ever change.
+        overlapping_rows = (
+            CitaMaquinaria.objects
+            .filter(maquinaria=maquinaria, planificada=True)
+            .select_related("cita", "cita__operacion__paciente__usuario")
+        )
+
+        citas_que_la_usan = []
+        suma = 0
+        for row in overlapping_rows:
+            cita = row.cita
+            if cita.sucursal_id != sucursal_id:
+                continue
+            if cita.estado not in BLOCKING_RESERVATION_STATES:
+                continue
+            if not (start_dt <= cita.fecha_hora < end_dt):
+                continue
+
+            cita_duracion = cita.duracion_estimada_minutos or 0
+            cita_fin = cita.fecha_hora + timedelta(minutes=cita_duracion)
+            cita_inicio_local = timezone.localtime(cita.fecha_hora)
+            cita_fin_local = timezone.localtime(cita_fin)
+
+            cliente_nombre = "Cliente no registrado"
+            if cita.operacion and getattr(cita.operacion, "paciente", None):
+                usuario = getattr(cita.operacion.paciente, "usuario", None)
+                if usuario:
+                    partes = [usuario.primer_nombre or "", usuario.apellido_paterno or ""]
+                    full = " ".join(p for p in partes if p).strip()
+                    if full:
+                        cliente_nombre = full
+
+            citas_que_la_usan.append(
+                {
+                    "citaId": cita.pk,
+                    "cliente": cliente_nombre,
+                    "fecha": cita_inicio_local.strftime("%Y-%m-%d"),
+                    "horaInicio": cita_inicio_local.strftime("%H:%M"),
+                    "horaFin": cita_fin_local.strftime("%H:%M"),
+                    "planificada": row.planificada,
+                }
+            )
+            suma += row.cantidad
+
+        cantidad_disponible = max(maquinaria.cantidad_total - suma, 0)
+        result.append(
+            {
+                "maquinariaId": maquinaria.pk,
+                "nombre": str(maquinaria),
+                "cantidadTotal": maquinaria.cantidad_total,
+                "cantidadSolicitada": cantidad_solicitada,
+                "cantidadDisponible": cantidad_disponible,
+                "sobreAsignada": cantidad_solicitada > cantidad_disponible,
+                "citasQueLaUsan": citas_que_la_usan,
+            }
+        )
+
+    return result
+
+
+def get_especialistas_disponibilidad(sucursal_id, fecha, hora_inicio, duracion_minutos, especialista_ids):
+    """Per-specialist availability for the time window.
+
+    Returns one entry per requested especialista with the citas where
+    the specialist appears in CitaEspecialista (planificada or
+    attended) during the requested window. Items where the id is
+    unknown to the branch scope are silently skipped.
+    """
+    if duracion_minutos <= 0 or not especialista_ids:
+        return []
+
+    try:
+        duracion_minutos = int(duracion_minutos)
+    except (TypeError, ValueError):
+        return []
+
+    start_dt = timezone.make_aware(datetime.combine(fecha, hora_inicio))
+    end_dt = start_dt + timedelta(minutes=duracion_minutos)
+
+    # Map id -> Especialista (only those who can work in this branch).
+    by_id = {
+        e.pk: e
+        for e in Especialista.objects.filter(
+            models.Q(sucursal_base_id=sucursal_id) | models.Q(sucursal_base__isnull=True)
+        )
+    }
+
+    result = []
+    for esp_id in especialista_ids:
+        try:
+            esp_id_int = int(esp_id)
+        except (TypeError, ValueError):
+            continue
+        esp = by_id.get(esp_id_int)
+        if not esp:
+            continue
+
+        overlapping = (
+            CitaEspecialista.objects
+            .filter(especialista=esp)
+            .select_related(
+                "cita",
+                "cita__operacion__paciente__usuario",
+            )
+        )
+
+        citas_del_especialista = []
+        for row in overlapping:
+            cita = row.cita
+            if cita.sucursal_id != sucursal_id:
+                continue
+            if cita.estado not in BLOCKING_RESERVATION_STATES:
+                continue
+            if not (start_dt <= cita.fecha_hora < end_dt):
+                continue
+
+            cita_duracion = cita.duracion_estimada_minutos or 0
+            cita_fin = cita.fecha_hora + timedelta(minutes=cita_duracion or 0)
+            cita_inicio_local = timezone.localtime(cita.fecha_hora)
+            cita_fin_local = timezone.localtime(cita_fin)
+
+            cliente_nombre = "Cliente no registrado"
+            if cita.operacion and getattr(cita.operacion, "paciente", None):
+                usuario = getattr(cita.operacion.paciente, "usuario", None)
+                if usuario:
+                    partes = [usuario.primer_nombre or "", usuario.apellido_paterno or ""]
+                    full = " ".join(p for p in partes if p).strip()
+                    if full:
+                        cliente_nombre = full
+
+            citas_del_especialista.append(
+                {
+                    "citaId": cita.pk,
+                    "cliente": cliente_nombre,
+                    "fecha": cita_inicio_local.strftime("%Y-%m-%d"),
+                    "horaInicio": cita_inicio_local.strftime("%H:%M"),
+                    "horaFin": cita_fin_local.strftime("%H:%M"),
+                    "planificada": row.planificada,
+                }
+            )
+
+        nombre = ""
+        if getattr(esp, "usuario", None):
+            nombre = esp.usuario.nombre_completo or esp.usuario.username
+
+        result.append(
+            {
+                "especialistaId": esp.pk,
+                "nombre": nombre,
+                "citasAsignadas": citas_del_especialista,
+            }
+        )
+
+    return result
 
 
 def mark_expired_programmed_appointments_as_no_show(reference_time=None):
