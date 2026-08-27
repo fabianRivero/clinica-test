@@ -3741,27 +3741,23 @@ def admin_cancel_appointment(request, appointment_id):
         }
     )
 
-
 @require_POST
 @admin_required
 @transaction.atomic
 def admin_mark_appointment_pending_biometric(request, appointment_id):
     """POST /api/admin/citas/<int:appointment_id>/pendiente-biometria/
 
-    Accepts the optional real-time fields introduced by the
-    appointment-reservation-redesign spec:
-    - horaRealInicio, horaRealFin (ISO datetimes; fin > inicio;
-      inicio >= fecha_hora - 1h tolerance)
-    - procedimientoRealizado, zonaCuerpoRealizada (text)
-    - especialistasAtendieron (int list)
-    - maquinariaUtilizada ([{maquinariaId, cantidad}])
+    Pure state transition: ``PROGRAMADA`` → ``REALIZADA_PENDIENTE_VERIFICACION``.
 
-    All fields are optional. Backward-compatible: callers sending no
-    body still transition the cita to REALIZADA_PENDIENTE_VERIFICACION.
+    Body is ignored. Real-time field capture (horaRealInicio,
+    procedimientoRealizado, etc.) moved to the new
+    ``POST /api/admin/citas/<id>/cerrar/`` endpoint, which only runs
+    on citas that are already ``CONFIRMADA``. This split lets admins
+    mark attendance without filling close data, and lets the close
+    data be filled later (typically after client verification).
     """
     appointment = (
         CitaMedica.objects.select_related(
-
             "operacion__paciente__usuario",
             "operacion__servicio_config__tipo_servicio",
             "operacion__servicio_config__proc_estetico",
@@ -3773,129 +3769,18 @@ def admin_mark_appointment_pending_biometric(request, appointment_id):
         return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
 
     if appointment.estado != CitaMedica.Estado.PROGRAMADA:
-        return json_response({"detail": "Solo se pueden cerrar citas que aun estén programadas."}, status=400)
-
-    # Parse the request body. Supports both JSON (the new modal flow) and
-    # form-encoded fallback. WSGIRequest does not expose `.data` like DRF's
-    # Request, so we read request.POST first and fall back to parsing JSON
-    # from request.body.
-    payload = {}
-    if request.POST:
-        payload = {k: v for k, v in request.POST.items()}
-    else:
-        try:
-            import json as _json
-            if request.body:
-                parsed = _json.loads(request.body.decode("utf-8"))
-                if isinstance(parsed, dict):
-                    payload = parsed
-        except (ValueError, UnicodeDecodeError):
-            payload = {}
-    errors = {}
-
-    # --- horaRealInicio / horaRealFin ------------------------------------
-    from django.utils.dateparse import parse_datetime
-    hora_real_inicio = None
-    hora_real_fin = None
-    hora_real_inicio_raw = payload.get("horaRealInicio")
-    hora_real_fin_raw = payload.get("horaRealFin")
-    if hora_real_inicio_raw:
-        parsed = parse_datetime(hora_real_inicio_raw)
-        if not parsed:
-            errors["horaRealInicio"] = "Formato de hora invalido."
-        elif timezone.is_naive(parsed):
-            parsed = timezone.make_aware(parsed)
-        hora_real_inicio = parsed
-    if hora_real_fin_raw:
-        parsed_fin = parse_datetime(hora_real_fin_raw)
-        if not parsed_fin:
-            errors["horaRealFin"] = "Formato de hora invalido."
-        elif timezone.is_naive(parsed_fin):
-            parsed_fin = timezone.make_aware(parsed_fin)
-        hora_real_fin = parsed_fin
-
-    if hora_real_inicio and hora_real_fin:
-        if hora_real_fin <= hora_real_inicio:
-            errors["horaRealFin"] = "La hora real de fin debe ser posterior a la de inicio."
-        earliest = appointment.fecha_hora - timedelta(hours=1)
-        if hora_real_inicio < earliest:
-            errors["horaRealInicio"] = (
-                "La hora real de inicio no puede ser anterior a la hora programada - 1h."
-            )
-
-    # --- text fields ------------------------------------------------------
-    procedimiento_realizado = payload.get("procedimientoRealizado") or ""
-    zona_cuerpo_realizada = payload.get("zonaCuerpoRealizada") or ""
-    if len(zona_cuerpo_realizada) > 200:
-        errors["zonaCuerpoRealizada"] = "La zona del cuerpo no puede superar los 200 caracteres."
-
-    # --- M2M items -------------------------------------------------------
-    especialistas_atendieron = payload.get("especialistasAtendieron") or []
-    maquinaria_utilizada_raw = payload.get("maquinariaUtilizada") or []
-
-    if not isinstance(especialistas_atendieron, list):
-        errors["especialistasAtendieron"] = "Debe ser una lista de IDs."
-        especialistas_atendieron = []
-    for idx, item in enumerate(maquinaria_utilizada_raw):
-        if not isinstance(item, dict):
-            errors["maquinariaUtilizada"] = f"Item {idx} invalido."
-            continue
-        mid = item.get("maquinariaId")
-        cant = item.get("cantidad", 1)
-        try:
-            int(mid) if mid is not None else None
-        except (TypeError, ValueError):
-            errors["maquinariaUtilizada"] = f"Item {idx}: maquinariaId invalido."
-        try:
-            cant_i = int(cant)
-            if cant_i < 1:
-                errors["maquinariaUtilizada"] = f"Item {idx}: cantidad debe ser >= 1."
-        except (TypeError, ValueError):
-            errors["maquinariaUtilizada"] = f"Item {idx}: cantidad invalida."
-
-    if errors:
-        return json_response(
-            {"detail": "Datos invalidos.", "errors": errors}, status=400
-        )
+        return json_response({"detail": "Solo se pueden cerrar citas que aun esten programadas."}, status=400)
 
     appointment.estado = CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION
     appointment.verif_biometria = False
-    appointment.detalles_cita = appointment.detalles_cita or "Cita marcada como realizada desde administracion."
-    if hora_real_inicio:
-        appointment.hora_real_inicio = hora_real_inicio
-    if hora_real_fin:
-        appointment.hora_real_fin = hora_real_fin
-    if procedimiento_realizado:
-        appointment.procedimiento_realizado = procedimiento_realizado
-    if zona_cuerpo_realizada:
-        appointment.zona_cuerpo_realizada = zona_cuerpo_realizada
+    appointment.detalles_cita = (
+        appointment.detalles_cita or "Cita marcada como realizada desde administracion."
+    )
     appointment.save()
-
-    # Replace previous planificada=False rows for idempotent re-close.
-    CitaEspecialista.objects.filter(cita=appointment, planificada=False).delete()
-    if especialistas_atendieron:
-        CitaEspecialista.objects.bulk_create([
-            CitaEspecialista(
-                cita=appointment, especialista_id=esp_id, planificada=False
-            )
-            for esp_id in especialistas_atendieron
-        ])
-
-    CitaMaquinaria.objects.filter(cita=appointment, planificada=False).delete()
-    if maquinaria_utilizada_raw:
-        CitaMaquinaria.objects.bulk_create([
-            CitaMaquinaria(
-                cita=appointment,
-                maquinaria_id=item["maquinariaId"],
-                cantidad=int(item.get("cantidad", 1)),
-                planificada=False,
-            )
-            for item in maquinaria_utilizada_raw
-        ])
 
     return json_response(
         {
-            "detail": "La cita quedo realizada y pendiente de confirmaciòn.",
+            "detail": "La cita quedo realizada y pendiente de confirmacion.",
             "appointment": _client_appointment_item(appointment),
             "operation": _operation_detail(appointment.operacion),
         }
