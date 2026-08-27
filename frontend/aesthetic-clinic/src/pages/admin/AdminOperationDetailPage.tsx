@@ -9,7 +9,7 @@ import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { ReservationModal } from './components/ReservationModal'
-import { CloseAppointmentModal, type CloseAppointmentCita } from './components/CloseAppointmentModal'
+import { CerrarCitaModal, type CerrarCitaPayload } from './components/CerrarCitaModal'
 import { AppointmentNotesPanel } from './components/AppointmentNotesPanel'
 import {
   cancelAdminAppointment,
@@ -17,6 +17,7 @@ import {
   createAdminClientReservation,
   deleteAdminOperationQuota,
   getAdminOperationDetail,
+  markAdminAppointmentPendingBiometric,
   rescheduleAdminAppointment,
   updateAdminOperationDetails,
   updateAdminOperationPricePlan,
@@ -110,6 +111,26 @@ export function AdminOperationDetailPage() {
       reload()
     } catch (requestError) {
       setActionError(requestError instanceof Error ? requestError.message : 'No se pudo cancelar la cita.')
+    } finally {
+      setAppointmentActionId(null)
+    }
+  }
+  // Step 1 of the close split: pure state transition
+  // (PROGRAMADA -> REALIZADA_PENDIENTE_VERIFICACION). No real-time fields
+  // are captured here; they move to CerrarCitaModal after the client
+  // confirms attendance.
+  const handleMarkPending = async (appointmentId: number) => {
+    setAppointmentActionId(appointmentId)
+    setActionError(null)
+    try {
+      await markAdminAppointmentPendingBiometric(appointmentId)
+      reload()
+    } catch (requestError) {
+      setActionError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo marcar la cita como pendiente.',
+      )
     } finally {
       setAppointmentActionId(null)
     }
@@ -853,17 +874,52 @@ const handleSaveSessions = async () => {
                     <p>{appointment.specialist}</p>
                     <span>{appointment.status}</span>
                     <small>Verificación: {appointment.biometricStatus}</small>
-                    {['programada', 'no asistio'].includes(appointment.status?.toLowerCase?.() ?? '') ? (
+                    {(() => {
+                    const normalized = appointment.status?.toLowerCase?.() ?? ''
+                    const isCancelable = ['programada', 'no asistio'].includes(
+                      normalized,
+                    )
+                    const isCloseable = normalized === 'confirmada'
+                    const isMarkPending = normalized === 'programada'
+                    if (!isCancelable && !isCloseable && !isMarkPending) {
+                      return null
+                    }
+                    return (
                       <div className="table-actions">
-                        <button className="button button--ghost button--compact" type="button" onClick={() => setSelectedAppointment(appointment.rawId)}>
-                          Reprogramar reserva
-                        </button>
-                        {appointment.canManage ? (
-                          <button className="button button--ghost button--compact" disabled={appointmentActionId !== null} type="button" onClick={() => void handleCancelAppointment(appointment.rawId)}>
-                            {appointmentActionId === appointment.rawId ? 'Cancelando...' : 'Cancelar reserva'}
+                        {isCancelable ? (
+                          <button
+                            className="button button--ghost button--compact"
+                            type="button"
+                            onClick={() => setSelectedAppointment(appointment.rawId)}
+                          >
+                            Reprogramar reserva
                           </button>
                         ) : null}
-                        {appointment.canManage && appointment.status?.toLowerCase?.() === 'programada' ? (
+                        {isCancelable && appointment.canManage ? (
+                          <button
+                            className="button button--ghost button--compact"
+                            disabled={appointmentActionId !== null}
+                            type="button"
+                            onClick={() => void handleCancelAppointment(appointment.rawId)}
+                          >
+                            {appointmentActionId === appointment.rawId
+                              ? 'Cancelando...'
+                              : 'Cancelar reserva'}
+                          </button>
+                        ) : null}
+                        {isMarkPending && appointment.canManage ? (
+                          <button
+                            className="button button--primary button--compact"
+                            type="button"
+                            disabled={appointmentActionId !== null}
+                            onClick={() => void handleMarkPending(appointment.rawId)}
+                          >
+                            {appointmentActionId === appointment.rawId
+                              ? 'Marcando...'
+                              : 'Marcar como pendiente'}
+                          </button>
+                        ) : null}
+                        {isCloseable ? (
                           <button
                             className="button button--primary button--compact"
                             type="button"
@@ -873,7 +929,8 @@ const handleSaveSessions = async () => {
                           </button>
                         ) : null}
                       </div>
-                    ) : null}
+                    )
+                  })()}
                   </article>
                 ))}
               </div>
@@ -1186,14 +1243,14 @@ const handleSaveSessions = async () => {
         isBooking={isBookingReservation}
       />
 
-      <CloseAppointmentModal
+      <CerrarCitaModal
         isOpen={closingAppointmentId !== null}
         onClose={() => setClosingAppointmentId(null)}
         cita={
           closingAppointmentId !== null
             ? (data.operation.appointments.find(
                 (apt) => apt.rawId === closingAppointmentId,
-              ) as CloseAppointmentCita | undefined) ?? null
+              ) as CerrarCitaPayload | undefined) ?? null
             : null
         }
         branchId={activeBranch?.id ?? data.operation.branchId ?? 0}
