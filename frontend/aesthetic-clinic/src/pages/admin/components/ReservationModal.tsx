@@ -102,6 +102,19 @@ export function ReservationModal({
   const [conflicts, setConflicts] = useState<MaquinariaConflict[]>([])
   const [isChecking, setIsChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Becomes true after a successful check; reset to false whenever any
+  // input that participates in availability changes (date, time, duration,
+  // or maquinaria rows). The Confirm button stays disabled until the
+  // admin runs the check again so they cannot submit with stale data.
+  const [availabilityChecked, setAvailabilityChecked] = useState(false)
+  // Snapshot of the inputs the last successful check was run against. Used
+  // to detect when the admin has touched the form again and re-locks Confirm.
+  const [checkedSnapshot, setCheckedSnapshot] = useState<{
+    date: string
+    time: string
+    duracionMinutos: number
+    maquinariaKey: string
+  } | null>(null)
 
   // Reset state when the modal opens/closes.
   useEffect(() => {
@@ -124,6 +137,8 @@ export function ReservationModal({
     setConcurrencyInfo(null)
     setConflicts([])
     setError(null)
+    setAvailabilityChecked(false)
+    setCheckedSnapshot(null)
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [isOpen, reservableOperations])
 
@@ -178,6 +193,30 @@ export function ReservationModal({
       cancelled = true
     }
   }, [isOpen, branchId])
+
+  // Invalidate the cached availability check whenever any input that
+  // participates in availability changes. The admin must re-run
+  // "Verificar disponibilidad" before Confirm unlocks again.
+  const maquinariaKey = JSON.stringify(
+    maquinariaRows.map((row) => ({ id: row.maquinariaId, c: row.cantidad })),
+  )
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!isOpen) return
+    if (!checkedSnapshot) return
+    const stillSame =
+      checkedSnapshot.date === date &&
+      checkedSnapshot.time === time &&
+      checkedSnapshot.duracionMinutos === duracionMinutos &&
+      checkedSnapshot.maquinariaKey === maquinariaKey
+    if (!stillSame) {
+      setAvailabilityChecked(false)
+      setConcurrencyInfo(null)
+      setConflicts([])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, time, duracionMinutos, maquinariaKey, isOpen])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (!isOpen) return null
 
@@ -242,6 +281,16 @@ export function ReservationModal({
       } else {
         setConflicts([])
       }
+      // Lock in the inputs that the check was just run against. Any
+      // change after this point invalidates availabilityChecked and the
+      // admin must run the check again.
+      setAvailabilityChecked(true)
+      setCheckedSnapshot({
+        date,
+        time,
+        duracionMinutos,
+        maquinariaKey,
+      })
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -496,8 +545,15 @@ export function ReservationModal({
                 disabled={!date || !time || isChecking}
                 onClick={() => void handleCheckAvailability()}
               >
-                {isChecking ? 'Verificando...' : 'Verificar disponibilidad'}
+                {isChecking
+                  ? 'Verificando...'
+                  : availabilityChecked
+                  ? 'Volver a verificar'
+                  : 'Verificar disponibilidad'}
               </button>
+              {availabilityChecked ? (
+                <small className="field__hint">Disponibilidad verificada</small>
+              ) : null}
             </div>
           </div>
 
@@ -595,7 +651,12 @@ export function ReservationModal({
               type="button"
               className="button button--primary"
               onClick={() => void handleSubmit()}
-              disabled={isBooking}
+              disabled={isBooking || !availabilityChecked}
+              title={
+                !availabilityChecked
+                  ? 'Verifica la disponibilidad antes de confirmar.'
+                  : undefined
+              }
               data-testid="reservation-modal-confirm"
             >
               {isBooking ? 'Confirmando...' : 'Confirmar reserva'}
