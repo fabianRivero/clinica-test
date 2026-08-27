@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 
 import {
+  closeAppointmentWithRealTimeData,
   getAdminStaff,
   getMaquinariaCatalog,
-  markAppointmentPendingBiometricExtended,
 } from '../../../services/api/admin'
 import type {
   AdminCloseExtendedPayload,
@@ -17,7 +17,7 @@ import type {
  * when those fields are missing. The admin can still type and submit
  * any value; the backend persists what is sent.
  */
-export interface CloseAppointmentCita {
+export interface CerrarCitaPayload {
   id?: string | number
   rawId: number
   dateTime?: string
@@ -29,15 +29,15 @@ export interface CloseAppointmentCita {
   maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
 }
 
-interface CloseAppointmentModalProps {
+interface CerrarCitaModalProps {
   isOpen: boolean
   onClose: () => void
   /** Cita being closed. Pass `null` to render nothing. */
-  cita: CloseAppointmentCita | null
+  cita: CerrarCitaPayload | null
   /** Branch context used to fetch the staff list. Optional. */
   branchId?: number | null
   /** Notifies the parent of the persisted appointment id after success. */
-  onSuccess?: (detail: { cita: CloseAppointmentCita | null; detail?: string }) => void
+  onSuccess?: (detail: { cita: CerrarCitaPayload | null; detail?: string }) => void
 }
 
 export interface MaquinariaUtilizadaRow {
@@ -74,19 +74,24 @@ function durationMinutes(start: string, end: string): number | null {
 /**
  * Modal de cierre de cita. Captura los campos de "lo realmente
  * realizado" (horas reales, procedimiento, zona, especialistas que
- * atendieron, maquinaria utilizada) y delega en
- * `markAppointmentPendingBiometricExtended`. Valida en el cliente que
+ * atendieron, maquinaria utilizada) y los persiste via
+ * `closeAppointmentWithRealTimeData` (POST /cerrar/) sobre una cita
+ * que ya esta en `CONFIRMADA`. Valida en el cliente que
  * `horaRealFin > horaRealInicio` y muestra un aviso amarillo cuando
  * la duracion real difiere en mas del 50 % de la estimada, como
  * pide el spec "Duration mismatch warning".
+ *
+ * El nombre cambia de `CloseAppointmentModal` a `CerrarCitaModal` para
+ * reflejar que la accion es de cierre post-confirmacion, no de
+ * transicion de estado.
  */
-export function CloseAppointmentModal({
+export function CerrarCitaModal({
   isOpen,
   onClose,
   cita,
   branchId,
   onSuccess,
-}: CloseAppointmentModalProps) {
+}: CerrarCitaModalProps) {
   const [horaRealInicio, setHoraRealInicio] = useState('')
   const [horaRealFin, setHoraRealFin] = useState('')
   const [procedimientoRealizado, setProcedimientoRealizado] = useState('')
@@ -235,9 +240,9 @@ export function CloseAppointmentModal({
 
     setIsSubmitting(true)
     try {
-      await markAppointmentPendingBiometricExtended(cita.rawId, payload)
-      setSuccess('La cita paso a pendiente de verificacion.')
-      onSuccess?.({ cita, detail: 'La cita paso a pendiente de verificacion.' })
+      await closeAppointmentWithRealTimeData(cita.rawId, payload)
+      setSuccess('La cita quedo cerrada con los datos reales.')
+      onSuccess?.({ cita, detail: 'La cita quedo cerrada con los datos reales.' })
       // Cerrar automaticamente despues de un pequeno delay para que
       // el admin alcance a leer el mensaje.
       setTimeout(() => {
