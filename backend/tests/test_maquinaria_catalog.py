@@ -79,7 +79,7 @@ class MaquinariaCatalogApiTests(TestCase):
         self.client.force_login(self.admin_general)
         response = self.client.get("/api/admin/catalogos/maquinaria/")
         self.assertEqual(response.status_code, 200)
-        nombres = {item["nombre"] for item in response.json()["items"]}
+        nombres = {item["title"] for item in response.json()["items"]}
         self.assertSetEqual(nombres, {"Global", "Centro Laser", "Norte Laser"})
 
     def test_admin_sucursal_sees_globales_plus_own(self):
@@ -95,7 +95,7 @@ class MaquinariaCatalogApiTests(TestCase):
         self.client.force_login(self.admin_centro)
         response = self.client.get("/api/admin/catalogos/maquinaria/")
         self.assertEqual(response.status_code, 200)
-        nombres = {item["nombre"] for item in response.json()["items"]}
+        nombres = {item["title"] for item in response.json()["items"]}
         self.assertSetEqual(nombres, {"Global", "Centro Laser"})
 
     def test_admin_principal_creates_global_maquinaria(self):

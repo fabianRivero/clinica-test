@@ -1890,16 +1890,24 @@ def _catalog_page_data(catalog_key, q="", active="all", request=None, **filters)
             queryset = Maquinaria.objects.none()
 
         items = [
-            {
-                "id": m.pk,
-                "nombre": m.nombre,
-                "marca": m.marca,
-                "descripcion": m.descripcion,
-                "cantidadTotal": m.cantidad_total,
-                "sucursalId": m.sucursal_id,
-                "sucursalNombre": m.sucursal.nombre if m.sucursal_id else None,
-                "activo": m.activo,
-            }
+            _catalog_entry(
+                item_id=m.pk,
+                title=m.nombre,
+                subtitle=m.marca or "Sin marca",
+                active=m.activo,
+                metadata=[
+                    ("Cantidad", str(m.cantidad_total)),
+                    ("Sucursal", m.sucursal.nombre if m.sucursal_id else "Global"),
+                ],
+                values={
+                    "nombre": m.nombre,
+                    "marca": m.marca,
+                    "descripcion": m.descripcion,
+                    "cantidadTotal": m.cantidad_total,
+                    "sucursalId": m.sucursal_id,
+                    "activo": m.activo,
+                },
+            )
             for m in queryset
         ]
         return {
