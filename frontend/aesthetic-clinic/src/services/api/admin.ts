@@ -239,8 +239,27 @@ export function markAppointmentPendingBiometricExtended(
   appointmentId: number,
   data: AdminCloseExtendedPayload,
 ) {
+  // Deprecated: pendiente-biometria no longer captures real-time fields.
+  // Use closeAppointmentWithRealTimeData() on a CONFIRMADA cita instead.
   return requestJsonWithBody<unknown>(
     `/api/admin/citas/${appointmentId}/pendiente-biometria/`,
+    data,
+  )
+}
+
+/**
+ * Persists the real-time close data on a CONFIRMADA cita. Endpoint:
+ * POST /api/admin/citas/<id>/cerrar/. Does NOT change the cita's state.
+ *
+ * Use this after the cita has been marked pending biometric and the client
+ * has verified attendance (i.e. estado === CONFIRMADA).
+ */
+export function closeAppointmentWithRealTimeData(
+  appointmentId: number,
+  data: AdminCloseExtendedPayload,
+) {
+  return requestJsonWithBody<unknown>(
+    `/api/admin/citas/${appointmentId}/cerrar/`,
     data,
   )
 }
