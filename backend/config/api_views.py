@@ -1958,7 +1958,7 @@ def _catalog_page_data(catalog_key, q="", active="all", request=None, **filters)
                 _catalog_field(
                     "activo",
                     "Activo",
-                    "boolean",
+                    "checkbox",
                     required=False,
                 ),
             ],
