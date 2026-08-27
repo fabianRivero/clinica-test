@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import {
+  checkAdminEspecialistasDisponibilidad,
   checkAdminMaquinariaConflicts,
   checkAdminConcurrency,
   getAdminStaff,
@@ -9,10 +10,13 @@ import {
 import type {
   AdminConcurrencyCheckResponse,
   AdminReservationExtendedPayload,
+  EspecialistaDisponibilidad,
   MaquinariaConflict,
+  MaquinariaDisponibilidad,
   StaffCapacityItem,
 } from '../../../types/admin'
 import { MaquinariaConflictList } from './MaquinariaConflictList'
+import { RecursosDisponibilidadPanel } from './RecursosDisponibilidadPanel'
 
 interface ReservationModalOption {
   id: number
@@ -100,6 +104,8 @@ export function ReservationModal({
   // --- Availability check state -------------------------------------------
   const [concurrencyInfo, setConcurrencyInfo] = useState<AdminConcurrencyCheckResponse | null>(null)
   const [conflicts, setConflicts] = useState<MaquinariaConflict[]>([])
+  const [maquinariaDisponibilidad, setMaquinariaDisponibilidad] = useState<MaquinariaDisponibilidad[]>([])
+  const [especialistasDisponibilidad, setEspecialistasDisponibilidad] = useState<EspecialistaDisponibilidad[]>([])
   const [isChecking, setIsChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Becomes true after a successful check; reset to false whenever any
@@ -114,6 +120,7 @@ export function ReservationModal({
     time: string
     duracionMinutos: number
     maquinariaKey: string
+    especialistasKey: string
   } | null>(null)
 
   // Reset state when the modal opens/closes.
@@ -136,6 +143,8 @@ export function ReservationModal({
     setMaquinariaRows([])
     setConcurrencyInfo(null)
     setConflicts([])
+    setMaquinariaDisponibilidad([])
+    setEspecialistasDisponibilidad([])
     setError(null)
     setAvailabilityChecked(false)
     setCheckedSnapshot(null)
@@ -200,6 +209,7 @@ export function ReservationModal({
   const maquinariaKey = JSON.stringify(
     maquinariaRows.map((row) => ({ id: row.maquinariaId, c: row.cantidad })),
   )
+  const especialistasKey = JSON.stringify([...especialistas].sort())
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!isOpen) return
@@ -208,14 +218,17 @@ export function ReservationModal({
       checkedSnapshot.date === date &&
       checkedSnapshot.time === time &&
       checkedSnapshot.duracionMinutos === duracionMinutos &&
-      checkedSnapshot.maquinariaKey === maquinariaKey
+      checkedSnapshot.maquinariaKey === maquinariaKey &&
+      checkedSnapshot.especialistasKey === especialistasKey
     if (!stillSame) {
       setAvailabilityChecked(false)
       setConcurrencyInfo(null)
       setConflicts([])
+      setMaquinariaDisponibilidad([])
+      setEspecialistasDisponibilidad([])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, time, duracionMinutos, maquinariaKey, isOpen])
+  }, [date, time, duracionMinutos, maquinariaKey, especialistasKey, isOpen])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   if (!isOpen) return null
@@ -279,8 +292,10 @@ export function ReservationModal({
     try {
       const concurrency = await checkAdminConcurrency(branchId, date, time, time)
       setConcurrencyInfo(concurrency)
-      // Solo pedimos conflictos de maquinaria si hay al menos una fila
-      // con maquinaria elegida. Si no hay, la lista queda vacia.
+
+      // Maquinaria availability: always fetched so the panel renders even
+      // when there is no over-assignment. The backend returns one entry
+      // per requested maquinaría.
       const selected = maquinariaRows
         .filter((row): row is { rowId: string; maquinariaId: number; cantidad: number } =>
           row.maquinariaId !== null && row.cantidad > 0,
@@ -299,8 +314,25 @@ export function ReservationModal({
           cantidades: selected.map((row) => row.cantidad),
         })
         setConflicts(conflictResponse.conflictos ?? [])
+        setMaquinariaDisponibilidad(conflictResponse.disponibilidad ?? [])
       } else {
         setConflicts([])
+        setMaquinariaDisponibilidad([])
+      }
+
+      // Especialistas availability: only fetched when the admin has
+      // selected at least one especialista.
+      if (especialistas.length > 0) {
+        const espResponse = await checkAdminEspecialistasDisponibilidad({
+          sucursalId: branchId,
+          fecha: date,
+          hora: time,
+          duracionMinutos,
+          especialistaIds: especialistas,
+        })
+        setEspecialistasDisponibilidad(espResponse.disponibilidad ?? [])
+      } else {
+        setEspecialistasDisponibilidad([])
       }
       // Lock in the inputs that the check was just run against. Any
       // change after this point invalidates availabilityChecked and the
@@ -311,6 +343,7 @@ export function ReservationModal({
         time,
         duracionMinutos,
         maquinariaKey,
+        especialistasKey,
       })
     } catch (requestError) {
       setError(
@@ -691,6 +724,11 @@ export function ReservationModal({
           <MaquinariaConflictList
             conflicts={conflicts}
             totalRequested={totalMaquinariaSolicitada}
+          />
+
+          <RecursosDisponibilidadPanel
+            maquinaria={maquinariaDisponibilidad}
+            especialistas={especialistasDisponibilidad}
           />
 
           <div className="_mt-lg form-actions">

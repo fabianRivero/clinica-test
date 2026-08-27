@@ -925,6 +925,52 @@ export type MaquinariaConflictResponse = {
   conflictos: MaquinariaConflict[]
 }
 
+/**
+ * Per-maquinaria availability, returned by
+ * GET /api/admin/disponibilidad/check-maquinaria/. Always one entry per
+ * requested maquinaría (even when there is no over-assignment) so the
+ * admin can see what is already booked for the window.
+ */
+export type MaquinariaDisponibilidad = {
+  maquinariaId: number
+  nombre: string
+  cantidadTotal: number
+  cantidadSolicitada: number
+  cantidadDisponible: number
+  sobreAsignada: boolean
+  citasQueLaUsan: Array<{
+    citaId: number
+    cliente: string
+    fecha: string
+    horaInicio: string
+    horaFin: string
+    planificada: boolean
+  }>
+}
+
+/**
+ * Per-specialist availability, returned by
+ * GET /api/admin/disponibilidad/check-especialistas/. Lists every
+ * specialist that was requested along with the citas where they are
+ * assigned in the window.
+ */
+export type EspecialistaDisponibilidad = {
+  especialistaId: number
+  nombre: string
+  citasAsignadas: Array<{
+    citaId: number
+    cliente: string
+    fecha: string
+    horaInicio: string
+    horaFin: string
+    planificada: boolean
+  }>
+}
+
+export type EspecialistaDisponibilidadResponse = {
+  disponibilidad: EspecialistaDisponibilidad[]
+}
+
 // Body for createAdminClientReservation: existing {branchId, dateTime} is
 // kept for backward compat; all new fields are optional.
 export type AdminReservationExtendedPayload = {

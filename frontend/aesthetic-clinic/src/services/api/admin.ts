@@ -28,6 +28,8 @@ import type {
   CreateAdminClientReservationResponse,
   CreateAdminProspectMedicalAppointmentResponse,
   MaquinariaConflictResponse,
+  MaquinariaDisponibilidad,
+  EspecialistaDisponibilidadResponse,
   CreateAdminStaffPayload,
   CreateAdminAvailabilityExceptionPayload,
   CreateAdminProspectPayload,
@@ -187,7 +189,7 @@ export function checkAdminMaquinariaConflicts(params: {
    * "cantidad_total=1 vs solicitud=8" which the default would miss.
    */
   cantidades?: number[]
-}): Promise<MaquinariaConflictResponse> {
+}): Promise<MaquinariaConflictResponse & { disponibilidad: MaquinariaDisponibilidad[] }> {
   const search = new URLSearchParams({
     sucursalId: String(params.sucursalId),
     fecha: params.fecha,
@@ -198,8 +200,27 @@ export function checkAdminMaquinariaConflicts(params: {
   if (params.cantidades && params.cantidades.length === params.maquinariaIds.length) {
     search.set("cantidades", params.cantidades.join(","))
   }
-  return requestJson<MaquinariaConflictResponse>(
+  return requestJson<MaquinariaConflictResponse & { disponibilidad: MaquinariaDisponibilidad[] }>(
     `/api/admin/disponibilidad/check-maquinaria/?${search.toString()}`,
+  )
+}
+
+export function checkAdminEspecialistasDisponibilidad(params: {
+  sucursalId: number
+  fecha: string
+  hora: string
+  duracionMinutos: number
+  especialistaIds: number[]
+}): Promise<EspecialistaDisponibilidadResponse> {
+  const search = new URLSearchParams({
+    sucursalId: String(params.sucursalId),
+    fecha: params.fecha,
+    hora: params.hora,
+    duracionMinutos: String(params.duracionMinutos),
+    especialistaIds: params.especialistaIds.join(","),
+  })
+  return requestJson<EspecialistaDisponibilidadResponse>(
+    `/api/admin/disponibilidad/check-especialistas/?${search.toString()}`,
   )
 }
 
