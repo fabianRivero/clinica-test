@@ -16,6 +16,7 @@ import { ClientOperationList } from './ClientOperationList'
 import { ClientProfileModal } from './ClientProfileModal'
 import { RescheduleModal } from './RescheduleModal'
 import { BiometricVerifyCaptureModal } from './BiometricVerifyCaptureModal'
+import { CerrarCitaModal, type CerrarCitaPayload } from '../components/CerrarCitaModal'
 
 const BIOMETRIC_SUSPENDED_NOTICE =
   'Verificacion por huella temporalmente suspendida. Usa la confirmacion manual para finalizar las citas pendientes.'
@@ -136,6 +137,7 @@ export function AdminClientDetailPage() {
   const [profileModalOpen, setProfileModalOpen] = useState(false)
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
   const [selectedSession, setSelectedSession] = useState<any>(null)
+  const [closingAppointmentId, setClosingAppointmentId] = useState<number | null>(null)
 
   function handleOpenReschedule(session: any) {
     setSelectedSession(session)
@@ -373,6 +375,15 @@ export function AdminClientDetailPage() {
                         Reprogramar
                       </button>
                     ) : null}
+                    {session.status === 'Confirmada' ? (
+                      <button
+                        className="button button--primary button--compact"
+                        type="button"
+                        onClick={() => setClosingAppointmentId(session.rawId)}
+                      >
+                        Cerrar cita
+                      </button>
+                    ) : null}
                     {!session.canManage && !session.canMarkPendingBiometric && !session.canConfirmBiometric && !session.canCancelFromVerification && !['Programada', 'No asistio'].includes(session.status) ? (
                       <span className="table-muted">Sin cambios</span>
                     ) : null}
@@ -456,6 +467,25 @@ export function AdminClientDetailPage() {
         onCheckAvailability={handleCheckRescheduleAvailability}
         onConfirm={() => handleRescheduleAppointment(() => setRescheduleModalOpen(false))}
         isBookingKey={appointmentActionId ? 'reprogramming' : null}
+      />
+
+      <CerrarCitaModal
+        isOpen={closingAppointmentId !== null}
+        onClose={() => setClosingAppointmentId(null)}
+        cita={
+          closingAppointmentId !== null
+            ? (data?.appointments?.find(
+                (apt: any) => apt.rawId === closingAppointmentId,
+              ) as CerrarCitaPayload | undefined) ?? null
+            : null
+        }
+        branchId={activeBranch?.id ?? null}
+        // CerrarCitaModal owns the POST to /cerrar/; this callback only
+        // runs after a successful response, so we just close + reload here.
+        onSuccess={() => {
+          setClosingAppointmentId(null)
+          reload()
+        }}
       />
 
       <BiometricVerifyCaptureModal

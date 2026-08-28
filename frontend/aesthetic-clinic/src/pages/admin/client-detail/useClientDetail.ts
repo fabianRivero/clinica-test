@@ -9,6 +9,7 @@ import {
   cancelAdminAppointment,
   cancelAdminAppointmentVerification,
   cancelAdminFreeMedicalAppointment,
+  closeAppointmentWithRealTimeData,
   confirmAdminFreeMedicalAppointment,
   checkAdminConcurrency,
   createAdminClientFreeMedicalAppointment,
@@ -24,7 +25,11 @@ import {
   isBiometricSuspended,
   type AgentListItem,
 } from '../../../services/fingerprint/biometricClient'
-import type { AdminConcurrencyCheckResponse, AdminReservationExtendedPayload } from '../../../types/admin'
+import type {
+  AdminCloseExtendedPayload,
+  AdminConcurrencyCheckResponse,
+  AdminReservationExtendedPayload,
+} from '../../../types/admin'
 import { useBranchContext } from '../../../providers/BranchProvider'
 import { migrateAdminClient } from '../../../services/api/admin'
 import { useAuth } from '../../../providers/AuthProvider'
@@ -244,6 +249,38 @@ export function useClientDetail(clientId: string) {
       showNotification({
         title: 'No se pudo actualizar la cita',
         message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
+        tone: 'danger',
+      })
+    } finally {
+      setAppointmentActionId(null)
+    }
+  }
+
+  // Step 3 of the close split: persist real-time data on a CONFIRMADA
+  // cita. The CerrarCitaModal owns the actual data collection (hours,
+  // procedure, zone, staff, machinery) and only calls this handler with
+  // the assembled payload. The backend persists the fields; cita stays
+  // CONFIRMADA.
+  async function handleCloseAppointment(
+    appointmentId: number,
+    payload: AdminCloseExtendedPayload,
+  ) {
+    setAppointmentActionId(appointmentId)
+    try {
+      await closeAppointmentWithRealTimeData(appointmentId, payload)
+      showNotification({
+        title: 'Cita cerrada',
+        message: 'La cita quedo cerrada con los datos reales.',
+        tone: 'success',
+      })
+      reload()
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo cerrar la cita',
+        message:
+          requestError instanceof Error
+            ? requestError.message
+            : 'Intenta nuevamente en unos segundos.',
         tone: 'danger',
       })
     } finally {
@@ -714,6 +751,7 @@ export function useClientDetail(clientId: string) {
     handleCancelFreeMedicalAppointment,
     handleConfirmFreeMedicalAppointment,
     handleMarkPendingBiometric,
+    handleCloseAppointment,
     handleCancelFromVerification,
     refreshAgents,
 
