@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
+import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { ReservationModal } from './components/ReservationModal'
@@ -53,6 +54,7 @@ export function AdminOperationDetailPage() {
   const loader = useMemo(() => () => getAdminOperationDetail(operationId), [operationId])
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
+  const { confirm } = useConfirmDialog()
   const { activeBranch } = useBranchContext()
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -132,6 +134,20 @@ export function AdminOperationDetailPage() {
     } finally {
       setAppointmentActionId(null)
     }
+  }
+
+  // Same confirm dialog as in AdminClientDetailPage's mark-pending flow.
+  // The admin should explicitly confirm before transitioning a cita to
+  // REALIZADA_PENDIENTE_DE_VERIFICACION.
+  const handleMarkPendingWithConfirm = async (appointmentId: number) => {
+    const confirmed = await confirm({
+      title: 'Confirmar cambio de estado',
+      message:
+        'Solo se debe cambiar a este estado cuando el cliente asiste al tratamiento. ¿Deseas continuar?',
+      tone: 'warning',
+    })
+    if (!confirmed) return
+    await handleMarkPending(appointmentId)
   }
 
   // Realizada Pendiente de Verificación → revertir a PROGRAMADA. Útil
@@ -977,11 +993,11 @@ const handleSaveSessions = async () => {
                             className="button button--primary button--compact"
                             type="button"
                             disabled={appointmentActionId !== null}
-                            onClick={() => void handleMarkPending(appointment.rawId)}
+                            onClick={() => void handleMarkPendingWithConfirm(appointment.rawId)}
                           >
                             {appointmentActionId === appointment.rawId
                               ? 'Marcando...'
-                              : 'Marcar como pendiente'}
+                              : 'Cambiar a pendiente de verificación'}
                           </button>
                         ) : null}
                         {isCloseable ? (
