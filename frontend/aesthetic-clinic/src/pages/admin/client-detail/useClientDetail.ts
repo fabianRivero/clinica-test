@@ -404,6 +404,7 @@ export function useClientDetail(clientId: string) {
     setAppointmentActionId(rescheduleAppointmentId)
     try {
       const response = await rescheduleAdminAppointment(rescheduleAppointmentId, {
+        branchId: activeBranch?.id ?? 0,
         dateTime: `${rescheduleDate}T${rescheduleTime}:00`,
       })
       showNotification({ title: 'Reserva reprogramada', message: response.detail, tone: 'success' })

@@ -13,7 +13,6 @@ import { CerrarCitaModal, type CerrarCitaPayload } from './components/CerrarCita
 import { AppointmentNotesPanel } from './components/AppointmentNotesPanel'
 import {
   cancelAdminAppointment,
-  checkAdminConcurrency,
   createAdminClientReservation,
   deleteAdminOperationQuota,
   getAdminOperationDetail,
@@ -56,12 +55,10 @@ export function AdminOperationDetailPage() {
   const { activeBranch } = useBranchContext()
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [selectedAppointment, setSelectedAppointment] = useState<number | null>(null)
   const [closingAppointmentId, setClosingAppointmentId] = useState<number | null>(null)
-  const [rescheduleDate, setRescheduleDate] = useState('')
-  const [rescheduleTime, setRescheduleTime] = useState('')
-  const [checkResult, setCheckResult] = useState<any | null>(null)
-  const [isChecking, setIsChecking] = useState(false)
+  const [rescheduleCitaId, setRescheduleCitaId] = useState<number | null>(null)
+  const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
+  const [isRescheduling, setIsRescheduling] = useState(false)
   const [isEditingDetails, setIsEditingDetails] = useState(false)
   const [isSavingDetails, setIsSavingDetails] = useState(false)
   const [isSavingPrice, setIsSavingPrice] = useState(false)
@@ -135,33 +132,44 @@ export function AdminOperationDetailPage() {
       setAppointmentActionId(null)
     }
   }
-  const handleCheck = async () => {
-    if (!rescheduleDate || !rescheduleTime || !data?.operation?.branchId) return
-    setIsChecking(true)
+
+  // `handleReschedule` reuses the ReservationModal in reschedule mode. The
+  // modal calls onConfirm with the same AdminReservationExtendedPayload
+  // shape as a new reservation; we forward it to the reschedule endpoint
+  // instead. The cita's dateTime moves, the planning fields replace
+  // whatever was previously stored on the cita, and the cita stays in
+  // PROGRAMADA (the backend enforces that).
+  const handleReschedule = async (payload?: AdminReservationExtendedPayload) => {
+    if (!data || rescheduleCitaId === null) return
+    if (!payload) {
+      setActionError('Falta el payload de la reprogramacion.')
+      return
+    }
+    setIsRescheduling(true)
     setActionError(null)
     try {
-      const result = await checkAdminConcurrency(data.operation.branchId, rescheduleDate, rescheduleTime, rescheduleTime)
-      setCheckResult(result)
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'No se pudo verificar disponibilidad.')
-    } finally {
-      setIsChecking(false)
-    }
-  }
-  const handleReschedule = async () => {
-    if (!selectedAppointment || !checkResult) return
-    setAppointmentActionId(selectedAppointment)
-    try {
-      await rescheduleAdminAppointment(selectedAppointment, { dateTime: `${rescheduleDate}T${rescheduleTime}:00` })
-      setSelectedAppointment(null)
-      setCheckResult(null)
-      setRescheduleDate('')
-      setRescheduleTime('')
+      const response = await rescheduleAdminAppointment(rescheduleCitaId, payload)
+      showNotification({
+        title: 'Cita reprogramada',
+        message:
+          (response as { detail?: string } | null)?.detail ??
+          'La reserva fue reprogramada correctamente.',
+        tone: 'success',
+      })
+      setRescheduleModalOpen(false)
+      setRescheduleCitaId(null)
       reload()
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'No se pudo reprogramar.')
+    } catch (requestError) {
+      showNotification({
+        title: 'No se pudo reprogramar la cita',
+        message:
+          requestError instanceof Error
+            ? requestError.message
+            : 'Intenta nuevamente en unos segundos.',
+        tone: 'danger',
+      })
     } finally {
-      setAppointmentActionId(null)
+      setIsRescheduling(false)
     }
   }
 
@@ -255,7 +263,6 @@ const handleSaveSessions = async () => {
     setActionError(null)
     try {
       const response = await createAdminClientReservation(patientId, data.operation.rawId, finalPayload)
-      setSelectedAppointment(null)
       reload()
       setReservationModalOpen(false)
       const successMessage = (response as { detail?: string } | null)?.detail ?? 'La cita fue reservada correctamente.'
@@ -890,7 +897,10 @@ const handleSaveSessions = async () => {
                           <button
                             className="button button--ghost button--compact"
                             type="button"
-                            onClick={() => setSelectedAppointment(appointment.rawId)}
+                            onClick={() => {
+                              setRescheduleCitaId(appointment.rawId)
+                              setRescheduleModalOpen(true)
+                            }}
                           >
                             Reprogramar reserva
                           </button>
@@ -1211,24 +1221,6 @@ const handleSaveSessions = async () => {
               />
             )}
           </article>
-
-          {/* ------------------------------------------------------------- */}
-          {/* Reprogramar (panel condicional, igual que antes)               */}
-          {/* ------------------------------------------------------------- */}
-          {selectedAppointment ? (
-            <article className="operation-detail-panel">
-              <div className="operation-detail-panel__header"><div><span>Reprogramar</span><strong>Antes y despues</strong></div></div>
-              <div className="form-grid">
-                <label className="field"><span>Fecha</span><input className="input" type="date" value={rescheduleDate} onChange={(e) => { setRescheduleDate(e.target.value); setCheckResult(null) }} /></label>
-                <label className="field"><span>Hora</span><input className="input" type="time" value={rescheduleTime} onChange={(e) => { setRescheduleTime(e.target.value); setCheckResult(null) }} /></label>
-                <div className="form-actions field--full">
-                  <button className="button button--ghost" type="button" onClick={() => void handleCheck()} disabled={!rescheduleDate || !rescheduleTime || isChecking}>{isChecking ? 'Verificando...' : 'Verificar disponibilidad'}</button>
-                  <button className="button" type="button" onClick={() => void handleReschedule()} disabled={!checkResult || appointmentActionId !== null}>Confirmar reprogramacion</button>
-                </div>
-                {checkResult ? <small className="field__hint">Disponibilidad: {checkResult.concurrency} cita(s) entre {checkResult.hora_inicio} y {checkResult.hora_fin}. Especialistas en turno: {checkResult.presentes?.length ?? 0}.</small> : null}
-              </div>
-            </article>
-          ) : null}
         </div>
       </SectionCard>
 
@@ -1241,6 +1233,28 @@ const handleSaveSessions = async () => {
         branchId={activeBranch?.id ?? data.operation.branchId ?? 0}
         onConfirm={handleReserve}
         isBooking={isBookingReservation}
+      />
+
+      <ReservationModal
+        mode="reschedule"
+        isOpen={rescheduleModalOpen}
+        onClose={() => {
+          setRescheduleModalOpen(false)
+          setRescheduleCitaId(null)
+        }}
+        reservableOperations={[
+          { id: data.operation.rawId, rawId: data.operation.rawId, selectLabel: data.operation.procedure },
+        ]}
+        branchId={activeBranch?.id ?? data.operation.branchId ?? 0}
+        prefillCita={
+          rescheduleCitaId !== null
+            ? (data.operation.appointments.find(
+                (apt) => apt.rawId === rescheduleCitaId,
+              ) ?? undefined)
+            : undefined
+        }
+        onConfirm={handleReschedule}
+        isBooking={isRescheduling}
       />
 
       <CerrarCitaModal

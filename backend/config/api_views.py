@@ -4018,9 +4018,14 @@ def admin_reschedule_appointment(request, appointment_id):
     payload = load_payload(request)
     if payload is None:
         return json_response({"detail": "Datos invalidos."}, status=400)
-    date_time_str = payload.get("dateTime")
-    if not date_time_str:
-        return json_response({"detail": "Debes enviar la nueva fecha y hora."}, status=400)
+    from config.api.serializers.operaciones import AppointmentRescheduleSerializer
+    serializer = AppointmentRescheduleSerializer(data=payload)
+    if not serializer.is_valid():
+        return json_response(
+            {"detail": "Datos inválidos.", "errors": serializer.errors}, status=400
+        )
+    v = serializer.validated_data
+    date_time_str = v["dateTime"]
     try:
         from django.utils import dateparse
         new_date_time = dateparse.parse_datetime(date_time_str)
@@ -4038,7 +4043,65 @@ def admin_reschedule_appointment(request, appointment_id):
     appointment.verif_biometria = False
     appointment.metodo_confirmacion = ""
     appointment.detalles_cita = "Reserva reprogramada desde administración."
-    appointment.save(update_fields=["fecha_hora", "estado", "verif_biometria", "metodo_confirmacion", "detalles_cita", "updated_at"])
+
+    # Optional planning fields. Each is updated only when explicitly sent
+    # (so an empty reschedule that omits them keeps the existing values).
+    update_fields = ["fecha_hora", "estado", "verif_biometria", "metodo_confirmacion", "detalles_cita", "updated_at"]
+    if "duracionEstimadaMinutos" in v and v["duracionEstimadaMinutos"] is not None:
+        appointment.duracion_estimada_minutos = v["duracionEstimadaMinutos"]
+        update_fields.append("duracion_estimada_minutos")
+    if "descripcionGeneral" in v:
+        appointment.descripcion_general = v["descripcionGeneral"] or ""
+        update_fields.append("descripcion_general")
+    if "notasPrevias" in v:
+        appointment.notas_previas = v["notasPrevias"] or ""
+        update_fields.append("notas_previas")
+    if "procedimientoPlanificado" in v:
+        appointment.procedimiento_planificado = v["procedimientoPlanificado"] or ""
+        update_fields.append("procedimiento_planificado")
+    if "zonaCuerpoPlanificada" in v:
+        appointment.zona_cuerpo_planificada = v["zonaCuerpoPlanificada"] or ""
+        update_fields.append("zona_cuerpo_planificada")
+
+    appointment.save(update_fields=update_fields)
+
+    # Replace M2M planning rows when the new payload includes them.
+    # CitaMaquinaria/CitaEspecialista.planificada=True rows are wiped
+    # so a fresh reschedule round starts from the new selection.
+    if "especialistasPlanificados" in v:
+        CitaEspecialista.objects.filter(cita=appointment, planificada=True).delete()
+        especialistas = v.get("especialistasPlanificados") or []
+        if especialistas:
+            CitaEspecialista.objects.bulk_create([
+                CitaEspecialista(cita=appointment, especialista_id=eid, planificada=True)
+                for eid in especialistas
+            ])
+    if "maquinariaPlanificada" in v:
+        CitaMaquinaria.objects.filter(cita=appointment, planificada=True).delete()
+        items = v.get("maquinariaPlanificada") or []
+        cleaned = []
+        for item in items:
+            try:
+                mid = int(item.get("maquinariaId"))
+            except (TypeError, ValueError):
+                continue
+            try:
+                cant = int(item.get("cantidad", 1))
+            except (TypeError, ValueError):
+                cant = 1
+            if mid and cant > 0:
+                cleaned.append({"maquinariaId": mid, "cantidad": cant})
+        if cleaned:
+            CitaMaquinaria.objects.bulk_create([
+                CitaMaquinaria(
+                    cita=appointment,
+                    maquinaria_id=item["maquinariaId"],
+                    cantidad=item["cantidad"],
+                    planificada=True,
+                )
+                for item in cleaned
+            ])
+
     client_user = appointment.operacion.paciente.usuario
     procedimiento = procedure_name(appointment.operacion)
     fecha_cita = appointment.fecha_hora.strftime('%d/%m/%Y')

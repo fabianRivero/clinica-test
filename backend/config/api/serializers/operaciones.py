@@ -54,8 +54,39 @@ class AppointmentStatusUpdateSerializer(serializers.Serializer):
 
 
 class AppointmentRescheduleSerializer(serializers.Serializer):
-    """Input for rescheduling an appointment."""
+    """Input for rescheduling an appointment.
+
+    All fields beyond ``dateTime`` are optional. When present, they
+    override the planning fields on the cita (matching the optional
+    fields on the reservation endpoint). CitaMaquinaria/CitaEspecialista
+    rows are replaced so the reschedule reads as a fresh planning round.
+    """
     dateTime = serializers.CharField(required=True)
+    duracionEstimadaMinutos = serializers.IntegerField(
+        required=False, allow_null=True, min_value=1, max_value=480
+    )
+    descripcionGeneral = serializers.CharField(
+        required=False, allow_blank=True, max_length=10_000
+    )
+    notasPrevias = serializers.CharField(
+        required=False, allow_blank=True, max_length=10_000
+    )
+    procedimientoPlanificado = serializers.CharField(
+        required=False, allow_blank=True, max_length=10_000
+    )
+    zonaCuerpoPlanificada = serializers.CharField(
+        required=False, allow_blank=True, max_length=200
+    )
+    especialistasPlanificados = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=False,
+        default=list,
+    )
+    maquinariaPlanificada = serializers.ListField(
+        child=serializers.DictField(),
+        required=False,
+        default=list,
+    )
 
 
 class AppointmentBiometricConfirmSerializer(serializers.Serializer):

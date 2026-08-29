@@ -407,6 +407,14 @@ export type OperationDetailAppointment = {
   canConfirmBiometric: boolean
   canCancelFromVerification: boolean
   canManage: boolean
+  // Planning fields used by the RescheduleModal prefill.
+  duracionEstimadaMinutos?: number | null
+  descripcionGeneral?: string
+  notasPrevias?: string
+  procedimientoPlanificado?: string
+  zonaCuerpoPlanificada?: string
+  especialistasPlanificados?: number[]
+  maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
 }
 
 export type OperationDetailQuota = {

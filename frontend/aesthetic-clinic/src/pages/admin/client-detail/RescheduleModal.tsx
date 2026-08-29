@@ -125,7 +125,7 @@ export function RescheduleModal({
                 )}
                 <div className="_mt-lg">
                   <button type="button" className="button button--primary" onClick={() => void onConfirm()} disabled={Boolean(isBookingKey)}>
-                    {isBookingKey ? 'Confirmando...' : 'Confirmar Reserva en esta Hora'}
+                    {isBookingKey ? 'Confirmando...' : 'Confirmar Reprogramación'}
                   </button>
                 </div>
               </div>

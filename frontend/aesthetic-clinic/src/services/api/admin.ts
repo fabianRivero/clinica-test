@@ -319,7 +319,10 @@ export function confirmAdminFreeMedicalAppointment(appointmentId: number) {
   )
 }
 
-export function rescheduleAdminAppointment(appointmentId: number, payload: { dateTime: string }) {
+export function rescheduleAdminAppointment(
+  appointmentId: number,
+  payload: AdminReservationExtendedPayload,
+) {
   return requestJsonWithBody<{ detail: string }>(
     `/api/admin/citas/${appointmentId}/reprogramar/`,
     payload,

@@ -48,12 +48,35 @@ export type MaquinariaRow = {
 interface ReservationModalProps {
   isOpen: boolean
   onClose: () => void
-  /** Opciones del selector "Procedimiento". */
+  /**
+   * "create" = new reservation. "reschedule" = re-plan an existing cita
+   * (date/hour editable, planning fields prepopulated from the cita).
+   * The submit button label and confirmation text change accordingly.
+   */
+  mode?: 'create' | 'reschedule'
+  /** Options for the "Procedimiento" selector. In reschedule mode the
+   *  first option is auto-selected (same as create mode) and the admin
+   *  does not change it. */
   reservableOperations: Array<{ id: number; rawId: number; selectLabel: string }>
   /** Sucursal del booking (la del admin/branch context). */
   branchId: number
+  /**
+   * In reschedule mode, prepopulate the planning fields from the cita
+   * being rescheduled. Without this prop, mode reschedule behaves the
+   * same as mode create (with empty planning fields).
+   */
+  prefillCita?: {
+    duracionEstimadaMinutos?: number | null
+    descripcionGeneral?: string
+    notasPrevias?: string
+    procedimientoPlanificado?: string
+    zonaCuerpoPlanificada?: string
+    especialistasPlanificados?: number[]
+    maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
+  }
   /** Callback que dispara la reserva. El padre arma el payload final con
-   *  los IDs de operacion + branchId y dispara `createAdminClientReservation`. */
+   *  los IDs de operacion + branchId y dispara `createAdminClientReservation`
+   *  o `rescheduleAdminAppointment` segun el `mode`. */
   onConfirm: (payload: AdminReservationExtendedPayload) => Promise<void> | void
   /** Texto de boton mientras la reserva esta en curso. */
   isBooking: boolean
@@ -79,8 +102,10 @@ const DURACION_MAX = 480
 export function ReservationModal({
   isOpen,
   onClose,
+  mode = 'create',
   reservableOperations,
   branchId,
+  prefillCita,
   onConfirm,
   isBooking,
 }: ReservationModalProps) {
@@ -132,15 +157,35 @@ export function ReservationModal({
     // disable it just for this block — same pattern as BiometricVerifyCaptureModal.
     /* eslint-disable react-hooks/set-state-in-effect */
     setOperationId(reservableOperations[0]?.rawId ?? '')
-    setDate('')
-    setTime('')
-    setDuracionMinutos(DURACION_DEFAULT)
-    setDescripcionGeneral('')
-    setNotasPrevias('')
-    setProcedimientoPlanificado('')
-    setZonaCuerpoPlanificada('')
-    setEspecialistas([])
-    setMaquinariaRows([])
+    if (mode === 'reschedule' && prefillCita) {
+      // Prepopulate planning fields from the cita being rescheduled.
+      // date/time stay empty so the admin picks a new slot.
+      setDate('')
+      setTime('')
+      setDuracionMinutos(prefillCita.duracionEstimadaMinutos ?? DURACION_DEFAULT)
+      setDescripcionGeneral(prefillCita.descripcionGeneral ?? '')
+      setNotasPrevias(prefillCita.notasPrevias ?? '')
+      setProcedimientoPlanificado(prefillCita.procedimientoPlanificado ?? '')
+      setZonaCuerpoPlanificada(prefillCita.zonaCuerpoPlanificada ?? '')
+      setEspecialistas(prefillCita.especialistasPlanificados ?? [])
+      setMaquinariaRows(
+        (prefillCita.maquinariaPlanificada ?? []).map((item) => ({
+          rowId: crypto.randomUUID(),
+          maquinariaId: item.maquinariaId,
+          cantidad: Math.max(1, item.cantidad),
+        })),
+      )
+    } else {
+      setDate('')
+      setTime('')
+      setDuracionMinutos(DURACION_DEFAULT)
+      setDescripcionGeneral('')
+      setNotasPrevias('')
+      setProcedimientoPlanificado('')
+      setZonaCuerpoPlanificada('')
+      setEspecialistas([])
+      setMaquinariaRows([])
+    }
     setConcurrencyInfo(null)
     setConflicts([])
     setMaquinariaDisponibilidad([])
@@ -149,7 +194,7 @@ export function ReservationModal({
     setAvailabilityChecked(false)
     setCheckedSnapshot(null)
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [isOpen, reservableOperations])
+  }, [isOpen, reservableOperations, mode, prefillCita])
 
   // Lazy-load the catalog + staff list once when the modal opens.
   useEffect(() => {
@@ -397,7 +442,7 @@ export function ReservationModal({
         data-testid="reservation-modal"
       >
         <header className="booking-modal-header">
-          <h2>Reservar cita</h2>
+          <h2>{mode === 'reschedule' ? 'Reprogramar cita' : 'Reservar cita'}</h2>
           <button type="button" className="booking-modal-close" onClick={onClose}>
             ✕
           </button>
@@ -746,7 +791,11 @@ export function ReservationModal({
               }
               data-testid="reservation-modal-confirm"
             >
-              {isBooking ? 'Confirmando...' : 'Confirmar reserva'}
+              {isBooking
+                ? 'Confirmando...'
+                : mode === 'reschedule'
+                ? 'Confirmar reprogramacion'
+                : 'Confirmar reserva'}
             </button>
           </div>
         </div>

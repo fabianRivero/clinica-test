@@ -437,6 +437,22 @@ def _appointment_item(cita, appointment_index=None, total_appointments=None):
         "zona": zona,
         "appointmentIndex": appointment_index,
         "totalAppointments": total_appointments,
+        # Planning fields (used by the RescheduleModal prefill).
+        "duracionEstimadaMinutos": cita.duracion_estimada_minutos,
+        "descripcionGeneral": cita.descripcion_general or "",
+        "notasPrevias": cita.notas_previas or "",
+        "procedimientoPlanificado": cita.procedimiento_planificado or "",
+        "zonaCuerpoPlanificada": cita.zona_cuerpo_planificada or "",
+        "especialistasPlanificados": list(
+            cita.especialistas_items.filter(planificada=True).values_list(
+                "especialista_id", flat=True
+            )
+        ),
+        "maquinariaPlanificada": list(
+            cita.maquinaria_items.filter(planificada=True).values(
+                "maquinaria_id", "cantidad"
+            )
+        ),
     }
 
 
