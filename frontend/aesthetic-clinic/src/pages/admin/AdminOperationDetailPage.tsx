@@ -546,8 +546,17 @@ const handleSaveSessions = async () => {
   // Etiqueta que aclara que la reserva corresponde a la siguiente cita
   // (en funcion de las que ya estan registradas) y, si el admin ya
   // configuro el total de sesiones, tambien muestra el denominador.
+  // Solo cuentan para el ordinal las citas que ocupan un slot de sesion
+  // (PROGRAMADA, REALIZADA_PENDIENTE_VERIFICACION, CONFIRMADA). Las
+  // CANCELADA y NO_ASISTIO quedan fuera del conteo porque no consumen
+  // sesion (misma regla que CitaMedica.clean() en el backend).
   const totalSesionesConfiguradas = currentSessions !== null && currentSessions > 0 ? currentSessions : null
-  const siguienteNumeroCita = operation.appointments.length + 1
+  const activeAppointments = operation.appointments.filter((apt) =>
+    ['programada', 'realizada pendiente de verificación', 'confirmada'].includes(
+      (apt.status ?? '').toLowerCase(),
+    ),
+  )
+  const siguienteNumeroCita = activeAppointments.length + 1
   const reservationCaption = totalSesionesConfiguradas !== null
     ? `Esta reserva corresponde a la cita N\u00B0 ${siguienteNumeroCita} de ${totalSesionesConfiguradas} sesiones configuradas.`
     : `Esta reserva corresponde a la cita N\u00B0 ${siguienteNumeroCita}.`
