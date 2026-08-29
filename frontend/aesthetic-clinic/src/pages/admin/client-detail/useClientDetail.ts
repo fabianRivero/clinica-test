@@ -399,14 +399,26 @@ export function useClientDetail(clientId: string) {
     }
   }
 
-  async function handleRescheduleAppointment(onSuccess?: () => void) {
-    if (!rescheduleAppointmentId || !rescheduleCheck) return
+  async function handleRescheduleAppointment(
+    payload?: AdminReservationExtendedPayload,
+    onSuccess?: () => void,
+  ) {
+    if (!rescheduleAppointmentId) return
+    // If the modal passed a full payload, use it; otherwise fall back to
+    // the legacy date-only payload built from rescheduleDate/Time. This
+    // keeps the legacy entry point working while letting the new modal
+    // forward richer data.
+    const finalPayload: AdminReservationExtendedPayload = payload ?? {
+      branchId: activeBranch?.id ?? 0,
+      dateTime: `${rescheduleDate}T${rescheduleTime}:00`,
+    }
     setAppointmentActionId(rescheduleAppointmentId)
     try {
-      const response = await rescheduleAdminAppointment(rescheduleAppointmentId, {
-        branchId: activeBranch?.id ?? 0,
-        dateTime: `${rescheduleDate}T${rescheduleTime}:00`,
-      })
+      const response = await rescheduleAdminAppointment(
+        rescheduleAppointmentId,
+        finalPayload,
+      )
+
       showNotification({ title: 'Reserva reprogramada', message: response.detail, tone: 'success' })
       setRescheduleAppointmentId(null)
       setRescheduleDate('')

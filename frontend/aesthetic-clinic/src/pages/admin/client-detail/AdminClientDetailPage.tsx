@@ -14,7 +14,7 @@ import { ClientFreeMedicalAppointmentSection } from './ClientFreeMedicalAppointm
 import { ClientPaymentSection } from './ClientPaymentSection'
 import { ClientOperationList } from './ClientOperationList'
 import { ClientProfileModal } from './ClientProfileModal'
-import { RescheduleModal } from './RescheduleModal'
+import { ReservationModal } from '../components/ReservationModal'
 import { BiometricVerifyCaptureModal } from './BiometricVerifyCaptureModal'
 import { CerrarCitaModal, type CerrarCitaPayload } from '../components/CerrarCitaModal'
 
@@ -103,16 +103,8 @@ export function AdminClientDetailPage() {
     handleCancelAppointment,
     handleMarkPendingBiometric,
     handleCancelFromVerification,
-    handleCheckRescheduleAvailability,
     handleRescheduleAppointment,
     setRescheduleAppointmentId,
-    rescheduleDate,
-    setRescheduleDate,
-    rescheduleTime,
-    setRescheduleTime,
-    rescheduleCheck,
-    setRescheduleCheck,
-    isCheckingReschedule,
 
     // Biometric verify modal
     verifyModalCitaId,
@@ -143,14 +135,6 @@ export function AdminClientDetailPage() {
     setSelectedSession(session)
     setRescheduleAppointmentId(session.rawId)
     setRescheduleModalOpen(true)
-  }
-
-  function handleCloseReschedule() {
-    setRescheduleModalOpen(false)
-    setSelectedSession(null)
-    setRescheduleDate('')
-    setRescheduleTime('')
-    setRescheduleCheck(null)
   }
 
   if (isLoading && !data) {
@@ -454,19 +438,42 @@ export function AdminClientDetailPage() {
         onClose={() => setProfileModalOpen(false)}
       />
 
-      <RescheduleModal
+      <ReservationModal
+        mode="reschedule"
         isOpen={rescheduleModalOpen}
-        onClose={handleCloseReschedule}
-        session={selectedSession}
-        rescheduleDate={rescheduleDate}
-        setRescheduleDate={setRescheduleDate}
-        rescheduleTime={rescheduleTime}
-        setRescheduleTime={setRescheduleTime}
-        concurrencyInfo={rescheduleCheck}
-        isChecking={isCheckingReschedule}
-        onCheckAvailability={handleCheckRescheduleAvailability}
-        onConfirm={() => handleRescheduleAppointment(() => setRescheduleModalOpen(false))}
-        isBookingKey={appointmentActionId ? 'reprogramming' : null}
+        onClose={() => {
+          setRescheduleModalOpen(false)
+          setSelectedSession(null)
+        }}
+        reservableOperations={
+          data?.operations?.length
+            ? [
+                {
+                  id: data.operations[0].rawId,
+                  rawId: data.operations[0].rawId,
+                  selectLabel: data.operations[0].procedure,
+                },
+              ]
+            : []
+        }
+        branchId={activeBranch?.id ?? 0}
+        prefillCita={
+          selectedSession
+            ? {
+                duracionEstimadaMinutos: selectedSession.duracionEstimadaMinutos,
+                descripcionGeneral: selectedSession.descripcionGeneral,
+                notasPrevias: selectedSession.notasPrevias,
+                procedimientoPlanificado: selectedSession.procedimientoPlanificado,
+                zonaCuerpoPlanificada: selectedSession.zonaCuerpoPlanificada,
+                especialistasPlanificados: selectedSession.especialistasPlanificados,
+                maquinariaPlanificada: selectedSession.maquinariaPlanificada,
+              }
+            : undefined
+        }
+        onConfirm={(payload) =>
+          handleRescheduleAppointment(payload, () => setRescheduleModalOpen(false))
+        }
+        isBooking={appointmentActionId !== null}
       />
 
       <CerrarCitaModal
