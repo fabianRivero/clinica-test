@@ -66,8 +66,8 @@ class MaquinariaCatalogApiTests(TestCase):
         payload.update(overrides)
         return json.dumps(payload).encode("utf-8")
 
-    def test_admin_general_sees_all_maquinaria(self):
-        """admin_principal sees globales + every branch's rows."""
+    def test_admin_general_sees_globales_plus_own(self):
+        """admin_principal sees globales + own branch only (active-branch scope)."""
         Maquinaria.objects.create(nombre="Global", cantidad_total=1, sucursal=None)
         Maquinaria.objects.create(
             nombre="Centro Laser", cantidad_total=1, sucursal=self.sucursal_centro
@@ -80,7 +80,9 @@ class MaquinariaCatalogApiTests(TestCase):
         response = self.client.get("/api/admin/catalogos/maquinaria/")
         self.assertEqual(response.status_code, 200)
         nombres = {item["title"] for item in response.json()["items"]}
-        self.assertSetEqual(nombres, {"Global", "Centro Laser", "Norte Laser"})
+        # admin_general is assigned to sucursal_centro, so they see
+        # Global + Centro Laser, but NOT Norte Laser.
+        self.assertSetEqual(nombres, {"Global", "Centro Laser"})
 
     def test_admin_sucursal_sees_globales_plus_own(self):
         """admin_sucursal sees globales + own; not other branches."""

@@ -1876,10 +1876,16 @@ def _catalog_page_data(catalog_key, q="", active="all", request=None, **filters)
         user = request.user if request is not None else None
         queryset = Maquinaria.objects.select_related("sucursal").order_by("nombre")
 
-        # Role-scoped visibility per appointment-reservation-redesign spec.
-        if getattr(user, "es_admin_principal", False):
-            pass  # admin principal sees everything
-        elif getattr(user, "es_admin_sucursal", False) and getattr(user, "sucursal_id", None):
+        # Role-scoped visibility per appointment-reservation-redesign spec,
+        # with a stricter rule for admin_principal: even the global admin
+        # only sees the maquinaría of their currently-active branch + global
+        # rows. CrioRes (Sur) won't appear when the admin is in Principal.
+        if getattr(user, "es_admin_sucursal", False) and getattr(user, "sucursal_id", None):
+            queryset = queryset.filter(
+                models.Q(sucursal__isnull=True)
+                | models.Q(sucursal_id=user.sucursal_id)
+            )
+        elif getattr(user, "es_admin_principal", False) and getattr(user, "sucursal_id", None):
             queryset = queryset.filter(
                 models.Q(sucursal__isnull=True)
                 | models.Q(sucursal_id=user.sucursal_id)
