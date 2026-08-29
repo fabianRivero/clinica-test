@@ -54,7 +54,7 @@ export function AdminOperationDetailPage() {
   const loader = useMemo(() => () => getAdminOperationDetail(operationId), [operationId])
   const { data, isLoading, error, reload } = useApiResource(loader)
   const { showNotification } = useNotifications()
-  const { confirm } = useConfirmDialog()
+  const { confirm, ConfirmDialog } = useConfirmDialog()
   const { activeBranch } = useBranchContext()
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -1366,6 +1366,8 @@ const handleSaveSessions = async () => {
         }}
         canEdit={true}
       />
+
+      <ConfirmDialog />
     </div>
   )
 }
