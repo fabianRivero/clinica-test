@@ -13,6 +13,7 @@ import { CerrarCitaModal, type CerrarCitaPayload } from './components/CerrarCita
 import { AppointmentNotesPanel } from './components/AppointmentNotesPanel'
 import {
   cancelAdminAppointment,
+  cancelAdminAppointmentVerification,
   createAdminClientReservation,
   deleteAdminOperationQuota,
   getAdminOperationDetail,
@@ -127,6 +128,31 @@ export function AdminOperationDetailPage() {
         requestError instanceof Error
           ? requestError.message
           : 'No se pudo marcar la cita como pendiente.',
+      )
+    } finally {
+      setAppointmentActionId(null)
+    }
+  }
+
+  // Realizada Pendiente de Verificación → revertir a PROGRAMADA. Útil
+  // cuando el admin marcó la cita por error. Mismo endpoint que el spec
+  // appointment-states documenta en su flujo "Cancelar verificación".
+  const handleRevertPending = async (appointmentId: number) => {
+    setAppointmentActionId(appointmentId)
+    setActionError(null)
+    try {
+      const response = await cancelAdminAppointmentVerification(appointmentId)
+      showNotification({
+        title: 'Verificación cancelada',
+        message: response.detail,
+        tone: 'info',
+      })
+      reload()
+    } catch (requestError) {
+      setActionError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo cancelar la verificación.',
       )
     } finally {
       setAppointmentActionId(null)
@@ -906,7 +932,18 @@ const handleSaveSessions = async () => {
                     )
                     const isCloseable = normalized === 'confirmada'
                     const isMarkPending = normalized === 'programada'
-                    if (!isCancelable && !isCloseable && !isMarkPending) {
+                    // Realizada Pendiente de Verificación: el admin puede
+                    // revertir a PROGRAMADA si marcó la cita por error
+                    // (mismo flujo que el endpoint POST /citas/<id>/
+                    // cancelar-verificacion/ del spec appointment-states).
+                    const isRevertible =
+                      normalized === 'realizada pendiente de verificación'
+                    if (
+                      !isCancelable &&
+                      !isCloseable &&
+                      !isMarkPending &&
+                      !isRevertible
+                    ) {
                       return null
                     }
                     return (
@@ -954,6 +991,18 @@ const handleSaveSessions = async () => {
                             onClick={() => setClosingAppointmentId(appointment.rawId)}
                           >
                             Cerrar cita
+                          </button>
+                        ) : null}
+                        {isRevertible ? (
+                          <button
+                            className="button button--ghost button--compact"
+                            disabled={appointmentActionId !== null}
+                            type="button"
+                            onClick={() => void handleRevertPending(appointment.rawId)}
+                          >
+                            {appointmentActionId === appointment.rawId
+                              ? 'Revirtiendo...'
+                              : 'Cancelar verificación'}
                           </button>
                         ) : null}
                       </div>
