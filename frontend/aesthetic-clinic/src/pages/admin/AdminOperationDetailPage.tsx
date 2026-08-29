@@ -566,11 +566,18 @@ const handleSaveSessions = async () => {
   // ya rechaza el POST con un 400, pero bloqueamos en el cliente para
   // evitar el ciclo "toco -> verifico -> reservo -> toast rojo".
   const availableAppointments = operation.availableAppointments ?? null
+  // Tambien bloqueamos si la siguiente ordinal ya excede el total de
+  // sesiones configuradas (defensa en el cliente: el backend ya
+  // valida con CitaMedica.clean() y devuelve 400, pero mejor no dejar
+  // llegar al POST). Solo aplica si el admin ya configuro el total.
+  const excedeSesionesConfiguradas =
+    totalSesionesConfiguradas !== null && siguienteNumeroCita > totalSesionesConfiguradas
   const canBookNewAppointment =
     operation.branchId !== null &&
     operation.patientId !== undefined &&
     availableAppointments !== null &&
-    availableAppointments > 0
+    availableAppointments > 0 &&
+    !excedeSesionesConfiguradas
 
   // Editor batch de cuotas: cantidad de items que el admin puede
   // editar (no Pagadas). Si es 0, deshabilitamos el boton "Guardar
@@ -863,7 +870,9 @@ const handleSaveSessions = async () => {
               <small className="field__hint _mb-sm">{reservationCaption}</small>
             ) : (
               <small className="field__hint _mb-sm">
-                {availableAppointments !== null && availableAppointments <= 0
+                {excedeSesionesConfiguradas
+                  ? `Ya alcanzaste las ${totalSesionesConfiguradas} sesiones configuradas para esta operacion.`
+                  : availableAppointments !== null && availableAppointments <= 0
                   ? 'Esta operacion no tiene mas sesiones disponibles.'
                   : !operation.branchId
                     ? 'Esta operacion aun no tiene una sede asignada; no se pueden reservar citas hasta que se asigne una.'
