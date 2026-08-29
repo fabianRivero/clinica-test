@@ -8,6 +8,14 @@ interface RecursosDisponibilidadPanelProps {
   maquinaria: MaquinariaDisponibilidad[]
   /** Per-specialist availability from GET check-especialistas. */
   especialistas: EspecialistaDisponibilidad[]
+  /**
+   * Whether the admin has selected at least one maquinaria and/or
+   * especialista. Lets the panel render a 'No se ha verificado
+   * disponibilidad' hint even when the availability arrays are empty
+   * (i.e. before the admin clicks 'Verificar disponibilidad' the first
+   * time).
+   */
+  hasSelection?: boolean
 }
 
 /**
@@ -23,8 +31,14 @@ interface RecursosDisponibilidadPanelProps {
 export function RecursosDisponibilidadPanel({
   maquinaria,
   especialistas,
+  hasSelection = false,
 }: RecursosDisponibilidadPanelProps) {
-  if (maquinaria.length === 0 && especialistas.length === 0) return null
+  if (maquinaria.length === 0 && especialistas.length === 0 && !hasSelection) return null
+
+  const showMaquinariaEmptyHint =
+    maquinaria.length === 0 && hasSelection
+  const showEspecialistasEmptyHint =
+    especialistas.length === 0 && hasSelection
 
   return (
     <div className="_panel-card _mt-md" data-testid="recursos-disponibilidad">
@@ -40,6 +54,12 @@ export function RecursosDisponibilidadPanel({
             <RecursoMaquinariaRow key={m.maquinariaId} item={m} />
           ))}
         </section>
+      ) : showMaquinariaEmptyHint ? (
+        <p className="_text-soft" style={{ fontSize: '0.85rem' }}>
+          Sin maquinaria seleccionada para esta cita. Haz click en
+          &quot;Verificar disponibilidad&quot; para revisar la disponibilidad
+          de los especialistas.
+        </p>
       ) : null}
 
       {especialistas.length > 0 ? (
@@ -49,6 +69,12 @@ export function RecursosDisponibilidadPanel({
             <RecursoEspecialistaRow key={e.especialistaId} item={e} />
           ))}
         </section>
+      ) : showEspecialistasEmptyHint ? (
+        <p className="_text-soft" style={{ fontSize: '0.85rem' }}>
+          Sin especialistas seleccionados para esta cita. Haz click en
+          &quot;Verificar disponibilidad&quot; para revisar la disponibilidad
+          de la maquinaria.
+        </p>
       ) : null}
     </div>
   )

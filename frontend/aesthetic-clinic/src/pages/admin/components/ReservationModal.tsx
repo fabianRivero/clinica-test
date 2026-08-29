@@ -248,6 +248,67 @@ export function ReservationModal({
     }
   }, [isOpen, branchId])
 
+  // Auto-fill availability panel when the modal opens in reschedule
+  // mode with a prefillCita that already has selected specialists or
+  // machinery. The admin sees the current schedule of those resources
+  // before picking a new date/hour, without having to manually click
+  // 'Verificar disponibilidad' first.
+  useEffect(() => {
+    if (!isOpen || mode !== 'reschedule' || !prefillCita) return
+    const selectedEsp = prefillCita.especialistasPlanificados ?? []
+    const selectedMaq = prefillCita.maquinariaPlanificada ?? []
+    if (selectedEsp.length === 0 && selectedMaq.length === 0) return
+    // The check needs a date/hour. We do not have the admin's new
+    // selection yet (date/hour are empty in reschedule mode). Use a
+    // safe default: today's date plus a 12:00 time so the panel at
+    // least shows "no other reservations on this date". The admin will
+    // pick the real date/hour and re-verify.
+    const today = new Date().toISOString().slice(0, 10)
+    const hora = '12:00'
+    const selectedEspIds = selectedEsp
+    const maqItems = selectedMaq.map((it) => ({ maquinariaId: it.maquinariaId, cantidad: it.cantidad }))
+    const maqIds = maqItems.map((it) => it.maquinariaId)
+    const maqCantidades = maqItems.map((it) => it.cantidad)
+    let cancelled = false
+    void (async () => {
+      try {
+        if (maqIds.length > 0) {
+          const conflictResponse = await checkAdminMaquinariaConflicts({
+            sucursalId: branchId,
+            fecha: today,
+            hora,
+            duracionMinutos: duracionMinutos > 0 ? duracionMinutos : 60,
+            maquinariaIds: maqIds,
+            cantidades: maqCantidades,
+          })
+          if (cancelled) return
+          setMaquinariaDisponibilidad(conflictResponse.disponibilidad ?? [])
+        } else {
+          if (!cancelled) setMaquinariaDisponibilidad([])
+        }
+        if (selectedEspIds.length > 0) {
+          const espResponse = await checkAdminEspecialistasDisponibilidad({
+            sucursalId: branchId,
+            fecha: today,
+            hora,
+            duracionMinutos: duracionMinutos > 0 ? duracionMinutos : 60,
+            especialistaIds: selectedEspIds,
+          })
+          if (cancelled) return
+          setEspecialistasDisponibilidad(espResponse.disponibilidad ?? [])
+        } else {
+          if (!cancelled) setEspecialistasDisponibilidad([])
+        }
+      } catch {
+        // Silent failure; the panel can be populated by the manual
+        // 'Verificar disponibilidad' click later.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, mode, prefillCita, branchId])
+
   // Invalidate the cached availability check whenever any input that
   // participates in availability changes. The admin must re-run
   // "Verificar disponibilidad" before Confirm unlocks again.
@@ -774,6 +835,7 @@ export function ReservationModal({
           <RecursosDisponibilidadPanel
             maquinaria={maquinariaDisponibilidad}
             especialistas={especialistasDisponibilidad}
+            hasSelection={maquinariaRows.length > 0 || especialistas.length > 0}
           />
 
           <div className="_mt-lg form-actions">
