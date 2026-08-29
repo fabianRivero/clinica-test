@@ -167,13 +167,28 @@ export function ReservationModal({
       setNotasPrevias(prefillCita.notasPrevias ?? '')
       setProcedimientoPlanificado(prefillCita.procedimientoPlanificado ?? '')
       setZonaCuerpoPlanificada(prefillCita.zonaCuerpoPlanificada ?? '')
-      setEspecialistas(prefillCita.especialistasPlanificados ?? [])
+      // Drop maquinaría/especialistas rows that are not in the active
+      // branch's catalog. The backend already enforces this scope on
+      // GET /check-maquinaria/, but if we kept the id in the form,
+      // the <select> would show an option that the catalog doesn't
+      // expose and the native dropdown would jump to the first visible
+      // option (bug the admin saw with CrioRes from Sur when the
+      // active branch was Norte).
+      const visibleMaquinariaIds = new Set(maquinariaOptions.map((opt) => opt.id))
+      const visibleEspecialistaIds = new Set(staffOptions.map((s) => s.id))
+      setEspecialistas(
+        (prefillCita.especialistasPlanificados ?? []).filter((id) =>
+          visibleEspecialistaIds.has(id),
+        ),
+      )
       setMaquinariaRows(
-        (prefillCita.maquinariaPlanificada ?? []).map((item) => ({
-          rowId: crypto.randomUUID(),
-          maquinariaId: item.maquinariaId,
-          cantidad: Math.max(1, item.cantidad),
-        })),
+        (prefillCita.maquinariaPlanificada ?? [])
+          .filter((item) => visibleMaquinariaIds.has(item.maquinariaId))
+          .map((item) => ({
+            rowId: crypto.randomUUID(),
+            maquinariaId: item.maquinariaId,
+            cantidad: Math.max(1, item.cantidad),
+          })),
       )
     } else {
       setDate('')
@@ -195,6 +210,26 @@ export function ReservationModal({
     setCheckedSnapshot(null)
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [isOpen, reservableOperations, mode, prefillCita])
+
+  // After the catalog finishes loading, re-apply the cross-branch
+  // filter on the prefilled maquinaría rows. The reset effect above runs
+  // before maquinariaOptions is populated, so the visibleIds check is
+  // initially an empty set. This follow-up effect waits for the catalog
+  // to arrive and trims the rows a second time. Idempotent.
+  useEffect(() => {
+    if (!isOpen || mode !== 'reschedule' || !prefillCita) return
+    if (maquinariaOptions.length === 0 && staffOptions.length === 0) return
+    setMaquinariaRows((rows) =>
+      rows.filter((row) => {
+        if (row.maquinariaId === null) return true
+        return maquinariaOptions.some((opt) => opt.id === row.maquinariaId)
+      }),
+    )
+    setEspecialistas((current) =>
+      current.filter((id) => staffOptions.some((s) => s.id === id)),
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maquinariaOptions.length, staffOptions.length, isOpen, mode])
 
   // Lazy-load the catalog + staff list once when the modal opens.
   useEffect(() => {
