@@ -122,9 +122,25 @@ export function CerrarCitaModal({
     // the cita's programmed date (parsed from cita.dateTime below) so
     // the backend receives a full ISO datetime. The admin never edits
     // the date here.
+    //
+    // The backend ships cita.dateTime in dd/mm HH:MM format (see
+    // api_helpers.datetime_label). We accept both the display form
+    // (dd/mm) and the ISO form (YYYY-MM-DD) defensively.
     if (cita.dateTime) {
-      const match = cita.dateTime.match(/(\d{4}-\d{2}-\d{2})/)
-      setScheduledDate(match ? match[1] : '')
+      const isoMatch = cita.dateTime.match(/(\d{4}-\d{2}-\d{2})/)
+      if (isoMatch) {
+        setScheduledDate(isoMatch[1])
+      } else {
+        const esMatch = cita.dateTime.match(/^(\d{2})\/(\d{2})/)
+        if (esMatch) {
+          const year = new Date().getFullYear()
+          setScheduledDate(
+            `${year}-${esMatch[2]}-${esMatch[1]}`,
+          )
+        } else {
+          setScheduledDate('')
+        }
+      }
     } else {
       setScheduledDate('')
     }
@@ -338,7 +354,7 @@ export function CerrarCitaModal({
         data-testid="close-appointment-modal"
       >
         <header className="booking-modal-header">
-          <h2>Cerrar cita</h2>
+          <h2>Establecer datos reales</h2>
           <button type="button" className="booking-modal-close" onClick={onClose}>
             ✕
           </button>
@@ -579,7 +595,7 @@ export function CerrarCitaModal({
               disabled={isSubmitting || loadingCatalog}
               data-testid="close-appointment-submit"
             >
-              {isSubmitting ? 'Cerrando...' : 'Cerrar cita'}
+              {isSubmitting ? 'Estableciendo...' : 'Establecer datos'}
             </button>
           </div>
         </div>
