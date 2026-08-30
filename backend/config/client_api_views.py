@@ -487,6 +487,9 @@ def _appointment_item(cita, appointment_index=None, total_appointments=None):
                 "maquinaria_id", "cantidad"
             )
         ),
+        # Photo URLs (absolute path). Empty string when no photo.
+        "fotoAntesUrl": cita.foto_antes.url if cita.foto_antes else "",
+        "fotoDespuesUrl": cita.foto_despues.url if cita.foto_despues else "",
     }
 
 

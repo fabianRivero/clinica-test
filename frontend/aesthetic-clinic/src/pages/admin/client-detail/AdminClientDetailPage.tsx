@@ -132,6 +132,9 @@ export function AdminClientDetailPage() {
   const [closingAppointmentId, setClosingAppointmentId] = useState<number | null>(null)
   // Tracks which session's real-time panel is open in the comparison modal.
   const [realTimeOpenSessionId, setRealTimeOpenSessionId] = useState<number | null>(null)
+  // Photo lightbox: opens when the admin clicks "Ver foto antes/despues"
+  // inside the comparison modal. null = closed.
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
 
   function handleOpenReschedule(session: any) {
     setSelectedSession(session)
@@ -571,6 +574,10 @@ export function AdminClientDetailPage() {
                             ? `${selectedSession.duracionEstimadaMinutos} min`
                             : '—'}
                         </dd>
+                        <dt>Descripción general</dt>
+                        <dd>{selectedSession.descripcionGeneral || '—'}</dd>
+                        <dt>Notas previas</dt>
+                        <dd>{selectedSession.notasPrevias || '—'}</dd>
                         <dt>Procedimiento</dt>
                         <dd>{selectedSession.procedimientoPlanificado || '—'}</dd>
                         <dt>Zona</dt>
@@ -631,6 +638,41 @@ export function AdminClientDetailPage() {
                         <dt>Notas post</dt>
                         <dd>{selectedSession.notasPost || '—'}</dd>
                       </dl>
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 'var(--spacing-2)',
+                          marginTop: 'var(--spacing-3)',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="button button--ghost button--compact"
+                          disabled={!selectedSession.fotoAntesUrl}
+                          onClick={() =>
+                            setPhotoPreviewUrl(
+                              selectedSession.fotoAntesUrl || null,
+                            )
+                          }
+                          aria-label="Ver foto antes"
+                        >
+                          Ver foto antes
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--compact"
+                          disabled={!selectedSession.fotoDespuesUrl}
+                          onClick={() =>
+                            setPhotoPreviewUrl(
+                              selectedSession.fotoDespuesUrl || null,
+                            )
+                          }
+                          aria-label="Ver foto después"
+                        >
+                          Ver foto después
+                        </button>
+                      </div>
                     </section>
                   </div>
                 </div>
@@ -669,6 +711,49 @@ export function AdminClientDetailPage() {
           reload()
         }}
       />
+
+      {photoPreviewUrl ? (
+        <div
+          className="booking-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Foto de la cita"
+          onClick={() => setPhotoPreviewUrl(null)}
+          data-testid="photo-lightbox"
+        >
+          <div
+            className="booking-modal-content"
+            onClick={(event) => event.stopPropagation()}
+            style={{ maxWidth: '40rem' }}
+          >
+            <header className="booking-modal-header">
+              <h2 className="_m-0">Foto</h2>
+              <button
+                type="button"
+                className="booking-modal-close"
+                onClick={() => setPhotoPreviewUrl(null)}
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </header>
+            <div
+              className="booking-modal-body"
+              style={{ textAlign: 'center' }}
+            >
+              <img
+                src={photoPreviewUrl}
+                alt="Foto de la cita"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '70vh',
+                  borderRadius: '8px',
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

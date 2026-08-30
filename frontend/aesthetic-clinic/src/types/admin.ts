@@ -427,6 +427,8 @@ export type OperationDetailAppointment = {
   notasPost?: string
   especialistasAtendieron?: number[]
   maquinariaUtilizada?: Array<{ maquinaria_id: number; cantidad: number }>
+  fotoAntesUrl?: string
+  fotoDespuesUrl?: string
 }
 
 export type OperationDetailQuota = {

@@ -517,6 +517,10 @@ def _operation_detail(operacion):
                         "maquinaria_id", "cantidad"
                     )
                 ),
+                # Photo URLs (absolute path the <img src> can use directly).
+                # Empty string when the photo is missing.
+                "fotoAntesUrl": cita.foto_antes.url if cita.foto_antes else "",
+                "fotoDespuesUrl": cita.foto_despues.url if cita.foto_despues else "",
             }
             for cita in operacion.citas_medicas.all()
         ],

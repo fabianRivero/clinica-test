@@ -63,6 +63,9 @@ export function AdminOperationDetailPage() {
   // admin can compare planning vs real close data side by side. Only one
   // panel is open at a time.
   const [realTimeOpenCitaId, setRealTimeOpenCitaId] = useState<number | null>(null)
+  // Photo lightbox: opens when the admin clicks "Ver foto antes/despues"
+  // inside the comparison modal. null = closed.
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null)
   const [rescheduleCitaId, setRescheduleCitaId] = useState<number | null>(null)
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
   const [isRescheduling, setIsRescheduling] = useState(false)
@@ -1438,6 +1441,10 @@ const handleSaveSessions = async () => {
                             ? `${selectedAppointment.duracionEstimadaMinutos} min`
                             : '—'}
                         </dd>
+                        <dt>Descripción general</dt>
+                        <dd>{selectedAppointment.descripcionGeneral || '—'}</dd>
+                        <dt>Notas previas</dt>
+                        <dd>{selectedAppointment.notasPrevias || '—'}</dd>
                         <dt>Procedimiento</dt>
                         <dd>{selectedAppointment.procedimientoPlanificado || '—'}</dd>
                         <dt>Zona</dt>
@@ -1498,6 +1505,41 @@ const handleSaveSessions = async () => {
                         <dt>Notas post</dt>
                         <dd>{selectedAppointment.notasPost || '—'}</dd>
                       </dl>
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 'var(--spacing-2)',
+                          marginTop: 'var(--spacing-3)',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="button button--ghost button--compact"
+                          disabled={!selectedAppointment.fotoAntesUrl}
+                          onClick={() =>
+                            setPhotoPreviewUrl(
+                              selectedAppointment.fotoAntesUrl || null,
+                            )
+                          }
+                          aria-label="Ver foto antes"
+                        >
+                          Ver foto antes
+                        </button>
+                        <button
+                          type="button"
+                          className="button button--ghost button--compact"
+                          disabled={!selectedAppointment.fotoDespuesUrl}
+                          onClick={() =>
+                            setPhotoPreviewUrl(
+                              selectedAppointment.fotoDespuesUrl || null,
+                            )
+                          }
+                          aria-label="Ver foto después"
+                        >
+                          Ver foto después
+                        </button>
+                      </div>
                     </section>
                   </div>
                 </div>
@@ -1518,6 +1560,49 @@ const handleSaveSessions = async () => {
       />
 
       <ConfirmDialog />
+
+      {photoPreviewUrl ? (
+        <div
+          className="booking-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Foto de la cita"
+          onClick={() => setPhotoPreviewUrl(null)}
+          data-testid="photo-lightbox-operation"
+        >
+          <div
+            className="booking-modal-content"
+            onClick={(event) => event.stopPropagation()}
+            style={{ maxWidth: '40rem' }}
+          >
+            <header className="booking-modal-header">
+              <h2 className="_m-0">Foto</h2>
+              <button
+                type="button"
+                className="booking-modal-close"
+                onClick={() => setPhotoPreviewUrl(null)}
+                aria-label="Cerrar"
+              >
+                �
+              </button>
+            </header>
+            <div
+              className="booking-modal-body"
+              style={{ textAlign: 'center' }}
+            >
+              <img
+                src={photoPreviewUrl}
+                alt="Foto de la cita"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '70vh',
+                  borderRadius: '8px',
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
