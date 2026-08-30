@@ -77,6 +77,25 @@ export type ClientAppointment = {
   canConfirmBiometric: boolean
   canCancelFromVerification: boolean
   isFreeMedicalAppointment?: boolean
+  // Planning fields (populated at reservation; used by the RescheduleModal
+  // prefill and the 'Datos reales al cierre' comparison modal).
+  duracionEstimadaMinutos?: number | null
+  procedimientoPlanificado?: string
+  zonaCuerpoPlanificada?: string
+  especialistasPlanificados?: number[]
+  maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
+  // Real-time close data (populated via POST /cerrar/ after the client
+  // confirms and the admin sets the close fields).
+  hasRealTimeData?: boolean
+  horaRealInicio?: string | null
+  horaRealFin?: string | null
+  procedimientoRealizado?: string
+  zonaCuerpoRealizada?: string
+  descripcionGeneral?: string
+  notasPrevias?: string
+  notasPost?: string
+  especialistasAtendieron?: number[]
+  maquinariaUtilizada?: Array<{ maquinaria_id: number; cantidad: number }>
 }
 
 export type ClientReservationSlot = {

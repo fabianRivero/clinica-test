@@ -130,6 +130,8 @@ export function AdminClientDetailPage() {
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
   const [selectedSession, setSelectedSession] = useState<any>(null)
   const [closingAppointmentId, setClosingAppointmentId] = useState<number | null>(null)
+  // Tracks which session's real-time panel is open in the comparison modal.
+  const [realTimeOpenSessionId, setRealTimeOpenSessionId] = useState<number | null>(null)
 
   function handleOpenReschedule(session: any) {
     setSelectedSession(session)
@@ -371,6 +373,24 @@ export function AdminClientDetailPage() {
                     {!session.canManage && !session.canMarkPendingBiometric && !session.canConfirmBiometric && !session.canCancelFromVerification && !['Programada', 'No asistio'].includes(session.status) ? (
                       <span className="table-muted">Sin cambios</span>
                     ) : null}
+                    {session.hasRealTimeData ? (
+                      <button
+                        className="button button--ghost button--compact"
+                        type="button"
+                        onClick={() =>
+                          setRealTimeOpenSessionId(
+                            realTimeOpenSessionId === session.rawId
+                              ? null
+                              : session.rawId,
+                          )
+                        }
+                        aria-expanded={realTimeOpenSessionId === session.rawId}
+                      >
+                        {realTimeOpenSessionId === session.rawId
+                          ? 'Ocultar datos'
+                          : 'Ver datos'}
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -494,6 +514,131 @@ export function AdminClientDetailPage() {
           reload()
         }}
       />
+
+      {realTimeOpenSessionId !== null ? (
+        (() => {
+          const selectedSession = data?.sessions.find(
+            (s: any) => s.rawId === realTimeOpenSessionId,
+          )
+          if (!selectedSession || !selectedSession.hasRealTimeData) return null
+          return (
+            <div
+              className="booking-modal-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Datos reales al cierre"
+              onClick={() => setRealTimeOpenSessionId(null)}
+              data-testid="real-time-modal"
+            >
+              <div
+                className="booking-modal-content"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <header className="booking-modal-header">
+                  <h2 className="_m-0">Datos reales al cierre</h2>
+                  <button
+                    type="button"
+                    className="booking-modal-close"
+                    onClick={() => setRealTimeOpenSessionId(null)}
+                    aria-label="Cerrar"
+                  >
+                    ✕
+                  </button>
+                </header>
+                <div className="booking-modal-body">
+                  <p className="_text-soft _mb-sm" style={{ fontSize: '0.85rem' }}>
+                    Cita {selectedSession.dateTime} · {selectedSession.operation}
+                  </p>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 'var(--spacing-4)',
+                    }}
+                  >
+                    <section
+                      style={{
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '8px',
+                        padding: 'var(--spacing-3)',
+                      }}
+                    >
+                      <h4 className="_mt-0 _mb-sm">Planificado</h4>
+                      <dl className="_m-0">
+                        <dt>Duración estimada</dt>
+                        <dd>
+                          {selectedSession.duracionEstimadaMinutos
+                            ? `${selectedSession.duracionEstimadaMinutos} min`
+                            : '—'}
+                        </dd>
+                        <dt>Procedimiento</dt>
+                        <dd>{selectedSession.procedimientoPlanificado || '—'}</dd>
+                        <dt>Zona</dt>
+                        <dd>{selectedSession.zonaCuerpoPlanificada || '—'}</dd>
+                        <dt>Especialistas</dt>
+                        <dd>
+                          {selectedSession.especialistasPlanificados?.length
+                            ? selectedSession.especialistasPlanificados.join(', ')
+                            : '—'}
+                        </dd>
+                        <dt>Maquinaria</dt>
+                        <dd>
+                          {selectedSession.maquinariaPlanificada?.length
+                            ? selectedSession.maquinariaPlanificada
+                                .map(
+                                  (m: { maquinariaId: number; cantidad: number }) =>
+                                    `id ${m.maquinariaId} x${m.cantidad}`,
+                                )
+                                .join(', ')
+                            : '—'}
+                        </dd>
+                      </dl>
+                    </section>
+                    <section
+                      style={{
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '8px',
+                        padding: 'var(--spacing-3)',
+                      }}
+                    >
+                      <h4 className="_mt-0 _mb-sm">Real al cierre</h4>
+                      <dl className="_m-0">
+                        <dt>Hora real inicio</dt>
+                        <dd>{selectedSession.horaRealInicio || '—'}</dd>
+                        <dt>Hora real fin</dt>
+                        <dd>{selectedSession.horaRealFin || '—'}</dd>
+                        <dt>Procedimiento realizado</dt>
+                        <dd>{selectedSession.procedimientoRealizado || '—'}</dd>
+                        <dt>Zona del cuerpo realizada</dt>
+                        <dd>{selectedSession.zonaCuerpoRealizada || '—'}</dd>
+                        <dt>Especialistas que atendieron</dt>
+                        <dd>
+                          {selectedSession.especialistasAtendieron?.length
+                            ? selectedSession.especialistasAtendieron.join(', ')
+                            : '—'}
+                        </dd>
+                        <dt>Maquinaria utilizada</dt>
+                        <dd>
+                          {selectedSession.maquinariaUtilizada?.length
+                            ? selectedSession.maquinariaUtilizada
+                                .map(
+                                  (m: { maquinaria_id: number; cantidad: number }) =>
+                                    `id ${m.maquinaria_id} x${m.cantidad}`,
+                                )
+                                .join(', ')
+                            : '—'}
+                        </dd>
+                        <dt>Notas post</dt>
+                        <dd>{selectedSession.notasPost || '—'}</dd>
+                      </dl>
+                    </section>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })()
+      ) : null}
 
       <BiometricVerifyCaptureModal
         open={!biometricSuspended && verifyModalCitaId !== null}
