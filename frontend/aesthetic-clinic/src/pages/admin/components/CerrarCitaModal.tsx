@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 
+import { useNotifications } from '../../../providers/NotificationProvider'
+
 import {
   closeAppointmentWithRealTimeData,
   getAdminStaff,
@@ -96,6 +98,12 @@ export function CerrarCitaModal({
   const [horaRealFin, setHoraRealFin] = useState('')
   const [procedimientoRealizado, setProcedimientoRealizado] = useState('')
   const [zonaCuerpoRealizada, setZonaCuerpoRealizada] = useState('')
+  // Fecha de la reserva (auto-derivable del prop). Se muestra en los
+  // inputs date de Hora real inicio/fin pero el admin no la edita — la
+  // cita se cierra con la fecha programada original.
+  const [scheduledDate, setScheduledDate] = useState('')
+  const [fotoAntesFile, setFotoAntesFile] = useState<File | null>(null)
+  const [fotoDespuesFile, setFotoDespuesFile] = useState<File | null>(null)
   const [especialistas, setEspecialistas] = useState<number[]>([])
   const [maquinariaRows, setMaquinariaRows] = useState<MaquinariaUtilizadaRow[]>([])
   const [maquinariaOptions, setMaquinariaOptions] = useState<MaquinariaOption[]>([])
@@ -104,11 +112,26 @@ export function CerrarCitaModal({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const { showNotification } = useNotifications()
 
   // Reset form when the modal opens for a (different) cita.
   useEffect(() => {
     if (!isOpen || !cita) return
     /* eslint-disable react-hooks/set-state-in-effect */
+    // The date inputs in Hora real inicio/fin are derived from the cita's
+    // programmed date (the admin picks the slot again, so the date
+    // must match the original). cita.dateTime is the display label; we
+    // parse out the YYYY-MM-DD prefix.
+    if (cita.dateTime) {
+      const match = cita.dateTime.match(/(\d{4}-\d{2}-\d{2})/)
+      if (match) {
+        setScheduledDate(match[1])
+      } else {
+        setScheduledDate('')
+      }
+    } else {
+      setScheduledDate('')
+    }
     setHoraRealInicio('')
     setHoraRealFin('')
     setProcedimientoRealizado(cita.procedimientoPlanificado ?? '')
@@ -121,6 +144,8 @@ export function CerrarCitaModal({
         cantidad: Math.max(1, item.cantidad),
       })),
     )
+    setFotoAntesFile(null)
+    setFotoDespuesFile(null)
     setError(null)
     setSuccess(null)
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -217,7 +242,21 @@ export function CerrarCitaModal({
       setError('Completa la hora real de inicio y fin.')
       return
     }
-    if (realMinutes === null || realMinutes <= 0) {
+    if (!scheduledDate) {
+      setError('No se puede determinar la fecha de la reserva.')
+      return
+    }
+    // Combine the cita's programmed date with the admin-entered times.
+    // The backend accepts ISO 8601 datetimes and validates fin > inicio.
+    const horaRealInicioIso = `${scheduledDate}T${horaRealInicio}:00`
+    const horaRealFinIso = `${scheduledDate}T${horaRealFin}:00`
+    const inicioDate = new Date(horaRealInicioIso)
+    const finDate = new Date(horaRealFinIso)
+    if (Number.isNaN(inicioDate.getTime()) || Number.isNaN(finDate.getTime())) {
+      setError('Hora invalida.')
+      return
+    }
+    if (finDate.getTime() <= inicioDate.getTime()) {
       setError('La hora real de fin debe ser posterior a la de inicio.')
       return
     }
@@ -230,8 +269,8 @@ export function CerrarCitaModal({
       }))
 
     const payload: AdminCloseExtendedPayload = {
-      horaRealInicio: horaRealInicio.length === 16 ? `${horaRealInicio}:00` : horaRealInicio,
-      horaRealFin: horaRealFin.length === 16 ? `${horaRealFin}:00` : horaRealFin,
+      horaRealInicio: horaRealInicioIso,
+      horaRealFin: horaRealFinIso,
       procedimientoRealizado: procedimientoRealizado || undefined,
       zonaCuerpoRealizada: zonaCuerpoRealizada || undefined,
       especialistasAtendieron: especialistas.length ? especialistas : undefined,
@@ -241,19 +280,55 @@ export function CerrarCitaModal({
     setIsSubmitting(true)
     try {
       await closeAppointmentWithRealTimeData(cita.rawId, payload)
-      setSuccess('La cita quedo cerrada con los datos reales.')
-      onSuccess?.({ cita, detail: 'La cita quedo cerrada con los datos reales.' })
+      // If the admin attached new photos, upload them via the notes
+      // endpoint. The notes endpoint accepts multipart for both text
+      // and images. We only send the foto fields when files are picked.
+      if (fotoAntesFile || fotoDespuesFile) {
+        const services = await import('../../../services/api/admin')
+        const notesForm = new FormData()
+        if (fotoAntesFile) notesForm.append('fotoAntes', fotoAntesFile)
+        if (fotoDespuesFile) notesForm.append('fotoDespues', fotoDespuesFile)
+        try {
+          // patchAppointmentNotes expects AdminAppointmentNotesPatchPayload,
+          // which is the public TS shape; the actual implementation accepts
+          // FormData at runtime. Cast via unknown to bridge the two.
+          await services.patchAppointmentNotes(
+            cita.rawId,
+            notesForm as unknown as Parameters<typeof services.patchAppointmentNotes>[1],
+          )
+        } catch (photoError) {
+          // The close-with-data already succeeded; log a soft warning
+          // so the admin can retry the photo upload via the notes panel.
+          setError(
+            photoError instanceof Error
+              ? `Datos guardados, pero las fotos no: ${photoError.message}`
+              : 'Datos guardados, pero las fotos no se subieron.',
+          )
+        }
+      }
+      setSuccess('Datos reales guardados correctamente.')
+      showNotification({
+        title: 'Datos reales guardados',
+        message: 'La cita quedo cerrada con los datos reales.',
+        tone: 'success',
+      })
+      onSuccess?.({ cita, detail: 'Datos reales guardados correctamente.' })
       // Cerrar automaticamente despues de un pequeno delay para que
       // el admin alcance a leer el mensaje.
       setTimeout(() => {
         onClose()
       }, 600)
     } catch (requestError) {
-      setError(
+      const errorMessage =
         requestError instanceof Error
           ? requestError.message
-          : 'No se pudo cerrar la cita.',
-      )
+          : 'No se pudo cerrar la cita.'
+      setError(errorMessage)
+      showNotification({
+        title: 'No se pudo cerrar la cita',
+        message: errorMessage,
+        tone: 'danger',
+      })
     } finally {
       setIsSubmitting(false)
     }
@@ -292,22 +367,44 @@ export function CerrarCitaModal({
           <div className="form-grid">
             <div className="_grid-2cols">
               <label className="field">
-                <span>Hora real inicio</span>
-                <input
-                  type="datetime-local"
-                  className="input"
-                  value={horaRealInicio}
-                  onChange={(event) => setHoraRealInicio(event.target.value)}
-                />
+                <span>Fecha y hora real inicio</span>
+                <div className="_flex _gap-sm">
+                  <input
+                    type="date"
+                    className="input"
+                    style={{ flex: '0 0 11rem' }}
+                    value={scheduledDate}
+                    disabled
+                    aria-label="Fecha de la reserva"
+                  />
+                  <input
+                    type="time"
+                    className="input"
+                    value={horaRealInicio}
+                    onChange={(event) => setHoraRealInicio(event.target.value)}
+                    aria-label="Hora real de inicio"
+                  />
+                </div>
               </label>
               <label className="field">
-                <span>Hora real fin</span>
-                <input
-                  type="datetime-local"
-                  className="input"
-                  value={horaRealFin}
-                  onChange={(event) => setHoraRealFin(event.target.value)}
-                />
+                <span>Fecha y hora real fin</span>
+                <div className="_flex _gap-sm">
+                  <input
+                    type="date"
+                    className="input"
+                    style={{ flex: '0 0 11rem' }}
+                    value={scheduledDate}
+                    disabled
+                    aria-label="Fecha de la reserva"
+                  />
+                  <input
+                    type="time"
+                    className="input"
+                    value={horaRealFin}
+                    onChange={(event) => setHoraRealFin(event.target.value)}
+                    aria-label="Hora real de fin"
+                  />
+                </div>
               </label>
             </div>
 
@@ -349,6 +446,43 @@ export function CerrarCitaModal({
                 onChange={(event) => setZonaCuerpoRealizada(event.target.value)}
               />
             </label>
+
+            <div className="_grid-2cols field--full">
+              <label className="field">
+                <span>Foto antes</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="input"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    setFotoAntesFile(file ?? null)
+                  }}
+                />
+                {fotoAntesFile ? (
+                  <small className="field__hint">
+                    Seleccionado: {fotoAntesFile.name}
+                  </small>
+                ) : null}
+              </label>
+              <label className="field">
+                <span>Foto después</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="input"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    setFotoDespuesFile(file ?? null)
+                  }}
+                />
+                {fotoDespuesFile ? (
+                  <small className="field__hint">
+                    Seleccionado: {fotoDespuesFile.name}
+                  </small>
+                ) : null}
+              </label>
+            </div>
 
             <fieldset className="field field--full">
               <legend>Especialistas que atendieron</legend>

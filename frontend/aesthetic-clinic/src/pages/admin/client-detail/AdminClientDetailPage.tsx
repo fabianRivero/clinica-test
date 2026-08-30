@@ -365,7 +365,7 @@ export function AdminClientDetailPage() {
                         type="button"
                         onClick={() => setClosingAppointmentId(session.rawId)}
                       >
-                        Cerrar cita
+                        Establecer datos reales
                       </button>
                     ) : null}
                     {!session.canManage && !session.canMarkPendingBiometric && !session.canConfirmBiometric && !session.canCancelFromVerification && !['Programada', 'No asistio'].includes(session.status) ? (

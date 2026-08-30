@@ -1006,7 +1006,7 @@ const handleSaveSessions = async () => {
                             type="button"
                             onClick={() => setClosingAppointmentId(appointment.rawId)}
                           >
-                            Cerrar cita
+                            Establecer datos reales
                           </button>
                         ) : null}
                         {isRevertible ? (
