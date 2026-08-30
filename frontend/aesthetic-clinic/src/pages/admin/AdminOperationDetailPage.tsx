@@ -1046,73 +1046,7 @@ const handleSaveSessions = async () => {
                       </div>
                     )
                   })()}
-                  {realTimeOpenCitaId === appointment.rawId && appointment.hasRealTimeData ? (
-                    <section
-                      className="_panel-card _mt-sm"
-                      data-testid="real-time-block"
-                      data-cita-id={appointment.rawId}
-                    >
-                      <h4 className="_mt-0 _mb-sm">Datos reales al cierre</h4>
-                      <dl className="catalog-admin-card__meta">
-                        {appointment.horaRealInicio ? (
-                          <div>
-                            <dt>Hora real inicio</dt>
-                            <dd>{appointment.horaRealInicio}</dd>
-                          </div>
-                        ) : null}
-                        {appointment.horaRealFin ? (
-                          <div>
-                            <dt>Hora real fin</dt>
-                            <dd>{appointment.horaRealFin}</dd>
-                          </div>
-                        ) : null}
-                        {appointment.procedimientoRealizado ? (
-                          <div>
-                            <dt>Procedimiento realizado</dt>
-                            <dd>{appointment.procedimientoRealizado}</dd>
-                          </div>
-                        ) : null}
-                        {appointment.zonaCuerpoRealizada ? (
-                          <div>
-                            <dt>Zona del cuerpo realizada</dt>
-                            <dd>{appointment.zonaCuerpoRealizada}</dd>
-                          </div>
-                        ) : null}
-                        {appointment.especialistasAtendieron &&
-                        appointment.especialistasAtendieron.length > 0 ? (
-                          <div>
-                            <dt>Especialistas que atendieron</dt>
-                            <dd>
-                              {appointment.especialistasAtendieron.length} id(s):
-                              {' '}
-                              {appointment.especialistasAtendieron.join(', ')}
-                            </dd>
-                          </div>
-                        ) : null}
-                        {appointment.maquinariaUtilizada &&
-                        appointment.maquinariaUtilizada.length > 0 ? (
-                          <div>
-                            <dt>Maquinaria utilizada</dt>
-                            <dd>
-                              {appointment.maquinariaUtilizada
-                                .map(
-                                  (m) =>
-                                    `maq ${m.maquinaria_id} x${m.cantidad}`,
-                                )
-                                .join(', ')}
-                            </dd>
-                          </div>
-                        ) : null}
-                        {appointment.notasPost ? (
-                          <div>
-                            <dt>Notas post</dt>
-                            <dd>{appointment.notasPost}</dd>
-                          </div>
-                        ) : null}
-                      </dl>
-                    </section>
-                  ) : null}
-                   </article>
+                  </article>
                 ))}
               </div>
             ) : (
@@ -1444,6 +1378,134 @@ const handleSaveSessions = async () => {
           reload()
         }}
       />
+
+      {realTimeOpenCitaId !== null ? (
+        (() => {
+          const selectedAppointment = data.operation.appointments.find(
+            (apt) => apt.rawId === realTimeOpenCitaId,
+          )
+          if (!selectedAppointment || !selectedAppointment.hasRealTimeData) return null
+          return (
+            <div
+              className="booking-modal-overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Datos reales al cierre"
+              onClick={() => setRealTimeOpenCitaId(null)}
+              data-testid="real-time-modal-operation"
+            >
+              <div
+                className="booking-modal-content"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <header className="booking-modal-header">
+                  <h2 className="_m-0">Datos reales al cierre</h2>
+                  <button
+                    type="button"
+                    className="booking-modal-close"
+                    onClick={() => setRealTimeOpenCitaId(null)}
+                    aria-label="Cerrar"
+                  >
+                    ✕
+                  </button>
+                </header>
+                <div className="booking-modal-body">
+                  <p
+                    className="_text-soft _mb-sm"
+                    style={{ fontSize: '0.85rem' }}
+                  >
+                    Cita {selectedAppointment.dateTime} · {data.operation.procedure}
+                  </p>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 'var(--spacing-4)',
+                    }}
+                  >
+                    <section
+                      style={{
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '8px',
+                        padding: 'var(--spacing-3)',
+                      }}
+                    >
+                      <h4 className="_mt-0 _mb-sm">Planificado</h4>
+                      <dl className="_m-0">
+                        <dt>Duración estimada</dt>
+                        <dd>
+                          {selectedAppointment.duracionEstimadaMinutos
+                            ? `${selectedAppointment.duracionEstimadaMinutos} min`
+                            : '—'}
+                        </dd>
+                        <dt>Procedimiento</dt>
+                        <dd>{selectedAppointment.procedimientoPlanificado || '—'}</dd>
+                        <dt>Zona</dt>
+                        <dd>{selectedAppointment.zonaCuerpoPlanificada || '—'}</dd>
+                        <dt>Especialistas</dt>
+                        <dd>
+                          {selectedAppointment.especialistasPlanificados?.length
+                            ? selectedAppointment.especialistasPlanificados.join(', ')
+                            : '—'}
+                        </dd>
+                        <dt>Maquinaria</dt>
+                        <dd>
+                          {selectedAppointment.maquinariaPlanificada?.length
+                            ? selectedAppointment.maquinariaPlanificada
+                                .map(
+                                  (m) =>
+                                    `id ${m.maquinariaId} x${m.cantidad}`,
+                                )
+                                .join(', ')
+                            : '—'}
+                        </dd>
+                      </dl>
+                    </section>
+                    <section
+                      style={{
+                        border: '1px solid var(--color-border)',
+                        borderRadius: '8px',
+                        padding: 'var(--spacing-3)',
+                      }}
+                    >
+                      <h4 className="_mt-0 _mb-sm">Real al cierre</h4>
+                      <dl className="_m-0">
+                        <dt>Hora real inicio</dt>
+                        <dd>{selectedAppointment.horaRealInicio || '—'}</dd>
+                        <dt>Hora real fin</dt>
+                        <dd>{selectedAppointment.horaRealFin || '—'}</dd>
+                        <dt>Procedimiento realizado</dt>
+                        <dd>{selectedAppointment.procedimientoRealizado || '—'}</dd>
+                        <dt>Zona del cuerpo realizada</dt>
+                        <dd>{selectedAppointment.zonaCuerpoRealizada || '—'}</dd>
+                        <dt>Especialistas que atendieron</dt>
+                        <dd>
+                          {selectedAppointment.especialistasAtendieron?.length
+                            ? selectedAppointment.especialistasAtendieron.join(', ')
+                            : '—'}
+                        </dd>
+                        <dt>Maquinaria utilizada</dt>
+                        <dd>
+                          {selectedAppointment.maquinariaUtilizada?.length
+                            ? selectedAppointment.maquinariaUtilizada
+                                .map(
+                                  (m) =>
+                                    `id ${m.maquinaria_id} x${m.cantidad}`,
+                                )
+                                .join(', ')
+                            : '—'}
+                        </dd>
+                        <dt>Notas post</dt>
+                        <dd>{selectedAppointment.notasPost || '—'}</dd>
+                      </dl>
+                    </section>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })()
+      ) : null}
 
       <AppointmentNotesPanel
         cita={{

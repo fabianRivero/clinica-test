@@ -453,6 +453,40 @@ def _appointment_item(cita, appointment_index=None, total_appointments=None):
                 "maquinaria_id", "cantidad"
             )
         ),
+        # Real-time close data (populated via POST /cerrar/ once the client
+        # confirms and the admin sets the close fields). The "Ver datos"
+        # button in cms/clientes/<id> uses hasRealTimeData to decide
+        # whether to render; when true the rest of the fields populate
+        # the comparison modal alongside the planning block.
+        "hasRealTimeData": bool(
+            cita.hora_real_inicio
+            or cita.hora_real_fin
+            or cita.procedimiento_realizado
+            or cita.zona_cuerpo_realizada
+        ),
+        "horaRealInicio": (
+            timezone.localtime(cita.hora_real_inicio).strftime("%d/%m %H:%M")
+            if cita.hora_real_inicio
+            else None
+        ),
+        "horaRealFin": (
+            timezone.localtime(cita.hora_real_fin).strftime("%d/%m %H:%M")
+            if cita.hora_real_fin
+            else None
+        ),
+        "procedimientoRealizado": cita.procedimiento_realizado or "",
+        "zonaCuerpoRealizada": cita.zona_cuerpo_realizada or "",
+        "notasPost": cita.notas_post or "",
+        "especialistasAtendieron": list(
+            cita.especialistas_items.filter(planificada=False).values_list(
+                "especialista_id", flat=True
+            )
+        ),
+        "maquinariaUtilizada": list(
+            cita.maquinaria_items.filter(planificada=False).values(
+                "maquinaria_id", "cantidad"
+            )
+        ),
     }
 
 
