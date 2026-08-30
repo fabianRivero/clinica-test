@@ -484,7 +484,39 @@ def _operation_detail(operacion):
                     CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
                 },
                 "canManage": cita.estado == CitaMedica.Estado.PROGRAMADA,
-
+                # Real-time close data (filled via /cerrar/ once the
+                # client confirms and the admin sets the close fields).
+                "hasRealTimeData": bool(
+                    cita.hora_real_inicio
+                    or cita.hora_real_fin
+                    or cita.procedimiento_realizado
+                    or cita.zona_cuerpo_realizada
+                ),
+                "horaRealInicio": (
+                    timezone.localtime(cita.hora_real_inicio).strftime("%d/%m %H:%M")
+                    if cita.hora_real_inicio
+                    else None
+                ),
+                "horaRealFin": (
+                    timezone.localtime(cita.hora_real_fin).strftime("%d/%m %H:%M")
+                    if cita.hora_real_fin
+                    else None
+                ),
+                "procedimientoRealizado": cita.procedimiento_realizado or "",
+                "zonaCuerpoRealizada": cita.zona_cuerpo_realizada or "",
+                "descripcionGeneral": cita.descripcion_general or "",
+                "notasPrevias": cita.notas_previas or "",
+                "notasPost": cita.notas_post or "",
+                "especialistasAtendieron": list(
+                    cita.especialistas_items.filter(planificada=False).values_list(
+                        "especialista_id", flat=True
+                    )
+                ),
+                "maquinariaUtilizada": list(
+                    cita.maquinaria_items.filter(planificada=False).values(
+                        "maquinaria_id", "cantidad"
+                    )
+                ),
             }
             for cita in operacion.citas_medicas.all()
         ],

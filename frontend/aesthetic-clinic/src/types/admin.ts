@@ -415,6 +415,18 @@ export type OperationDetailAppointment = {
   zonaCuerpoPlanificada?: string
   especialistasPlanificados?: number[]
   maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
+  // Real-time close data populated by POST /cerrar/ once the client
+  // confirms and the admin sets the close fields.
+  hasRealTimeData?: boolean
+  horaRealInicio?: string | null
+  horaRealFin?: string | null
+  procedimientoRealizado?: string
+  zonaCuerpoRealizada?: string
+  // descripcionGeneral / notasPrevias are already in the planning
+  // block above; we just re-use them for the close panel.
+  notasPost?: string
+  especialistasAtendieron?: number[]
+  maquinariaUtilizada?: Array<{ maquinaria_id: number; cantidad: number }>
 }
 
 export type OperationDetailQuota = {

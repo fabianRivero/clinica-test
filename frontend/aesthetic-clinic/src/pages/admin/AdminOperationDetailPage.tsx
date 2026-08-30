@@ -59,6 +59,10 @@ export function AdminOperationDetailPage() {
   const [appointmentActionId, setAppointmentActionId] = useState<number | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [closingAppointmentId, setClosingAppointmentId] = useState<number | null>(null)
+  // Tracks which cita's "Datos reales al cierre" panel is open so the
+  // admin can compare planning vs real close data side by side. Only one
+  // panel is open at a time.
+  const [realTimeOpenCitaId, setRealTimeOpenCitaId] = useState<number | null>(null)
   const [rescheduleCitaId, setRescheduleCitaId] = useState<number | null>(null)
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
   const [isRescheduling, setIsRescheduling] = useState(false)
@@ -1009,6 +1013,24 @@ const handleSaveSessions = async () => {
                             Establecer datos reales
                           </button>
                         ) : null}
+                        {appointment.hasRealTimeData ? (
+                          <button
+                            className="button button--ghost button--compact"
+                            type="button"
+                            onClick={() =>
+                              setRealTimeOpenCitaId(
+                                realTimeOpenCitaId === appointment.rawId
+                                  ? null
+                                  : appointment.rawId,
+                              )
+                            }
+                            aria-expanded={realTimeOpenCitaId === appointment.rawId}
+                          >
+                            {realTimeOpenCitaId === appointment.rawId
+                              ? 'Ocultar datos'
+                              : 'Ver datos'}
+                          </button>
+                        ) : null}
                         {isRevertible ? (
                           <button
                             className="button button--ghost button--compact"
@@ -1024,7 +1046,73 @@ const handleSaveSessions = async () => {
                       </div>
                     )
                   })()}
-                  </article>
+                  {realTimeOpenCitaId === appointment.rawId && appointment.hasRealTimeData ? (
+                    <section
+                      className="_panel-card _mt-sm"
+                      data-testid="real-time-block"
+                      data-cita-id={appointment.rawId}
+                    >
+                      <h4 className="_mt-0 _mb-sm">Datos reales al cierre</h4>
+                      <dl className="catalog-admin-card__meta">
+                        {appointment.horaRealInicio ? (
+                          <div>
+                            <dt>Hora real inicio</dt>
+                            <dd>{appointment.horaRealInicio}</dd>
+                          </div>
+                        ) : null}
+                        {appointment.horaRealFin ? (
+                          <div>
+                            <dt>Hora real fin</dt>
+                            <dd>{appointment.horaRealFin}</dd>
+                          </div>
+                        ) : null}
+                        {appointment.procedimientoRealizado ? (
+                          <div>
+                            <dt>Procedimiento realizado</dt>
+                            <dd>{appointment.procedimientoRealizado}</dd>
+                          </div>
+                        ) : null}
+                        {appointment.zonaCuerpoRealizada ? (
+                          <div>
+                            <dt>Zona del cuerpo realizada</dt>
+                            <dd>{appointment.zonaCuerpoRealizada}</dd>
+                          </div>
+                        ) : null}
+                        {appointment.especialistasAtendieron &&
+                        appointment.especialistasAtendieron.length > 0 ? (
+                          <div>
+                            <dt>Especialistas que atendieron</dt>
+                            <dd>
+                              {appointment.especialistasAtendieron.length} id(s):
+                              {' '}
+                              {appointment.especialistasAtendieron.join(', ')}
+                            </dd>
+                          </div>
+                        ) : null}
+                        {appointment.maquinariaUtilizada &&
+                        appointment.maquinariaUtilizada.length > 0 ? (
+                          <div>
+                            <dt>Maquinaria utilizada</dt>
+                            <dd>
+                              {appointment.maquinariaUtilizada
+                                .map(
+                                  (m) =>
+                                    `maq ${m.maquinaria_id} x${m.cantidad}`,
+                                )
+                                .join(', ')}
+                            </dd>
+                          </div>
+                        ) : null}
+                        {appointment.notasPost ? (
+                          <div>
+                            <dt>Notas post</dt>
+                            <dd>{appointment.notasPost}</dd>
+                          </div>
+                        ) : null}
+                      </dl>
+                    </section>
+                  ) : null}
+                   </article>
                 ))}
               </div>
             ) : (
