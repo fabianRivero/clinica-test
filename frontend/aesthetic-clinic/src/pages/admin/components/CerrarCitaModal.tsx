@@ -118,17 +118,13 @@ export function CerrarCitaModal({
   useEffect(() => {
     if (!isOpen || !cita) return
     /* eslint-disable react-hooks/set-state-in-effect */
-    // The date inputs in Hora real inicio/fin are derived from the cita's
-    // programmed date (the admin picks the slot again, so the date
-    // must match the original). cita.dateTime is the display label; we
-    // parse out the YYYY-MM-DD prefix.
+    // Hora real inicio/fin carry only HH:MM. The submit concatenates
+    // the cita's programmed date (parsed from cita.dateTime below) so
+    // the backend receives a full ISO datetime. The admin never edits
+    // the date here.
     if (cita.dateTime) {
       const match = cita.dateTime.match(/(\d{4}-\d{2}-\d{2})/)
-      if (match) {
-        setScheduledDate(match[1])
-      } else {
-        setScheduledDate('')
-      }
+      setScheduledDate(match ? match[1] : '')
     } else {
       setScheduledDate('')
     }
@@ -367,44 +363,24 @@ export function CerrarCitaModal({
           <div className="form-grid">
             <div className="_grid-2cols">
               <label className="field">
-                <span>Fecha y hora real inicio</span>
-                <div className="_flex _gap-sm">
-                  <input
-                    type="date"
-                    className="input"
-                    style={{ flex: '0 0 11rem' }}
-                    value={scheduledDate}
-                    disabled
-                    aria-label="Fecha de la reserva"
-                  />
-                  <input
-                    type="time"
-                    className="input"
-                    value={horaRealInicio}
-                    onChange={(event) => setHoraRealInicio(event.target.value)}
-                    aria-label="Hora real de inicio"
-                  />
-                </div>
+                <span>Hora real inicio</span>
+                <input
+                  type="time"
+                  className="input"
+                  value={horaRealInicio}
+                  onChange={(event) => setHoraRealInicio(event.target.value)}
+                  aria-label="Hora real de inicio"
+                />
               </label>
               <label className="field">
-                <span>Fecha y hora real fin</span>
-                <div className="_flex _gap-sm">
-                  <input
-                    type="date"
-                    className="input"
-                    style={{ flex: '0 0 11rem' }}
-                    value={scheduledDate}
-                    disabled
-                    aria-label="Fecha de la reserva"
-                  />
-                  <input
-                    type="time"
-                    className="input"
-                    value={horaRealFin}
-                    onChange={(event) => setHoraRealFin(event.target.value)}
-                    aria-label="Hora real de fin"
-                  />
-                </div>
+                <span>Hora real fin</span>
+                <input
+                  type="time"
+                  className="input"
+                  value={horaRealFin}
+                  onChange={(event) => setHoraRealFin(event.target.value)}
+                  aria-label="Hora real de fin"
+                />
               </label>
             </div>
 
