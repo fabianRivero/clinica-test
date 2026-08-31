@@ -591,14 +591,18 @@ export function AdminClientDetailPage() {
                                     if (typeof e === 'number') return `id ${e}`
                                     const esp = e as {
                                       especialista_id: number
-                                      especialista__usuario__first_name?: string
-                                      especialista__usuario__last_name?: string
+                                      especialista__usuario__primer_nombre?: string
+                                      especialista__usuario__segundo_nombre?: string
+                                      especialista__usuario__apellido_paterno?: string
+                                      especialista__usuario__apellido_materno?: string
                                       especialista__usuario__username?: string
                                     }
                                     return (
                                       [
-                                        esp.especialista__usuario__first_name,
-                                        esp.especialista__usuario__last_name,
+                                        esp.especialista__usuario__primer_nombre,
+                                        esp.especialista__usuario__segundo_nombre,
+                                        esp.especialista__usuario__apellido_paterno,
+                                        esp.especialista__usuario__apellido_materno,
                                       ]
                                         .filter(Boolean)
                                         .join(' ')
@@ -657,16 +661,20 @@ export function AdminClientDetailPage() {
                                     if (typeof e === 'number') return `id ${e}`
                                     const esp = e as {
                                       especialista_id: number
-                                      especialista__usuario__first_name?: string
-                                      especialista__usuario__last_name?: string
+                                      especialista__usuario__primer_nombre?: string
+                                      especialista__usuario__segundo_nombre?: string
+                                      especialista__usuario__apellido_paterno?: string
+                                      especialista__usuario__apellido_materno?: string
                                       especialista__usuario__username?: string
                                     }
                                     return (
                                       [
-                                        esp.especialista__usuario__first_name,
-                                        esp.especialista__usuario__last_name,
+                                        esp.especialista__usuario__primer_nombre,
+                                        esp.especialista__usuario__segundo_nombre,
+                                        esp.especialista__usuario__apellido_paterno,
+                                        esp.especialista__usuario__apellido_materno,
                                       ]
-                                        .filter(Boolean)
+                                         .filter(Boolean)
                                         .join(' ')
                                         .trim() ||
                                       esp.especialista__usuario__username ||

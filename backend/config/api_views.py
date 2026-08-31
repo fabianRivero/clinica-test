@@ -513,7 +513,9 @@ def _operation_detail(operacion):
                     .values(
                         "especialista_id",
                         "especialista__usuario__primer_nombre",
+                        "especialista__usuario__segundo_nombre",
                         "especialista__usuario__apellido_paterno",
+                        "especialista__usuario__apellido_materno",
                         "especialista__usuario__username",
                     )
                 ),

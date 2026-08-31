@@ -449,7 +449,9 @@ def _appointment_item(cita, appointment_index=None, total_appointments=None):
             .values(
                 "especialista_id",
                 "especialista__usuario__primer_nombre",
+                "especialista__usuario__segundo_nombre",
                 "especialista__usuario__apellido_paterno",
+                "especialista__usuario__apellido_materno",
                 "especialista__usuario__username",
             )
         ),
@@ -493,7 +495,9 @@ def _appointment_item(cita, appointment_index=None, total_appointments=None):
             .values(
                 "especialista_id",
                 "especialista__usuario__primer_nombre",
+                "especialista__usuario__segundo_nombre",
                 "especialista__usuario__apellido_paterno",
+                "especialista__usuario__apellido_materno",
                 "especialista__usuario__username",
             )
         ),
