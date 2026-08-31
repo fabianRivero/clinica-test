@@ -11,7 +11,6 @@ import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { ReservationModal } from './components/ReservationModal'
 import { CerrarCitaModal, type CerrarCitaPayload } from './components/CerrarCitaModal'
-import { AppointmentNotesPanel } from './components/AppointmentNotesPanel'
 import {
   cancelAdminAppointment,
   cancelAdminAppointmentVerification,
@@ -1607,15 +1606,14 @@ const handleSaveSessions = async () => {
         })()
       ) : null}
 
-      <AppointmentNotesPanel
-        cita={{
-          rawId: data.operation.rawId,
-          descripcionGeneral: (data.operation as { descripcionGeneral?: string }).descripcionGeneral,
-          notasPrevias: (data.operation as { notasPrevias?: string }).notasPrevias,
-          notasPost: (data.operation as { notasPost?: string }).notasPost,
-        }}
-        canEdit={true}
-      />
+      {/*
+        AppointmentNotesPanel was removed from the operation-detail
+        level. It used data.operation.rawId (an operation id) as the cita
+        rawId, which the /notas endpoint rejects. The intended upload
+        flow is via CerrarCitaModal (the close modal), which correctly
+        passes the cita id and the multipart FormData with the photo
+        files.
+      */}
 
       <ConfirmDialog />
 
