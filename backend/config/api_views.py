@@ -3567,6 +3567,16 @@ def admin_update_appointment_notes(request, appointment_id):
     if not cita:
         return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
 
+    # Debug log: print which keys (text + files) the request carries.
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "PATCH /notas cita=%s POST keys=%s FILES keys=%s",
+        appointment_id,
+        sorted(request.POST.keys()),
+        sorted(request.FILES.keys()),
+    )
+
     errors = {}
 
     text_fields = (
