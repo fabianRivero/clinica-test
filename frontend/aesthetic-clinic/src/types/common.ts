@@ -82,7 +82,12 @@ export type ClientAppointment = {
   duracionEstimadaMinutos?: number | null
   procedimientoPlanificado?: string
   zonaCuerpoPlanificada?: string
-  especialistasPlanificados?: number[]
+  /**
+   * Backend response shape (object with name + id) OR legacy shape
+   * (just the id). The frontend tolerates both — the modal's selection
+   * logic reads the id from either form.
+   */
+  especialistasPlanificados?: Array<number | { especialista_id: number }>
   maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
   // Real-time close data (populated via POST /cerrar/ after the client
   // confirms and the admin sets the close fields).
@@ -94,8 +99,18 @@ export type ClientAppointment = {
   descripcionGeneral?: string
   notasPrevias?: string
   notasPost?: string
-  especialistasAtendieron?: number[]
-  maquinariaUtilizada?: Array<{ maquinaria_id: number; cantidad: number }>
+  especialistasAtendieron?: Array<{
+    especialista_id: number
+    especialista__usuario__first_name?: string
+    especialista__usuario__last_name?: string
+    especialista__usuario__username?: string
+  }>
+  maquinariaUtilizada?: Array<{
+    maquinaria_id: number
+    cantidad: number
+    maquinaria__nombre?: string
+    maquinaria__marca?: string
+  }>
   fotoAntesUrl?: string
   fotoDespuesUrl?: string
 }

@@ -585,7 +585,30 @@ export function AdminClientDetailPage() {
                         <dt>Especialistas</dt>
                         <dd>
                           {selectedSession.especialistasPlanificados?.length
-                            ? selectedSession.especialistasPlanificados.join(', ')
+                            ? selectedSession.especialistasPlanificados
+                                .map(
+                                  (e: number | { especialista_id: number }) => {
+                                    if (typeof e === 'number') return `id ${e}`
+                                    const esp = e as {
+                                      especialista_id: number
+                                      especialista__usuario__first_name?: string
+                                      especialista__usuario__last_name?: string
+                                      especialista__usuario__username?: string
+                                    }
+                                    return (
+                                      [
+                                        esp.especialista__usuario__first_name,
+                                        esp.especialista__usuario__last_name,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(' ')
+                                        .trim() ||
+                                      esp.especialista__usuario__username ||
+                                      `id ${esp.especialista_id}`
+                                    )
+                                  },
+                                )
+                                .join(', ')
                             : '—'}
                         </dd>
                         <dt>Maquinaria</dt>
@@ -593,8 +616,15 @@ export function AdminClientDetailPage() {
                           {selectedSession.maquinariaPlanificada?.length
                             ? selectedSession.maquinariaPlanificada
                                 .map(
-                                  (m: { maquinariaId: number; cantidad: number }) =>
-                                    `id ${m.maquinariaId} x${m.cantidad}`,
+                                  (m: {
+                                    maquinariaId: number
+                                    cantidad: number
+                                    maquinaria__nombre?: string
+                                    maquinaria__marca?: string
+                                  }) =>
+                                    `${m.maquinaria__nombre ?? `id ${m.maquinariaId}`}${
+                                      m.maquinaria__marca ? ` (${m.maquinaria__marca})` : ''
+                                    } x${m.cantidad}`,
                                 )
                                 .join(', ')
                             : '—'}
@@ -621,7 +651,30 @@ export function AdminClientDetailPage() {
                         <dt>Especialistas que atendieron</dt>
                         <dd>
                           {selectedSession.especialistasAtendieron?.length
-                            ? selectedSession.especialistasAtendieron.join(', ')
+                            ? selectedSession.especialistasAtendieron
+                                .map(
+                                  (e: number | { especialista_id: number }) => {
+                                    if (typeof e === 'number') return `id ${e}`
+                                    const esp = e as {
+                                      especialista_id: number
+                                      especialista__usuario__first_name?: string
+                                      especialista__usuario__last_name?: string
+                                      especialista__usuario__username?: string
+                                    }
+                                    return (
+                                      [
+                                        esp.especialista__usuario__first_name,
+                                        esp.especialista__usuario__last_name,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(' ')
+                                        .trim() ||
+                                      esp.especialista__usuario__username ||
+                                      `id ${esp.especialista_id}`
+                                    )
+                                  },
+                                )
+                                .join(', ')
                             : '—'}
                         </dd>
                         <dt>Maquinaria utilizada</dt>
@@ -629,8 +682,15 @@ export function AdminClientDetailPage() {
                           {selectedSession.maquinariaUtilizada?.length
                             ? selectedSession.maquinariaUtilizada
                                 .map(
-                                  (m: { maquinaria_id: number; cantidad: number }) =>
-                                    `id ${m.maquinaria_id} x${m.cantidad}`,
+                                  (m: {
+                                    maquinaria_id: number
+                                    cantidad: number
+                                    maquinaria__nombre?: string
+                                    maquinaria__marca?: string
+                                  }) =>
+                                    `${m.maquinaria__nombre ?? `id ${m.maquinaria_id}`}${
+                                      m.maquinaria__marca ? ` (${m.maquinaria__marca})` : ''
+                                    } x${m.cantidad}`,
                                 )
                                 .join(', ')
                             : '—'}

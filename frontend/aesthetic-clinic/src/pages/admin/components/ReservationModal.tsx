@@ -71,7 +71,12 @@ interface ReservationModalProps {
     notasPrevias?: string
     procedimientoPlanificado?: string
     zonaCuerpoPlanificada?: string
-    especialistasPlanificados?: number[]
+    /**
+     * Backend response shape (object with name + id) OR legacy shape
+     * (just the id). The modal accepts both so the reschedule prefill
+     * works regardless of which response variant the backend emits.
+     */
+    especialistasPlanificados?: Array<number | { especialista_id: number }>
     maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
   }
   /** Callback que dispara la reserva. El padre arma el payload final con
@@ -118,7 +123,7 @@ export function ReservationModal({
   const [notasPrevias, setNotasPrevias] = useState('')
   const [procedimientoPlanificado, setProcedimientoPlanificado] = useState('')
   const [zonaCuerpoPlanificada, setZonaCuerpoPlanificada] = useState('')
-  const [especialistas, setEspecialistas] = useState<number[]>([])
+  const [especialistas, setEspecialistas] = useState<Array<number | { especialista_id: number }>>([])
   const [maquinariaRows, setMaquinariaRows] = useState<MaquinariaRow[]>([])
 
   // --- Server data (lazy) -------------------------------------------------
@@ -177,9 +182,9 @@ export function ReservationModal({
       const visibleMaquinariaIds = new Set(maquinariaOptions.map((opt) => opt.id))
       const visibleEspecialistaIds = new Set(staffOptions.map((s) => s.id))
       setEspecialistas(
-        (prefillCita.especialistasPlanificados ?? []).filter((id) =>
-          visibleEspecialistaIds.has(id),
-        ),
+        (prefillCita.especialistasPlanificados ?? [])
+          .map((e) => (typeof e === 'number' ? e : e.especialista_id))
+          .filter((id) => visibleEspecialistaIds.has(id)),
       )
       setMaquinariaRows(
         (prefillCita.maquinariaPlanificada ?? [])
@@ -226,7 +231,9 @@ export function ReservationModal({
       }),
     )
     setEspecialistas((current) =>
-      current.filter((id) => staffOptions.some((s) => s.id === id)),
+      current
+        .map((e) => (typeof e === 'number' ? e : e.especialista_id))
+        .filter((id) => staffOptions.some((s) => s.id === id)),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [maquinariaOptions.length, staffOptions.length, isOpen, mode])
@@ -300,7 +307,9 @@ export function ReservationModal({
     // pick the real date/hour and re-verify.
     const today = new Date().toISOString().slice(0, 10)
     const hora = '12:00'
-    const selectedEspIds = selectedEsp
+    const selectedEspIds = selectedEsp.map((e) =>
+      typeof e === 'number' ? e : e.especialista_id,
+    )
     const maqItems = selectedMaq.map((it) => ({ maquinariaId: it.maquinariaId, cantidad: it.cantidad }))
     const maqIds = maqItems.map((it) => it.maquinariaId)
     const maqCantidades = maqItems.map((it) => it.cantidad)
@@ -418,9 +427,14 @@ export function ReservationModal({
   }
 
   function toggleEspecialista(id: number) {
-    setEspecialistas((current) =>
-      current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
-    )
+    setEspecialistas((current) => {
+      const currentIds = current.map((value) =>
+        typeof value === 'number' ? value : value.especialista_id,
+      )
+      return currentIds.includes(id)
+        ? currentIds.filter((value) => value !== id)
+        : [...currentIds, id]
+    })
   }
 
   async function handleCheckAvailability() {
@@ -469,7 +483,9 @@ export function ReservationModal({
           fecha: date,
           hora: time,
           duracionMinutos,
-          especialistaIds: especialistas,
+          especialistaIds: especialistas.map((e) =>
+            typeof e === 'number' ? e : e.especialista_id,
+          ),
         })
         setEspecialistasDisponibilidad(espResponse.disponibilidad ?? [])
       } else {
@@ -524,7 +540,11 @@ export function ReservationModal({
       notasPrevias: notasPrevias || undefined,
       procedimientoPlanificado: procedimientoPlanificado || undefined,
       zonaCuerpoPlanificada: zonaCuerpoPlanificada || undefined,
-      especialistasPlanificados: especialistas.length ? especialistas : undefined,
+      especialistasPlanificados: especialistas.length
+        ? especialistas.map((e) => ({
+            especialista_id: typeof e === 'number' ? e : e.especialista_id,
+          }))
+        : undefined,
       maquinariaPlanificada: maquinariaPlanificada.length ? maquinariaPlanificada : undefined,
     }
     await onConfirm(payload)

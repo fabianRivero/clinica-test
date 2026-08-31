@@ -25,10 +25,20 @@ export interface CerrarCitaPayload {
   dateTime?: string
   status?: string
   duracionEstimadaMinutos?: number | null
+  descripcionGeneral?: string
+  notasPrevias?: string
   procedimientoPlanificado?: string
   zonaCuerpoPlanificada?: string
-  especialistasPlanificados?: number[]
+  /**
+   * Backend response shape (object with name + id) OR legacy shape
+   * (just the id) when the page builds the payload from a fresh
+   * reservation. We accept both so the modal stays backward-compatible
+   * with the create-reservation flow which passes plain ids.
+   */
+  especialistasPlanificados?: Array<number | { especialista_id: number }>
   maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
+  fotoAntesUrl?: string
+  fotoDespuesUrl?: string
 }
 
 interface CerrarCitaModalProps {
@@ -104,7 +114,7 @@ export function CerrarCitaModal({
   const [scheduledDate, setScheduledDate] = useState('')
   const [fotoAntesFile, setFotoAntesFile] = useState<File | null>(null)
   const [fotoDespuesFile, setFotoDespuesFile] = useState<File | null>(null)
-  const [especialistas, setEspecialistas] = useState<number[]>([])
+  const [especialistas, setEspecialistas] = useState<Array<number | { especialista_id: number }>>([])
   const [maquinariaRows, setMaquinariaRows] = useState<MaquinariaUtilizadaRow[]>([])
   const [maquinariaOptions, setMaquinariaOptions] = useState<MaquinariaOption[]>([])
   const [staffOptions, setStaffOptions] = useState<StaffOption[]>([])
@@ -148,7 +158,11 @@ export function CerrarCitaModal({
     setHoraRealFin('')
     setProcedimientoRealizado(cita.procedimientoPlanificado ?? '')
     setZonaCuerpoRealizada(cita.zonaCuerpoPlanificada ?? '')
-    setEspecialistas(cita.especialistasPlanificados ?? [])
+    setEspecialistas(
+      (cita.especialistasPlanificados ?? []).map((e) =>
+        typeof e === 'number' ? e : e.especialista_id,
+      ),
+    )
     setMaquinariaRows(
       (cita.maquinariaPlanificada ?? []).map((item) => ({
         rowId: crypto.randomUUID(),
@@ -238,9 +252,14 @@ export function CerrarCitaModal({
   }
 
   function toggleEspecialista(id: number) {
-    setEspecialistas((current) =>
-      current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
-    )
+    setEspecialistas((current) => {
+      const currentIds = current.map((value) =>
+        typeof value === 'number' ? value : value.especialista_id,
+      )
+      return currentIds.includes(id)
+        ? currentIds.filter((value) => value !== id)
+        : [...currentIds, id]
+    })
   }
 
   async function handleSubmit() {
@@ -280,12 +299,15 @@ export function CerrarCitaModal({
         cantidad: row.cantidad,
       }))
 
+    const especialistaIds = especialistas.map((value) =>
+      typeof value === 'number' ? value : value.especialista_id,
+    )
     const payload: AdminCloseExtendedPayload = {
       horaRealInicio: horaRealInicioIso,
       horaRealFin: horaRealFinIso,
       procedimientoRealizado: procedimientoRealizado || undefined,
       zonaCuerpoRealizada: zonaCuerpoRealizada || undefined,
-      especialistasAtendieron: especialistas.length ? especialistas : undefined,
+      especialistasAtendieron: especialistaIds.length ? especialistaIds : undefined,
       maquinariaUtilizada: maquinariaUtilizada.length ? maquinariaUtilizada : undefined,
     }
 

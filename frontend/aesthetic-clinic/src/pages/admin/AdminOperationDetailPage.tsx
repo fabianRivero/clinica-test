@@ -1370,9 +1370,9 @@ const handleSaveSessions = async () => {
         onClose={() => setClosingAppointmentId(null)}
         cita={
           closingAppointmentId !== null
-            ? (data.operation.appointments.find(
+            ? (((data.operation.appointments.find(
                 (apt) => apt.rawId === closingAppointmentId,
-              ) as CerrarCitaPayload | undefined) ?? null
+              )) ?? null) as CerrarCitaPayload | null)
             : null
         }
         branchId={activeBranch?.id ?? data.operation.branchId ?? 0}
@@ -1452,7 +1452,30 @@ const handleSaveSessions = async () => {
                         <dt>Especialistas</dt>
                         <dd>
                           {selectedAppointment.especialistasPlanificados?.length
-                            ? selectedAppointment.especialistasPlanificados.join(', ')
+                            ? selectedAppointment.especialistasPlanificados
+                                .map(
+                                  (e: number | { especialista_id: number }) => {
+                                    if (typeof e === 'number') return `id ${e}`
+                                    const esp = e as {
+                                      especialista_id: number
+                                      especialista__usuario__first_name?: string
+                                      especialista__usuario__last_name?: string
+                                      especialista__usuario__username?: string
+                                    }
+                                    return (
+                                      [
+                                        esp.especialista__usuario__first_name,
+                                        esp.especialista__usuario__last_name,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(' ')
+                                        .trim() ||
+                                      esp.especialista__usuario__username ||
+                                      `id ${esp.especialista_id}`
+                                    )
+                                  },
+                                )
+                                .join(', ')
                             : '—'}
                         </dd>
                         <dt>Maquinaria</dt>
@@ -1461,7 +1484,9 @@ const handleSaveSessions = async () => {
                             ? selectedAppointment.maquinariaPlanificada
                                 .map(
                                   (m) =>
-                                    `id ${m.maquinariaId} x${m.cantidad}`,
+                                    `${m.maquinaria__nombre ?? `id ${m.maquinariaId}`}${
+                                      m.maquinaria__marca ? ` (${m.maquinaria__marca})` : ''
+                                    } x${m.cantidad}`,
                                 )
                                 .join(', ')
                             : '—'}
@@ -1488,7 +1513,30 @@ const handleSaveSessions = async () => {
                         <dt>Especialistas que atendieron</dt>
                         <dd>
                           {selectedAppointment.especialistasAtendieron?.length
-                            ? selectedAppointment.especialistasAtendieron.join(', ')
+                            ? selectedAppointment.especialistasAtendieron
+                                .map(
+                                  (e: number | { especialista_id: number }) => {
+                                    if (typeof e === 'number') return `id ${e}`
+                                    const esp = e as {
+                                      especialista_id: number
+                                      especialista__usuario__first_name?: string
+                                      especialista__usuario__last_name?: string
+                                      especialista__usuario__username?: string
+                                    }
+                                    return (
+                                      [
+                                        esp.especialista__usuario__first_name,
+                                        esp.especialista__usuario__last_name,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(' ')
+                                        .trim() ||
+                                      esp.especialista__usuario__username ||
+                                      `id ${esp.especialista_id}`
+                                    )
+                                  },
+                                )
+                                .join(', ')
                             : '—'}
                         </dd>
                         <dt>Maquinaria utilizada</dt>
@@ -1497,7 +1545,9 @@ const handleSaveSessions = async () => {
                             ? selectedAppointment.maquinariaUtilizada
                                 .map(
                                   (m) =>
-                                    `id ${m.maquinaria_id} x${m.cantidad}`,
+                                    `${m.maquinaria__nombre ?? `id ${m.maquinaria_id}`}${
+                                      m.maquinaria__marca ? ` (${m.maquinaria__marca})` : ''
+                                    } x${m.cantidad}`,
                                 )
                                 .join(', ')
                             : '—'}

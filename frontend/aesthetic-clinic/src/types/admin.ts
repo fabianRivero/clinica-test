@@ -413,8 +413,18 @@ export type OperationDetailAppointment = {
   notasPrevias?: string
   procedimientoPlanificado?: string
   zonaCuerpoPlanificada?: string
-  especialistasPlanificados?: number[]
-  maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
+  especialistasPlanificados?: Array<{
+    especialista_id: number
+    especialista__usuario__first_name?: string
+    especialista__usuario__last_name?: string
+    especialista__usuario__username?: string
+  }>
+  maquinariaPlanificada?: Array<{
+    maquinariaId: number
+    cantidad: number
+    maquinaria__nombre?: string
+    maquinaria__marca?: string
+  }>
   // Real-time close data populated by POST /cerrar/ once the client
   // confirms and the admin sets the close fields.
   hasRealTimeData?: boolean
@@ -425,8 +435,18 @@ export type OperationDetailAppointment = {
   // descripcionGeneral / notasPrevias are already in the planning
   // block above; we just re-use them for the close panel.
   notasPost?: string
-  especialistasAtendieron?: number[]
-  maquinariaUtilizada?: Array<{ maquinaria_id: number; cantidad: number }>
+  especialistasAtendieron?: Array<{
+    especialista_id: number
+    especialista__usuario__first_name?: string
+    especialista__usuario__last_name?: string
+    especialista__usuario__username?: string
+  }>
+  maquinariaUtilizada?: Array<{
+    maquinaria_id: number
+    cantidad: number
+    maquinaria__nombre?: string
+    maquinaria__marca?: string
+  }>
   fotoAntesUrl?: string
   fotoDespuesUrl?: string
 }
@@ -1003,8 +1023,18 @@ export type AdminReservationExtendedPayload = {
   notasPrevias?: string
   procedimientoPlanificado?: string
   zonaCuerpoPlanificada?: string
-  especialistasPlanificados?: number[]
-  maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
+  especialistasPlanificados?: Array<{
+    especialista_id: number
+    especialista__usuario__first_name?: string
+    especialista__usuario__last_name?: string
+    especialista__usuario__username?: string
+  }>
+  maquinariaPlanificada?: Array<{
+    maquinariaId: number
+    cantidad: number
+    maquinaria__nombre?: string
+    maquinaria__marca?: string
+  }>
 }
 
 // Body for pendiente-biometria (close). All fields optional.

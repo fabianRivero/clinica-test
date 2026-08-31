@@ -508,13 +508,23 @@ def _operation_detail(operacion):
                 "notasPrevias": cita.notas_previas or "",
                 "notasPost": cita.notas_post or "",
                 "especialistasAtendieron": list(
-                    cita.especialistas_items.filter(planificada=False).values_list(
-                        "especialista_id", flat=True
+                    cita.especialistas_items.filter(planificada=False)
+                    .select_related("especialista__usuario__especialista")
+                    .values(
+                        "especialista_id",
+                        "especialista__usuario__primer_nombre",
+                        "especialista__usuario__apellido_paterno",
+                        "especialista__usuario__username",
                     )
                 ),
                 "maquinariaUtilizada": list(
-                    cita.maquinaria_items.filter(planificada=False).values(
-                        "maquinaria_id", "cantidad"
+                    cita.maquinaria_items.filter(planificada=False)
+                    .select_related("maquinaria")
+                    .values(
+                        "maquinaria_id",
+                        "cantidad",
+                        "maquinaria__nombre",
+                        "maquinaria__marca",
                     )
                 ),
                 # Photo URLs (absolute path the <img src> can use directly).
