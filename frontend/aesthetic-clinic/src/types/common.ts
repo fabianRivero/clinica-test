@@ -58,6 +58,14 @@ export type ClientPayment = {
   receiptUrl: string
   verifier: string
   note: string
+  /**
+   * `VIRTUAL` (default for legacy rows), `FISICO` for desk payments, or
+   * `MIXTO` for split payments. Rendered only when not `VIRTUAL`.
+   */
+  paymentMethod?: string
+  /** Formatted "Bs X.XX" — present for any method. */
+  physicalAmount?: string
+  virtualAmount?: string
 }
 
 export type ClientAppointment = {

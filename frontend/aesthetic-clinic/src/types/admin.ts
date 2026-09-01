@@ -38,6 +38,32 @@ export type VerificationPayment = {
   dueDate?: string
   receiptUrl?: string
   verifier?: string
+  /** Payment channel — `VIRTUAL` / `FISICO` / `MIXTO`. */
+  paymentMethod?: string
+  /** Formatted "Bs X.XX" — present for every method. */
+  physicalAmount?: string
+  virtualAmount?: string
+}
+
+/**
+ * Payload used by `registerAdminPayment`. Mirrors the write serializer on
+ * the backend (`PagoRealizadoCreateSerializer`): `paymentMethod` is
+ * always required; `montoFisico` / `montoVirtual` are required only when
+ * the method is `MIXTO`. Receipt and details are optional regardless of
+ * method — admins may register a desk cash payment without a receipt.
+ */
+export type RegisterAdminPaymentPayload = {
+  paymentMethod: 'VIRTUAL' | 'FISICO' | 'MIXTO'
+  amount: string
+  montoFisico?: string
+  montoVirtual?: string
+  receiptFile?: File
+  details?: string
+}
+
+export type RegisterAdminPaymentResponse = {
+  detail: string
+  payment: VerificationPayment
 }
 
 export type UpcomingPayment = {
