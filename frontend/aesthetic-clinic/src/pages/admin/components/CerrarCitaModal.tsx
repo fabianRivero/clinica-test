@@ -309,43 +309,41 @@ export function CerrarCitaModal({
       zonaCuerpoRealizada: zonaCuerpoRealizada || undefined,
       especialistasAtendieron: especialistaIds.length ? especialistaIds : undefined,
       maquinariaUtilizada: maquinariaUtilizada.length ? maquinariaUtilizada : undefined,
+      // Photos travel in the same /cerrar/ round-trip so a single
+      // submit persists everything. closeAppointmentWithRealTimeData
+      // switches to multipart automatically when one of these is set.
+      fotoAntes: fotoAntesFile ?? undefined,
+      fotoDespues: fotoDespuesFile ?? undefined,
     }
 
     setIsSubmitting(true)
     try {
-      await closeAppointmentWithRealTimeData(cita.rawId, payload)
-      // If the admin attached new photos, upload them via the notes
-      // endpoint. The notes endpoint accepts multipart for both text
-      // and images. We only send the foto fields when files are picked.
-      if (fotoAntesFile || fotoDespuesFile) {
-        const services = await import('../../../services/api/admin')
-        const notesForm = new FormData()
-        if (fotoAntesFile) notesForm.append('fotoAntes', fotoAntesFile)
-        if (fotoDespuesFile) notesForm.append('fotoDespues', fotoDespuesFile)
-        try {
-          // patchAppointmentNotes expects AdminAppointmentNotesPatchPayload,
-          // which is the public TS shape; the actual implementation accepts
-          // FormData at runtime. Cast via unknown to bridge the two.
-          await services.patchAppointmentNotes(
-            cita.rawId,
-            notesForm as unknown as Parameters<typeof services.patchAppointmentNotes>[1],
-          )
-        } catch (photoError) {
-          // The close-with-data already succeeded; log a soft warning
-          // so the admin can retry the photo upload via the notes panel.
-          setError(
-            photoError instanceof Error
-              ? `Datos guardados, pero las fotos no: ${photoError.message}`
-              : 'Datos guardados, pero las fotos no se subieron.',
-          )
-        }
+      const response = (await closeAppointmentWithRealTimeData(
+        cita.rawId,
+        payload,
+      )) as { warnings?: Record<string, string>; detail?: string }
+      const photoWarnings = response?.warnings
+        ? Object.values(response.warnings)
+        : []
+      if (photoWarnings.length > 0) {
+        // Backend accepted the text/M2M payload but flagged individual
+        // photos (e.g. oversize). Surface them inline so the admin can
+        // retry without losing the rest of the close data.
+        setError(photoWarnings.join(' '))
+        showNotification({
+          title: 'Datos guardados con avisos',
+          message:
+            'La cita quedo cerrada, pero algunas fotos no pudieron guardarse.',
+          tone: 'warning',
+        })
+      } else {
+        setSuccess('Datos reales guardados correctamente.')
+        showNotification({
+          title: 'Datos reales guardados',
+          message: 'La cita quedo cerrada con los datos reales.',
+          tone: 'success',
+        })
       }
-      setSuccess('Datos reales guardados correctamente.')
-      showNotification({
-        title: 'Datos reales guardados',
-        message: 'La cita quedo cerrada con los datos reales.',
-        tone: 'success',
-      })
       onSuccess?.({ cita, detail: 'Datos reales guardados correctamente.' })
       // Cerrar automaticamente despues de un pequeno delay para que
       // el admin alcance a leer el mensaje.

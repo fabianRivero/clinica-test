@@ -202,9 +202,6 @@ export function ClientAppointmentSection({
                           Cancelar
                         </button>
                       ) : null}
-                      {!appointment.canManage && !appointment.canMarkPendingBiometric && !appointment.canConfirmBiometric && !appointment.canCancelFromVerification ? (
-                        <span className="table-muted">Sin cambios</span>
-                      ) : null}
                     </div>
                   </td>
                 </tr>

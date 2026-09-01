@@ -144,6 +144,42 @@ def full_name(user):
     return user.nombre_completo or user.username
 
 
+def appointment_specialists(cita):
+    """Return a comma-separated list of specialist display names for a
+    CitaMedica, combining the planned and the actually-attended rows
+    (unique by especialista_id so the same person does not appear twice
+    when both roles are filled). Falls back to ``"—"`` when no
+    especialista is associated with the cita.
+
+    Used by the admin/client/operation list endpoints that previously
+    hard-coded ``"Sin asignar"`` regardless of whether the cita had
+    staff assigned. The detailed comparison modal already exposes the
+    same data via ``especialistasPlanificados`` /
+    ``especialistasAtendieron`` arrays; this helper only fills the
+    summary column shown in the appointments list.
+    """
+    if cita is None:
+        return "—"
+    # Avoid N+1 by relying on the prefetch the caller already issued
+    # (verifiable via ``_appointment_item`` / ``_operation_detail``,
+    # both of which already select_related the especialista chain).
+    seen: set[int] = set()
+    nombres: list[str] = []
+    for item in cita.especialistas_items.all():
+        esp = getattr(item, "especialista", None)
+        if esp is None or esp.pk in seen:
+            continue
+        seen.add(esp.pk)
+        usuario = getattr(esp, "usuario", None)
+        if usuario is None:
+            continue
+        nombres.append(usuario.nombre_completo or usuario.username or "")
+    nombres = [n for n in nombres if n]
+    if not nombres:
+        return "—"
+    return ", ".join(nombres)
+
+
 def procedure_name(operacion):
     """Return the procedure name for an operation.
 

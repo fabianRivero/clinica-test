@@ -34,6 +34,7 @@ from operations.models import (
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 from config.api.permissions import AdminRequired
 from config.api_helpers import (
+    appointment_specialists,
     currency,
     date_label,
     datetime_label,
@@ -587,7 +588,7 @@ class CitasViewSet(viewsets.ViewSet):
                 "rawId": appointment.pk,
                 "dateTime": datetime_label(appointment.fecha_hora),
                 "operation": procedure_name(appointment.operacion),
-                "specialist": "Sin asignar",
+                "specialist": appointment_specialists(appointment),
                 "status": appointment.get_estado_display(),
             },
         })

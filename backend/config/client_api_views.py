@@ -16,6 +16,7 @@ from clinical.models import AnalisisEstetico
 from notifications.models import Notification
 from notifications.services import create_notification, admins_for_specialist_branch
 from config.api_helpers import (
+    appointment_specialists,
     currency,
     date_label,
     datetime_label,
@@ -418,7 +419,7 @@ def _appointment_item(cita, appointment_index=None, total_appointments=None):
         "rawId": cita.pk,
         "operationRawId": cita.operacion_id,
         "operation": procedure_name(cita.operacion),
-        "specialist": "Sin asignar",
+        "specialist": appointment_specialists(cita),
         "dateTime": datetime_label(cita.fecha_hora),
         "status": cita.get_estado_display(),
         "statusTone": _appointment_tone(cita),

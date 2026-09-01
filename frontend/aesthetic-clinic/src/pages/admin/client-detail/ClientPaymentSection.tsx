@@ -134,12 +134,6 @@ export function ClientPaymentSection({
                         <div className="table-action-list">
                           {(() => {
                             const normalizedStatus = payment.status.trim().toUpperCase()
-                            const isApproved = normalizedStatus === 'APROBADO'
-
-                            if (isApproved) {
-                              return <span className="table-muted">Sin cambios</span>
-                            }
-
                             return (
                               <>
                                 <button className="button button--ghost button--compact" disabled={paymentActionId === payment.rawId || normalizedStatus === 'APROBADO'} type="button" onClick={() => void onUpdatePaymentStatus(payment.rawId, payment.status, 'APROBADO', payment.note)}>Aprobar</button>

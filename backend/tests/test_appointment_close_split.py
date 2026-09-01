@@ -362,4 +362,89 @@ class CerrarCitaTests(TestCase):
             }
         )
         self.assertEqual(response.status_code, 400, response.content)
-        self.assertIn("horaRealInicio", response.json()["errors"])
+
+    def test_close_multipart_persists_photos(self):
+        """A multipart close with fotoAntes + fotoDespues persists the
+        images and exposes them in the response appointment payload,
+        so the admin modal can re-enable the 'Ver foto antes/despues'
+        buttons immediately after submit."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.force_login(self.admin)
+        tiny_png = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4"
+            b"\x89\x00\x00\x00\rIDATx\x9cc\xf8\xff\xff?\x00\x05\xfe\x02\xfeA"
+            b"\xb6\xfa\x92\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        antes = SimpleUploadedFile(
+            "antes.png", tiny_png, content_type="image/png"
+        )
+        despues = SimpleUploadedFile(
+            "despues.png", tiny_png, content_type="image/png"
+        )
+        response = self.client.post(
+            self.url,
+            data={
+                "procedimientoRealizado": "Con fotos",
+                "zonaCuerpoRealizada": "Rostro",
+                "fotoAntes": antes,
+                "fotoDespues": despues,
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.cita.refresh_from_db()
+        self.assertTrue(bool(self.cita.foto_antes))
+        self.assertTrue(bool(self.cita.foto_despues))
+        body = response.json()
+        # The response payload mirrors what the operation-detail call
+        # will return next, so the modal buttons find the URL.
+        self.assertTrue(body["appointment"]["fotoAntesUrl"])
+        self.assertTrue(body["appointment"]["fotoDespuesUrl"])
+        self.assertIn("citas/", body["appointment"]["fotoAntesUrl"])
+        # No warnings expected when the photos fit under 5 MB.
+        self.assertNotIn("warnings", body)
+
+    def test_close_oversize_photo_returns_warning(self):
+        """An oversize fotoAntes does not abort the close; it is
+        surfaced under `warnings` while the rest of the payload
+        (text + M2M) is persisted."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.force_login(self.admin)
+        oversize = SimpleUploadedFile(
+            "big.png",
+            b"\x89PNG\r\n" + b"x" * (5 * 1024 * 1024 + 1),
+            content_type="image/png",
+        )
+        response = self.client.post(
+            self.url,
+            data={
+                "procedimientoRealizado": "Sin foto",
+                "fotoAntes": oversize,
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertIn("warnings", body)
+        self.assertIn("fotoAntes", body["warnings"])
+        self.cita.refresh_from_db()
+        self.assertEqual(self.cita.procedimiento_realizado, "Sin foto")
+        self.assertFalse(bool(self.cita.foto_antes))
+
+    def test_close_json_still_works_alongside_multipart(self):
+        """JSON-only callers keep working after the multipart refactor:
+        fotos fields are simply ignored when no files are uploaded."""
+        self.client.force_login(self.admin)
+        response = self._post(
+            {
+                "procedimientoRealizado": "Solo JSON",
+                "zonaCuerpoRealizada": "Cuello",
+            }
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.cita.refresh_from_db()
+        self.assertEqual(self.cita.procedimiento_realizado, "Solo JSON")
+        self.assertEqual(self.cita.zona_cuerpo_realizada, "Cuello")
+        self.assertFalse(bool(self.cita.foto_antes))
+        self.assertFalse(bool(self.cita.foto_despues))

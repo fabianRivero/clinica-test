@@ -373,9 +373,6 @@ export function AdminClientDetailPage() {
                         Establecer datos reales
                       </button>
                     ) : null}
-                    {!session.canManage && !session.canMarkPendingBiometric && !session.canConfirmBiometric && !session.canCancelFromVerification && !['Programada', 'No asistio'].includes(session.status) ? (
-                      <span className="table-muted">Sin cambios</span>
-                    ) : null}
                     {session.hasRealTimeData ? (
                       <button
                         className="button button--ghost button--compact"

@@ -326,3 +326,37 @@ class AvailableAppointmentsFieldTests(TestCase):
         response = client.get(f"/api/admin/operaciones/{operation.pk}/")
         self.assertEqual(response.status_code, 200, response.content)
         self.assertIn("availableAppointments", response.json()["operation"])
+
+    def test_detail_helper_exposes_planning_fields_per_appointment(self):
+        """The "Ver datos" comparison modal in cms/operaciones/<id> relies
+        on planning fields being present in every cita of the operation
+        detail payload. Without them the left "Planificado" column
+        renders as "—" even though the same fields show correctly under
+        cms/clientes/<id> (which uses _appointment_item).
+        """
+        from django.utils import timezone as tz
+
+        operation = self._make_operation(sesiones_totales=2)
+        cita = CitaMedica.objects.create(
+            operacion=operation,
+            sucursal=self.sucursal,
+            fecha_hora=tz.now() + tz.timedelta(days=1),
+            estado=CitaMedica.Estado.PROGRAMADA,
+            duracion_estimada_minutos=60,
+            procedimiento_planificado="Borrar mancha",
+            zona_cuerpo_planificada="Espalda superior",
+            descripcion_general="Una reserva para esta operacion",
+            notas_previas="operacion de prueba",
+        )
+        item = detail_helper(operation)
+        self.assertEqual(len(item["appointments"]), 1)
+        apt = item["appointments"][0]
+        self.assertEqual(apt["duracionEstimadaMinutos"], 60)
+        self.assertEqual(apt["procedimientoPlanificado"], "Borrar mancha")
+        self.assertEqual(apt["zonaCuerpoPlanificada"], "Espalda superior")
+        # Empty arrays must still be present so the frontend can render
+        # the comparison column instead of crashing on undefined access.
+        self.assertIn("especialistasPlanificados", apt)
+        self.assertIn("maquinariaPlanificada", apt)
+        self.assertEqual(apt["especialistasPlanificados"], [])
+        self.assertEqual(apt["maquinariaPlanificada"], [])
