@@ -306,6 +306,7 @@ export function AdminProspectConvertPage() {
             firstPaymentFisico={firstPaymentFisico}
             firstPaymentVirtual={firstPaymentVirtual}
             paymentQrImageUrl={paymentQrImageUrl}
+            cuotasTotales={operationForm?.cuotasTotales ?? null}
             fieldErrors={fieldErrors}
             isSaving={isSaving}
             isCancelling={isCancelling}

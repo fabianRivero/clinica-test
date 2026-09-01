@@ -13,6 +13,7 @@ type Props = {
   firstPaymentFisico: string
   firstPaymentVirtual: string
   paymentQrImageUrl: string
+  cuotasTotales: number | null
   fieldErrors: FieldErrors
   isSaving: boolean
   isCancelling: boolean
@@ -37,6 +38,7 @@ export function ConversionStepPayment({
   firstPaymentFisico,
   firstPaymentVirtual,
   paymentQrImageUrl,
+  cuotasTotales,
   fieldErrors,
   isSaving,
   isCancelling,
@@ -72,6 +74,13 @@ export function ConversionStepPayment({
         }}
       >
         <div className="wizard-block field--full">
+          {cuotasTotales == null ? (
+            <small className="field__hint field--full">
+              No definiste un plan de cuotas en el paso 2. Si registras un pago
+              aquí, se creará automáticamente una cuota única por el precio
+              total del tratamiento.
+            </small>
+          ) : null}
           {paymentQrImageUrl ? (
             <>
               <img

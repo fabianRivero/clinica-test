@@ -371,6 +371,41 @@ class ConversionFirstPaymentTests(TestCase):
         # The new row was not created.
         self.assertEqual(cuota.pagos_realizados.count(), 1)
 
+    def test_no_cuotas_totales_with_first_payment_creates_cuota_and_pago(self):
+        """When the admin skips step 2 (no cuotasTotales, no due dates)
+        but registers a first payment in step 5, the finalize view must
+        auto-create a single ``CuotaPlanPago`` with ``monto_programado
+        == precio_total`` so the payment has somewhere to land. Without
+        this fallback the operation would render as "0 cuota(s)" in
+        /cms/operaciones/<id>.
+        """
+        draft = _make_full_draft(
+            cliente=self.cliente,
+            usuario=self.admin,
+            servicio=self.servicio,
+            today=self.today,
+            catalog_ids=self.catalog_ids,
+        )
+        # Override the draft to mirror "admin skipped step 2 cuotas".
+        draft.datos_operacion["cuotasTotales"] = None
+        draft.datos_operacion["fechasVencimientoCuotas"] = []
+        draft.save(update_fields=["datos_operacion"])
+        self._login()
+        response = self._post_finalize(
+            draft,
+            primerPagoMetodo="FISICO",
+            primerPagoMontoFisico="100.00",
+            primerPagoDetalle="Pago en consultorio.",
+        )
+        self.assertEqual(response.status_code, 201)
+        operacion = Operacion.objects.get(paciente=self.cliente)
+        cuotas = CuotaPlanPago.objects.filter(operacion=operacion)
+        self.assertEqual(cuotas.count(), 1)
+        self.assertEqual(cuotas.first().monto_programado, Decimal("100.00"))
+        self.assertEqual(
+            PagoRealizado.objects.filter(cuota__operacion=operacion).count(), 1
+        )
+
     def test_no_payment_when_no_amount_signal_and_no_receipt(self):
         """When only ``primerPagoDetalle`` is sent (no amount, no receipt)
         the helper should silently skip and no ``PagoRealizado`` row is

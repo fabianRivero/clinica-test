@@ -1892,6 +1892,28 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
                 fecha_vencimiento=date.fromisoformat(fecha_vencimiento),
                 monto_programado=quota_amounts[cuota_index] if cuota_index < len(quota_amounts) else Decimal("0.00"),
             )
+    # Fallback: when the admin didn't define cuotasTotales in step 2 but
+    # registers a first payment in step 5, the operation still needs at
+    # least one ``CuotaPlanPago`` for the payment to land against. Without
+    # this row ``_register_first_payment_from_request`` would skip silently
+    # (no cuota → no row) and the operation would render as "0 cuota(s)"
+    # in /cms/operaciones/<id>. We create a single cuota covering the full
+    # precio_total and let the first payment register against it.
+    first_payment_signal = any(
+        [
+            (request.POST.get("primerPagoMonto") or "").strip(),
+            (request.POST.get("primerPagoMontoFisico") or "").strip(),
+            (request.POST.get("primerPagoMontoVirtual") or "").strip(),
+            request.FILES.get("primerPagoComprobante"),
+        ]
+    )
+    if not due_dates_to_create and first_payment_signal:
+        CuotaPlanPago.objects.create(
+            operacion=operacion,
+            nro_cuota=1,
+            fecha_vencimiento=timezone.localdate(),
+            monto_programado=Decimal(operation_data["precioTotal"]),
+        )
     # Optional first-payment block. Helper returns ``None`` when no
     # payment data was supplied and creates an APROBADO row otherwise.
     # Comprobante is now optional — ``PagoRealizado.clean`` rejects
