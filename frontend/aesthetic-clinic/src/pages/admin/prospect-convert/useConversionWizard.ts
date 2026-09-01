@@ -167,17 +167,25 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
   const [firstPaymentVirtual, setFirstPaymentVirtual] = useState('')
 
   const firstPaymentAmount = useMemo(() => {
-    if (!operationForm) return ''
-    const total = Number(operationForm.precioTotal)
-    const cuotas = Number(operationForm.cuotasTotales)
-    if (!Number.isFinite(total) || !Number.isFinite(cuotas) || cuotas <= 0) return ''
-    const basePerCuota = (total / cuotas).toFixed(2)
+    // MIXTO always reflects fisico + virtual, independent of the (possibly
+    // null) cuotasTotales — the admin writes both parts directly and we just
+    // display the running total so they can verify the breakdown matches the
+    // cuota they're about to register.
     if (firstPaymentMethod === 'MIXTO') {
       const fisico = Number(firstPaymentFisico || '0')
       const virtual = Number(firstPaymentVirtual || '0')
-      if (!Number.isFinite(fisico) || !Number.isFinite(virtual)) return ''
+      if (!Number.isFinite(fisico) || !Number.isFinite(virtual)) return '0.00'
       return (fisico + virtual).toFixed(2)
     }
+    if (!operationForm) return '0.00'
+    const total = Number(operationForm.precioTotal)
+    const cuotas = Number(operationForm.cuotasTotales)
+    const basePerCuota =
+      Number.isFinite(total) && Number.isFinite(cuotas) && cuotas > 0
+        ? (total / cuotas).toFixed(2)
+        : Number.isFinite(total)
+          ? total.toFixed(2)
+          : '0.00'
     if (firstPaymentMethod === 'FISICO') {
       return firstPaymentFisico || basePerCuota
     }
