@@ -62,6 +62,9 @@ class QuotaStatusRulesTests(TestCase):
         PagoRealizado.objects.create(
             cuota=cuota,
             monto_pagado=Decimal("120.00"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("120.00"),
+            monto_fisico=Decimal("0"),
             comprobante_url="comprobantes_pagos/test.png",
             estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
         )
@@ -117,6 +120,9 @@ class QuotaStatusRulesTests(TestCase):
         PagoRealizado.objects.create(
             cuota=cuota,
             monto_pagado=Decimal("120.00"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("120.00"),
+            monto_fisico=Decimal("0"),
             comprobante_url="comprobantes_pagos/pending.png",
             estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
         )

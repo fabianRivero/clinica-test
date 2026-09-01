@@ -274,6 +274,9 @@ class OperationPricePlanUpdateTests(TestCase):
         PagoRealizado.objects.create(
             cuota=cuota_con_pago,
             monto_pagado=Decimal("100.00"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("100.00"),
+            monto_fisico=Decimal("0"),
             comprobante_url=SimpleUploadedFile("c.pdf", b"%PDF-test", content_type="application/pdf"),
             estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
         )
@@ -315,6 +318,9 @@ class OperationPricePlanUpdateTests(TestCase):
         PagoRealizado.objects.create(
             cuota=cuota_con_rechazo,
             monto_pagado=Decimal("100.00"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("100.00"),
+            monto_fisico=Decimal("0"),
             comprobante_url=SimpleUploadedFile("c.pdf", b"%PDF-test", content_type="application/pdf"),
             estado_verificacion=PagoRealizado.EstadoVerificacion.RECHAZADO,
             verificado_por=self.admin,
@@ -351,6 +357,9 @@ class OperationPricePlanUpdateTests(TestCase):
         PagoRealizado.objects.create(
             cuota=cuota_pagada,
             monto_pagado=Decimal("100.00"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("100.00"),
+            monto_fisico=Decimal("0"),
             comprobante_url=SimpleUploadedFile("c.pdf", b"%PDF-test", content_type="application/pdf"),
             estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
             verificado_por=self.admin,
@@ -725,6 +734,9 @@ class OperationDeleteQuotaTests(TestCase):
         PagoRealizado.objects.create(
             cuota=cuota_pagada,
             monto_pagado=Decimal("100.00"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("100.00"),
+            monto_fisico=Decimal("0"),
             comprobante_url=SimpleUploadedFile("c.pdf", b"%PDF-test", content_type="application/pdf"),
             estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
             verificado_por=self.admin,
@@ -745,6 +757,9 @@ class OperationDeleteQuotaTests(TestCase):
         PagoRealizado.objects.create(
             cuota=cuota,
             monto_pagado=Decimal("100.00"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("100.00"),
+            monto_fisico=Decimal("0"),
             comprobante_url=SimpleUploadedFile("c.pdf", b"%PDF-test", content_type="application/pdf"),
             estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
         )
@@ -761,6 +776,9 @@ class OperationDeleteQuotaTests(TestCase):
         PagoRealizado.objects.create(
             cuota=cuota,
             monto_pagado=Decimal("100.00"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("100.00"),
+            monto_fisico=Decimal("0"),
             comprobante_url=SimpleUploadedFile("c.pdf", b"%PDF-test", content_type="application/pdf"),
             estado_verificacion=PagoRealizado.EstadoVerificacion.RECHAZADO,
             verificado_por=self.admin,

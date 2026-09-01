@@ -152,9 +152,29 @@ class PagoRealizado(TimeStampedModel):
     def clean(self):
         errors = {}
 
-        if not self.comprobante_url:
-            errors["comprobante_url"] = "Se requiere un comprobante para registrar el pago."
+        # ---- Method-driven rules (NEW) ----
+        # VIRTUAL: receipt required, monto_virtual == monto_pagado, monto_fisico == 0.
+        # FISICO: receipt optional, monto_fisico == monto_pagado, monto_virtual == 0.
+        # MIXTO: receipt optional, both breakdown amounts strictly > 0 and sum to monto_pagado.
+        if self.metodo_pago == self.MetodoPago.VIRTUAL:
+            if not self.comprobante_url:
+                errors["comprobante_url"] = "Se requiere un comprobante para registrar el pago."
+            if self.monto_virtual != self.monto_pagado:
+                errors["monto_virtual"] = "monto_virtual debe ser igual a monto_pagado para pagos virtuales."
+            if self.monto_fisico != 0:
+                errors["monto_fisico"] = "monto_fisico debe ser 0 para pagos virtuales."
+        elif self.metodo_pago == self.MetodoPago.FISICO:
+            if self.monto_fisico != self.monto_pagado:
+                errors["monto_fisico"] = "monto_fisico debe ser igual a monto_pagado para pagos fisicos."
+            if self.monto_virtual != 0:
+                errors["monto_virtual"] = "monto_virtual debe ser 0 para pagos fisicos."
+        elif self.metodo_pago == self.MetodoPago.MIXTO:
+            if self.monto_fisico <= 0 or self.monto_virtual <= 0:
+                errors["monto_pagado"] = "Ambos montos (fisico y virtual) deben ser mayores a 0."
+            if (self.monto_fisico + self.monto_virtual) != self.monto_pagado:
+                errors["monto_pagado"] = "monto_fisico + monto_virtual debe ser igual a monto_pagado."
 
+        # ---- Existing rules (unchanged) ----
         if self.estado_verificacion in {
             self.EstadoVerificacion.APROBADO,
             self.EstadoVerificacion.RECHAZADO,
