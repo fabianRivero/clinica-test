@@ -69,19 +69,19 @@ The factory-call patch from Phase 4.3 was moved into Commit 2 of PR 1 because th
 
 ## Phase 5: Frontend — Client Page
 
-- [ ] 5.1 Extend `payment` TS type (+ ~10).
-- [ ] 5.2 Add `paymentMethod` state + `<select>` + conditional fields (+ ~70).
-- [ ] 5.3 Send new fields; render breakdown line when `paymentMethod !== 'VIRTUAL'` (+ ~25).
+- [x] 5.1 Extend `payment` TS type (+ ~10).
+- [x] 5.2 Add `paymentMethod` state + `<select>` + conditional fields (+ ~70).
+- [x] 5.3 Send new fields; render breakdown line when `paymentMethod !== 'VIRTUAL'` (+ ~25).
 
-**Verify**: `cd frontend/aesthetic-clinic && npm run lint && npx tsc --noEmit && npm run build`.
+**Verify**: `cd frontend/aesthetic-clinic && npm run lint && npx tsc --noEmit && npm run build`. ✅
 
 ## Phase 6: Frontend — Admin Page
 
-- [ ] 6.1 Add `registerAdminPayment` service (+ ~20).
-- [ ] 6.2 Add "Registrar pago" button + modal (+ ~110).
-- [ ] 6.3 Render breakdown line; minor tabs update (+ ~25).
+- [x] 6.1 Add `registerAdminPayment` service (+ ~20).
+- [x] 6.2 Add "Registrar pago" button + modal (+ ~110).
+- [x] 6.3 Render breakdown line; minor tabs update (+ ~25).
 
-**Verify**: `cd frontend/aesthetic-clinic && npm run lint && npx tsc --noEmit && npm run build`.
+**Verify**: `cd frontend/aesthetic-clinic && npm run lint && npx tsc --noEmit && npm run build`. ✅
 
 ## Phase 7: End-to-End Verification
 
