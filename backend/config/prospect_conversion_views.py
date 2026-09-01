@@ -5,15 +5,18 @@ from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.contrib.auth.hashers import make_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django.conf import settings
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from biometric.serializers import enrollment_suspended_payload
 
 from accounts.models import Rol, Usuario
 from billing.models import CuotaPlanPago
 from billing.models import PagoRealizado
+from billing.validators import assert_not_over_payment
 from catalogs.models import (
     AntecedenteMedico,
     CirugiaEstetica,
@@ -1524,6 +1527,149 @@ def admin_prospect_conversion_biometric_step(request, prospecto_id=None, cliente
     return json_response(_admin_conversion_detail(draft))
 
 
+def _register_first_payment_from_request(request, operacion):
+    """Create an APROBADO ``PagoRealizado`` for the first quota when the
+    admin submits the optional first-payment block during conversion or
+    reactivation finalize.
+
+    Reads the multipart fields produced by the wizard step 5:
+
+    * ``primerPagoMetodo`` — ``VIRTUAL`` / ``FISICO`` / ``MIXTO``. Defaults
+      to ``VIRTUAL`` when missing (back-compat with the legacy payload
+      that only sent ``primerPagoMonto``).
+    * ``primerPagoMontoFisico`` / ``primerPagoMontoVirtual`` — breakdown
+      amounts. Required for ``MIXTO``; for ``VIRTUAL`` / ``FISICO`` they
+      are derived from the single ``primerPagoMonto`` field so the
+      wizard can keep sending a flat total when the user does not split
+      the payment.
+    * ``primerPagoMonto`` — flat total used when the breakdown is
+      absent. Kept so older wizard payloads keep working.
+    * ``primerPagoComprobante`` — optional receipt file. The model
+      ``clean()`` still enforces "VIRTUAL requires receipt" so a missing
+      receipt for a virtual payment surfaces a 400 from DRF.
+    * ``primerPagoDetalle`` — free-text details.
+
+    Returns the ``PagoRealizado`` when one was created, otherwise
+    ``None``. Over-payment is enforced before save via
+    ``assert_not_over_payment``; the surrounding view runs inside
+    ``transaction.atomic`` so the failure rolls back the whole
+    conversion.
+    """
+    primer_pago_comprobante = request.FILES.get("primerPagoComprobante")
+    primer_pago_monto_raw = (request.POST.get("primerPagoMonto") or "").strip()
+    primer_pago_detalle = (request.POST.get("primerPagoDetalle") or "").strip()
+    raw_metodo = (request.POST.get("primerPagoMetodo") or "").strip()
+    valid_methods = {choice for choice, _ in PagoRealizado.MetodoPago.choices}
+    if raw_metodo and raw_metodo not in valid_methods:
+        raise _PrimerPagoValidationError(
+            {"detail": "El metodo de pago del primer pago no es valido."}
+        )
+    primer_pago_metodo = raw_metodo or PagoRealizado.MetodoPago.VIRTUAL
+    primer_pago_fisico_raw = (request.POST.get("primerPagoMontoFisico") or "").strip()
+    primer_pago_virtual_raw = (request.POST.get("primerPagoMontoVirtual") or "").strip()
+
+    # Skip the block entirely when no payment data was supplied. This
+    # preserves the legacy behaviour where an empty ``primerPagoMonto``
+    # means "no payment yet".
+    has_amount_signal = bool(
+        primer_pago_monto_raw or primer_pago_fisico_raw or primer_pago_virtual_raw
+    )
+    if not has_amount_signal and not primer_pago_comprobante:
+        return None
+
+    primera_cuota = operacion.cuotas_plan_pagos.order_by(
+        "nro_cuota", "fecha_vencimiento"
+    ).first()
+    if primera_cuota is None:
+        return None
+
+    # Legacy back-compat: if the wizard sent only a receipt (no amount),
+    # default the total to the cuota base, mirroring the pre-PR-4 path.
+    if not has_amount_signal and primer_pago_comprobante:
+        primer_pago_monto_raw = str(primera_cuota.monto_programado)
+
+    def _parse_decimal(raw_value, field_name):
+        if not raw_value:
+            return Decimal("0")
+        try:
+            return Decimal(raw_value)
+        except (InvalidOperation, ValueError):
+            raise _PrimerPagoValidationError(
+                {"detail": f"El monto {field_name} del primer pago no es valido."}
+            )
+
+    if primer_pago_metodo == PagoRealizado.MetodoPago.MIXTO:
+        monto_fisico = _parse_decimal(primer_pago_fisico_raw, "fisico")
+        monto_virtual = _parse_decimal(primer_pago_virtual_raw, "virtual")
+        monto_pagado = monto_fisico + monto_virtual
+        if not primer_pago_monto_raw:
+            primer_pago_monto_raw = str(monto_pagado)
+        else:
+            try:
+                monto_pagado = Decimal(primer_pago_monto_raw)
+            except (InvalidOperation, ValueError):
+                raise _PrimerPagoValidationError(
+                    {"detail": "El monto del primer pago no es valido."}
+                )
+    elif primer_pago_metodo == PagoRealizado.MetodoPago.FISICO:
+        if primer_pago_fisico_raw:
+            monto_fisico = _parse_decimal(primer_pago_fisico_raw, "fisico")
+            monto_pagado = monto_fisico
+        else:
+            monto_fisico = _parse_decimal(primer_pago_monto_raw, "total")
+            monto_pagado = monto_fisico
+        monto_virtual = Decimal("0")
+    else:  # VIRTUAL (default)
+        if primer_pago_virtual_raw:
+            monto_virtual = _parse_decimal(primer_pago_virtual_raw, "virtual")
+            monto_pagado = monto_virtual
+        else:
+            monto_virtual = _parse_decimal(primer_pago_monto_raw, "total")
+            monto_pagado = monto_virtual
+        monto_fisico = Decimal("0")
+
+    # Last-chance normalisation: when no breakdown was sent and the flat
+    # total was empty, ``monto_pagado`` is still 0 — treat that as "no
+    # payment" and exit silently.
+    if monto_pagado <= 0:
+        return None
+
+    assert_not_over_payment(primera_cuota, monto_pagado)
+
+    pago = PagoRealizado(
+        cuota=primera_cuota,
+        monto_pagado=monto_pagado,
+        metodo_pago=primer_pago_metodo,
+        monto_fisico=monto_fisico,
+        monto_virtual=monto_virtual,
+        comprobante_url=primer_pago_comprobante,
+        detalles_pago=primer_pago_detalle
+        or "Comprobante de primer pago registrado durante la conversion.",
+        estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
+        verificado_por=request.user,
+        fecha_verificacion=timezone.now(),
+        observacion_verificacion="Pago confirmado durante la conversion.",
+    )
+    pago.full_clean()
+    pago.save()
+    return pago
+
+
+class _PrimerPagoValidationError(Exception):
+    """Internal sentinel raised by ``_register_first_payment_from_request``.
+
+    The view catches this exception and returns a 400 with the carried
+    error payload. Using a sentinel (rather than letting
+    ``PagoRealizado.full_clean`` raise ``ValidationError`` directly)
+    keeps the helper return value simple — every other error path
+    already bubbles up via DRF or Django.
+    """
+
+    def __init__(self, payload):
+        super().__init__(payload.get("detail", ""))
+        self.payload = payload
+
+
 @require_POST
 @admin_required
 @transaction.atomic
@@ -1746,31 +1892,26 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
                 fecha_vencimiento=date.fromisoformat(fecha_vencimiento),
                 monto_programado=quota_amounts[cuota_index] if cuota_index < len(quota_amounts) else Decimal("0.00"),
             )
-    primer_pago_comprobante = request.FILES.get("primerPagoComprobante")
-    primer_pago_monto = (request.POST.get("primerPagoMonto") or "").strip()
-    primer_pago_detalle = (request.POST.get("primerPagoDetalle") or "").strip()
-    if (primer_pago_monto or primer_pago_detalle) and not primer_pago_comprobante:
-        return json_response(
-            {"detail": "Debes adjuntar el comprobante para registrar el primer pago en este paso."},
-            status=400,
-        )
-    if primer_pago_comprobante:
-        primera_cuota = operacion.cuotas_plan_pagos.order_by("nro_cuota", "fecha_vencimiento").first()
-        if primera_cuota:
-            try:
-                monto_primer_pago = Decimal(primer_pago_monto) if primer_pago_monto else primera_cuota.monto_programado
-            except Exception:
-                return json_response({"detail": "El monto del primer pago no es válido."}, status=400)
-            PagoRealizado.objects.create(
-                cuota=primera_cuota,
-                monto_pagado=monto_primer_pago,
-                comprobante_url=primer_pago_comprobante,
-                detalles_pago=primer_pago_detalle or "Comprobante de primer pago registrado durante la conversión.",
-                estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
-                verificado_por=request.user,
-                fecha_verificacion=timezone.now(),
-                observacion_verificacion="Pago confirmado durante la conversión.",
-            )
+    # Optional first-payment block. Helper returns ``None`` when no
+    # payment data was supplied and creates an APROBADO row otherwise.
+    # Comprobante is now optional — ``PagoRealizado.clean`` rejects
+    # VIRTUAL without receipt, and ``assert_not_over_payment`` rejects
+    # amounts that would exceed the cuota.
+    try:
+        _register_first_payment_from_request(request, operacion)
+    except _PrimerPagoValidationError as exc:
+        return json_response(exc.payload, status=400)
+    except DjangoValidationError as exc:
+        # ``PagoRealizado.full_clean`` raised — surface the message via 400.
+        message = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
+        if isinstance(message, dict):
+            message = message.get("detail") or next(iter(message.values()), str(exc))
+        return json_response({"detail": str(message)}, status=400)
+    except DRFValidationError as exc:
+        detail = getattr(exc, "detail", None)
+        if isinstance(detail, dict):
+            detail = detail.get("detail") or next(iter(detail.values()), str(exc))
+        return json_response({"detail": str(detail)}, status=400)
 
     ficha = FichaClinica.objects.create(
         operacion=operacion,
