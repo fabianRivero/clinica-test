@@ -47,6 +47,10 @@ export function AdminProspectConvertPage() {
     setQrModalOpen,
     shouldRegisterFirstPayment,
     firstPaymentDetails,
+    firstPaymentReceipt,
+    firstPaymentMethod,
+    firstPaymentFisico,
+    firstPaymentVirtual,
     selectedService,
     firstPaymentAmount,
     today,
@@ -292,11 +296,15 @@ export function AdminProspectConvertPage() {
       )}
 
       {activeStep === 5 && (
-        <SectionCard eyebrow="Paso 5" title="Primer pago" description="Activa la casilla para registrar el primer pago en este paso. Si lo activas, el comprobante es obligatorio.">
+        <SectionCard eyebrow="Paso 5" title="Primer pago" description="Activa la casilla para registrar el primer pago en este paso. El comprobante es opcional salvo que el metodo sea Virtual.">
           <ConversionStepPayment
             shouldRegisterFirstPayment={shouldRegisterFirstPayment}
             firstPaymentDetails={firstPaymentDetails}
+            firstPaymentReceipt={firstPaymentReceipt}
             firstPaymentAmount={firstPaymentAmount}
+            firstPaymentMethod={firstPaymentMethod}
+            firstPaymentFisico={firstPaymentFisico}
+            firstPaymentVirtual={firstPaymentVirtual}
             paymentQrImageUrl={paymentQrImageUrl}
             fieldErrors={fieldErrors}
             isSaving={isSaving}
@@ -308,6 +316,9 @@ export function AdminProspectConvertPage() {
                 wizard.setFirstPaymentDetails('')
               }
             }}
+            onMethodChange={(method) => wizard.setFirstPaymentMethod(method)}
+            onFisicoChange={(value) => wizard.setFirstPaymentFisico(value)}
+            onVirtualChange={(value) => wizard.setFirstPaymentVirtual(value)}
             onReceiptChange={(event) => wizard.setFirstPaymentReceipt(event.target.files?.[0] || null)}
             onDetailsChange={(event) => wizard.setFirstPaymentDetails(event.target.value)}
             onQrModalToggle={(open) => setQrModalOpen(open)}

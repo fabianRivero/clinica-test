@@ -936,23 +936,51 @@ export function saveAdminProspectConversionBiometricStep(prospectId: string, pay
   )
 }
 
+/**
+ * Payload for the optional first-payment block of the conversion /
+ * reactivation finalize endpoints. The wizard step 5 sends the full
+ * breakdown when the admin picks FISICO / MIXTO; legacy callers that
+ * only send `amount` keep working (the backend treats them as
+ * VIRTUAL with the flat total).
+ */
+export type FirstConversionPaymentPayload = {
+  paymentMethod?: 'VIRTUAL' | 'FISICO' | 'MIXTO'
+  montoFisico?: string
+  montoVirtual?: string
+  receiptFile?: File | null
+  details?: string
+  /** Legacy flat-total field. Used when `paymentMethod` is absent. */
+  amount?: string
+}
+
 export function finalizeAdminProspectConversion(
   prospectId: string,
   documentFile?: File,
-  firstPayment?: { receiptFile?: File | null; amount?: string; details?: string },
+  firstPayment?: FirstConversionPaymentPayload,
 ) {
   const formData = new FormData()
   if (documentFile) {
     formData.append('documentoFichaPdf', documentFile)
   }
-  if (firstPayment?.receiptFile) {
-    formData.append('primerPagoComprobante', firstPayment.receiptFile)
-  }
-  if (firstPayment?.amount) {
-    formData.append('primerPagoMonto', firstPayment.amount)
-  }
-  if (firstPayment?.details) {
-    formData.append('primerPagoDetalle', firstPayment.details)
+  if (firstPayment) {
+    if (firstPayment.paymentMethod) {
+      formData.append('primerPagoMetodo', firstPayment.paymentMethod)
+    }
+    if (firstPayment.montoFisico) {
+      formData.append('primerPagoMontoFisico', firstPayment.montoFisico)
+    }
+    if (firstPayment.montoVirtual) {
+      formData.append('primerPagoMontoVirtual', firstPayment.montoVirtual)
+    }
+    if (firstPayment.receiptFile) {
+      formData.append('primerPagoComprobante', firstPayment.receiptFile)
+    }
+    if (firstPayment.amount) {
+      formData.append('primerPagoMonto', firstPayment.amount)
+    }
+    if (firstPayment.details) {
+      formData.append('primerPagoDetalle', firstPayment.details)
+    }
   }
 
   return requestFormDataWithBody<ProspectConversionFinalizeResponse>(
@@ -1133,20 +1161,31 @@ export function saveAdminClientReactivationBiometricStep(clientId: string, paylo
 export function finalizeAdminClientReactivation(
   clientId: string,
   pdfFile?: File,
-  firstPayment?: { receiptFile?: File | null; amount?: string; details?: string },
+  firstPayment?: FirstConversionPaymentPayload,
 ) {
   const formData = new FormData()
   if (pdfFile) {
     formData.append('documento_escaneado_pdf', pdfFile)
   }
-  if (firstPayment?.receiptFile) {
-    formData.append('primerPagoComprobante', firstPayment.receiptFile)
-  }
-  if (firstPayment?.amount) {
-    formData.append('primerPagoMonto', firstPayment.amount)
-  }
-  if (firstPayment?.details) {
-    formData.append('primerPagoDetalle', firstPayment.details)
+  if (firstPayment) {
+    if (firstPayment.paymentMethod) {
+      formData.append('primerPagoMetodo', firstPayment.paymentMethod)
+    }
+    if (firstPayment.montoFisico) {
+      formData.append('primerPagoMontoFisico', firstPayment.montoFisico)
+    }
+    if (firstPayment.montoVirtual) {
+      formData.append('primerPagoMontoVirtual', firstPayment.montoVirtual)
+    }
+    if (firstPayment.receiptFile) {
+      formData.append('primerPagoComprobante', firstPayment.receiptFile)
+    }
+    if (firstPayment.amount) {
+      formData.append('primerPagoMonto', firstPayment.amount)
+    }
+    if (firstPayment.details) {
+      formData.append('primerPagoDetalle', firstPayment.details)
+    }
   }
 
   return requestFormDataWithBody<ProspectConversionFinalizeResponse>(`/api/admin/clientes/${clientId}/reactivar/finalizar/`, formData)
