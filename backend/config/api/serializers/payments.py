@@ -11,6 +11,61 @@ from billing.models import CuotaPlanPago, PagoRealizado, ConfiguracionPagoQR
 from operations.models import Operacion
 
 
+class PagoRealizadoCreateSerializer(serializers.Serializer):
+    """Write serializer for both client and admin payment creation.
+
+    ``clean()`` on the model is the authoritative validator; this
+    serializer only catches shape errors early and derives
+    ``monto_fisico`` / ``monto_virtual`` from ``monto_pagado`` when the
+    method is ``VIRTUAL`` or ``FISICO``.
+
+    The serializer is intentionally NOT a ``ModelSerializer``: write-side
+    field requirements differ from the read shape (camelCase input keys,
+    optional breakdown, optional receipt) and decoupling keeps the
+    existing read serializer untouched.
+    """
+    paymentMethod = serializers.ChoiceField(choices=PagoRealizado.MetodoPago.choices)
+    monto_pagado = serializers.DecimalField(
+        max_digits=10, decimal_places=2, min_value=Decimal("0.01")
+    )
+    montoFisico = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True, min_value=0
+    )
+    montoVirtual = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True, min_value=0
+    )
+    receiptFile = serializers.FileField(required=False, allow_null=True)
+    details = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        method = attrs["paymentMethod"]
+        fisico = attrs.get("montoFisico")
+        virtual = attrs.get("montoVirtual")
+        total = attrs["monto_pagado"]
+        receipt = attrs.get("receiptFile")
+
+        if method == PagoRealizado.MetodoPago.VIRTUAL:
+            if not receipt:
+                raise serializers.ValidationError(
+                    {"receiptFile": "Debes adjuntar el comprobante."}
+                )
+            attrs["montoVirtual"] = total
+            attrs["montoFisico"] = Decimal("0")
+        elif method == PagoRealizado.MetodoPago.FISICO:
+            attrs["montoFisico"] = total
+            attrs["montoVirtual"] = Decimal("0")
+        else:  # MIXTO
+            if not fisico or not virtual or fisico <= 0 or virtual <= 0:
+                raise serializers.ValidationError(
+                    "Para pagos MIXTO debes indicar montoFisico y montoVirtual mayores a 0."
+                )
+            if fisico + virtual != total:
+                raise serializers.ValidationError(
+                    "montoFisico + montoVirtual debe ser igual a monto_pagado."
+                )
+        return attrs
+
+
 class PagoRealizadoSerializer(serializers.ModelSerializer):
     """Read serializer for PagoRealizado with nested relations."""
     cliente_nombre = serializers.SerializerMethodField()
