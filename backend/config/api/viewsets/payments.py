@@ -569,6 +569,9 @@ class PagosViewSet(viewsets.ViewSet):
             "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Sin revisar",
             "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
             "note": payment.observacion_verificacion or payment.detalles_pago or "",
+            "paymentMethod": payment.metodo_pago,
+            "physicalAmount": currency(payment.monto_fisico),
+            "virtualAmount": currency(payment.monto_virtual),
         }
 
     def _admin_quota_item(self, cuota):

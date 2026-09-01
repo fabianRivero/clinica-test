@@ -378,6 +378,9 @@ def _payment_item(payment):
         "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
         "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Pendiente de revisión",
         "note": payment.observacion_verificacion or payment.detalles_pago or "Sin observaciones.",
+        "paymentMethod": payment.metodo_pago,
+        "physicalAmount": currency(payment.monto_fisico),
+        "virtualAmount": currency(payment.monto_virtual),
     }
 
 
