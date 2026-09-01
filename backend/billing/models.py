@@ -91,6 +91,11 @@ class PagoRealizado(TimeStampedModel):
         RECHAZADO = "RECHAZADO", "Rechazado"
         CANCELADO = "CANCELADO", "Cancelado"
 
+    class MetodoPago(models.TextChoices):
+        VIRTUAL = "VIRTUAL", "Virtual"
+        FISICO = "FISICO", "Físico"
+        MIXTO = "MIXTO", "Mixto"
+
     cuota = models.ForeignKey(
         "billing.CuotaPlanPago",
         on_delete=models.CASCADE,
@@ -100,6 +105,23 @@ class PagoRealizado(TimeStampedModel):
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)],
+    )
+    metodo_pago = models.CharField(
+        max_length=10,
+        choices=MetodoPago.choices,
+        default=MetodoPago.VIRTUAL,
+    )
+    monto_fisico = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=0,
+    )
+    monto_virtual = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=0,
     )
     comprobante_url = models.FileField(
         upload_to="comprobantes_pagos/%Y/%m/",
