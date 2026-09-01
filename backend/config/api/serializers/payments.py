@@ -20,7 +20,8 @@ class PagoRealizadoSerializer(serializers.ModelSerializer):
     class Meta:
         model = PagoRealizado
         fields = [
-            "id", "monto_pagado", "comprobante_url", "estado_verificacion",
+            "id", "monto_pagado", "metodo_pago", "monto_fisico", "monto_virtual",
+            "comprobante_url", "estado_verificacion",
             "verificado", "verificado_por", "verificado_por_nombre",
             "fecha_verificacion", "detalles_pago", "observacion_verificacion",
             "cliente_nombre", "procedimiento",
