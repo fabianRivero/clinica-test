@@ -15,11 +15,16 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from billing.models import CuotaPlanPago, PagoRealizado, ConfiguracionPagoQR
+from billing.validators import assert_cuota_in_user_branch, assert_not_over_payment
 from notifications.models import Notification
-from notifications.services import create_notification
+from notifications.services import (
+    admins_for_specialist_branch,
+    create_notification,
+)
 
 from config.api.permissions import AdminRequired
 from config.api.serializers.payments import (
+    PagoRealizadoCreateSerializer,
     PagoRealizadoSerializer,
     CuotaPlanPagoSerializer,
     ConfiguracionPagoQRSerializer,
@@ -263,6 +268,95 @@ class PagosViewSet(viewsets.ViewSet):
         except Exception as exc:
             logger.error(f"[QR-UPDATE] Error: {exc}\n{traceback.format_exc()}")
             return Response({"detail": f"Error al guardar imagen: {exc}"}, status=500)
+
+    @action(detail=False, methods=["post"], url_path=r"cuotas/(?P<cuota_id>\d+)/pagos")
+    def register_payment(self, request, cuota_id=None):
+        """POST /pagos/cuotas/<cuota_id>/pagos/ — admin registers a payment on behalf of a client.
+
+        Creates a ``PagoRealizado`` in ``PENDIENTE`` for the given cuota and
+        fires one ``ADMIN_PAYMENT_PENDING_CONFIRMATION`` notification per
+        branch-admin in the cuota's branch. Enforces branch isolation
+        (raises ``Http404`` for cross-branch requests) and the
+        spec's quota over-payment rule (returns 400).
+        """
+        cuota = (
+            CuotaPlanPago.objects.select_for_update(of=("self",))
+            .select_related(
+                "operacion__paciente__usuario",
+                "operacion__servicio_config__tipo_servicio",
+            )
+            .prefetch_related("pagos_realizados")
+            .filter(pk=cuota_id)
+            .first()
+        )
+        if not cuota:
+            return Response({"detail": "No encontramos la cuota solicitada."}, status=404)
+
+        # Branch isolation — raises Http404 when the admin's branch does
+        # not match the cuota's client branch (see validators.py).
+        assert_cuota_in_user_branch(request, cuota)
+
+        serializer = PagoRealizadoCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        attrs = serializer.validated_data
+        assert_not_over_payment(cuota, attrs["monto_pagado"])
+
+        details = (attrs.get("details") or "").strip() or "Pago registrado por administración."
+        receipt_file = attrs.get("receiptFile")
+        payment = PagoRealizado.objects.create(
+            cuota=cuota,
+            monto_pagado=attrs["monto_pagado"],
+            metodo_pago=attrs["paymentMethod"],
+            monto_fisico=attrs.get("montoFisico") or 0,
+            monto_virtual=attrs.get("montoVirtual") or 0,
+            comprobante_url=receipt_file or "",
+            detalles_pago=details,
+            estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
+        )
+
+        # Fire the same notification as the client upload path. The
+        # admin endpoint always creates a fresh row (no PENDIENTE reuse
+        # logic), so exactly one notification per call.
+        sucursal = payment.cuota.operacion.paciente.usuario.sucursal
+        paciente_user = payment.cuota.operacion.paciente.usuario
+        paciente_cliente = payment.cuota.operacion.paciente
+        identificador_cliente = paciente_cliente.ci or paciente_user.username
+        procedimiento = payment.cuota.operacion.servicio_config.proc_estetico.proceso
+        operacion_id = payment.cuota.operacion.pk
+        nro_cuota = payment.cuota.nro_cuota
+        monto_cuota = payment.monto_pagado
+        for admin in admins_for_specialist_branch(sucursal):
+            create_notification(
+                recipient=admin,
+                branch=sucursal,
+                type=Notification.Type.ADMIN_PAYMENT_PENDING_CONFIRMATION,
+                title="Nuevo pago pendiente de revisión",
+                message=(
+                    f"El cliente {paciente_user.primer_nombre} {paciente_user.apellido_paterno} "
+                    f"({identificador_cliente}), envio el comprobante del pago de la cuota Nro {nro_cuota} "
+                    f"del procedimiento {procedimiento} con ID {operacion_id}. "
+                    f"El monto de la cuota de pago es: Bs {monto_cuota}."
+                ),
+                action_url="/cms/pagos",
+                source_event="payment.admin_registered",
+                source_entity_type="payment",
+                source_entity_id=payment.id,
+                created_by_type="admin",
+                created_by_id=request.user.id,
+            )
+
+        cuota.refresh_from_db(fields=["estado"])
+
+        return Response(
+            {
+                "detail": "El pago fue registrado correctamente y quedo pendiente de revisión.",
+                "payment": self._payment_item(payment),
+                "quota": self._admin_quota_item(cuota),
+            },
+            status=201,
+        )
 
     @action(detail=True, methods=["post"], url_path="estado")
     def update_status(self, request, pk=None):
