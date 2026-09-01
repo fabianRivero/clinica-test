@@ -91,9 +91,12 @@ export function uploadClientPaymentReceipt(
   payload: UploadClientPaymentReceiptPayload,
 ) {
   const formData = new FormData()
+  formData.append('paymentMethod', payload.paymentMethod)
   formData.append('amount', payload.amount)
+  if (payload.montoFisico) formData.append('montoFisico', payload.montoFisico)
+  if (payload.montoVirtual) formData.append('montoVirtual', payload.montoVirtual)
   formData.append('details', payload.details)
-  formData.append('receiptFile', payload.receiptFile)
+  if (payload.receiptFile) formData.append('receiptFile', payload.receiptFile)
 
   return requestFormDataWithBody<UploadClientPaymentReceiptResponse>(
     `/api/client/pagos/cuotas/${quotaId}/comprobante/`,
