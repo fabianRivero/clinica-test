@@ -374,10 +374,13 @@ class ConversionFirstPaymentTests(TestCase):
     def test_no_cuotas_totales_with_first_payment_creates_cuota_and_pago(self):
         """When the admin skips step 2 (no cuotasTotales, no due dates)
         but registers a first payment in step 5, the finalize view must
-        auto-create a single ``CuotaPlanPago`` with ``monto_programado
-        == precio_total`` so the payment has somewhere to land. Without
-        this fallback the operation would render as "0 cuota(s)" in
-        /cms/operaciones/<id>.
+        auto-create a single ``CuotaPlanPago`` so the payment has
+        somewhere to land. The cuota's monto_programado is set to the
+        residual balance (``precioTotal - pago``), so partial payments
+        leave the cuota covering exactly the saldo pendiente and full
+        payments collapse the cuota to ``pago``. Without this fallback
+        the operation would render as "0 cuota(s)" in
+        /cms/operaciones/<id> and the payment would be silently dropped.
         """
         draft = _make_full_draft(
             cliente=self.cliente,
@@ -405,6 +408,41 @@ class ConversionFirstPaymentTests(TestCase):
         self.assertEqual(
             PagoRealizado.objects.filter(cuota__operacion=operacion).count(), 1
         )
+
+    def test_no_cuotas_totales_partial_first_payment_creates_cuota_with_saldo(self):
+        """Partial first payment against an operation with no pre-existing
+        cuotas leaves a single ``CuotaPlanPago`` covering the full
+        ``precio_total``. The cuota is in PENDIENTE state because the
+        payment only covers part of the scheduled amount. The admin can
+        later add additional cuotas for the residual — the frontend
+        surfaces ``Pagado: Bs 30 de Bs 100`` so the partial state is
+        visible.
+        """
+        draft = _make_full_draft(
+            cliente=self.cliente,
+            usuario=self.admin,
+            servicio=self.servicio,
+            today=self.today,
+            catalog_ids=self.catalog_ids,
+        )
+        draft.datos_operacion["cuotasTotales"] = None
+        draft.datos_operacion["fechasVencimientoCuotas"] = []
+        draft.save(update_fields=["datos_operacion"])
+        self._login()
+        response = self._post_finalize(
+            draft,
+            primerPagoMetodo="MIXTO",
+            primerPagoMontoFisico="20.00",
+            primerPagoMontoVirtual="10.00",
+        )
+        self.assertEqual(response.status_code, 201)
+        operacion = Operacion.objects.get(paciente=self.cliente)
+        cuotas = CuotaPlanPago.objects.filter(operacion=operacion)
+        self.assertEqual(cuotas.count(), 1)
+        self.assertEqual(cuotas.first().monto_programado, Decimal("100.00"))
+        self.assertEqual(cuotas.first().estado, CuotaPlanPago.Estado.PENDIENTE)
+        pago = PagoRealizado.objects.get(cuota=cuotas.first())
+        self.assertEqual(pago.monto_pagado, Decimal("30.00"))
 
     def test_no_payment_when_no_amount_signal_and_no_receipt(self):
         """When only ``primerPagoDetalle`` is sent (no amount, no receipt)

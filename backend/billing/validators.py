@@ -61,6 +61,11 @@ def assert_not_over_payment(cuota, new_amount):
     helper is only called for NEW payments — rejected/pending row
     resubmissions skip it because the row was already accepted on its
     first save.
+
+    A ``monto_programado`` of 0 means the cuota has been auto-created to
+    host a single full payment (e.g. the conversion wizard path). The
+    cuota will then be marked PAGADO immediately and any further
+    payments on it must be rejected.
     """
     if new_amount is None:
         return
@@ -70,8 +75,7 @@ def assert_not_over_payment(cuota, new_amount):
     approved_sum = (
         cuota.pagos_realizados.filter(
             estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO
-        )
-        .aggregate(s=Sum("monto_pagado"))["s"]
+        ).aggregate(s=Sum("monto_pagado"))["s"]
         or Decimal("0")
     )
     if approved_sum + new_amount > cuota.monto_programado:

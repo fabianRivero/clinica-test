@@ -1897,8 +1897,10 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
     # least one ``CuotaPlanPago`` for the payment to land against. Without
     # this row ``_register_first_payment_from_request`` would skip silently
     # (no cuota → no row) and the operation would render as "0 cuota(s)"
-    # in /cms/operaciones/<id>. We create a single cuota covering the full
-    # precio_total and let the first payment register against it.
+    # in /cms/operaciones/<id>. The cuota's monto_programado is set to the
+    # remaining balance after the first payment (precioTotal - pago), so
+    # the cuota reflects the saldo pendiente and the cuota status auto-
+    # resolves to PAGADO once the payment is recorded.
     first_payment_signal = any(
         [
             (request.POST.get("primerPagoMonto") or "").strip(),
@@ -1908,6 +1910,11 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         ]
     )
     if not due_dates_to_create and first_payment_signal:
+        # Always create one cuota so the PagoRealizado has somewhere to
+        # land. The cuota's monto_programado is the full precio_total so
+        # the admin can later add more cuotas and redistribute the
+        # residual; the frontend surfaces the actual paid amount per
+        # cuota so the partial-payment state is visible.
         CuotaPlanPago.objects.create(
             operacion=operacion,
             nro_cuota=1,

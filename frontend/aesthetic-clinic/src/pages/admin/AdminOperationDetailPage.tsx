@@ -625,7 +625,13 @@ const handleSaveSessions = async () => {
     singleAddMonto > 0 &&
     Number.isFinite(Number(numberFromCurrency(operation.price))) &&
     singleAddMonto +
-      operation.quotas.reduce((acc, q) => acc + (Number(q.amountValue) || 0), 0) >
+      operation.quotas.reduce(
+        (acc, q) =>
+          acc +
+          (Number(q.amountValue) || 0) -
+          (Number(q.paidAmountValue) || 0),
+        0,
+      ) >
       Number(numberFromCurrency(operation.price))
 
   return (
@@ -1113,20 +1119,24 @@ const handleSaveSessions = async () => {
                   <small className="field__hint">
                     {(() => {
                       // Saldo restante = precio total - suma de montos ya
-                      // programados (los existentes + el nuevo que el admin
-                      // esta tipeando). Sirve de pista: despues de guardar
-                      // esta cuota, ese sera el monto que aun queda por
-                      // distribuir entre las siguientes cuotas. Si el
-                      // restante es negativo, la suma EXCEDE el precio
-                      // total y el backend rechazara el guardado.
+                      // programados + lo ya pagado sobre esas cuotas (los
+                      // pagos aprobados liberan cupo). Sirve de pista:
+                      // despues de guardar esta cuota, ese sera el monto
+                      // que aun queda por distribuir entre las siguientes
+                      // cuotas. Si el restante es negativo, la suma EXCEDE
+                      // el precio total y el backend rechazara el guardado.
                       const precioTotal = Number(numberFromCurrency(operation.price))
                       if (!Number.isFinite(precioTotal) || precioTotal <= 0) return null
                       const programadoExistente = operation.quotas.reduce(
                         (acc, q) => acc + (Number(q.amountValue) || 0),
                         0,
                       )
+                      const pagadoExistente = operation.quotas.reduce(
+                        (acc, q) => acc + (Number(q.paidAmountValue) || 0),
+                        0,
+                      )
                       const digitado = Number(newQuotaDraft.montoProgramado) || 0
-                      const restante = precioTotal - programadoExistente - digitado
+                      const restante = precioTotal - programadoExistente + pagadoExistente - digitado
                       if (restante < 0) {
                         return (
                           <span className="field__error">
