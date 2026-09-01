@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useState, type ChangeEvent, type FormEvent } from 'react'
 
 import type { AdminPaymentQuota } from '../../types/admin'
 
@@ -39,26 +39,44 @@ export function AdminRegisterPaymentModal({
   onClose,
   onSubmit,
 }: AdminRegisterPaymentModalProps) {
+  // Derive a stable key for the open session; remounting on quota change
+  // resets the form fields without an effect-driven setState cascade.
+  const sessionKey = isOpen && quota ? `${quota.rawId}:${quota.amount}` : 'closed'
+
+  if (!isOpen || !quota) {
+    return null
+  }
+
+  return (
+    <AdminRegisterPaymentModalBody
+      key={sessionKey}
+      quota={quota}
+      isSubmitting={isSubmitting}
+      errorMessage={errorMessage}
+      onClose={onClose}
+      onSubmit={onSubmit}
+    />
+  )
+}
+
+function AdminRegisterPaymentModalBody({
+  quota,
+  isSubmitting,
+  errorMessage,
+  onClose,
+  onSubmit,
+}: {
+  quota: AdminPaymentQuota
+  isSubmitting: boolean
+  errorMessage: string | null
+  onClose: () => void
+  onSubmit: AdminRegisterPaymentModalProps['onSubmit']
+}) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('FISICO')
   const [montoFisico, setMontoFisico] = useState('')
   const [montoVirtual, setMontoVirtual] = useState('')
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
   const [details, setDetails] = useState('')
-
-  // Reset the form whenever a different cuota is opened or the modal closes.
-  useEffect(() => {
-    if (isOpen) {
-      setPaymentMethod('FISICO')
-      setMontoFisico('')
-      setMontoVirtual('')
-      setReceiptFile(null)
-      setDetails('')
-    }
-  }, [isOpen, quota?.rawId])
-
-  if (!isOpen || !quota) {
-    return null
-  }
 
   const handleReceiptFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     setReceiptFile(event.target.files?.[0] || null)
