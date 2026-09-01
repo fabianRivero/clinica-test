@@ -53,17 +53,17 @@ The factory-call patch from Phase 4.3 was moved into Commit 2 of PR 1 because th
 
 ## Phase 3: Backend — Admin Endpoint
 
-- [ ] 3.1 Add `@action register_payment` on `PagosViewSet` (+ ~80).
-- [ ] 3.2 Add 4 endpoint tests (happy/cross-branch/over-pay/MIXTO-mismatch) (+ ~140).
-- [ ] 3.3 Add notification test (+ ~35).
+- [x] 3.1 Add `@action register_payment` on `PagosViewSet` (+ ~80).
+- [x] 3.2 Add 4 endpoint tests (happy/cross-branch/over-pay/MIXTO-mismatch) (+ ~140).
+- [x] 3.3 Add notification test (+ ~35).
 
-**Verify**: `python manage.py test billing.tests.test_admin_register_payment billing.tests.test_admin_register_payment_notifies_branch_admins_once`.
+**Verify**: `python manage.py test billing.tests.test_admin_register_payment billing.tests.test_admin_register_payment_notifies_branch_admins_once`. ✅
 
 ## Phase 4: Backend — Client Upload Refactor
 
-- [ ] 4.1 Refactor `client_upload_payment_receipt` for method + breakdown + reuse (+ ~50 net).
-- [ ] 4.2 Add 5 endpoint tests (+ ~150).
-- [ ] 4.3 Patch 7 factory calls to set `monto_virtual=monto_pagado` (+ ~7).
+- [x] 4.1 Refactor `client_upload_payment_receipt` for method + breakdown + reuse (+ ~50 net).
+- [x] 4.2 Add 5 endpoint tests (+ ~150).
+- [ ] 4.3 Patch 7 factory calls to set `monto_virtual=monto_pagado` (+ ~7). *Moved to PR 1 — see Phase 2 deviation note.*
 
 **Verify**: `python manage.py test billing.tests.test_client_upload_payment_receipt tests.test_quota_status_rules tests.test_operation_price_plan_update`.
 
