@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from pathlib import PurePosixPath
 from datetime import date, timedelta, time
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -50,6 +51,7 @@ from operations.models import (
     CitaProspecto,
     EventoConfirmacionCita,
     Operacion,
+    OperacionFoto,
     BranchAdminAuditLog,
     TabletKiosko,
 )
@@ -57,6 +59,7 @@ from clinical.models import FichaCampo, FichaSeccion
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 from config.api_helpers import (
     admin_required,
+    appointment_specialists,
     capitalize_first_letter,
     currency,
     date_label,
@@ -399,13 +402,70 @@ def _prospect_interest(prospecto):
 # _appointment_biometric_status are defined in helpers_operations and aliased at lines 98-107.
 
 
-def _operation_detail(operacion):
+def _operation_detail_queryset():
+    """Canonical queryset used by every admin endpoint that returns a
+    full ``_operation_detail`` payload.
+
+    Centralises the prefetches (``citas_medicas``, ``cuotas_plan_pagos``,
+    and the new ``fotos_operacion`` gallery) so callers cannot drift.
+    """
+    return Operacion.objects.select_related(
+        "paciente__usuario",
+        "servicio_config__tipo_servicio",
+        "servicio_config__proc_estetico__tipo_p_estetico",
+        "ficha_clinica",
+    ).prefetch_related(
+        Prefetch(
+            "citas_medicas",
+            queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
+        ),
+        Prefetch(
+            "cuotas_plan_pagos",
+            queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados").order_by("nro_cuota"),
+        ),
+        Prefetch(
+            "fotos_operacion",
+            queryset=OperacionFoto.objects.order_by("uploaded_at", "id"),
+        ),
+    )
+
+
+def _operation_detail(operacion, request=None):
     ficha = getattr(operacion, "ficha_clinica", None)
     huella = getattr(operacion.paciente, "huella_biometrica", None)
     procedure = operacion.servicio_config.proc_estetico
     document_field = ficha.documento_escaneado_pdf if ficha else None
     document_url = document_field.url if document_field else ""
     document_name = PurePosixPath(document_field.name).name if document_field else ""
+
+    def _photo_to_payload(foto):
+        url = (
+            request.build_absolute_uri(foto.imagen.url)
+            if request is not None
+            else foto.imagen.url
+        )
+        # ``_operacion_foto_upload_to`` writes ``<prefix>-`` on
+        # disk. Strip the 13-char prefix (12 hex + "-") so the response
+        # carries the original filename the admin picked.
+        basename = os.path.basename(foto.imagen.name)
+        file_name = basename[13:] if len(basename) > 13 else basename
+        return {
+            "id": foto.pk,
+            "url": url,
+            "uploadedAt": foto.uploaded_at.isoformat(),
+            "fileName": file_name,
+        }
+
+    fotos_antes = [
+        _photo_to_payload(f)
+        for f in operacion.fotos_operacion.all()
+        if f.kind == OperacionFoto.Kind.ANTES
+    ]
+    fotos_despues = [
+        _photo_to_payload(f)
+        for f in operacion.fotos_operacion.all()
+        if f.kind == OperacionFoto.Kind.DESPUES
+    ]
 
     quotas_payload = [
         {
@@ -476,7 +536,7 @@ def _operation_detail(operacion):
                 "id": f"CIT-{cita.pk:04d}",
                 "rawId": cita.pk,
                 "dateTime": _datetime_label(cita.fecha_hora),
-                "specialist": "Sin asignar",
+                "specialist": appointment_specialists(cita),
                 "status": cita.get_estado_display(),
                 "biometricStatus": _appointment_biometric_status(cita),
                 "canConfirmBiometric": (not settings.BIOMETRIC_SUSPENDED) and cita.estado in {
@@ -484,6 +544,37 @@ def _operation_detail(operacion):
                     CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION,
                 },
                 "canManage": cita.estado == CitaMedica.Estado.PROGRAMADA,
+                # Planning fields (populated when the cita was reserved).
+                # The "Ver datos" comparison modal in
+                # cms/operaciones/<id> uses these on the left column to
+                # mirror what _appointment_item already exposes on the
+                # cms/clientes/<id> side; keeping both endpoints in sync
+                # prevents the left column from rendering as "—".
+                "duracionEstimadaMinutos": cita.duracion_estimada_minutos,
+                "procedimientoPlanificado": cita.procedimiento_planificado or "",
+                "zonaCuerpoPlanificada": cita.zona_cuerpo_planificada or "",
+                "especialistasPlanificados": list(
+                    cita.especialistas_items.filter(planificada=True)
+                    .select_related("especialista__usuario__especialista")
+                    .values(
+                        "especialista_id",
+                        "especialista__usuario__primer_nombre",
+                        "especialista__usuario__segundo_nombre",
+                        "especialista__usuario__apellido_paterno",
+                        "especialista__usuario__apellido_materno",
+                        "especialista__usuario__username",
+                    )
+                ),
+                "maquinariaPlanificada": list(
+                    cita.maquinaria_items.filter(planificada=True)
+                    .select_related("maquinaria")
+                    .values(
+                        "maquinaria_id",
+                        "cantidad",
+                        "maquinaria__nombre",
+                        "maquinaria__marca",
+                    )
+                ),
                 # Real-time close data (filled via /cerrar/ once the
                 # client confirms and the admin sets the close fields).
                 "hasRealTimeData": bool(
@@ -537,6 +628,8 @@ def _operation_detail(operacion):
             for cita in operacion.citas_medicas.all()
         ],
         "quotas": quotas_payload,
+        "fotosAntes": fotos_antes,
+        "fotosDespues": fotos_despues,
     }
 
 
@@ -581,7 +674,7 @@ def _prospect_appointment_item(appointment):
         "rawId": appointment.pk,
         "prospectRawId": appointment.prospecto_id,
         "dateTime": _datetime_label(appointment.fecha_hora),
-        "specialist": "Sin asignar",
+        "specialist": "—",
         "service": appointment.servicio_config.tipo_servicio.tipo,
         "status": appointment.get_estado_display(),
         "statusValue": appointment.estado,
@@ -602,7 +695,7 @@ def _free_client_appointment_item(appointment):
         "rawId": appointment.pk,
         "operationRawId": None,
         "operation": "Cita medica libre",
-        "specialist": "Sin asignar",
+        "specialist": "—",
         "dateTime": _datetime_label(appointment.fecha_hora),
         "status": appointment.get_estado_display(),
         "statusTone": (
@@ -685,7 +778,7 @@ def _client_item(cliente):
                     "_sortDate": cita.fecha_hora,
                     "dateTime": _datetime_label(cita.fecha_hora),
                     "operation": procedure_name(operacion),
-                    "specialist": "Sin asignar",
+                    "specialist": appointment_specialists(cita),
                     "status": cita.get_estado_display(),
                 }
             )
@@ -3570,11 +3663,16 @@ def admin_update_appointment_notes(request, appointment_id):
     # Debug log: print which keys (text + files) the request carries.
     import logging
     logger = logging.getLogger(__name__)
+    file_details = sorted(
+        (k, getattr(request.FILES[k], "size", "?"))
+        for k in request.FILES
+    )
     logger.info(
-        "PATCH /notas cita=%s POST keys=%s FILES keys=%s",
+        "PATCH /notas cita=%s POST keys=%s FILES keys=%s file_sizes=%s",
         appointment_id,
         sorted(request.POST.keys()),
         sorted(request.FILES.keys()),
+        file_details,
     )
 
     errors = {}
@@ -3585,39 +3683,12 @@ def admin_update_appointment_notes(request, appointment_id):
         ("notasPost", "notas_post"),
     )
 
-    # If the request body is non-empty but request.POST is empty (because the
-    # method is not POST — Django's WSGIRequest only auto-parses the body for
-    # POST), parse it manually based on the content-type.
-    if request.body and not request.POST:
-        content_type = request.META.get("CONTENT_TYPE", "")
-        if content_type.startswith("multipart/") or b"Content-Disposition: form-data" in request.body[:1024]:
-            from django.http.multipartparser import MultiPartParser
-            from io import BytesIO as _BytesIO
-            try:
-                parser = MultiPartParser(
-                    request.META,
-                    _BytesIO(request.body),
-                    upload_handlers=request.upload_handlers,
-                )
-                data, files = parser.parse()
-                request.POST = data
-                request._files = files
-            except Exception:
-                pass
-        else:
-            # Try JSON as a final fallback (handles clients that send JSON
-            # bodies with a wrong or missing content-type).
-            import json as _json
-            try:
-                parsed = _json.loads(request.body.decode("utf-8") or "{}")
-                if isinstance(parsed, dict):
-                    from django.http import QueryDict
-                    qd = QueryDict("", mutable=True)
-                    for k, v in parsed.items():
-                        qd[k] = str(v) if v is not None else ""
-                    request.POST = qd
-            except (ValueError, UnicodeDecodeError):
-                pass
+    # Note: Django parses multipart bodies for POST automatically, so
+    # request.POST / request.FILES are populated by the time we get here.
+    # We do NOT manually re-parse request.body because Django has already
+    # consumed the stream by then (RawPostDataException). If a client sent
+    # a multipart body that Django did not parse (e.g. PATCH + no body),
+    # request.POST stays empty and we treat it as a no-op write below.
 
     for request_key, attr in text_fields:
         if request_key in request.POST:
@@ -3799,7 +3870,7 @@ def admin_cancel_appointment(request, appointment_id):
                 "rawId": appointment.pk,
                 "dateTime": _datetime_label(appointment.fecha_hora),
                 "operation": procedure_name(appointment.operacion),
-                "specialist": "Sin asignar",
+                "specialist": appointment_specialists(appointment),
                 "status": appointment.get_estado_display(),
             },
         }
@@ -3846,7 +3917,7 @@ def admin_mark_appointment_pending_biometric(request, appointment_id):
         {
             "detail": "La cita quedo realizada y pendiente de confirmacion.",
             "appointment": _client_appointment_item(appointment),
-            "operation": _operation_detail(appointment.operacion),
+            "operation": _operation_detail(appointment.operacion, request=request),
         }
     )
 
@@ -3892,13 +3963,26 @@ def admin_cerrar_cita(request, appointment_id):
             {"detail": "Solo se pueden cerrar citas confirmadas."}, status=400
         )
 
-    # Parse the request body. Supports both JSON and form-encoded.
+    # Parse the request body. Supports both JSON and multipart.
+    # JSON callers keep the existing contract; multipart callers (those
+    # that uploaded a photo) get list/object fields decoded from their
+    # JSON-string encoding so downstream code keeps treating them as
+    # native Python types.
+    import json as _json
     payload = {}
     if request.POST:
         payload = {k: v for k, v in request.POST.items()}
+        for _key in ("especialistasAtendieron", "maquinariaUtilizada"):
+            _raw = payload.get(_key)
+            if isinstance(_raw, str):
+                try:
+                    payload[_key] = _json.loads(_raw)
+                except (ValueError, TypeError):
+                    # Leave the raw value; the type-check below will
+                    # reject it with a clear error.
+                    pass
     else:
         try:
-            import json as _json
             if request.body:
                 parsed = _json.loads(request.body.decode("utf-8"))
                 if isinstance(parsed, dict):
@@ -3983,6 +4067,32 @@ def admin_cerrar_cita(request, appointment_id):
         appointment.procedimiento_realizado = procedimiento_realizado
     if zona_cuerpo_realizada:
         appointment.zona_cuerpo_realizada = zona_cuerpo_realizada
+
+    # --- photos ---------------------------------------------------------
+    # Accept multipart uploads (fotoAntes / fotoDespues). Empty / missing
+    # files are a no-op so JSON-only callers keep working unchanged.
+    # Same 5 MB cap as admin_update_appointment_notes (/notas/) to keep
+    # the upload contract consistent across both endpoints. Photo errors
+    # are surfaced as non-blocking warnings so a single oversize image
+    # does not erase the real-time text/M2M data the admin already
+    # entered; the client UI surfaces them inline.
+    photo_fields = (
+        ("fotoAntes", "foto_antes"),
+        ("fotoDespues", "foto_despues"),
+    )
+    MAX_IMAGE_BYTES = 5 * 1024 * 1024
+    photo_warnings: dict[str, str] = {}
+    for request_key, attr in photo_fields:
+        upload = request.FILES.get(request_key)
+        if not upload:
+            continue
+        if upload.size > MAX_IMAGE_BYTES:
+            photo_warnings[request_key] = (
+                f"La imagen no puede superar los 5 MB (tamano actual: {upload.size} bytes)."
+            )
+            continue
+        setattr(appointment, attr, upload)
+
     appointment.save()
 
     # Replace previous planificada=False rows for idempotent re-close.
@@ -4007,13 +4117,20 @@ def admin_cerrar_cita(request, appointment_id):
             for item in maquinaria_utilizada_raw
         ])
 
-    return json_response(
-        {
-            "detail": "La cita quedo cerrada con los datos reales.",
-            "appointment": _client_appointment_item(appointment),
-            "operation": _operation_detail(appointment.operacion),
-        }
-    )
+    response_body = {
+        "detail": "La cita quedo cerrada con los datos reales.",
+        "appointment": _client_appointment_item(appointment),
+        "operation": _operation_detail(appointment.operacion, request=request),
+    }
+    if photo_warnings:
+        # Surface per-field photo warnings without aborting the whole
+        # close. The CerrarCitaModal UI reads `warnings` and shows them
+        # inline next to each foto input.
+        response_body["warnings"] = photo_warnings
+        response_body["detail"] = (
+            "La cita quedo cerrada, pero algunas fotos no pudieron guardarse."
+        )
+    return json_response(response_body)
 
 
 @require_POST
@@ -4256,16 +4373,15 @@ def admin_confirm_appointment_biometric(request, appointment_id):
         {
             "detail": "La cita fue confirmada con huella biometrica simulada.",
             "appointment": {
-                "id": f"CIT-{appointment.pk:04d}",
+"id": f"CIT-{appointment.pk:04d}",
                 "rawId": appointment.pk,
                 "dateTime": _datetime_label(appointment.fecha_hora),
                 "operation": procedure_name(appointment.operacion),
-                "specialist": "Sin asignar",
-                "status": appointment.get_estado_display(),
+                "specialist": appointment_specialists(appointment),
                 "biometricStatus": "Validada",
                 "confirmedAt": _datetime_label(appointment.fecha_confirmacion_biometrica),
             },
-            "operation": _operation_detail(appointment.operacion),
+            "operation": _operation_detail(appointment.operacion, request=request),
         }
     )
 
@@ -4295,11 +4411,11 @@ def admin_cancel_appointment_verification(request, appointment_id):
     return json_response({
         "detail": "La verificacion fue cancelada. La cita volvio a estado Programada.",
         "appointment": {
-            "id": f"CIT-{appointment.pk:04d}",
-            "rawId": appointment.pk,
-            "dateTime": _datetime_label(appointment.fecha_hora),
-            "operation": procedure_name(appointment.operacion),
-            "specialist": "Sin asignar",
+"id": f"CIT-{appointment.pk:04d}",
+                "rawId": appointment.pk,
+                "dateTime": _datetime_label(appointment.fecha_hora),
+                "operation": procedure_name(appointment.operacion),
+                "specialist": appointment_specialists(appointment),
             "status": appointment.get_estado_display(),
         },
     })
@@ -4436,31 +4552,12 @@ def admin_operaciones(request):
 @admin_required
 def admin_operacion_detalle(request, operacion_id):
     mark_expired_programmed_appointments_as_no_show()
-    operacion = (
-        Operacion.objects.select_related(
-            "paciente__usuario",
-            "servicio_config__tipo_servicio",
-            "servicio_config__proc_estetico__tipo_p_estetico",
-            "ficha_clinica",
-        )
-        .prefetch_related(
-            Prefetch(
-                "citas_medicas",
-                queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
-            ),
-            Prefetch(
-                "cuotas_plan_pagos",
-                queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados").order_by("nro_cuota"),
-            ),
-        )
-        .filter(pk=operacion_id)
-        .first()
-    )
+    operacion = _operation_detail_queryset().filter(pk=operacion_id).first()
 
     if not operacion:
         return json_response({"detail": "No encontramos la operacion solicitada."}, status=404)
 
-    return json_response({"operation": _operation_detail(operacion)})
+    return json_response({"operation": _operation_detail(operacion, request=request)})
 
 
 @require_POST
@@ -4496,26 +4593,185 @@ def admin_update_operation_details(request, operacion_id):
     operacion.save(update_fields=["detalles_op", "recomendaciones", "sesiones_totales", "updated_at"])
     operacion.paciente.actualizar_estado_automaticamente()
 
+    operacion = _operation_detail_queryset().get(pk=operacion.pk)
+    return json_response({"detail": "La operacion fue actualizada correctamente.", "operation": _operation_detail(operacion, request=request)})
+
+
+@require_POST
+@admin_required
+@transaction.atomic
+def admin_update_operation_observaciones(request, operacion_id):
+    """Persist ``Operacion.detalles_op`` only.
+
+    Mirrors the legacy ``admin_update_operation_details`` shape but updates
+    exactly one field so the per-cita photo save flow on this page can
+    coexist with ``recomendaciones`` and ``sesiones_totales`` without
+    clobbering either.
+
+    Body: ``{"details": "<text>"}``
+    """
+    payload = load_payload(request)
+    if payload is None:
+        return json_response(
+            {"detail": "El cuerpo de la solicitud no es JSON valido."},
+            status=400,
+        )
+
+    if "details" not in payload:
+        return json_response(
+            {
+                "detail": "Datos invalidos.",
+                "errors": {"details": "Debes enviar el campo details."},
+            },
+            status=400,
+        )
+
     operacion = (
-        Operacion.objects.select_related(
-            "paciente__usuario",
-            "servicio_config__tipo_servicio",
-            "servicio_config__proc_estetico__tipo_p_estetico",
-            "ficha_clinica",
-        )
-        .prefetch_related(
-            Prefetch(
-                "citas_medicas",
-                queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
-            ),
-            Prefetch(
-                "cuotas_plan_pagos",
-                queryset=CuotaPlanPago.objects.prefetch_related("pagos_realizados").order_by("nro_cuota"),
-            ),
-        )
-        .get(pk=operacion.pk)
+        Operacion.objects.select_for_update(of=("self",))
+        .filter(pk=operacion_id)
+        .first()
     )
-    return json_response({"detail": "La operacion fue actualizada correctamente.", "operation": _operation_detail(operacion)})
+    if not operacion:
+        return json_response(
+            {"detail": "No encontramos la operacion solicitada."},
+            status=404,
+        )
+
+    operacion.detalles_op = (payload.get("details") or "").strip()
+    # ``update_fields`` deliberately omits ``updated_at``: ``Operacion``
+    # has the field via ``TimeStampedModel`` but ``detalles_op`` is the
+    # only field we want to mutate; the SQL touch keeps the change
+    # narrow and avoids the implicit save of the rest of the row.
+    operacion.save(update_fields=["detalles_op"])
+
+    operacion = _operation_detail_queryset().get(pk=operacion.pk)
+    return json_response({
+        "detail": "Las observaciones fueron actualizadas correctamente.",
+        "operation": _operation_detail(operacion, request=request),
+    })
+
+
+# Per-file 5 MB cap. Mirrors the per-cita ``MAX_IMAGE_BYTES`` constant
+# at ``admin_update_appointment_notes``; both endpoints should change
+# together if the cap is ever adjusted.
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+@require_POST
+@admin_required
+@transaction.atomic
+def admin_upload_operation_photos(request, operacion_id, kind):
+    """Upload one or more ``OperacionFoto`` rows for the given operation.
+
+    ``kind`` must be ``"antes"`` or ``"despues"``. Files arrive under the
+    repeated ``archivos`` form field (multipart). Per-file failures (e.g.
+    >5 MB) are reported in ``errors`` and DO NOT abort the batch; if at
+    least one file saved the response is 201, otherwise 400.
+    """
+    if kind not in {"antes", "despues"}:
+        return json_response(
+            {
+                "detail": "Datos invalidos.",
+                "errors": {"kind": "Solo se permiten los valores 'antes' o 'despues'."},
+            },
+            status=400,
+        )
+
+    operacion = Operacion.objects.filter(pk=operacion_id).first()
+    if not operacion:
+        return json_response(
+            {"detail": "No encontramos la operacion solicitada."},
+            status=404,
+        )
+
+    files = request.FILES.getlist("archivos")
+    if not files:
+        return json_response(
+            {
+                "detail": "Datos invalidos.",
+                "errors": {"archivos": "Debes adjuntar al menos una imagen."},
+            },
+            status=400,
+        )
+
+    saved_payload = []
+    errors = {}
+
+    for index, upload in enumerate(files):
+        if upload.size > MAX_IMAGE_BYTES:
+            errors[f"archivos[{index}]"] = (
+                f"La imagen no puede superar los 5 MB "
+                f"(tamano actual: {upload.size} bytes)."
+            )
+            continue
+        foto = OperacionFoto.objects.create(
+            operacion=operacion,
+            kind=kind,
+            imagen=upload,
+        )
+        # Strip the 13-char prefix that ``_operacion_foto_upload_to``
+        # writes onto disk so the response carries the admin-picked name.
+        basename = os.path.basename(foto.imagen.name)
+        file_name = basename[13:] if len(basename) > 13 else basename
+        saved_payload.append({
+            "id": foto.pk,
+            "url": request.build_absolute_uri(foto.imagen.url),
+            "uploadedAt": foto.uploaded_at.isoformat(),
+            "fileName": file_name,
+        })
+
+    if not saved_payload:
+        return json_response(
+            {"detail": "Datos invalidos.", "errors": errors},
+            status=400,
+        )
+
+    operacion = _operation_detail_queryset().get(pk=operacion.pk)
+    detail_msg = (
+        "Fotos guardadas."
+        if not errors
+        else "Algunas fotos no pudieron subirse."
+    )
+    return json_response(
+        {
+            "detail": detail_msg,
+            "saved": saved_payload,
+            "errors": errors,
+            "operation": _operation_detail(operacion, request=request),
+        },
+        status=201,
+    )
+
+
+@require_http_methods(["DELETE"])
+@admin_required
+@transaction.atomic
+def admin_delete_operation_photo(request, operacion_id, photo_id):
+    """Remove one ``OperacionFoto`` row and its file from disk.
+
+    Filters on both ``pk=photo_id`` and ``operacion_id=operacion_id`` so
+    a 404 is returned for missing rows AND for photos that belong to a
+    different operation (no cross-operation existence leak).
+
+    The endpoint owns the disk-cleanup side effect: ``imagen.delete()``
+    is called BEFORE ``foto.delete()`` so the file is freed even if the
+    ``OperacionFoto`` row removal fails partway.
+    """
+    foto = (
+        OperacionFoto.objects
+        .select_related("operacion")
+        .filter(pk=photo_id, operacion_id=operacion_id)
+        .first()
+    )
+    if not foto:
+        return json_response(
+            {"detail": "No encontramos la foto solicitada."},
+            status=404,
+        )
+
+    foto.imagen.delete(save=False)
+    foto.delete()
+    return json_response({}, status=204)
 
 
 @require_POST
@@ -4896,7 +5152,7 @@ def admin_update_operation_price_plan(request, operacion_id):
     )
     return json_response({
         "detail": "El precio y las cuotas fueron actualizados correctamente.",
-        "operation": _operation_detail(operacion),
+        "operation": _operation_detail(operacion, request=request),
     })
 
 
@@ -5031,7 +5287,7 @@ def admin_delete_operation_quota(request, operacion_id):
     )
     return json_response({
         "detail": f"Cuota #{nro_cuota} eliminada correctamente.",
-        "operation": _operation_detail(operacion),
+        "operation": _operation_detail(operacion, request=request),
     })
 
 

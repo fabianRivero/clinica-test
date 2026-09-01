@@ -41,6 +41,8 @@ import type {
   ExpensesResponse,
   ManageAdminGlobalAvailabilityPayload,
   OperationDetailResponse,
+  UpdateAdminOperationObservacionesResponse,
+  UploadAdminOperationPhotosResponse,
   OperationsResponse,
   PaymentsResponse,
   ProspectsResponse,
@@ -253,14 +255,37 @@ export function markAppointmentPendingBiometricExtended(
  *
  * Use this after the cita has been marked pending biometric and the client
  * has verified attendance (i.e. estado === CONFIRMADA).
+ *
+ * Sends multipart/form-data when `fotoAntes` / `fotoDespues` are present
+ * so photos can be uploaded in the same round-trip. Otherwise the body
+ * is JSON to stay backward-compatible with non-photo callers.
  */
 export function closeAppointmentWithRealTimeData(
   appointmentId: number,
   data: AdminCloseExtendedPayload,
 ) {
-  return requestJsonWithBody<unknown>(
+  const hasPhotos = !!(data.fotoAntes || data.fotoDespues)
+  if (!hasPhotos) {
+    return requestJsonWithBody<unknown>(
+      `/api/admin/citas/${appointmentId}/cerrar/`,
+      data,
+    )
+  }
+  const formData = new FormData()
+  Object.entries(data).forEach(([key, value]) => {
+    if (value === undefined || value === null) return
+    if (value instanceof File) {
+      formData.append(key, value)
+    } else if (Array.isArray(value) || typeof value === 'object') {
+      // M2M arrays / objects serialize as JSON strings inside FormData.
+      formData.append(key, JSON.stringify(value))
+    } else {
+      formData.append(key, String(value))
+    }
+  })
+  return requestFormDataWithBody<unknown>(
     `/api/admin/citas/${appointmentId}/cerrar/`,
-    data,
+    formData,
   )
 }
 
@@ -358,6 +383,53 @@ export function updateAdminOperationDetails(
   return requestJsonWithBody<OperationDetailResponse>(
     `/api/admin/operaciones/${operationId}/actualizar-detalles/`,
     payload,
+  )
+}
+
+/**
+ * Save only ``Operacion.detalles_op`` from the new "Observaciones del
+ * procedimiento" section. The endpoint is narrow on purpose — it does
+ * NOT touch ``recomendaciones`` or ``sesiones_totales`` so the inline
+ * editor on the same page can stay focused on one field.
+ */
+export function updateAdminOperationObservaciones(
+  operationId: number,
+  payload: { details: string },
+) {
+  return requestJsonWithBody<UpdateAdminOperationObservacionesResponse>(
+    `/api/admin/operaciones/${operationId}/actualizar-observaciones/`,
+    payload,
+  )
+}
+
+/**
+ * Upload one or more ``OperacionFoto`` rows for the given ``kind``
+ * (``"antes"`` or ``"despues"``). The backend uses partial-success
+ * semantics: 201 with ``saved[]`` + ``errors{}`` when at least one file
+ * saved, 400 when none did. ``requestFormDataWithBody`` already extracts
+ * ``fieldErrors`` on error responses.
+ */
+export function uploadAdminOperationPhotos(
+  operationId: number,
+  files: File[],
+  kind: 'antes' | 'despues',
+) {
+  const formData = new FormData()
+  files.forEach((file) => formData.append('archivos', file))
+  return requestFormDataWithBody<UploadAdminOperationPhotosResponse>(
+    `/api/admin/operaciones/${operationId}/fotos/${kind}/`,
+    formData,
+  )
+}
+
+/**
+ * Delete a single photo (and its file on disk). 204 on success, 404 if
+ * the photo does not exist OR belongs to a different operation. Returns
+ * ``null`` on success (204 has no body).
+ */
+export function deleteAdminOperationPhoto(operationId: number, photoId: number) {
+  return requestDelete(
+    `/api/admin/operaciones/${operationId}/fotos/${photoId}/`,
   )
 }
 

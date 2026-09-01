@@ -72,6 +72,9 @@ from config.api_views import (
     admin_update_operation_details,
     admin_update_operation_price_plan,
     admin_delete_operation_quota,
+    admin_update_operation_observaciones,
+    admin_upload_operation_photos,
+    admin_delete_operation_photo,
     admin_update_payment_status,
     admin_update_payment_qr_config,
     admin_update_prospect_medical_appointment,
@@ -282,6 +285,25 @@ urlpatterns = [
         "operaciones/<int:operacion_id>/actualizar-detalles/",
         admin_update_operation_details,
         name="admin-operation-update-details-api",
+    ),
+    path(
+        "operaciones/<int:operacion_id>/actualizar-observaciones/",
+        admin_update_operation_observaciones,
+        name="admin-operation-update-observaciones-api",
+    ),
+    # NOTE: the <int:photo_id> route MUST come before <str:kind> because
+    # Django's path resolver tries each pattern in order and <str:> would
+    # happily match a numeric pk like "42", sending the DELETE request to
+    # admin_upload_operation_photos (which rejects DELETE with 405).
+    path(
+        "operaciones/<int:operacion_id>/fotos/<int:photo_id>/",
+        admin_delete_operation_photo,
+        name="admin-operation-delete-photo-api",
+    ),
+    path(
+        "operaciones/<int:operacion_id>/fotos/<str:kind>/",
+        admin_upload_operation_photos,
+        name="admin-operation-upload-photos-api",
     ),
     path(
         "operaciones/<int:operacion_id>/actualizar-precio/",

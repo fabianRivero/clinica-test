@@ -8,6 +8,7 @@ from operations.models import (
     CitaClienteLibre,
     DiaBloqueadoAgendaGlobal,
     Operacion,
+    OperacionFoto,
 )
 
 
@@ -66,6 +67,13 @@ class AgendaExcepcionEspecialistaAdmin(admin.ModelAdmin):
 class DiaBloqueadoAgendaGlobalAdmin(admin.ModelAdmin):
     list_display = ("id", "fecha", "activo", "detalle")
     list_filter = ("activo",)
+
+
+@admin.register(OperacionFoto)
+class OperacionFotoAdmin(admin.ModelAdmin):
+    list_display = ("id", "operacion", "kind", "uploaded_at")
+    list_filter = ("kind",)
+    search_fields = ("operacion__paciente__usuario__primer_nombre",)
 
 
 for model in (

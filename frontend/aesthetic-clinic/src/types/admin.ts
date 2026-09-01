@@ -462,6 +462,16 @@ export type OperationDetailQuota = {
   paymentsCount: number
 }
 
+export type OperacionFoto = {
+  id: number
+  /** Absolute URL ready for `<img src>` (the backend builds it from `request.build_absolute_uri`). */
+  url: string
+  /** ISO 8601 timestamp. */
+  uploadedAt: string
+  /** Filename the admin picked on disk (without the storage prefix). */
+  fileName: string
+}
+
 export type OperationDetailData = {
   id: string
   rawId: number
@@ -503,6 +513,12 @@ export type OperationDetailData = {
   hasBiometricEnrollment: boolean
   appointments: OperationDetailAppointment[]
   quotas: OperationDetailQuota[]
+  /**
+   * Persistent before/after photo gallery embedded in the detail
+   * payload. Ordered by `uploadedAt ASC, id ASC` per the spec.
+   */
+  fotosAntes: OperacionFoto[]
+  fotosDespues: OperacionFoto[]
 }
 
 export type OperationDetailResponse = {
@@ -513,6 +529,22 @@ export type UpdateAdminOperationDetailsPayload = {
   details: string
   recommendations: string
   sessionsTotal: number
+}
+
+export type UpdateAdminOperationObservacionesResponse = {
+  detail: string
+  operation: OperationDetailData
+}
+
+export type UploadAdminOperationPhotosResponse = {
+  detail: string
+  saved: OperacionFoto[]
+  /**
+   * Per-file failure keys (`"archivos[1]"` style) keyed by their index
+   * in the original request. Empty when every file was accepted.
+   */
+  errors: Record<string, string>
+  operation: OperationDetailData
 }
 
 export type OperationPricePlanQuotaEdit = {
@@ -1045,6 +1077,14 @@ export type AdminCloseExtendedPayload = {
   zonaCuerpoRealizada?: string
   especialistasAtendieron?: number[]
   maquinariaUtilizada?: Array<{ maquinariaId: number; cantidad: number }>
+  /**
+   * Optional photo files uploaded alongside the close payload.
+   * The /cerrar/ endpoint accepts multipart so both text fields and
+   * image files share one round-trip; missing files are a no-op so
+   * JSON-only callers keep working unchanged.
+   */
+  fotoAntes?: File
+  fotoDespues?: File
 }
 
 // PATCH /citas/<id>/notas/ — multipart; text fields and photos share one endpoint.

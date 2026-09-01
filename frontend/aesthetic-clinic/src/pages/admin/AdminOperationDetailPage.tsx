@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { DataState } from '../../components/admin/DataState'
@@ -11,6 +11,7 @@ import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { ReservationModal } from './components/ReservationModal'
 import { CerrarCitaModal, type CerrarCitaPayload } from './components/CerrarCitaModal'
+import { OperationObservationsSection } from './components/OperationObservationsSection'
 import {
   cancelAdminAppointment,
   cancelAdminAppointmentVerification,
@@ -68,13 +69,7 @@ export function AdminOperationDetailPage() {
   const [rescheduleCitaId, setRescheduleCitaId] = useState<number | null>(null)
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
   const [isRescheduling, setIsRescheduling] = useState(false)
-  const [isEditingDetails, setIsEditingDetails] = useState(false)
-  const [isSavingDetails, setIsSavingDetails] = useState(false)
   const [isSavingPrice, setIsSavingPrice] = useState(false)
-  const [detailsForm, setDetailsForm] = useState({
-    details: '',
-    recommendations: '',
-  })
   // Estado para reservar una nueva cita dentro del bloque "Citas medicas".
   // El formulario inline se reemplazo por un `ReservationModal`; solo
   // conservamos el flag que indica si la reserva esta en curso + el control
@@ -221,16 +216,6 @@ export function AdminOperationDetailPage() {
     }
   }
 
-  const startEditingDetails = () => {
-    if (!data || !canEditPricePlan) return
-    setActionError(null)
-    setDetailsForm({
-      details: data.operation.detallesOperacion === 'Sin detalles registrados.' ? '' : data.operation.detallesOperacion,
-      recommendations: data.operation.recomendaciones === 'Sin recomendaciones registradas.' ? '' : data.operation.recomendaciones,
-    })
-    setIsEditingDetails(true)
-  }
-
   // Total de sesiones vigente segun el backend. Lo derivamos con useMemo
   // para no llamar setState dentro de un effect; el admin edita en un
   // input local (sessionsDraft) y al guardar + recargar el dato se
@@ -240,23 +225,6 @@ export function AdminOperationDetailPage() {
     const match = data.operation.sessions.match(/^(\d+)/)
     return match ? Number(match[1]) : null
   }, [data])
-
-  const handleSaveDetails = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!data) return
-
-    setIsSavingDetails(true)
-    setActionError(null)
-    try {
-      await updateAdminOperationDetails(data.operation.rawId, detailsForm)
-      setIsEditingDetails(false)
-      reload()
-    } catch (requestError) {
-      setActionError(requestError instanceof Error ? requestError.message : 'No se pudo actualizar la operación.')
-    } finally {
-      setIsSavingDetails(false)
-    }
-  }
 
   // -------- handlers del bloque "Citas y cuotas" ----------
 
@@ -590,6 +558,13 @@ const handleSaveSessions = async () => {
 
   const { operation } = data
   const canEditPricePlan = operation.status.toLowerCase() === 'en proceso'
+  // Lifecycle gate for the new "Observaciones del procedimiento" section
+  // at the bottom of the page. Per the spec (lines 124-144), editable in
+  // BORRADOR and EN_PROCESO, read-only in FINALIZADA and CANCELADA.
+  // Wider than canEditPricePlan (which only matches "en proceso").
+  const canEditObservations = ['borrador', 'en proceso'].includes(
+    operation.status.toLowerCase(),
+  )
 
   // Etiqueta que aclara que la reserva corresponde a la siguiente cita
   // (en funcion de las que ya estan registradas) y, si el admin ya
@@ -743,59 +718,6 @@ const handleSaveSessions = async () => {
           </article>
         </div>
 
-        <div className="operation-card__note-grid">
-          <article>
-            <span>Detalles de la operación</span>
-            <p>{operation.detallesOperacion}</p>
-          </article>
-          <article>
-            <span>Recomendaciones</span>
-            <p>{operation.recomendaciones}</p>
-          </article>
-        </div>
-        <div className="form-actions">
-          <button className="button button--ghost" type="button" onClick={startEditingDetails} disabled={!canEditPricePlan}>
-            Cambiar detalles y recomendaciones
-          </button>
-        </div>
-
-        {isEditingDetails && canEditPricePlan ? (
-          <form className="form-grid" onSubmit={handleSaveDetails}>
-            <label className="field field--full">
-              <span>Detalles de la operación</span>
-              <textarea
-                className="input textarea"
-                rows={4}
-                value={detailsForm.details}
-                onChange={(event) => setDetailsForm({ ...detailsForm, details: event.target.value })}
-              />
-            </label>
-            <label className="field field--full">
-              <span>Recomendaciones</span>
-              <textarea
-                className="input textarea"
-                rows={4}
-                value={detailsForm.recommendations}
-                onChange={(event) => setDetailsForm({ ...detailsForm, recommendations: event.target.value })}
-              />
-            </label>
-            <small className="field__hint field--full">
-              El numero de sesiones se edita en el bloque "Citas y cuotas".
-            </small>
-            <div className="form-actions field--full">
-              <button className="button button--ghost" disabled={isSavingDetails} type="button" onClick={() => setIsEditingDetails(false)}>
-                Cancelar
-              </button>
-              <button className="button" disabled={isSavingDetails} type="submit">
-                {isSavingDetails ? 'Guardando...' : 'Guardar cambios'}
-              </button>
-            </div>
-          </form>
-        ) : null}
-
-        {!canEditPricePlan ? (
-          <small className="field__hint">Solo las operaciones en proceso permiten editar el plan de pagos y las sesiones.</small>
-        ) : null}
       </SectionCard>
 
       <SectionCard
@@ -1329,6 +1251,18 @@ const handleSaveSessions = async () => {
             )}
           </article>
         </div>
+      </SectionCard>
+
+      <SectionCard
+        eyebrow="Bitácora clínica"
+        title="Observaciones del procedimiento"
+        description="Registra notas clínicas y archiva fotos antes y después del procedimiento."
+      >
+        <OperationObservationsSection
+          operacion={operation}
+          editable={canEditObservations}
+          onSaved={reload}
+        />
       </SectionCard>
 
       <ReservationModal

@@ -1,3 +1,5 @@
+import uuid
+
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
@@ -303,6 +305,51 @@ class CitaMedica(TimeStampedModel):
 
     def __str__(self):
         return f"Cita #{self.pk} - {self.operacion}"
+
+
+def _operacion_foto_upload_to(instance, filename):
+    """Callable ``upload_to`` for ``OperacionFoto.imagen``.
+
+    Returns ``operaciones/<YYYY>/<MM>/<DD>/<kind>/<uuid-prefix>-``
+    so that same-day uploads do not collide and the path stays organised by
+    date AND kind. Django invokes this once per save, after the row's PK
+    exists; the FK is set by the endpoint before ``save()``, so
+    ``instance.kind`` is available.
+    """
+    stamp = timezone.now().strftime("%Y/%m/%d")
+    prefix = uuid.uuid4().hex[:12]
+    return f"operaciones/{stamp}/{instance.kind}/{prefix}-{filename}"
+
+
+class OperacionFoto(models.Model):
+    """Persistent before/after photos attached to an ``Operacion``.
+
+    Inherits directly from ``models.Model`` (NOT ``TimeStampedModel``) per
+    the spec, which forbids an ``updated_at`` column on this table.
+    """
+
+    class Kind(models.TextChoices):
+        ANTES = "antes", "Antes"
+        DESPUES = "despues", "Despues"
+
+    operacion = models.ForeignKey(
+        "operations.Operacion",
+        on_delete=models.CASCADE,
+        related_name="fotos_operacion",
+    )
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    imagen = models.ImageField(upload_to=_operacion_foto_upload_to)
+    uploaded_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "operaciones_fotos"
+        ordering = ("uploaded_at", "id")
+        indexes = [
+            models.Index(fields=["operacion", "kind", "uploaded_at", "id"]),
+        ]
+
+    def __str__(self):
+        return f"OperacionFoto #{self.pk} - {self.operacion_id} ({self.kind})"
 
 
 class CitaMaquinaria(TimeStampedModel):
