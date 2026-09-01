@@ -46,6 +46,8 @@ import type {
   OperationsResponse,
   PaymentsResponse,
   ProspectsResponse,
+  RegisterAdminPaymentPayload,
+  RegisterAdminPaymentResponse,
   ReportClient,
   ReportIncomeItem,
   ReportProspect,
@@ -497,6 +499,32 @@ export function updateAdminPaymentStatus(
   return requestJsonWithBody<UpdateAdminPaymentStatusResponse>(
     `/api/admin/pagos/${paymentId}/estado/`,
     payload,
+  )
+}
+
+/**
+ * Register a payment on behalf of a client from the admin CMS.
+ *
+ * Mirrors the write serializer on the backend: `paymentMethod` is
+ * always required, the breakdown is required only for `MIXTO`, and
+ * the receipt is optional regardless of method so admins can register
+ * desk cash payments without uploading a file.
+ */
+export function registerAdminPayment(
+  cuotaId: number,
+  payload: RegisterAdminPaymentPayload,
+) {
+  const formData = new FormData()
+  formData.append('paymentMethod', payload.paymentMethod)
+  formData.append('monto_pagado', payload.amount)
+  if (payload.montoFisico) formData.append('montoFisico', payload.montoFisico)
+  if (payload.montoVirtual) formData.append('montoVirtual', payload.montoVirtual)
+  if (payload.receiptFile) formData.append('receiptFile', payload.receiptFile)
+  if (payload.details) formData.append('details', payload.details)
+
+  return requestFormDataWithBody<RegisterAdminPaymentResponse>(
+    `/api/admin/pagos/cuotas/${cuotaId}/pagos/`,
+    formData,
   )
 }
 
