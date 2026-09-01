@@ -12,6 +12,8 @@ from django.views.decorators.http import require_GET, require_POST
 from django.conf import settings
 
 from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
+from billing.validators import assert_not_over_payment
+from config.api.serializers.payments import PagoRealizadoCreateSerializer
 from clinical.models import AnalisisEstetico
 from notifications.models import Notification
 from notifications.services import create_notification, admins_for_specialist_branch
@@ -828,16 +830,27 @@ def client_upload_payment_receipt(request, quota_id):
     if cuota.estado == CuotaPlanPago.Estado.PAGADO:
         return json_response({"detail": "Esta cuota ya fue pagada y no admite nuevos comprobantes."}, status=400)
 
-    receipt_file = request.FILES.get("receiptFile")
-    if not receipt_file:
-        return json_response({"detail": "Debes adjuntar el comprobante del pago."}, status=400)
+    payload = {key: value for key, value in request.POST.items()}
+    for key, files in request.FILES.lists():
+        payload[key] = files[0] if len(files) == 1 else files
+    # The client portal posts `amount`; the write serializer expects
+    # ``monto_pagado``. Translate here so both clients share one shape.
+    if "amount" in payload and "monto_pagado" not in payload:
+        payload["monto_pagado"] = payload["amount"]
+    serializer = PagoRealizadoCreateSerializer(data=payload)
+    if not serializer.is_valid():
+        # Translate the VIRTUAL-without-receipt case into the original
+        # legacy message so the existing client tests keep working.
+        if "receiptFile" in serializer.errors:
+            return json_response(
+                {"detail": "Debes adjuntar el comprobante del pago."}, status=400
+            )
+        return json_response(
+            {"detail": "Debes indicar un monto valido para registrar el pago."},
+            status=400,
+        )
 
-    amount = (request.POST.get("amount") or "").strip()
-    details = (request.POST.get("details") or "").strip()
-    try:
-        amount_value = Decimal(amount)
-    except Exception:
-        return json_response({"detail": "Debes indicar un monto valido para registrar el pago."}, status=400)
+    attrs = serializer.validated_data
 
     editable_payment = cuota.pagos_realizados.filter(
         estado_verificacion__in=[
@@ -847,9 +860,16 @@ def client_upload_payment_receipt(request, quota_id):
     ).order_by("-created_at").first()
 
     if editable_payment:
-        editable_payment.monto_pagado = amount_value
-        editable_payment.comprobante_url = receipt_file
-        editable_payment.detalles_pago = details or "Comprobante actualizado por el cliente desde el portal."
+        # Resubmission: spec requires us to NOT re-check the over-payment
+        # guard — the row was already accepted when first created.
+        editable_payment.metodo_pago = attrs["paymentMethod"]
+        editable_payment.monto_pagado = attrs["monto_pagado"]
+        editable_payment.monto_fisico = attrs.get("montoFisico") or 0
+        editable_payment.monto_virtual = attrs.get("montoVirtual") or 0
+        receipt_file = attrs.get("receiptFile")
+        if receipt_file:
+            editable_payment.comprobante_url = receipt_file
+        editable_payment.detalles_pago = attrs.get("details") or "Comprobante actualizado por el cliente desde el portal."
         editable_payment.estado_verificacion = PagoRealizado.EstadoVerificacion.PENDIENTE
         editable_payment.verificado = False
         editable_payment.verificado_por = None
@@ -859,11 +879,17 @@ def client_upload_payment_receipt(request, quota_id):
         payment = editable_payment
         detail = "El comprobante fue actualizado correctamente y quedo pendiente de revisión."
     else:
+        # Fresh row: enforce the over-payment guard before creating.
+        assert_not_over_payment(cuota, attrs["monto_pagado"])
+        receipt_file = attrs.get("receiptFile")
         payment = PagoRealizado.objects.create(
             cuota=cuota,
-            monto_pagado=amount_value,
-            comprobante_url=receipt_file,
-            detalles_pago=details or "Comprobante enviado por el cliente desde el portal.",
+            monto_pagado=attrs["monto_pagado"],
+            metodo_pago=attrs["paymentMethod"],
+            monto_fisico=attrs.get("montoFisico") or 0,
+            monto_virtual=attrs.get("montoVirtual") or 0,
+            comprobante_url=receipt_file or "",
+            detalles_pago=attrs.get("details") or "Comprobante enviado por el cliente desde el portal.",
         )
         paciente_user = payment.cuota.operacion.paciente.usuario
         paciente_cliente = payment.cuota.operacion.paciente
