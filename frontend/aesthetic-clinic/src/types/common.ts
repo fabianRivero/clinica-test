@@ -35,6 +35,8 @@ export type ClientQuota = {
   quotaLabel: string
   amount: string
   amountValue: string
+  paidAmount?: string
+  paidAmountValue?: string
   dueDate: string
   status: string
   statusTone: 'approved' | 'pending' | 'danger' | 'observed'

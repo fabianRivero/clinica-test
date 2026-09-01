@@ -84,6 +84,7 @@ from config.api.helpers_operations import (
     operation_reference_appointment,
     prospect_appointment_operation_card,
     quota_display_status,
+    quota_paid_amount,
     quota_programmed_amount,
     quota_status,
     appointment_biometric_status,
@@ -115,6 +116,7 @@ _agenda_verification_method = agenda_verification_method
 _quota_status = quota_status
 _quota_programmed_amount = quota_programmed_amount
 _quota_display_status = quota_display_status
+_quota_paid_amount = quota_paid_amount
 _operation_reference_appointment = operation_reference_appointment
 _operation_branch = operation_branch
 _operation_branch_id = operation_branch_id
@@ -474,6 +476,8 @@ def _operation_detail(operacion, request=None):
             "rawId": cuota.pk,
             "amount": currency(_quota_programmed_amount(cuota)),
             "amountValue": f"{_quota_programmed_amount(cuota):.2f}",
+            "paidAmount": currency(_quota_paid_amount(cuota)),
+            "paidAmountValue": f"{_quota_paid_amount(cuota):.2f}",
             "dueDate": date_label(cuota.fecha_vencimiento),
             "status": _quota_display_status(cuota),
             "paymentsCount": cuota.pagos_realizados.count(),

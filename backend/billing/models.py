@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -6,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models import Sum
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.utils import timezone
@@ -61,9 +63,16 @@ class CuotaPlanPago(TimeStampedModel):
         ]
 
     def actualizar_estado_por_pagos(self, save=True):
-        if self.pagos_realizados.filter(
-            estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO
-        ).exists():
+        # PAGADO only when the sum of approved payments actually covers the
+        # scheduled amount. With mixed/partial payments a single approved
+        # row no longer marks the quota as fully paid.
+        approved_sum = (
+            self.pagos_realizados.filter(
+                estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO
+            ).aggregate(s=Sum("monto_pagado"))["s"]
+            or Decimal("0")
+        )
+        if approved_sum >= self.monto_programado:
             nuevo_estado = self.Estado.PAGADO
         elif self.pagos_realizados.filter(
             estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE

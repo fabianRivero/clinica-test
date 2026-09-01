@@ -9,7 +9,7 @@ aliases in their respective modules.
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Sum
 from django.utils import timezone
 
 from billing.models import CuotaPlanPago, PagoRealizado
@@ -157,6 +157,21 @@ def quota_display_status(cuota):
 
     result = cuota.get_estado_display()
     return result
+
+
+def quota_paid_amount(cuota):
+    """Return the sum of approved payments for a quota as a Decimal.
+
+    Used by the operation detail endpoint to surface how much was actually
+    paid vs. the scheduled amount — important for mixed/partial payments
+    where the cuota may be in PENDIENTE state even after an approved row.
+    """
+    approved = cuota.pagos_realizados.filter(
+        estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO
+    ).aggregate(s=Sum("monto_pagado"))["s"]
+    return (approved or Decimal("0")).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
 
 
 def operation_card(operacion):

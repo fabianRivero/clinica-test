@@ -483,6 +483,8 @@ export type OperationDetailQuota = {
   number: number
   amount: string
   amountValue: string
+  paidAmount?: string
+  paidAmountValue?: string
   dueDate: string
   status: string
   paymentsCount: number

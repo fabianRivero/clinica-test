@@ -1238,7 +1238,9 @@ const handleSaveSessions = async () => {
                       </div>
                       <p>{quota.amount} | vence: {quota.dueDate}</p>
                       <span>{quota.status}</span>
-                      <small>Pagos registrados: {quota.paymentsCount}</small>
+                      <small>
+                        Pagado: {quota.paidAmount ?? 'Bs 0.00'} de {quota.amount} ({quota.paymentsCount} pago{quota.paymentsCount === 1 ? '' : 's'})
+                      </small>
                     </article>
                   )
                 })}
