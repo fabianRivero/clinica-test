@@ -73,19 +73,26 @@ function AdminRegisterPaymentModalBody({
   onClose: () => void
   onSubmit: AdminRegisterPaymentModalProps['onSubmit']
 }) {
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('FISICO')
-  // Pre-fill the amount with the residual balance (programado - ya pagado)
-  // so the admin can complete the cuota without exceeding it. When there
-  // are no prior approved payments, this equals the full programmed amount.
-  const initialAmount = (() => {
+  // The amount to register is fixed: it's the residual balance on the
+  // cuota (programado - ya pagado). The admin registers the full
+  // outstanding amount against the cuota; partial sub-payments are
+  // tracked through the breakdown for MIXTO and the backend still
+  // validates that the total matches the cuota before saving.
+  const saldoPendiente = (() => {
     const programado = Number(quota.amount) || 0
     const pagado = Number(quota.paidAmount ?? '0') || 0
     const restante = programado - pagado
-    return restante > 0 ? restante.toFixed(2) : programado.toFixed(2)
+    return restante > 0 ? restante : programado
   })()
-  const [amount, setAmount] = useState(initialAmount)
-  const [montoFisico, setMontoFisico] = useState('')
-  const [montoVirtual, setMontoVirtual] = useState('')
+  const amount = saldoPendiente.toFixed(2)
+
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('FISICO')
+  // Pre-fill MIXTO breakdown so the two halves always sum to `amount`.
+  // Default split is 50/50; the admin tweaks one side and the other
+  // side recomputes automatically.
+  const halfAmount = (saldoPendiente / 2).toFixed(2)
+  const [montoFisico, setMontoFisico] = useState(halfAmount)
+  const [montoVirtual, setMontoVirtual] = useState(halfAmount)
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
   const [details, setDetails] = useState('')
 
@@ -93,13 +100,42 @@ function AdminRegisterPaymentModalBody({
     setReceiptFile(event.target.files?.[0] || null)
   }
 
+  const handleFisicoChange = (raw: string) => {
+    setMontoFisico(raw)
+    if (raw === '') return
+    const fisico = Number(raw) || 0
+    const clamped = Math.min(Math.max(fisico, 0), saldoPendiente)
+    const virtual = Math.max(saldoPendiente - clamped, 0)
+    setMontoVirtual(virtual.toFixed(2))
+  }
+
+  const handleVirtualChange = (raw: string) => {
+    setMontoVirtual(raw)
+    if (raw === '') return
+    const virtual = Number(raw) || 0
+    const clamped = Math.min(Math.max(virtual, 0), saldoPendiente)
+    const fisico = Math.max(saldoPendiente - clamped, 0)
+    setMontoFisico(fisico.toFixed(2))
+  }
+
+  const handleMethodChange = (method: PaymentMethod) => {
+    setPaymentMethod(method)
+    if (method === 'MIXTO') {
+      // Reset breakdown to a clean 50/50 split on every entry into MIXTO.
+      const half = (saldoPendiente / 2).toFixed(2)
+      setMontoFisico(half)
+      setMontoVirtual(half)
+    }
+  }
+
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault()
     void onSubmit({
       paymentMethod,
       amount,
-      ...(montoFisico ? { montoFisico } : {}),
-      ...(montoVirtual ? { montoVirtual } : {}),
+      ...(paymentMethod === 'MIXTO'
+        ? { montoFisico, montoVirtual }
+        : {}),
       ...(receiptFile ? { receiptFile } : {}),
       ...(details ? { details } : {}),
     })
@@ -133,22 +169,18 @@ function AdminRegisterPaymentModalBody({
           <div className="payment-upload-form__grid">
             <label className="field">
               <span>
-                Monto programado: Bs {quota.amount}
+                Saldo pendiente: Bs {amount}
                 {quota.paidAmount && Number(quota.paidAmount) > 0
-                  ? ` (ya pagado Bs ${quota.paidAmount})`
+                  ? ` (programado Bs ${quota.amount}, ya pagado Bs ${quota.paidAmount})`
                   : ''}
               </span>
               <input
                 className="input"
-                type="number"
-                min="0"
-                step="0.01"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
+                type="text"
+                value={`Bs ${amount}`}
+                readOnly
+                aria-readonly="true"
               />
-              <small className="field__hint">
-                Por defecto se pre-carga el saldo pendiente. Modificalo si vas a registrar un pago parcial.
-              </small>
             </label>
             <label className="field">
               <span>Metodo de pago</span>
@@ -156,7 +188,7 @@ function AdminRegisterPaymentModalBody({
                 className="input"
                 value={paymentMethod}
                 onChange={(event) =>
-                  setPaymentMethod(event.target.value as PaymentMethod)
+                  handleMethodChange(event.target.value as PaymentMethod)
                 }
               >
                 <option value="FISICO">Fisico (caja del consultorio)</option>
@@ -174,7 +206,7 @@ function AdminRegisterPaymentModalBody({
                     min="0"
                     step="0.01"
                     value={montoFisico}
-                    onChange={(event) => setMontoFisico(event.target.value)}
+                    onChange={(event) => handleFisicoChange(event.target.value)}
                   />
                 </label>
                 <label className="field">
@@ -185,12 +217,9 @@ function AdminRegisterPaymentModalBody({
                     min="0"
                     step="0.01"
                     value={montoVirtual}
-                    onChange={(event) => setMontoVirtual(event.target.value)}
+                    onChange={(event) => handleVirtualChange(event.target.value)}
                   />
                 </label>
-                <small className="field__hint field--full">
-                  La suma debe ser igual al monto total ({amount}).
-                </small>
               </>
             ) : null}
             <label className="field field--full">
