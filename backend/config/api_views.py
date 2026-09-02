@@ -481,6 +481,12 @@ def _operation_detail(operacion, request=None):
             "dueDate": date_label(cuota.fecha_vencimiento),
             "status": _quota_display_status(cuota),
             "paymentsCount": cuota.pagos_realizados.count(),
+            "hasPendingReview": cuota.pagos_realizados.filter(
+                estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE
+            ).exists(),
+            "hasRejectedPayments": cuota.pagos_realizados.filter(
+                estado_verificacion=PagoRealizado.EstadoVerificacion.RECHAZADO
+            ).exists(),
         }
         for cuota in operacion.cuotas_plan_pagos.all()
     ]

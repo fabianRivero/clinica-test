@@ -626,10 +626,7 @@ const handleSaveSessions = async () => {
     Number.isFinite(Number(numberFromCurrency(operation.price))) &&
     singleAddMonto +
       operation.quotas.reduce(
-        (acc, q) =>
-          acc +
-          (Number(q.amountValue) || 0) -
-          (Number(q.paidAmountValue) || 0),
+        (acc, q) => acc + (Number(q.paidAmountValue) || 0),
         0,
       ) >
       Number(numberFromCurrency(operation.price))
@@ -1118,36 +1115,33 @@ const handleSaveSessions = async () => {
                   </div>
                   <small className="field__hint">
                     {(() => {
-                      // Saldo restante = precio total - suma de montos ya
-                      // programados + lo ya pagado sobre esas cuotas (los
-                      // pagos aprobados liberan cupo). Sirve de pista:
-                      // despues de guardar esta cuota, ese sera el monto
-                      // que aun queda por distribuir entre las siguientes
-                      // cuotas. Si el restante es negativo, la suma EXCEDE
-                      // el precio total y el backend rechazara el guardado.
+                      // Saldo restante = precio total - lo ya pagado -
+                      // el monto que el admin esta tipeando. Refleja
+                      // cuanto queda por distribuir entre esta cuota y
+                      // las siguientes. Los pagos aprobados sobre cuotas
+                      // existentes ya cubrieron parte del precio total y
+                      // liberan cupo. Si el restante es negativo, la suma
+                      // EXCEDE el precio total y el backend rechazara el
+                      // guardado.
                       const precioTotal = Number(numberFromCurrency(operation.price))
                       if (!Number.isFinite(precioTotal) || precioTotal <= 0) return null
-                      const programadoExistente = operation.quotas.reduce(
-                        (acc, q) => acc + (Number(q.amountValue) || 0),
-                        0,
-                      )
                       const pagadoExistente = operation.quotas.reduce(
                         (acc, q) => acc + (Number(q.paidAmountValue) || 0),
                         0,
                       )
                       const digitado = Number(newQuotaDraft.montoProgramado) || 0
-                      const restante = precioTotal - programadoExistente + pagadoExistente - digitado
+                      const restante = precioTotal - pagadoExistente - digitado
                       if (restante < 0) {
                         return (
                           <span className="field__error">
-                            La suma ({precioTotal.toFixed(2)} de precio + {digitado.toFixed(2)} de esta cuota menos lo ya programado de {programadoExistente.toFixed(2)}) excederia el precio total en Bs {Math.abs(restante).toFixed(2)}.
+                            La suma (precio total Bs {precioTotal.toFixed(2)} - ya pagado Bs {pagadoExistente.toFixed(2)} + esta cuota Bs {digitado.toFixed(2)}) excederia el precio total en Bs {Math.abs(restante).toFixed(2)}.
                           </span>
                         )
                       }
                       return (
                         <>
                           Saldo restante despues de esta cuota:{' '}
-                          <strong>Bs {restante.toFixed(2)}</strong> (de Bs {precioTotal.toFixed(2)}).
+                          <strong>Bs {restante.toFixed(2)}</strong> (de Bs {precioTotal.toFixed(2)}, ya pagado Bs {pagadoExistente.toFixed(2)}).
                         </>
                       )
                     })()}
@@ -1164,19 +1158,34 @@ const handleSaveSessions = async () => {
                   // error exacto al guardar.
                   const backendQuota = operation.quotas.find((q2) => q2.number === q.nroCuota)
                   const isPagada = backendQuota?.status === 'Pagado'
-                  const hasPayments = (backendQuota?.paymentsCount ?? 0) > 0
+                  const hasPendingReview = backendQuota?.hasPendingReview ?? false
+                  const hasRejectedPayments = backendQuota?.hasRejectedPayments ?? false
                   const lockReason = isPagada
                     ? 'Esta cuota ya fue pagada y no se puede editar.'
-                    : hasPayments
-                      ? 'Esta cuota tiene un comprobante registrado; el backend puede bloquear la edicion si esta en revision.'
-                      : null
+                    : hasPendingReview
+                      ? 'Esta cuota tiene un comprobante en revision; revisa o espera la aprobacion antes de editar.'
+                      : hasRejectedPayments
+                        ? 'Esta cuota tiene un comprobante observado; revisa antes de editar.'
+                        : null
                   return (
                     <article className="operation-detail-item" key={`quota-edit-${q.nroCuota}`}>
                       <div className="operation-detail-item__header">
                         <strong>Cuota {q.nroCuota}</strong>
                         {lockReason ? (
-                          <StatusBadge tone={isPagada ? 'success' : 'warning'}>
-                            {isPagada ? 'Pagada' : 'Con comprobante'}
+                          <StatusBadge
+                            tone={
+                              isPagada
+                                ? 'success'
+                                : hasRejectedPayments
+                                  ? 'danger'
+                                  : 'warning'
+                            }
+                          >
+                            {isPagada
+                              ? 'Pagada'
+                              : hasRejectedPayments
+                                ? 'Observado'
+                                : 'En revision'}
                           </StatusBadge>
                         ) : null}
                       </div>
@@ -1219,8 +1228,13 @@ const handleSaveSessions = async () => {
                   // mismos casos para evitar enviar un POST que
                   // retornaria 400.
                   const isPagada = quota.status === 'Pagado'
-                  const hasPayments = (quota.paymentsCount ?? 0) > 0
-                  const canDelete = !isPagada && !hasPayments && canEditPricePlan
+                  const hasPendingReview = quota.hasPendingReview ?? false
+                  const hasRejectedPayments = quota.hasRejectedPayments ?? false
+                  const canDelete =
+                    !isPagada &&
+                    !hasPendingReview &&
+                    !hasRejectedPayments &&
+                    canEditPricePlan
                   const isDeleting = deletingQuotaNumber === quota.number
                   return (
                     <article className="operation-detail-item" key={quota.id}>
@@ -1240,16 +1254,20 @@ const handleSaveSessions = async () => {
                           <small className="field__hint">
                             {isPagada
                               ? 'Pagada: no se puede eliminar.'
-                              : hasPayments
-                                ? 'Con comprobante: revisar antes de eliminar.'
-                                : null}
+                              : hasPendingReview
+                                ? 'Con comprobante pendiente de revision: revisar antes de eliminar.'
+                                : hasRejectedPayments
+                                  ? 'Con comprobante observado: revisar antes de eliminar.'
+                                  : null}
                           </small>
                         )}
                       </div>
-                      <p>{quota.amount} | vence: {quota.dueDate}</p>
+                      <p>
+                        {quota.paidAmount ?? 'Bs 0.00'} / {quota.amount} | vence: {quota.dueDate}
+                      </p>
                       <span>{quota.status}</span>
                       <small>
-                        Pagado: {quota.paidAmount ?? 'Bs 0.00'} de {quota.amount} ({quota.paymentsCount} pago{quota.paymentsCount === 1 ? '' : 's'})
+                        {quota.paymentsCount} pago{quota.paymentsCount === 1 ? '' : 's'} registrado{quota.paymentsCount === 1 ? '' : 's'}
                       </small>
                     </article>
                   )

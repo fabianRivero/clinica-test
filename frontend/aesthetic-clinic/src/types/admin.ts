@@ -488,6 +488,8 @@ export type OperationDetailQuota = {
   dueDate: string
   status: string
   paymentsCount: number
+  hasPendingReview?: boolean
+  hasRejectedPayments?: boolean
 }
 
 export type OperacionFoto = {
