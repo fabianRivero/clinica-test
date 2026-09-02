@@ -1,14 +1,26 @@
+import { useState } from 'react'
+
 import { StatusBadge } from '../../../components/admin/StatusBadge'
 import { DataState } from '../../../components/admin/DataState'
 import { SectionCard } from '../../../components/admin/SectionCard'
+import { AdminRegisterPaymentModal } from '../../../components/admin/AdminRegisterPaymentModal'
+import { useNotifications } from '../../../providers/NotificationProvider'
+import { registerAdminPayment } from '../../../services/api/admin'
+import type {
+  AdminPaymentQuota,
+  RegisterAdminPaymentPayload,
+} from '../../../types/admin'
 
 interface ClientPaymentSectionProps {
+  clientId: number
+  clientName: string
   pendingQuotas: any[]
   payments: any[]
   paymentActionId: number | null
   getPaymentNote: (paymentId: number, fallbackNote?: string) => string
   onPaymentNoteChange: (paymentId: number, note: string) => void
   onUpdatePaymentStatus: (paymentId: number, currentStatus: string, status: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO', fallbackNote?: string) => void
+  onPaymentRegistered: () => void
   pendingQuotaProcedureFilter: string
   pendingQuotaProcedures: string[]
   filteredPendingQuotas: any[]
@@ -28,12 +40,15 @@ interface ClientPaymentSectionProps {
 }
 
 export function ClientPaymentSection({
+  clientId,
+  clientName,
   pendingQuotas,
   payments,
   paymentActionId,
   getPaymentNote,
   onPaymentNoteChange,
   onUpdatePaymentStatus,
+  onPaymentRegistered,
   pendingQuotaProcedureFilter,
   pendingQuotaProcedures,
   filteredPendingQuotas,
@@ -51,6 +66,76 @@ export function ClientPaymentSection({
   hasMorePendingQuotas,
   hasLessPendingQuotas,
 }: ClientPaymentSectionProps) {
+  // Estado del modal `AdminRegisterPaymentModal` reusado para que el
+  // admin registre pagos en nombre del cliente desde "Pagos pendientes"
+  // sin tener que abrir el flujo global de pagos/cuotas. El modal exige
+  // un `AdminPaymentQuota` con la misma forma que en `/cms/pagos/cuotas`,
+  // asi que aqui convertimos el `ClientQuota` local rellenando
+  // `clientId`/`patient` desde la pagina padre y derivando `quotaNumber`
+  // del `quotaLabel` (`"Cuota 3" -> 3`). `paymentsCount` no viene en
+  // `ClientQuota`, asi que enviamos 0; el modal solo renderiza el
+  // header y el monto programado, no muestra el contador.
+  const [registerQuota, setRegisterQuota] = useState<AdminPaymentQuota | null>(null)
+  const [isRegistering, setIsRegistering] = useState(false)
+  const [registerError, setRegisterError] = useState<string | null>(null)
+  const { showNotification } = useNotifications()
+
+  const closeRegisterModal = () => {
+    setRegisterQuota(null)
+    setRegisterError(null)
+  }
+
+  const handleRegisterPayment = async (
+    payload: Omit<RegisterAdminPaymentPayload, 'amount'>,
+  ) => {
+    if (!registerQuota) return
+    setIsRegistering(true)
+    setRegisterError(null)
+    try {
+      const response = await registerAdminPayment(registerQuota.rawId, {
+        ...payload,
+        amount: registerQuota.amount,
+      })
+      showNotification({
+        title: 'Pago registrado',
+        message: response.detail,
+        tone: 'success',
+      })
+      setRegisterQuota(null)
+      // El padre (AdminClientDetailPage) recarga `data` para que la
+      // lista de `pendingQuotas` se refresque y la cuota registrada
+      // desaparezca del bloque "Pagos pendientes" si el backend decide
+      // que ya esta cubierta.
+      onPaymentRegistered()
+    } catch (requestError) {
+      setRegisterError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo registrar el pago.',
+      )
+    } finally {
+      setIsRegistering(false)
+    }
+  }
+
+  const openRegisterModalForQuota = (quota: any) => {
+    const quotaMatch = /(\d+)/.exec(quota.quotaLabel ?? '')
+    const quotaNumber = quotaMatch ? Number(quotaMatch[1]) : 0
+    setRegisterError(null)
+    setRegisterQuota({
+      id: quota.id,
+      rawId: quota.rawId,
+      clientId,
+      patient: clientName,
+      operation: quota.operation,
+      quotaNumber,
+      amount: quota.amount,
+      dueDate: quota.dueDate,
+      status: quota.status,
+      paymentsCount: 0,
+    })
+  }
+
   return (
     <>
       <SectionCard eyebrow="Pagos" title="Pagos pendientes" description="Cuotas aun no pagadas o pendientes de completar.">
@@ -73,6 +158,19 @@ export function ClientPaymentSection({
                       <div className="capacity-item__header">
                         <div><strong>{quota.operation} | {quota.quotaLabel}</strong><p>{quota.amount} | Vence: {quota.dueDate}</p></div>
                         <StatusBadge tone={quota.statusTone}>{quota.status}</StatusBadge>
+                      </div>
+                      <div className="capacity-item__actions">
+                        <button
+                          className="button button--ghost button--compact"
+                          type="button"
+                          disabled={isRegistering}
+                          onClick={() => openRegisterModalForQuota(quota)}
+                          aria-label={`Registrar pago de ${quota.quotaLabel}`}
+                        >
+                          {isRegistering && registerQuota?.rawId === quota.rawId
+                            ? 'Registrando...'
+                            : 'Registrar pago'}
+                        </button>
                       </div>
                     </article>
                   ))}
@@ -166,6 +264,15 @@ export function ClientPaymentSection({
           </>
         ) : <DataState title="Sin pagos registrados" message="El cliente aun no tiene pagos en su historial." />}
       </SectionCard>
+
+      <AdminRegisterPaymentModal
+        quota={registerQuota}
+        isOpen={registerQuota !== null}
+        isSubmitting={isRegistering}
+        errorMessage={registerError}
+        onClose={closeRegisterModal}
+        onSubmit={handleRegisterPayment}
+      />
     </>
   )
 }

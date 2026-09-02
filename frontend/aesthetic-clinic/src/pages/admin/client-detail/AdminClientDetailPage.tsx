@@ -415,12 +415,15 @@ export function AdminClientDetailPage() {
       </SectionCard>
 
       <ClientPaymentSection
+        clientId={data.client.rawId}
+        clientName={data.client.name}
         pendingQuotas={data.pendingQuotas}
         payments={data.payments}
         paymentActionId={paymentActionId}
         getPaymentNote={getPaymentNote}
         onPaymentNoteChange={handlePaymentNoteChange}
         onUpdatePaymentStatus={handlePaymentStatusUpdate}
+        onPaymentRegistered={reload}
         pendingQuotaProcedureFilter={pendingQuotaProcedureFilter}
         pendingQuotaProcedures={pendingQuotaProcedures}
         filteredPendingQuotas={filteredPendingQuotas}
