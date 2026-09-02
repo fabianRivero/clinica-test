@@ -992,6 +992,9 @@ const handleSaveSessions = async () => {
               <div>
                 <span>Plan de pagos</span>
                 <strong>{operation.quotas.length} cuota(s)</strong>
+                <small className="field__hint">
+                  Precio del tratamiento: {operation.price}
+                </small>
               </div>
               {isAddingQuota ? (
                 <div className="table-actions">
@@ -1266,9 +1269,6 @@ const handleSaveSessions = async () => {
                         {quota.paidAmount ?? 'Bs 0.00'} / {quota.amount} | vence: {quota.dueDate}
                       </p>
                       <span>{quota.status}</span>
-                      <small>
-                        {quota.paymentsCount} pago{quota.paymentsCount === 1 ? '' : 's'} registrado{quota.paymentsCount === 1 ? '' : 's'}
-                      </small>
                     </article>
                   )
                 })}
