@@ -5,6 +5,7 @@ import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
+import { AdminRegisterPaymentModal } from '../../components/admin/AdminRegisterPaymentModal'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
@@ -19,11 +20,16 @@ import {
   deleteAdminOperationQuota,
   getAdminOperationDetail,
   markAdminAppointmentPendingBiometric,
+  registerAdminPayment,
   rescheduleAdminAppointment,
   updateAdminOperationDetails,
   updateAdminOperationPricePlan,
 } from '../../services/api/admin'
-import type { AdminReservationExtendedPayload } from '../../types/admin'
+import type {
+  AdminPaymentQuota,
+  AdminReservationExtendedPayload,
+  RegisterAdminPaymentPayload,
+} from '../../types/admin'
 
 function getStatusTone(status: string) {
   const normalized = status.toLowerCase()
@@ -100,6 +106,12 @@ export function AdminOperationDetailPage() {
   // bloquea PAGADAS y con comprobante en revision; el frontend oculta
   // el boton en esos casos.
   const [deletingQuotaNumber, setDeletingQuotaNumber] = useState<number | null>(null)
+  // Estado del modal `AdminRegisterPaymentModal` reusado desde el bloque
+  // "Plan de pagos". El admin registra pagos en nombre del cliente desde
+  // cada cuota pendiente sin salir de la pagina de detalle.
+  const [registerQuota, setRegisterQuota] = useState<AdminPaymentQuota | null>(null)
+  const [isRegistering, setIsRegistering] = useState(false)
+  const [registerError, setRegisterError] = useState<string | null>(null)
   // El precio y los montos por cuota se editan desde el bloque "Citas y
 // cuotas" (sub-bloque Plan de pagos). El save reutiliza el mismo
 // endpoint `actualizar-precio` con la lista `quotas` opcional.
@@ -460,6 +472,47 @@ const handleSaveSessions = async () => {
     } finally {
       setDeletingQuotaNumber(null)
     }
+  }
+
+  // Handler del modal `AdminRegisterPaymentModal`. Mismo flujo que en
+  // /cms/pagos/cuotas: el modal entrega `{ paymentMethod, montoFisico,
+  // montoVirtual, receiptFile, details }`, nosotros completamos el
+  // `amount` desde la cuota seleccionada y disparamos el POST. El reload
+  // refresca `data.operation.quotas` + `paymentsCount` para reflejar el
+  // pago registrado (la cuota podra pasar a Pagada si el backend decide
+  // que la suma aprobada ya cubre el monto programado).
+  const handleRegisterPayment = async (
+    payload: Omit<RegisterAdminPaymentPayload, 'amount'>,
+  ) => {
+    if (!registerQuota) return
+    setIsRegistering(true)
+    setRegisterError(null)
+    try {
+      const response = await registerAdminPayment(registerQuota.rawId, {
+        ...payload,
+        amount: registerQuota.amount,
+      })
+      showNotification({
+        title: 'Pago registrado',
+        message: response.detail,
+        tone: 'success',
+      })
+      setRegisterQuota(null)
+      reload()
+    } catch (requestError) {
+      setRegisterError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo registrar el pago.',
+      )
+    } finally {
+      setIsRegistering(false)
+    }
+  }
+
+  const closeRegisterModal = () => {
+    setRegisterQuota(null)
+    setRegisterError(null)
   }
 
   const handleSaveQuotas = async () => {
@@ -1239,31 +1292,78 @@ const handleSaveSessions = async () => {
                     !hasRejectedPayments &&
                     canEditPricePlan
                   const isDeleting = deletingQuotaNumber === quota.number
+                  // Solo cuotas NO pagadas admiten registrar un pago
+                  // nuevo. La decision la confirma el backend; aca
+                  // bloqueamos el boton para evitar un POST que siempre
+                  // retornaria 400.
+                  const canRegisterPayment = !isPagada && !isRegistering
                   return (
                     <article className="operation-detail-item" key={quota.id}>
                       <div className="operation-detail-item__header">
                         <strong>Cuota {quota.number}</strong>
-                        {canDelete ? (
-                          <button
-                            className="button button--ghost button--compact"
-                            type="button"
-                            onClick={() => void handleDeleteQuota(quota.number)}
-                            disabled={isDeleting || deletingQuotaNumber !== null}
-                            aria-label={`Quitar cuota ${quota.number}`}
-                          >
-                            {isDeleting ? 'Eliminando...' : 'Quitar'}
-                          </button>
-                        ) : (
-                          <small className="field__hint">
-                            {isPagada
-                              ? 'Pagada: no se puede eliminar.'
-                              : hasPendingReview
-                                ? 'Con comprobante pendiente de revision: revisar antes de eliminar.'
-                                : hasRejectedPayments
-                                  ? 'Con comprobante observado: revisar antes de eliminar.'
-                                  : null}
-                          </small>
-                        )}
+                        <div className="table-actions">
+                          {canRegisterPayment ? (
+                            <button
+                              className="button button--ghost button--compact"
+                              type="button"
+                              onClick={() => {
+                                // Sin `patientId` no podemos armar el
+                                // modal (la cuota necesita el id del
+                                // cliente para futuras referencias). El
+                                // backend SIEMPRE lo expone en esta ruta,
+                                // asi que es una defensa en caso de que
+                                // un dia deje de venir.
+                                if (operation.patientId === undefined) {
+                                  showNotification({
+                                    title: 'No se pudo registrar el pago',
+                                    message:
+                                      'La operacion no expone el id del cliente; recarga la pagina.',
+                                    tone: 'danger',
+                                  })
+                                  return
+                                }
+                                setRegisterError(null)
+                                setRegisterQuota({
+                                  id: quota.id,
+                                  rawId: quota.rawId,
+                                  clientId: operation.patientId,
+                                  patient: operation.patient,
+                                  operation: operation.procedure,
+                                  quotaNumber: quota.number,
+                                  amount: quota.amount,
+                                  dueDate: quota.dueDate,
+                                  status: quota.status,
+                                  paymentsCount: quota.paymentsCount,
+                                })
+                              }}
+                              disabled={isRegistering}
+                              aria-label={`Registrar pago de cuota ${quota.number}`}
+                            >
+                              Registrar pago
+                            </button>
+                          ) : null}
+                          {canDelete ? (
+                            <button
+                              className="button button--ghost button--compact"
+                              type="button"
+                              onClick={() => void handleDeleteQuota(quota.number)}
+                              disabled={isDeleting || deletingQuotaNumber !== null}
+                              aria-label={`Quitar cuota ${quota.number}`}
+                            >
+                              {isDeleting ? 'Eliminando...' : 'Quitar'}
+                            </button>
+                          ) : !canRegisterPayment ? (
+                            <small className="field__hint">
+                              {isPagada
+                                ? 'Pagada: no se puede eliminar.'
+                                : hasPendingReview
+                                  ? 'Con comprobante pendiente de revision: revisar antes de eliminar.'
+                                  : hasRejectedPayments
+                                    ? 'Con comprobante observado: revisar antes de eliminar.'
+                                    : null}
+                            </small>
+                          ) : null}
+                        </div>
                       </div>
                       <p>
                         {quota.paidAmount ?? 'Bs 0.00'} / {quota.amount} | vence: {quota.dueDate}
@@ -1580,6 +1680,15 @@ const handleSaveSessions = async () => {
       */}
 
       <ConfirmDialog />
+
+      <AdminRegisterPaymentModal
+        quota={registerQuota}
+        isOpen={registerQuota !== null}
+        isSubmitting={isRegistering}
+        errorMessage={registerError}
+        onClose={closeRegisterModal}
+        onSubmit={handleRegisterPayment}
+      />
 
       {photoPreviewUrl ? (
         <div
