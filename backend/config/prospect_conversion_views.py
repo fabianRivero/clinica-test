@@ -1910,17 +1910,31 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         ]
     )
     if not due_dates_to_create and first_payment_signal:
-        # Always create one cuota so the PagoRealizado has somewhere to
-        # land. The cuota's monto_programado is the full precio_total so
-        # the admin can later add more cuotas and redistribute the
-        # residual; the frontend surfaces the actual paid amount per
-        # cuota so the partial-payment state is visible.
-        CuotaPlanPago.objects.create(
-            operacion=operacion,
-            nro_cuota=1,
-            fecha_vencimiento=timezone.localdate(),
-            monto_programado=Decimal(operation_data["precioTotal"]),
-        )
+        def _parse_amount(raw):
+            if not raw:
+                return Decimal("0")
+            try:
+                return Decimal(raw)
+            except (InvalidOperation, ValueError):
+                return Decimal("0")
+
+        # The cuota's monto_programado is the amount the admin just paid
+        # (not the full precio_total). This way the cuota reflects exactly
+        # what was committed in step 5 and resolves to PAGADO immediately.
+        # If the admin wants to distribute the residual into additional
+        # cuotas they can do so from /cms/operaciones/<id>; the saldo
+        # restante helper already accounts for the already-paid amount.
+        first_payment_amount = (
+            _parse_amount(request.POST.get("primerPagoMontoFisico"))
+            + _parse_amount(request.POST.get("primerPagoMontoVirtual"))
+        ) or _parse_amount(request.POST.get("primerPagoMonto"))
+        if first_payment_amount > Decimal("0"):
+            CuotaPlanPago.objects.create(
+                operacion=operacion,
+                nro_cuota=1,
+                fecha_vencimiento=timezone.localdate(),
+                monto_programado=first_payment_amount,
+            )
     # Optional first-payment block. Helper returns ``None`` when no
     # payment data was supplied and creates an APROBADO row otherwise.
     # Comprobante is now optional — ``PagoRealizado.clean`` rejects

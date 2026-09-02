@@ -410,13 +410,11 @@ class ConversionFirstPaymentTests(TestCase):
         )
 
     def test_no_cuotas_totales_partial_first_payment_creates_cuota_with_saldo(self):
-        """Partial first payment against an operation with no pre-existing
-        cuotas leaves a single ``CuotaPlanPago`` covering the full
-        ``precio_total``. The cuota is in PENDIENTE state because the
-        payment only covers part of the scheduled amount. The admin can
-        later add additional cuotas for the residual — the frontend
-        surfaces ``Pagado: Bs 30 de Bs 100`` so the partial state is
-        visible.
+        """When the admin skips step 2 and registers a partial first
+        payment in step 5, the auto-created cuota reflects exactly the
+        paid amount and resolves to PAGADO immediately. The admin can
+        later add additional cuotas for the residual balance via
+        /cms/operaciones/<id>.
         """
         draft = _make_full_draft(
             cliente=self.cliente,
@@ -439,8 +437,9 @@ class ConversionFirstPaymentTests(TestCase):
         operacion = Operacion.objects.get(paciente=self.cliente)
         cuotas = CuotaPlanPago.objects.filter(operacion=operacion)
         self.assertEqual(cuotas.count(), 1)
-        self.assertEqual(cuotas.first().monto_programado, Decimal("100.00"))
-        self.assertEqual(cuotas.first().estado, CuotaPlanPago.Estado.PENDIENTE)
+        # Cuota mirrors the paid amount, not the full precio_total.
+        self.assertEqual(cuotas.first().monto_programado, Decimal("30.00"))
+        self.assertEqual(cuotas.first().estado, CuotaPlanPago.Estado.PAGADO)
         pago = PagoRealizado.objects.get(cuota=cuotas.first())
         self.assertEqual(pago.monto_pagado, Decimal("30.00"))
 
