@@ -18,6 +18,7 @@ export type AdminRegisterPaymentModalProps = {
    */
   onSubmit: (payload: {
     paymentMethod: PaymentMethod
+    amount: string
     montoFisico?: string
     montoVirtual?: string
     receiptFile?: File
@@ -73,6 +74,16 @@ function AdminRegisterPaymentModalBody({
   onSubmit: AdminRegisterPaymentModalProps['onSubmit']
 }) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('FISICO')
+  // Pre-fill the amount with the residual balance (programado - ya pagado)
+  // so the admin can complete the cuota without exceeding it. When there
+  // are no prior approved payments, this equals the full programmed amount.
+  const initialAmount = (() => {
+    const programado = Number(quota.amount) || 0
+    const pagado = Number(quota.paidAmount ?? '0') || 0
+    const restante = programado - pagado
+    return restante > 0 ? restante.toFixed(2) : programado.toFixed(2)
+  })()
+  const [amount, setAmount] = useState(initialAmount)
   const [montoFisico, setMontoFisico] = useState('')
   const [montoVirtual, setMontoVirtual] = useState('')
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
@@ -86,6 +97,7 @@ function AdminRegisterPaymentModalBody({
     event.preventDefault()
     void onSubmit({
       paymentMethod,
+      amount,
       ...(montoFisico ? { montoFisico } : {}),
       ...(montoVirtual ? { montoVirtual } : {}),
       ...(receiptFile ? { receiptFile } : {}),
@@ -120,14 +132,23 @@ function AdminRegisterPaymentModalBody({
         <form className="payment-upload-form" onSubmit={handleSubmit}>
           <div className="payment-upload-form__grid">
             <label className="field">
-              <span>Monto programado</span>
+              <span>
+                Monto programado: Bs {quota.amount}
+                {quota.paidAmount && Number(quota.paidAmount) > 0
+                  ? ` (ya pagado Bs ${quota.paidAmount})`
+                  : ''}
+              </span>
               <input
                 className="input"
-                type="text"
-                value={quota.amount}
-                readOnly
-                aria-readonly="true"
+                type="number"
+                min="0"
+                step="0.01"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
               />
+              <small className="field__hint">
+                Por defecto se pre-carga el saldo pendiente. Modificalo si vas a registrar un pago parcial.
+              </small>
             </label>
             <label className="field">
               <span>Metodo de pago</span>
@@ -168,7 +189,7 @@ function AdminRegisterPaymentModalBody({
                   />
                 </label>
                 <small className="field__hint field--full">
-                  La suma debe ser igual al monto programado.
+                  La suma debe ser igual al monto total ({amount}).
                 </small>
               </>
             ) : null}

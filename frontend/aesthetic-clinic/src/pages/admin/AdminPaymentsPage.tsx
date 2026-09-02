@@ -182,16 +182,13 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
   }
 
   const handleRegisterPayment = async (
-    payload: Omit<RegisterAdminPaymentPayload, 'amount'>,
+    payload: RegisterAdminPaymentPayload,
   ) => {
     if (!registerQuota) return
     setIsRegistering(true)
     setRegisterError(null)
     try {
-      const response = await registerAdminPayment(registerQuota.rawId, {
-        ...payload,
-        amount: registerQuota.amount,
-      })
+      const response = await registerAdminPayment(registerQuota.rawId, payload)
       showNotification({
         title: 'Pago registrado',
         message: response.detail,

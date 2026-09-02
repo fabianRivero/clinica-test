@@ -613,6 +613,7 @@ export type AdminPaymentQuota = {
   operation: string
   quotaNumber: number
   amount: string
+  paidAmount?: string
   dueDate: string
   status: string
   paymentsCount: number

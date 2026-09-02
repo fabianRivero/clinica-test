@@ -482,16 +482,13 @@ const handleSaveSessions = async () => {
   // pago registrado (la cuota podra pasar a Pagada si el backend decide
   // que la suma aprobada ya cubre el monto programado).
   const handleRegisterPayment = async (
-    payload: Omit<RegisterAdminPaymentPayload, 'amount'>,
+    payload: RegisterAdminPaymentPayload,
   ) => {
     if (!registerQuota) return
     setIsRegistering(true)
     setRegisterError(null)
     try {
-      const response = await registerAdminPayment(registerQuota.rawId, {
-        ...payload,
-        amount: registerQuota.amount,
-      })
+      const response = await registerAdminPayment(registerQuota.rawId, payload)
       showNotification({
         title: 'Pago registrado',
         message: response.detail,

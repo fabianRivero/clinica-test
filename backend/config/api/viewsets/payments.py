@@ -5,8 +5,9 @@ Domain 3 of Phase 6.
 
 import calendar
 import os
+from decimal import Decimal
 
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from rest_framework import status, viewsets
@@ -298,7 +299,20 @@ class PagosViewSet(viewsets.ViewSet):
 
         serializer = PagoRealizadoCreateSerializer(data=request.data)
         if not serializer.is_valid():
-            return Response(serializer.errors, status=400)
+            # Surface a friendly top-level detail plus the field-level
+            # errors so the modal can render both.
+            errors = serializer.errors
+            first_field = next(iter(errors.keys()), None)
+            first_messages = errors.get(first_field, []) if first_field else []
+            summary = (
+                f"{first_field}: {first_messages[0]}"
+                if first_field and first_messages
+                else "Los datos del pago no son validos."
+            )
+            return Response(
+                {"detail": summary, "errors": errors},
+                status=400,
+            )
 
         attrs = serializer.validated_data
         assert_not_over_payment(cuota, attrs["monto_pagado"])
@@ -577,6 +591,12 @@ class PagosViewSet(viewsets.ViewSet):
     def _admin_quota_item(self, cuota):
         operacion = cuota.operacion
         paciente = operacion.paciente
+        paid_amount = (
+            cuota.pagos_realizados.filter(
+                estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO
+            ).aggregate(s=Sum("monto_pagado"))["s"]
+            or Decimal("0")
+        )
         return {
             "id": cuota.pk,
             "clienteCodigo": paciente.cliente_codigo,
@@ -591,6 +611,7 @@ class PagosViewSet(viewsets.ViewSet):
             ),
             "quotaNumber": cuota.nro_cuota,
             "amount": str(cuota.monto_programado),
+            "paidAmount": str(paid_amount),
             "dueDate": cuota.fecha_vencimiento.isoformat(),
             "status": cuota.estado,
             "paymentsCount": cuota.pagos_realizados.count(),
