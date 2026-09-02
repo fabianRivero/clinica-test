@@ -142,7 +142,7 @@ class AdminRegisterPaymentHappyPathTests(TestCase):
         data.update(extra)
         return self.client.post(_url(self.g["cuota"].pk), data)
 
-    def test_fisico_happy_path_creates_pendiente_row(self):
+    def test_fisico_happy_path_creates_aprobado_row(self):
         response = self._post()
         self.assertEqual(response.status_code, 201, response.content)
         body = response.json()
@@ -152,7 +152,10 @@ class AdminRegisterPaymentHappyPathTests(TestCase):
             PagoRealizado.objects.count(), 1, "exactly one row was created"
         )
         payment = PagoRealizado.objects.get()
-        self.assertEqual(payment.estado_verificacion, PagoRealizado.EstadoVerificacion.PENDIENTE)
+        self.assertEqual(payment.estado_verificacion, PagoRealizado.EstadoVerificacion.APROBADO)
+        self.assertTrue(payment.verificado)
+        self.assertIsNotNone(payment.verificado_por)
+        self.assertIsNotNone(payment.fecha_verificacion)
         self.assertEqual(payment.metodo_pago, PagoRealizado.MetodoPago.FISICO)
         self.assertEqual(payment.monto_pagado, Decimal("120.00"))
         self.assertEqual(payment.monto_fisico, Decimal("120.00"))
@@ -303,10 +306,12 @@ class AdminRegisterPaymentNotificationTests(TestCase):
         self.client = Client()
         self.client.force_login(self.g["admin"])
 
-    def test_admin_register_payment_notifies_branch_admins_once(self):
-        """Each branch-admin in the cuota's branch receives exactly one
-        ``ADMIN_PAYMENT_PENDING_CONFIRMATION`` notification, with the
-        admin-registered source_event."""
+    def test_admin_register_payment_notifies_client_once(self):
+        """The client receives one ``CLIENT_PAYMENT_CONFIRMED`` notification
+        so they see the impact on their portal without refreshing. No
+        admin-pending-review notification is fired because the admin
+        registering the payment is the same one confirming it was
+        collected."""
         with patch(
             "config.api.viewsets.payments.create_notification"
         ) as mock_create:
@@ -316,18 +321,15 @@ class AdminRegisterPaymentNotificationTests(TestCase):
             )
         self.assertEqual(response.status_code, 201, response.content)
 
-        # Two branch admins in this branch → two notifications, one per admin.
-        self.assertEqual(mock_create.call_count, 2)
+        # Exactly one notification, addressed to the client.
+        self.assertEqual(mock_create.call_count, 1)
 
-        for call in mock_create.call_args_list:
-            kwargs = call.kwargs
-            self.assertEqual(
-                kwargs["type"], Notification.Type.ADMIN_PAYMENT_PENDING_CONFIRMATION
-            )
-            self.assertEqual(kwargs["title"], "Nuevo pago pendiente de revisión")
-            self.assertIn("Bs 120", kwargs["message"])
-            self.assertEqual(kwargs["action_url"], "/cms/pagos")
-            self.assertEqual(kwargs["source_event"], "payment.admin_registered")
-            self.assertEqual(kwargs["source_entity_type"], "payment")
-            self.assertEqual(kwargs["created_by_type"], "admin")
-            self.assertEqual(kwargs["created_by_id"], self.g["admin"].id)
+        kwargs = mock_create.call_args.kwargs
+        self.assertEqual(kwargs["type"], Notification.Type.CLIENT_PAYMENT_CONFIRMED)
+        self.assertEqual(kwargs["title"], "Pago confirmado")
+        self.assertIn("Bs 120", kwargs["message"])
+        self.assertEqual(kwargs["action_url"], "/cliente/pagos")
+        self.assertEqual(kwargs["source_event"], "payment.admin_registered_and_confirmed")
+        self.assertEqual(kwargs["source_entity_type"], "payment")
+        self.assertEqual(kwargs["created_by_type"], "admin")
+        self.assertEqual(kwargs["created_by_id"], self.g["admin"].id)

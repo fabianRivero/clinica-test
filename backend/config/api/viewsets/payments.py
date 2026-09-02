@@ -319,6 +319,12 @@ class PagosViewSet(viewsets.ViewSet):
 
         details = (attrs.get("details") or "").strip() or "Pago registrado por administración."
         receipt_file = attrs.get("receiptFile")
+        # The admin registering the payment is the same person who
+        # confirms it was collected (cash at the desk, QR verified in
+        # person, etc.), so the row lands APROBADO and the cuota status
+        # is updated immediately. No admin-pending-review notification is
+        # fired — there is no second pair of eyes needed, mirroring the
+        # conversion wizard's step-5 first payment.
         payment = PagoRealizado.objects.create(
             cuota=cuota,
             monto_pagado=attrs["monto_pagado"],
@@ -327,45 +333,41 @@ class PagosViewSet(viewsets.ViewSet):
             monto_virtual=attrs.get("montoVirtual") or 0,
             comprobante_url=receipt_file or "",
             detalles_pago=details,
-            estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE,
+            estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
+            verificado=True,
+            verificado_por=request.user,
+            fecha_verificacion=timezone.now(),
+            observacion_verificacion="Pago confirmado durante el registro administrativo.",
         )
 
-        # Fire the same notification as the client upload path. The
-        # admin endpoint always creates a fresh row (no PENDIENTE reuse
-        # logic), so exactly one notification per call.
-        sucursal = payment.cuota.operacion.paciente.usuario.sucursal
+        # Notify the client that their payment was confirmed so they see
+        # the impact on their portal without having to refresh.
         paciente_user = payment.cuota.operacion.paciente.usuario
-        paciente_cliente = payment.cuota.operacion.paciente
-        identificador_cliente = paciente_cliente.ci or paciente_user.username
-        procedimiento = payment.cuota.operacion.servicio_config.proc_estetico.proceso
-        operacion_id = payment.cuota.operacion.pk
+        sucursal = payment.cuota.operacion.paciente.usuario.sucursal
         nro_cuota = payment.cuota.nro_cuota
-        monto_cuota = payment.monto_pagado
-        for admin in admins_for_specialist_branch(sucursal):
-            create_notification(
-                recipient=admin,
-                branch=sucursal,
-                type=Notification.Type.ADMIN_PAYMENT_PENDING_CONFIRMATION,
-                title="Nuevo pago pendiente de revisión",
-                message=(
-                    f"El cliente {paciente_user.primer_nombre} {paciente_user.apellido_paterno} "
-                    f"({identificador_cliente}), envio el comprobante del pago de la cuota Nro {nro_cuota} "
-                    f"del procedimiento {procedimiento} con ID {operacion_id}. "
-                    f"El monto de la cuota de pago es: Bs {monto_cuota}."
-                ),
-                action_url="/cms/pagos",
-                source_event="payment.admin_registered",
-                source_entity_type="payment",
-                source_entity_id=payment.id,
-                created_by_type="admin",
-                created_by_id=request.user.id,
-            )
+        procedimiento = payment.cuota.operacion.servicio_config.proc_estetico.proceso
+        create_notification(
+            recipient=paciente_user,
+            branch=sucursal,
+            type=Notification.Type.CLIENT_PAYMENT_CONFIRMED,
+            title="Pago confirmado",
+            message=(
+                f"El pago de la cuota Nro {nro_cuota} por Bs {payment.monto_pagado} "
+                f"del procedimiento {procedimiento} fue confirmado."
+            ),
+            action_url="/cliente/pagos",
+            source_event="payment.admin_registered_and_confirmed",
+            source_entity_type="payment",
+            source_entity_id=payment.id,
+            created_by_type="admin",
+            created_by_id=request.user.id,
+        )
 
         cuota.refresh_from_db(fields=["estado"])
 
         return Response(
             {
-                "detail": "El pago fue registrado correctamente y quedo pendiente de revisión.",
+                "detail": "El pago fue registrado y aprobado correctamente.",
                 "payment": self._payment_item(payment),
                 "quota": self._admin_quota_item(cuota),
             },
