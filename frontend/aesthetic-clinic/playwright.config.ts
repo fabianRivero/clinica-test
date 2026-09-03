@@ -2,6 +2,18 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // ``admin-direct-client-creation.realbackend.spec.ts`` is excluded
+  // from the default run (it needs a real dev server + populated DB
+  // and would race the DB-reset global setup). To run it locally:
+  //
+  //   PLAYWRIGHT_INCLUDE_REAL_BACKEND=1 \
+  //     npx playwright test tests/e2e/admin-direct-client-creation.realbackend.spec.ts
+  //
+  // It self-skips when the env var is unset so the standard suite
+  // stays stable.
+  testIgnore: process.env.PLAYWRIGHT_INCLUDE_REAL_BACKEND
+    ? undefined
+    : ['**/admin-direct-client-creation.realbackend.spec.ts'],
   globalSetup: './tests/global-setup.ts',
   timeout: 60000,
   expect: {
