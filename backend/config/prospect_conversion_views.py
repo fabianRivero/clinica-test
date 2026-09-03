@@ -711,7 +711,7 @@ def _serialize_medical_config(service_config):
     }
 
 
-def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
+def _get_draft_convertible(request, prospecto_id=None, cliente_id=None, direct_id=None):
     user = request.user
     branch = _get_branch_for_scope_check(request)
     enforce_branch = bool(branch)
@@ -743,6 +743,19 @@ def _get_draft_convertible(request, prospecto_id=None, cliente_id=None):
             # Pre-poblamos el hash de contraseña para reactivacion
             draft.datos_usuario = {"passwordHash": cliente.usuario.password}
             draft.save(update_fields=["datos_usuario"])
+        return draft, None
+    elif direct_id:
+        # Direct client creation flow: resolve by draft PK (when called from a
+        # subsequent step endpoint, e.g. paso-1/.../finalizar). The initialize
+        # endpoint does not pass direct_id; it creates a fresh (null, null)
+        # draft via ``admin_direct_client_initialize`` below.
+        draft = ProspectoConversionBorrador.objects.filter(
+            pk=direct_id,
+            prospecto__isnull=True,
+            cliente__isnull=True,
+        ).first()
+        if not draft:
+            return None, "No encontramos el borrador de creacion directa."
         return draft, None
     return None, "Se requiere un ID de prospecto o cliente."
 
@@ -779,6 +792,41 @@ def admin_client_reactivation_initialize(request, cliente_id):
     detail["crossCityWarning"] = warning
 
     return json_response(detail)
+
+
+@require_POST
+@admin_required
+def admin_direct_client_initialize(request):
+    """Create an empty ``ProspectoConversionBorrador(prospecto=None,
+    cliente=None, iniciado_por=request.user)`` for the direct client
+    creation wizard and return the standard conversion detail payload.
+
+    The draft is attributed to the calling admin so an audit trail exists
+    for who kicked off the creation. No branch scope is required: the
+    admin's scope branch is resolved at finalize time, the same as
+    reactivation.
+    """
+    draft = ProspectoConversionBorrador.objects.create(
+        prospecto=None,
+        cliente=None,
+        iniciado_por=request.user,
+    )
+    logger.warning(
+        "[DIRECT-CREATE] initialize draft_id=%s admin=%s",
+        draft.id,
+        getattr(request.user, "username", None),
+    )
+    # The front-end wizard routes every subsequent step /
+    # finalize / cancel request to
+    # ``/api/admin/clientes/directo/<int:direct_id>/<step>/``
+    # (Django does not infer it from the session). Surface the new
+    # draft's PK as a top-level ``draftId`` field so the wizard can
+    # stitch the URL family together after ``initialize``. The shared
+    # ``_admin_conversion_detail`` helper stays untouched (prospect /
+    # reactivation callers do not need it).
+    payload = _admin_conversion_detail(draft)
+    payload["draftId"] = draft.pk
+    return json_response(payload, status=201)
 
 
 def _serialize_conversion_payload(prospecto, draft):
@@ -1301,7 +1349,7 @@ def _admin_conversion_detail(draft):
 
 @require_GET
 @admin_required
-def admin_prospect_conversion_detail(request, prospecto_id):
+def admin_prospect_conversion_detail(request, prospecto_id=None, direct_id=None):
     draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id)
     if error:
         return json_response({"detail": error}, status=400)
@@ -1336,8 +1384,10 @@ def admin_client_reactivation_detail(request, cliente_id):
 
 @require_POST
 @admin_required
-def admin_prospect_conversion_cancel(request, prospecto_id=None, cliente_id=None):
-    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+def admin_prospect_conversion_cancel(request, prospecto_id=None, cliente_id=None, direct_id=None):
+    draft, error = _get_draft_convertible(
+        request, prospecto_id=prospecto_id, cliente_id=cliente_id, direct_id=direct_id
+    )
     if error:
         return json_response({"detail": error}, status=400)
 
@@ -1347,8 +1397,10 @@ def admin_prospect_conversion_cancel(request, prospecto_id=None, cliente_id=None
 
 @require_POST
 @admin_required
-def admin_prospect_conversion_user_step(request, prospecto_id=None, cliente_id=None):
-    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+def admin_prospect_conversion_user_step(request, prospecto_id=None, cliente_id=None, direct_id=None):
+    draft, error = _get_draft_convertible(
+        request, prospecto_id=prospecto_id, cliente_id=cliente_id, direct_id=direct_id
+    )
     if error:
         return json_response({"detail": error}, status=400)
 
@@ -1376,8 +1428,10 @@ def admin_prospect_conversion_user_step(request, prospecto_id=None, cliente_id=N
 
 @require_POST
 @admin_required
-def admin_prospect_conversion_operation_step(request, prospecto_id=None, cliente_id=None):
-    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+def admin_prospect_conversion_operation_step(request, prospecto_id=None, cliente_id=None, direct_id=None):
+    draft, error = _get_draft_convertible(
+        request, prospecto_id=prospecto_id, cliente_id=cliente_id, direct_id=direct_id
+    )
     if error:
         return json_response({"detail": error}, status=400)
 
@@ -1414,8 +1468,10 @@ def admin_prospect_conversion_operation_step(request, prospecto_id=None, cliente
 
 @require_POST
 @admin_required
-def admin_prospect_conversion_medical_step(request, prospecto_id=None, cliente_id=None):
-    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+def admin_prospect_conversion_medical_step(request, prospecto_id=None, cliente_id=None, direct_id=None):
+    draft, error = _get_draft_convertible(
+        request, prospecto_id=prospecto_id, cliente_id=cliente_id, direct_id=direct_id
+    )
     if error:
         return json_response({"detail": error}, status=400)
 
@@ -1468,12 +1524,14 @@ def admin_prospect_conversion_medical_step(request, prospecto_id=None, cliente_i
 
 @require_POST
 @admin_required
-def admin_prospect_conversion_biometric_step(request, prospecto_id=None, cliente_id=None):
+def admin_prospect_conversion_biometric_step(request, prospecto_id=None, cliente_id=None, direct_id=None):
     # Resolve + authorize the draft BEFORE the suspended branch so we
     # preserve the existing "no encontrado / ya procesado / sin permisos"
     # errors even while the flag is on. The suspended path then mutates
     # only the resolved draft and never touches the agent or persistence.
-    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+    draft, error = _get_draft_convertible(
+        request, prospecto_id=prospecto_id, cliente_id=cliente_id, direct_id=direct_id
+    )
     if error:
         return json_response({"detail": error}, status=400)
 
@@ -1673,8 +1731,10 @@ class _PrimerPagoValidationError(Exception):
 @require_POST
 @admin_required
 @transaction.atomic
-def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=None):
-    draft, error = _get_draft_convertible(request, prospecto_id=prospecto_id, cliente_id=cliente_id)
+def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=None, direct_id=None):
+    draft, error = _get_draft_convertible(
+        request, prospecto_id=prospecto_id, cliente_id=cliente_id, direct_id=direct_id
+    )
     if error:
         return json_response({"detail": error}, status=400)
 
@@ -1712,7 +1772,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         # Nueva cuenta para prospecto
         if not user_data.get("passwordHash"):
             return json_response({"detail": "El borrador no tiene una contraseña valida para crear la cuenta."}, status=400)
-        
+
         username = user_data.get("username", "")
         if Usuario.objects.filter(username=username).exists():
             return json_response({"detail": "Ya existe una cuenta con el usuario seleccionado. Actualiza el paso 1 antes de continuar."}, status=400)
@@ -1752,7 +1812,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             ocupacion=user_data.get("ocupacion", ""),
             observaciones=user_data.get("observacionesCliente", ""),
         )
-    else:
+    elif draft.cliente:
         # Actualizacion de cliente existente (reactivacion).
         #
         # Live profile updates during reactivation must go through
@@ -1766,6 +1826,61 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         if user_data.get("observacionesCliente") is not None:
             cliente.observaciones = user_data.get("observacionesCliente") or ""
             cliente.save(update_fields=["observaciones", "updated_at"])
+    else:
+        # Creacion directa de cliente (sin prospecto, sin cliente previo).
+        # Reuses the prospect branch's user+cliente creation flow but skips
+        # `marcar_como_convertido()` and prospect-biometric migration, which
+        # both are impossible because no prospect FK is set on the draft.
+        # The biometric stamping block below takes the reactivation path
+        # (no prospect to migrate from) and stamps any template captured
+        # during step 4 directly onto the freshly-created Cliente.
+        if not user_data.get("passwordHash"):
+            return json_response({"detail": "El borrador no tiene una contraseña valida para crear la cuenta."}, status=400)
+
+        username = user_data.get("username", "")
+        if Usuario.objects.filter(username=username).exists():
+            return json_response({"detail": "Ya existe una cuenta con el usuario seleccionado. Actualiza el paso 1 antes de continuar."}, status=400)
+
+        user = Usuario.objects.create(
+            username=username,
+            email=user_data.get("email", ""),
+            primer_nombre=user_data["primerNombre"],
+            segundo_nombre=user_data.get("segundoNombre", ""),
+            apellido_paterno=user_data["apellidoPaterno"],
+            apellido_materno=user_data.get("apellidoMaterno", ""),
+            rol=client_role,
+            is_active=True,
+            is_staff=False,
+            is_superuser=False,
+            password=user_data["passwordHash"],
+        )
+
+        # No `draft.prospecto.sucursal_registro` to fall back on. Direct mode
+        # is admin-driven and uses the admin's effective branch: scope branch
+        # for branch admins, session/principal branch for principal admins
+        # (matching the same fallback that ``get_user_branch`` uses for
+        # principal admins in other admin endpoints). Only if every fallback
+        # is empty do we surface the "no branch" error.
+        target_branch = _get_branch_for_scope_check(request) or get_user_branch(request)
+        if not target_branch:
+            return json_response({"detail": "No encontramos una sucursal activa para completar la conversión."}, status=400)
+
+        # Keep Usuario.sucursal in sync with Cliente.sucursal_origen at
+        # creation time (same invariant as the prospect branch).
+        user.sucursal = target_branch
+        user.save(update_fields=["sucursal", "updated_at"])
+
+        cliente = Cliente.objects.create(
+            usuario=user,
+            sucursal_origen=target_branch,
+            ci=user_data.get("ci", ""),
+            fecha_nacimiento=date.fromisoformat(user_data["fechaNacimiento"]),
+            nro_hijos=int(user_data.get("nroHijos") or 0),
+            direccion_domicilio=user_data.get("direccionDomicilio", ""),
+            telefono=user_data.get("telefono", ""),
+            ocupacion=user_data.get("ocupacion", ""),
+            observaciones=user_data.get("observacionesCliente", ""),
+        )
 
     # If the prospect enrollment endpoint already captured the fingerprint
     # during the wizard (step 4 now triggers a real capture), the row
@@ -1792,11 +1907,18 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             # stamping one from the wizard payload so finalize still
             # produces a huella + attempt row.
             if migrated == 0 and biometric_data.get("template"):
+                # Coerce string → bytes (BinaryField can't accept str).
+                raw_template = biometric_data.get("template", "") or b""
+                template_bytes = (
+                    raw_template
+                    if isinstance(raw_template, (bytes, bytearray, memoryview))
+                    else raw_template.encode("utf-8")
+                )
                 HuellaBiometricaCliente.objects.update_or_create(
                     cliente=cliente,
                     defaults={
                         "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK_LEGACY,
-                        "template_biometrico": biometric_data.get("template", ""),
+                        "template_biometrico": template_bytes,
                         "device_serial": biometric_data.get("deviceSerial", ""),
                         "calidad_captura": int(biometric_data.get("quality") or 0),
                         "consentimiento_aceptado": bool(biometric_data.get("consentAccepted")),
@@ -1813,11 +1935,23 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             # historical template or attempts log.
             pass
         else:
+            # ``datos_biometria`` is a JSONField; the template may arrive as
+            # either ``str`` (legacy MOCK payload) or ``bytes`` (real DP
+            # capture). The ``HuellaBiometricaCliente.template_biometrico``
+            # column is a BinaryField, so encode the payload before insert/
+            # update — otherwise SQLite (and strict PG bytea drivers) reject
+            # a string with "memoryview: a bytes-like object is required".
+            raw_template = biometric_data.get("template", "") or b""
+            template_bytes = (
+                raw_template
+                if isinstance(raw_template, (bytes, bytearray, memoryview))
+                else raw_template.encode("utf-8")
+            )
             HuellaBiometricaCliente.objects.update_or_create(
                 cliente=cliente,
                 defaults={
                     "proveedor": biometric_data.get("provider") or HuellaBiometricaCliente.Proveedor.MOCK_LEGACY,
-                    "template_biometrico": biometric_data.get("template", ""),
+                    "template_biometrico": template_bytes,
                     "device_serial": biometric_data.get("deviceSerial", ""),
                     "calidad_captura": int(biometric_data.get("quality") or 0),
                     "consentimiento_aceptado": bool(biometric_data.get("consentAccepted")),
@@ -1996,6 +2130,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             )
 
     is_reactivation = draft.cliente is not None
+    is_direct_create = draft.prospecto is None and draft.cliente is None
     if draft.prospecto:
         draft.prospecto.marcar_como_convertido(cliente, save=True)
     elif is_reactivation:
@@ -2004,12 +2139,20 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
 
     draft.delete()
 
+    if is_direct_create:
+        detail_message = "El cliente fue creado correctamente."
+    elif is_reactivation:
+        detail_message = "El proceso finalizo correctamente."
+    else:
+        detail_message = "El prospecto fue convertido correctamente a cliente."
+
     return json_response(
         {
-            "detail": "El proceso finalizo correctamente." if is_reactivation else "El prospecto fue convertido correctamente a cliente.",
+            "detail": detail_message,
             "client": {
                 "id": cliente.id,
                 "name": cliente.usuario.nombre_completo,
+                "clienteCodigo": cliente.cliente_codigo,
             },
             "operation": {
                 "id": operacion.id,

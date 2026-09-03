@@ -120,6 +120,7 @@ from config.prospect_conversion_views import (
     admin_prospect_conversion_user_step,
     admin_client_reactivation_initialize,
     admin_client_reactivation_detail,
+    admin_direct_client_initialize,
 )
 
 
@@ -218,6 +219,53 @@ urlpatterns = [
         "clientes/<int:cliente_id>/reactivar/initialize/",
         admin_client_reactivation_initialize,
         name="admin-client-reactivation-initialize-api",
+    ),
+    # Direct client creation routes — declared BEFORE the
+    # ``clientes/<int:cliente_id>/reactivar/...`` family so the literal
+    # ``directo`` segment is unambiguous: the ``<int:cliente_id>`` converter
+    # cannot match ``directo`` so routing precedence is safe. ``payment`` is
+    # intentionally absent as a standalone URL — first-payment fields are
+    # submitted as multipart form data on finalize (matches the existing
+    # reactivation/prospect finalize contract).
+    path(
+        "clientes/directo/initialize/",
+        admin_direct_client_initialize,
+        name="admin-direct-client-initialize-api",
+    ),
+    path(
+        "clientes/directo/<int:direct_id>/",
+        admin_prospect_conversion_detail,
+        name="admin-direct-client-detail-api",
+    ),
+    path(
+        "clientes/directo/<int:direct_id>/cancelar/",
+        admin_prospect_conversion_cancel,
+        name="admin-direct-client-cancel-api",
+    ),
+    path(
+        "clientes/directo/<int:direct_id>/paso-1/",
+        admin_prospect_conversion_user_step,
+        name="admin-direct-client-user-step-api",
+    ),
+    path(
+        "clientes/directo/<int:direct_id>/paso-2/",
+        admin_prospect_conversion_operation_step,
+        name="admin-direct-client-operation-step-api",
+    ),
+    path(
+        "clientes/directo/<int:direct_id>/paso-3/",
+        admin_prospect_conversion_medical_step,
+        name="admin-direct-client-medical-step-api",
+    ),
+    path(
+        "clientes/directo/<int:direct_id>/paso-4/",
+        admin_prospect_conversion_biometric_step,
+        name="admin-direct-client-biometric-step-api",
+    ),
+    path(
+        "clientes/directo/<int:direct_id>/finalizar/",
+        admin_prospect_conversion_finalize,
+        name="admin-direct-client-finalize-api",
     ),
     path(
         "clientes/<int:cliente_id>/reactivar/",
