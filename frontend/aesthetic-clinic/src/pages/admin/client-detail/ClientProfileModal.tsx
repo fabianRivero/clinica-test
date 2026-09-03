@@ -2,9 +2,12 @@ import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react'
 
 import {
   getAdminClientReactivation,
-  saveAdminClientReactivationUserStep,
+  patchAdminClientProfile,
 } from '../../../services/api/admin'
-import type { ProspectConversionUserData } from '../../../types/prospectConversion'
+import type {
+  AdminClientProfilePatchPayload,
+  ProspectConversionUserData,
+} from '../../../types/prospectConversion'
 
 type Props = {
   clientId: string
@@ -47,8 +50,31 @@ export function ClientProfileModal({ clientId, isOpen, onClose }: Props) {
     setIsSaving(true)
     setError(null)
     try {
-      const response = await saveAdminClientReactivationUserStep(clientId, form)
-      setForm(response.draft.userData)
+      // Build the strict 13-field payload: the live endpoint rejects
+      // `codBiometrico` and unknown fields, so we map the form state
+      // down before sending.
+      const payload: AdminClientProfilePatchPayload = {
+        primerNombre: form.primerNombre,
+        segundoNombre: form.segundoNombre,
+        apellidoPaterno: form.apellidoPaterno,
+        apellidoMaterno: form.apellidoMaterno,
+        ci: form.ci,
+        username: form.username,
+        email: form.email,
+        telefono: form.telefono,
+        fechaNacimiento: form.fechaNacimiento,
+        nroHijos: form.nroHijos,
+        ocupacion: form.ocupacion,
+        direccionDomicilio: form.direccionDomicilio,
+        observacionesCliente: form.observacionesCliente,
+      }
+      const response = await patchAdminClientProfile(clientId, payload)
+      // response.client is the server snapshot of the live profile,
+      // matching ProspectConversionUserData (minus codBiometrico).
+      // Re-hydrate the form so the modal closes with the truth on disk;
+      // we keep the existing codBiometrico since the live endpoint does
+      // not surface it.
+      setForm({ codBiometrico: form.codBiometrico, ...response.client })
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo guardar')
