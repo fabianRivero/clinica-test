@@ -20,6 +20,43 @@ export type ProspectConversionUserData = {
   hasPassword: boolean
 }
 
+/**
+ * Strict subset of `ProspectConversionUserData` accepted by
+ * `PATCH /api/admin/clientes/<pk>/perfil/`. The endpoint is a partial
+ * update, but the modal always sends the full 13-field payload so the
+ * local type keeps every field required.
+ *
+ * Notably missing vs `ProspectConversionUserData`:
+ * - `codBiometrico` — biometric code, not editable through this endpoint
+ * - `hasPassword` — server-side signal only, not editable
+ */
+export type AdminClientProfilePatchPayload = {
+  primerNombre: string
+  segundoNombre: string
+  apellidoPaterno: string
+  apellidoMaterno: string
+  username: string
+  email: string
+  telefono: string
+  ci: string
+  fechaNacimiento: string
+  nroHijos: number
+  direccionDomicilio: string
+  ocupacion: string
+  observacionesCliente: string
+}
+
+/**
+ * Response envelope of `PATCH /api/admin/clientes/<pk>/perfil/`. The
+ * server returns the full live snapshot of the 13 contract fields plus
+ * the `hasPassword` signal under `client`, which matches the
+ * `ProspectConversionUserData` shape (minus `codBiometrico`, which the
+ * endpoint does not surface).
+ */
+export type AdminClientProfilePatchResponse = {
+  client: Omit<ProspectConversionUserData, 'codBiometrico'>
+}
+
 export type ProspectConversionOperationData = {
   serviceConfigId: string
   zonaGeneral: string

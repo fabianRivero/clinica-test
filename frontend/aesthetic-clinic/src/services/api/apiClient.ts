@@ -83,6 +83,30 @@ export async function requestJsonWithBody<T>(path: string, body: unknown): Promi
   return responseBody as T
 }
 
+/** PATCH request with JSON body. Includes branch header. Extracts fieldErrors on error. */
+export async function patchJsonWithBody<T>(path: string, body: unknown): Promise<T> {
+  const csrfToken = await ensureCsrfCookie()
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: buildHeaders({
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrfToken,
+    }),
+    body: JSON.stringify(body),
+  })
+
+  const responseBody = (await response.json().catch(() => null)) as
+    | { detail?: string; errors?: Record<string, string> }
+    | null
+
+  if (!response.ok) {
+    parseErrorResponse(response, path, responseBody)
+  }
+
+  return responseBody as T
+}
+
 /** POST request with JSON body + idempotency key. Includes branch header. */
 export async function requestJsonWithBodyIdempotent<T>(path: string, body: unknown, idempotencyKey: string): Promise<T> {
   const csrfToken = await ensureCsrfCookie()

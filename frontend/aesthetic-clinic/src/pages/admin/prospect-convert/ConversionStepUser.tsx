@@ -47,38 +47,43 @@ export function ConversionStepUser({
 }: Props) {
   return (
     <form className="form-grid" onSubmit={onSubmit}>
+      {isReactivation && (
+        <p className="_col-full field__hint">
+          Datos del perfil del cliente. Para editarlos, use el botón &quot;Ver perfil del cliente&quot; en la página del cliente.
+        </p>
+      )}
       <label className="field">
         <span>Primer nombre <abbr title="obligatorio" className="required-mark">*</abbr></span>
-        <input className="input" name="primerNombre" value={userForm.primerNombre} onChange={onUserChange} onBlur={onNameBlur} />
+        <input className="input" name="primerNombre" value={userForm.primerNombre} onChange={onUserChange} onBlur={onNameBlur} readOnly={isReactivation} />
         {fieldErrors.primerNombre ? <small className="field__error">{fieldErrors.primerNombre}</small> : null}
       </label>
       <label className="field">
         <span>Segundo nombre</span>
-        <input className="input" name="segundoNombre" value={userForm.segundoNombre} onChange={onUserChange} />
+        <input className="input" name="segundoNombre" value={userForm.segundoNombre} onChange={onUserChange} readOnly={isReactivation} />
       </label>
       <label className="field">
         <span>Apellido paterno <abbr title="obligatorio" className="required-mark">*</abbr></span>
-        <input className="input" name="apellidoPaterno" value={userForm.apellidoPaterno} onChange={onUserChange} onBlur={onNameBlur} />
+        <input className="input" name="apellidoPaterno" value={userForm.apellidoPaterno} onChange={onUserChange} onBlur={onNameBlur} readOnly={isReactivation} />
         {fieldErrors.apellidoPaterno ? <small className="field__error">{fieldErrors.apellidoPaterno}</small> : null}
       </label>
       <label className="field">
         <span>Apellido materno</span>
-        <input className="input" name="apellidoMaterno" value={userForm.apellidoMaterno} onChange={onUserChange} />
+        <input className="input" name="apellidoMaterno" value={userForm.apellidoMaterno} onChange={onUserChange} readOnly={isReactivation} />
       </label>
       <label className="field">
         <span>CI <small className="field__hint">(opcional)</small></span>
-        <input className="input" name="ci" value={userForm.ci} onChange={onUserChange} />
+        <input className="input" name="ci" value={userForm.ci} onChange={onUserChange} readOnly={isReactivation} />
         <small className="field__hint">Si el cliente no recuerda su CI, podés dejarlo vacío. Se le asignará un código único al guardar.</small>
         {fieldErrors.ci ? <small className="field__error">{fieldErrors.ci}</small> : null}
       </label>
       <label className="field">
         <span>Nombre de usuario <abbr title="obligatorio" className="required-mark">*</abbr></span>
-        <input className="input" name="username" value={userForm.username} onChange={onUserChange} />
+        <input className="input" name="username" value={userForm.username} onChange={onUserChange} readOnly={isReactivation} />
         {fieldErrors.username ? <small className="field__error">{fieldErrors.username}</small> : null}
       </label>
       <label className="field">
         <span>Email</span>
-        <input className="input" name="email" type="email" value={userForm.email} onChange={onUserChange} />
+        <input className="input" name="email" type="email" value={userForm.email} onChange={onUserChange} readOnly={isReactivation} />
       </label>
       {!isReactivation && (
         <>
@@ -142,25 +147,25 @@ export function ConversionStepUser({
       )}
       <label className="field">
         <span>Teléfono</span>
-        <input className="input" name="telefono" type="tel" value={userForm.telefono} onChange={onUserChange} />
+        <input className="input" name="telefono" type="tel" value={userForm.telefono} onChange={onUserChange} readOnly={isReactivation} />
       </label>
       <label className="field">
         <span>Fecha de nacimiento <abbr title="obligatorio" className="required-mark">*</abbr></span>
-        <input className="input" name="fechaNacimiento" type="date" value={userForm.fechaNacimiento} onChange={onUserChange} />
+        <input className="input" name="fechaNacimiento" type="date" value={userForm.fechaNacimiento} onChange={onUserChange} readOnly={isReactivation} />
         {fieldErrors.fechaNacimiento ? <small className="field__error">{fieldErrors.fechaNacimiento}</small> : null}
       </label>
       <label className="field">
         <span>Nro. hijos</span>
-        <input className="input" name="nroHijos" type="number" min="0" value={userForm.nroHijos} onChange={onUserChange} />
+        <input className="input" name="nroHijos" type="number" min="0" value={userForm.nroHijos} onChange={onUserChange} readOnly={isReactivation} />
         {fieldErrors.nroHijos ? <small className="field__error">{fieldErrors.nroHijos}</small> : null}
       </label>
       <label className="field">
         <span>Ocupación</span>
-        <input className="input" name="ocupacion" value={userForm.ocupacion} onChange={onUserChange} />
+        <input className="input" name="ocupacion" value={userForm.ocupacion} onChange={onUserChange} readOnly={isReactivation} />
       </label>
       <label className="field field--full">
         <span>Dirección</span>
-        <input className="input" name="direccionDomicilio" value={userForm.direccionDomicilio} onChange={onUserChange} />
+        <input className="input" name="direccionDomicilio" value={userForm.direccionDomicilio} onChange={onUserChange} readOnly={isReactivation} />
       </label>
       <label className="field field--full">
         <span>Observaciones del cliente</span>

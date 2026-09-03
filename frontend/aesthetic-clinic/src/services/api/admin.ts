@@ -77,6 +77,8 @@ import type {
   ProspectConversionOperationData,
   ProspectConversionResponse,
   ProspectConversionUserData,
+  AdminClientProfilePatchPayload,
+  AdminClientProfilePatchResponse,
 } from '../../types/prospectConversion'
 import {
   requestJson,
@@ -85,6 +87,7 @@ import {
   requestFormDataWithBody,
   requestBlob,
   requestDelete,
+  patchJsonWithBody,
 } from './apiClient'
 
 export function getAdminDashboard() {
@@ -1252,6 +1255,26 @@ export function getAdminClientReactivation(clientId: string) {
 
 export function cancelAdminClientReactivation(clientId: string) {
   return requestJsonWithBody<{ detail: string }>(`/api/admin/clientes/${clientId}/reactivar/cancelar/`, {})
+}
+
+/**
+ * Live profile edit endpoint for the client detail page modal. Issues
+ * a `PATCH /api/admin/clientes/<clientId>/perfil/` against the live
+ * `Cliente` + `Usuario` rows; the modal hydrates from `response.client`
+ * (the full 13-field snapshot + `hasPassword`).
+ *
+ * The wizard reactivation flow does NOT use this — it still routes
+ * identity edits through the draft endpoint, which after Slice 1+2 no
+ * longer overwrites live profile fields on finalize.
+ */
+export function patchAdminClientProfile(
+  clientId: string | number,
+  payload: AdminClientProfilePatchPayload,
+) {
+  return patchJsonWithBody<AdminClientProfilePatchResponse>(
+    `/api/admin/clientes/${clientId}/perfil/`,
+    payload,
+  )
 }
 
 export function saveAdminClientReactivationUserStep(clientId: string, payload: ProspectConversionUserData & { password?: string }) {
