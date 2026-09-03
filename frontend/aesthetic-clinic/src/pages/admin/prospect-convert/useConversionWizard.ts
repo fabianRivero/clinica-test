@@ -18,6 +18,13 @@ import {
   saveAdminClientReactivationMedicalStep,
   saveAdminClientReactivationBiometricStep,
   finalizeAdminClientReactivation,
+  initializeDirectClientConversion,
+  cancelAdminDirectClientConversion,
+  saveAdminDirectClientUserStep,
+  saveAdminDirectClientOperationStep,
+  saveAdminDirectClientMedicalStep,
+  saveAdminDirectClientBiometricStep,
+  finalizeAdminDirectClientCreation,
   getAdminPayments,
 } from '../../../services/api/admin'
 import type {
@@ -46,10 +53,19 @@ import {
   isBiometricSuspended,
 } from '../../../services/fingerprint/biometricClient'
 
+/**
+ * Wizard mode discriminator — matches the URL-derived value in
+ * `AdminProspectConvertPage`. The wizard uses it to dispatch the
+ * init / save / finalize calls against the right endpoint family
+ * (`/prospectos/:id/conversion/...`, `/clientes/:id/reactivar/...`,
+ * or `/clientes/directo/...`).
+ */
+type WizardMode = 'prospect' | 'reactivation' | 'direct'
+
 type UseConversionWizardParams = {
   prospectId: string
   clientId: string
-  isReactivation: boolean
+  mode: WizardMode
 }
 
 type UseConversionWizardReturn = {
@@ -130,15 +146,44 @@ type UseConversionWizardReturn = {
   ConfirmDialogModal: ReturnType<typeof useConfirmDialog>['ConfirmDialog']
 }
 
-export function useConversionWizard({ prospectId, clientId, isReactivation }: UseConversionWizardParams): UseConversionWizardReturn {
+export function useConversionWizard({ prospectId, clientId, mode }: UseConversionWizardParams): UseConversionWizardReturn {
+  const isReactivation = mode === 'reactivation'
+  const isDirect = mode === 'direct'
   const navigate = useNavigate()
   const { confirm, ConfirmDialog: ConfirmDialogModal } = useConfirmDialog()
   const { showNotification } = useNotifications()
+
+  /**
+   * Direct-mode service calls ALL require the draft PK. If we somehow
+   * reach a step without it (e.g. the initialize response didn't carry
+   * `draftId` because the backend is stale), surface that as a
+   * recoverable submission error instead of firing a request with an
+   * undefined path segment (`/api/.../undefined/paso-1/` → 404).
+   * Captured at call-site so the existing `catch` blocks in
+   * `handleSave1` / `handleSave2` / `handleSave3` / `handleSaveBiometricStep`
+   * / `handleFinalize` / `handleCancelDraft` pick it up via
+   * `submitError`.
+   */
+  const requireDirectDraftId = <T>(draftId: number | null, fn: () => Promise<T>): Promise<T> => {
+    if (draftId === null || !Number.isFinite(draftId)) {
+      const message = 'No se pudo obtener el identificador del borrador de creación directa. Recarga la página para reintentarlo.'
+      setSubmitError(message)
+      return Promise.reject(new Error(message))
+    }
+    return fn()
+  }
 
   // Build-time flag, immutable for the lifetime of this bundle.
   const biometricSuspended = isBiometricSuspended()
 
   const [data, setData] = useState<ProspectConversionResponse | null>(null)
+  // Direct-mode draft PK. The backend's initialize endpoint surfaces this
+  // via the response payload (`draftId`) so every subsequent step /
+  // finalize / cancel call can build the URL family
+  // `/api/admin/clientes/directo/<directId>/<step>/`. This is a
+  // direct-only concern; prospect and reactivation flows route via the URL
+  // params (`prospectId` / `clientId`) instead.
+  const [directDraftId, setDirectDraftId] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -201,10 +246,17 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
       try {
         const response = isReactivation
           ? await initializeAdminClientReactivation(clientId)
-          : await getAdminProspectConversion(prospectId)
+          : isDirect
+            ? await initializeDirectClientConversion()
+            : await getAdminProspectConversion(prospectId)
 
         if (cancelled) return
         setData(response)
+        // Direct mode: capture the draft PK so step / finalize / cancel
+        // calls can build their URLs. Only meaningful while `mode ===
+        // 'direct'` — the backend skips this field for prospect /
+        // reactivation payloads.
+        setDirectDraftId(isDirect && typeof response.draftId === 'number' ? response.draftId : null)
         setUserForm(response.draft.userData)
         if (response.draft.userData.hasPassword) {
           setPassword('********')
@@ -240,7 +292,7 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     return () => {
       cancelled = true
     }
-  }, [prospectId, clientId, isReactivation])
+  }, [prospectId, clientId, mode])
 
   const selectedService =
     data && operationForm?.serviceConfigId
@@ -486,7 +538,11 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     try {
       const response = isReactivation
         ? await saveAdminClientReactivationUserStep(clientId, { ...userForm, password: password || undefined })
-        : await saveAdminProspectConversionUserStep(prospectId, { ...userForm, password: password || undefined })
+        : isDirect
+          ? await requireDirectDraftId(directDraftId, () =>
+              saveAdminDirectClientUserStep(directDraftId as number, { ...userForm, password: password || undefined }),
+            )
+          : await saveAdminProspectConversionUserStep(prospectId, { ...userForm, password: password || undefined })
       applyResponse(response)
       setPassword('')
       setConfirmPassword('')
@@ -518,7 +574,11 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     try {
       const response = isReactivation
         ? await saveAdminClientReactivationOperationStep(clientId, finalForm)
-        : await saveAdminProspectConversionOperationStep(prospectId, finalForm)
+        : isDirect
+          ? await requireDirectDraftId(directDraftId, () =>
+              saveAdminDirectClientOperationStep(directDraftId as number, finalForm),
+            )
+          : await saveAdminProspectConversionOperationStep(prospectId, finalForm)
       applyResponse(response)
       setActiveStep(3)
     } catch (requestError) {
@@ -550,7 +610,11 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     try {
       const saveResponse = isReactivation
         ? await saveAdminClientReactivationMedicalStep(clientId, medicalForm, medicalDocumentFile || undefined)
-        : await saveAdminProspectConversionMedicalStep(prospectId, medicalForm)
+        : isDirect
+          ? await requireDirectDraftId(directDraftId, () =>
+              saveAdminDirectClientMedicalStep(directDraftId as number, medicalForm),
+            )
+          : await saveAdminProspectConversionMedicalStep(prospectId, medicalForm)
       applyResponse(saveResponse)
       setActiveStep(4)
     } catch (requestError) {
@@ -671,7 +735,11 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     try {
       const biometricResponse = isReactivation
         ? await saveAdminClientReactivationBiometricStep(clientId, biometricForm)
-        : await saveAdminProspectConversionBiometricStep(prospectId, biometricForm)
+        : isDirect
+          ? await requireDirectDraftId(directDraftId, () =>
+              saveAdminDirectClientBiometricStep(directDraftId as number, biometricForm),
+            )
+          : await saveAdminProspectConversionBiometricStep(prospectId, biometricForm)
       applyResponse(biometricResponse)
       setActiveStep(5)
     } catch (requestError) {
@@ -717,14 +785,32 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
         : undefined
       const finalizeResponse = isReactivation
         ? await finalizeAdminClientReactivation(clientId, medicalDocumentFile || undefined, firstPaymentPayload)
-        : await finalizeAdminProspectConversion(prospectId, medicalDocumentFile || undefined, firstPaymentPayload)
+        : isDirect
+          ? await requireDirectDraftId(directDraftId, () =>
+              finalizeAdminDirectClientCreation(
+                directDraftId as number,
+                medicalDocumentFile || undefined,
+                firstPaymentPayload,
+              ),
+            )
+          : await finalizeAdminProspectConversion(prospectId, medicalDocumentFile || undefined, firstPaymentPayload)
+      const notificationTitle = isReactivation
+        ? 'Reactivación exitosa'
+        : isDirect
+          ? 'Creación exitosa'
+          : 'Conversión exitosa'
       showNotification({
-        title: isReactivation ? 'Reactivación exitosa' : 'Conversión exitosa',
+        title: notificationTitle,
         message: `${finalizeResponse.detail} Cliente: ${finalizeResponse.client.name}. Operación: ${finalizeResponse.operation.procedure}.`,
         tone: 'success',
         duration: 6000,
       })
-      navigate(isReactivation ? `/cms/clientes/${clientId}` : '/cms/prospectos', {
+      const successRoute = isReactivation
+        ? `/cms/clientes/${clientId}`
+        : isDirect
+          ? '/cms/clientes'
+          : '/cms/prospectos'
+      navigate(successRoute, {
         replace: true,
       })
     } catch (requestError) {
@@ -753,11 +839,15 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
       return
     }
 
-    resetFeedback()
-    setIsCancelling(true)
+resetFeedback()
+      setIsCancelling(true)
     try {
       if (isReactivation) {
         await cancelAdminClientReactivation(clientId)
+      } else if (isDirect) {
+        await requireDirectDraftId(directDraftId, () =>
+          cancelAdminDirectClientConversion(directDraftId as number),
+        )
       } else {
         await cancelAdminProspectConversion(prospectId)
       }
@@ -766,7 +856,12 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
         message: 'El borrador de conversion fue cancelado correctamente.',
         tone: 'info',
       })
-      navigate(isReactivation ? `/cms/clientes/${clientId}` : '/cms/prospectos', {
+      const cancelRoute = isReactivation
+        ? `/cms/clientes/${clientId}`
+        : isDirect
+          ? '/cms/clientes'
+          : '/cms/prospectos'
+      navigate(cancelRoute, {
         replace: true,
       })
     } catch (requestError) {
@@ -805,7 +900,11 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     biometricForm,
     biometricStatus,
     biometricModalOpen,
-    biometricModalSubjectName: data?.prospect?.name ?? data?.client?.name ?? '',
+    biometricModalSubjectName:
+      data?.prospect?.name
+      ?? data?.client?.name
+      ?? (userForm ? `${userForm.primerNombre} ${userForm.apellidoPaterno}`.trim() : '')
+      ?? '',
     biometricSuspended,
     medicalDocumentFile,
     paymentQrImageUrl,

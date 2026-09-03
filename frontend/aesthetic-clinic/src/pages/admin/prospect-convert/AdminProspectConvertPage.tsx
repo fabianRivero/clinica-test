@@ -13,11 +13,26 @@ import { ConversionStepUser } from './ConversionStepUser'
 import { useConversionWizard } from './useConversionWizard'
 import { blankAntecedente, blankCirugia, blankImplante } from './conversionHelpers'
 
+/**
+ * Wizard mode derived from URL params. The URL is the single source of truth
+ * (mirrors the backend draft-FK state):
+ *   - prospectId  → 'prospect'     (URL: /cms/prospectos/:id/convertir)
+ *   - clientId    → 'reactivation' (URL: /cms/clientes/:id/reactivar)
+ *   - neither     → 'direct'       (URL: /cms/clientes/nuevo)
+ *
+ * `isReactivation` is kept as a derived flag for backwards compatibility
+ * with the `ConversionStepUser` prop contract (it only has a boolean) and
+ * downstream ternaries that still key off the prospect vs. client path.
+ */
+type WizardMode = 'prospect' | 'reactivation' | 'direct'
+
 export function AdminProspectConvertPage() {
   const { prospectId = '', clientId = '' } = useParams()
-  const isReactivation = !!clientId
+  const mode: WizardMode = prospectId ? 'prospect' : clientId ? 'reactivation' : 'direct'
+  const isReactivation = mode === 'reactivation'
+  const isDirect = mode === 'direct'
 
-  const wizard = useConversionWizard({ prospectId, clientId, isReactivation })
+  const wizard = useConversionWizard({ prospectId, clientId, mode })
 
   const {
     data,
@@ -117,23 +132,35 @@ export function AdminProspectConvertPage() {
     ? 'Nuevo procedimiento'
     : isReactivation
       ? 'Reactivación de cliente'
-      : 'Conversión de prospecto'
+      : isDirect
+        ? 'Nuevo cliente directo'
+        : 'Conversión de prospecto'
   const wizardSubject = isActiveClient
     ? `Nuevo procedimiento para ${data.client?.name}`
     : isReactivation
       ? `Reactivar a ${data.client?.name}`
-      : `Convertir a ${data.prospect?.name}`
+      : isDirect
+        ? 'Crear cliente sin prospecto previo'
+        : `Convertir a ${data.prospect?.name}`
 
   return (
     <div className="page-stack">
       <PageHeader
         eyebrow={wizardTitle}
         title={wizardSubject}
-        description="Este flujo guarda temporalmente la información en cuatro pasos: datos de usuario, operación, ficha médica y huella biometrica. Solo al finalizar se crea/actualiza el cliente y la nueva operación."
+        description="Este flujo guarda temporalmente la información en cinco pasos: datos de usuario, operación, ficha médica y huella biometrica. Solo al finalizar se crea/actualiza el cliente y la nueva operación."
         actions={[{
-          label: isReactivation ? 'Volver a cliente' : 'Volver a prospectos',
+          label: isReactivation
+            ? 'Volver a cliente'
+            : isDirect
+              ? 'Volver a clientes'
+              : 'Volver a prospectos',
           variant: 'ghost',
-          to: isReactivation ? `/cms/clientes/${clientId}` : '/cms/prospectos'
+          to: isReactivation
+            ? `/cms/clientes/${clientId}`
+            : isDirect
+              ? '/cms/clientes'
+              : '/cms/prospectos'
         }]}
       />
 
@@ -147,23 +174,33 @@ export function AdminProspectConvertPage() {
         </div>
       ) : null}
 
-      <section className="wizard-summary">
-        <article>
-          <span>{isReactivation ? 'Cliente' : 'Prospecto'}</span>
-          <strong>{isReactivation ? data.client?.name : data.prospect?.name}</strong>
-          <p>{isReactivation ? data.client?.ci : data.prospect?.phone}</p>
-        </article>
-        <article>
-          <span>{isReactivation ? 'Estado de cliente' : 'Interes inicial'}</span>
-          <strong>{isReactivation ? data.client?.status : data.prospect?.interest}</strong>
-          <p>{isActiveClient ? 'Agregar nuevo tratamiento' : isReactivation ? 'Procedimiento previo finalizado' : `Registrado por ${data.prospect?.registeredBy}`}</p>
-        </article>
-        <article>
-          <span>{isReactivation ? 'Identificacion' : 'Estado actual'}</span>
-          <strong>{isReactivation ? data.client?.ci : data.prospect?.state}</strong>
-          <p>{isReactivation ? 'Verificado en sistema' : `Creado ${data.prospect?.createdAt}`}</p>
-        </article>
-      </section>
+      {data.prospect != null ? (
+        <section className="wizard-summary">
+          <article>
+            <span>{isReactivation ? 'Cliente' : 'Prospecto'}</span>
+            <strong>{isReactivation ? data.client?.name : data.prospect?.name}</strong>
+            <p>{isReactivation ? data.client?.ci : data.prospect?.phone}</p>
+          </article>
+          <article>
+            <span>{isReactivation ? 'Estado de cliente' : 'Interes inicial'}</span>
+            <strong>{isReactivation ? data.client?.status : data.prospect?.interest}</strong>
+            <p>{isActiveClient ? 'Agregar nuevo tratamiento' : isReactivation ? 'Procedimiento previo finalizado' : `Registrado por ${data.prospect?.registeredBy}`}</p>
+          </article>
+          <article>
+            <span>{isReactivation ? 'Identificacion' : 'Estado actual'}</span>
+            <strong>{isReactivation ? data.client?.ci : data.prospect?.state}</strong>
+            <p>{isReactivation ? 'Verificado en sistema' : `Creado ${data.prospect?.createdAt}`}</p>
+          </article>
+        </section>
+      ) : (
+        <section className="wizard-summary wizard-summary--direct" aria-label="Encabezado de cliente directo">
+          <article>
+            <span>Modo</span>
+            <strong>Nuevo cliente directo</strong>
+            <p>Este flujo crea un cliente sin prospecto previo. Paso 1 de 5 — datos del nuevo cliente.</p>
+          </article>
+        </section>
+      )}
       <div className="stepper">
         {stepLabels.map((item) => (
           <button

@@ -178,6 +178,9 @@ export function AdminClientsPage() {
         eyebrow="Relacion comercial"
         title="Clientes"
         description="Consulta los clientes consolidados que ya tienen cuenta, historial clinico y acceso al portal para pagos y reservas."
+        actions={[
+          { label: 'Crear cliente directo', variant: 'primary', to: '/cms/clientes/nuevo' },
+        ]}
       />
 
       <AdminRelationshipTabs />

@@ -202,6 +202,14 @@ export type ProspectConversionMedicalConfig = {
 export type ProspectConversionResponse = {
   prospect: ProspectLead | null
   client?: { id: number; name: string; ci: string; status: string; } | null
+  /**
+   * Top-level draft PK surfaced by the direct-mode initialize endpoint so
+   * the wizard can build URLs of the form
+   * `/api/admin/clientes/directo/<int:direct_id>/<step>/`. Optional on the
+   * type because prospect / reactivation responses don't ship it (the
+   * wizard routes those via URL params instead).
+   */
+  draftId?: number
   draft: ProspectConversionDraft
   serviceConfigs: ProspectConversionServiceConfig[]
   operationStates: ProspectConversionStateOption[]

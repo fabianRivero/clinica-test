@@ -131,6 +131,7 @@ function App() {
           <Route index element={<AdminDashboardPage />} />
           <Route path="prospectos" element={<AdminProspectsPage />} />
           <Route path="clientes" element={<AdminClientsPage />} />
+          <Route path="clientes/nuevo" element={<AdminProspectConvertPage />} />
           <Route path="clientes/:clientId" element={<AdminClientDetailPage />} />
           <Route path="clientes/:clientId/reactivar" element={<AdminProspectConvertPage />} />
           <Route path="prospectos/nuevo" element={<AdminProspectCreatePage />} />

@@ -1249,6 +1249,105 @@ export function initializeAdminClientReactivation(clientId: string) {
   return requestJson<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/initialize/`)
 }
 
+/**
+ * Initialize a direct-client-creation wizard. Creates a fresh
+ * `ProspectoConversionBorrador(prospecto=None, cliente=None)` draft
+ * attributed to the calling admin and returns the same
+ * `ProspectConversionResponse` envelope used by the prospect / reactivation
+ * flows (with `prospect: null` and `client: null` until finalize creates
+ * both rows). The endpoint is admin-only; backend returns 403 for any
+ * non-admin caller. Backend uses POST (per design.md task 1.1) even
+ * though the body is empty, mirroring the action-only pattern used by
+ * other initialize endpoints in the conversion family.
+ */
+export function initializeDirectClientConversion() {
+  return requestJsonWithBody<ProspectConversionResponse>(
+    '/api/admin/clientes/directo/initialize/',
+    {},
+  )
+}
+
+export function cancelAdminDirectClientConversion(directId: number) {
+  return requestJsonWithBody<{ detail: string }>(`/api/admin/clientes/directo/${directId}/cancelar/`, {})
+}
+
+/**
+ * Submit step 1 in direct-client mode. The backend enforces global CI /
+ * username uniqueness (no "self" exclusion because no FK is set yet) and
+ * returns 400 with a Spanish message on collision. Returns the refreshed
+ * `ProspectConversionResponse` on success so the wizard can advance.
+ */
+export function saveAdminDirectClientUserStep(directId: number, payload: ProspectConversionUserData & { password?: string }) {
+  return requestJsonWithBody<ProspectConversionResponse>(
+    `/api/admin/clientes/directo/${directId}/paso-1/`,
+    payload,
+  )
+}
+
+export function saveAdminDirectClientOperationStep(directId: number, payload: ProspectConversionOperationData) {
+  return requestJsonWithBody<ProspectConversionResponse>(
+    `/api/admin/clientes/directo/${directId}/paso-2/`,
+    payload,
+  )
+}
+
+export function saveAdminDirectClientMedicalStep(directId: number, payload: ProspectConversionMedicalData) {
+  return requestJsonWithBody<ProspectConversionResponse>(
+    `/api/admin/clientes/directo/${directId}/paso-3/`,
+    payload,
+  )
+}
+
+export function saveAdminDirectClientBiometricStep(directId: number, payload: ProspectConversionBiometricData) {
+  return requestJsonWithBody<ProspectConversionResponse>(
+    `/api/admin/clientes/directo/${directId}/paso-4/`,
+    payload,
+  )
+}
+
+/**
+ * Finalize direct-client creation. Backend creates `Usuario (CLIENTE)` +
+ * `Cliente` inside one `transaction.atomic()` block, stamps biometric from
+ * the wizard payload (or skips if suspended), and deletes the draft on
+ * success. Accepts the optional medical PDF and the optional first-payment
+ * payload via multipart — same shape as the prospect finalize endpoint.
+ */
+export function finalizeAdminDirectClientCreation(
+  directId: number,
+  documentFile?: File,
+  firstPayment?: FirstConversionPaymentPayload,
+) {
+  const formData = new FormData()
+  if (documentFile) {
+    formData.append('documentoFichaPdf', documentFile)
+  }
+  if (firstPayment) {
+    if (firstPayment.paymentMethod) {
+      formData.append('primerPagoMetodo', firstPayment.paymentMethod)
+    }
+    if (firstPayment.montoFisico) {
+      formData.append('primerPagoMontoFisico', firstPayment.montoFisico)
+    }
+    if (firstPayment.montoVirtual) {
+      formData.append('primerPagoMontoVirtual', firstPayment.montoVirtual)
+    }
+    if (firstPayment.receiptFile) {
+      formData.append('primerPagoComprobante', firstPayment.receiptFile)
+    }
+    if (firstPayment.amount) {
+      formData.append('primerPagoMonto', firstPayment.amount)
+    }
+    if (firstPayment.details) {
+      formData.append('primerPagoDetalle', firstPayment.details)
+    }
+  }
+
+  return requestFormDataWithBody<ProspectConversionFinalizeResponse>(
+    `/api/admin/clientes/directo/${directId}/finalizar/`,
+    formData,
+  )
+}
+
 export function getAdminClientReactivation(clientId: string) {
   return requestJson<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/`)
 }
