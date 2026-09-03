@@ -5,6 +5,8 @@ import { DataState } from '../../components/admin/DataState'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
+import { AdminRegisterPaymentModal } from '../../components/admin/AdminRegisterPaymentModal'
+import { AdminRegisterAppointmentPaymentModal } from '../../components/admin/AdminRegisterAppointmentPaymentModal'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
@@ -19,11 +21,20 @@ import {
   deleteAdminOperationQuota,
   getAdminOperationDetail,
   markAdminAppointmentPendingBiometric,
+  registerAdminAppointmentPayment,
+  registerAdminPayment,
   rescheduleAdminAppointment,
   updateAdminOperationDetails,
   updateAdminOperationPricePlan,
 } from '../../services/api/admin'
-import type { AdminReservationExtendedPayload } from '../../types/admin'
+import type {
+  AdminAppointment,
+  AdminPaymentQuota,
+  AdminReservationExtendedPayload,
+  OperationDetailAppointment,
+  RegisterAdminAppointmentPaymentPayload,
+  RegisterAdminPaymentPayload,
+} from '../../types/admin'
 
 function getStatusTone(status: string) {
   const normalized = status.toLowerCase()
@@ -100,6 +111,20 @@ export function AdminOperationDetailPage() {
   // bloquea PAGADAS y con comprobante en revision; el frontend oculta
   // el boton en esos casos.
   const [deletingQuotaNumber, setDeletingQuotaNumber] = useState<number | null>(null)
+  // Estado del modal `AdminRegisterPaymentModal` reusado desde el bloque
+  // "Plan de pagos". El admin registra pagos en nombre del cliente desde
+  // cada cuota pendiente sin salir de la pagina de detalle.
+  const [registerQuota, setRegisterQuota] = useState<AdminPaymentQuota | null>(null)
+  const [isRegistering, setIsRegistering] = useState(false)
+  const [registerError, setRegisterError] = useState<string | null>(null)
+  // Estado del modal `AdminRegisterAppointmentPaymentModal` reusado desde
+  // el bloque "Citas medicas" para que el admin cobre una cita al
+  // consultorio sin salir del detalle de operacion. El payload de la cita
+  // ya incluye `precio` / `saldoPendiente` / `pagos[]` (ver
+  // `_operation_detail` en backend/config/api_views.py).
+  const [cobrarAppointment, setCobrarAppointment] = useState<AdminAppointment | null>(null)
+  const [isCobrarSubmitting, setIsCobrarSubmitting] = useState(false)
+  const [cobrarError, setCobrarError] = useState<string | null>(null)
   // El precio y los montos por cuota se editan desde el bloque "Citas y
 // cuotas" (sub-bloque Plan de pagos). El save reutiliza el mismo
 // endpoint `actualizar-precio` con la lista `quotas` opcional.
@@ -462,6 +487,94 @@ const handleSaveSessions = async () => {
     }
   }
 
+  // Handler del modal `AdminRegisterPaymentModal`. Mismo flujo que en
+  // /cms/pagos/cuotas: el modal entrega `{ paymentMethod, montoFisico,
+  // montoVirtual, receiptFile, details }`, nosotros completamos el
+  // `amount` desde la cuota seleccionada y disparamos el POST. El reload
+  // refresca `data.operation.quotas` + `paymentsCount` para reflejar el
+  // pago registrado (la cuota podra pasar a Pagada si el backend decide
+  // que la suma aprobada ya cubre el monto programado).
+  const handleRegisterPayment = async (
+    payload: RegisterAdminPaymentPayload,
+  ) => {
+    if (!registerQuota) return
+    setIsRegistering(true)
+    setRegisterError(null)
+    try {
+      const response = await registerAdminPayment(registerQuota.rawId, payload)
+      showNotification({
+        title: 'Pago registrado',
+        message: response.detail,
+        tone: 'success',
+      })
+      setRegisterQuota(null)
+      reload()
+    } catch (requestError) {
+      setRegisterError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo registrar el pago.',
+      )
+    } finally {
+      setIsRegistering(false)
+    }
+  }
+
+  const closeRegisterModal = () => {
+    setRegisterQuota(null)
+    setRegisterError(null)
+  }
+
+  // Handler del modal `AdminRegisterAppointmentPaymentModal`. El cita
+  // ya viene con `precio` / `saldoPendiente` del payload de la operacion;
+  // solo necesitamos su `rawId` + el `operationRawId` del padre (para
+  // armar el POST a `/operaciones/<op>/citas/<cita>/cobrar/`).
+  const handleCobrarAppointment = async (
+    payload: RegisterAdminAppointmentPaymentPayload,
+  ) => {
+    if (!cobrarAppointment || !data) return
+    setIsCobrarSubmitting(true)
+    setCobrarError(null)
+    try {
+      const response = await registerAdminAppointmentPayment(
+        data.operation.rawId,
+        cobrarAppointment.rawId,
+        payload,
+      )
+      showNotification({
+        title: 'Pago registrado',
+        message: response.detail,
+        tone: 'success',
+      })
+      setCobrarAppointment(null)
+      reload()
+    } catch (requestError) {
+      setCobrarError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo registrar el pago de la cita.',
+      )
+    } finally {
+      setIsCobrarSubmitting(false)
+    }
+  }
+
+  const closeCobrarAppointmentModal = () => {
+    setCobrarAppointment(null)
+    setCobrarError(null)
+  }
+
+  // Misma regla de habilitacion que ClientAppointmentSection: precio
+  // positivo y estado no terminal. CANCELADA / NO_ASISTIO son rechazados
+  // por el backend con 400.
+  const canCobrarAppointment = (appointment: OperationDetailAppointment): boolean => {
+    const precioNumber = Number(appointment.precio ?? '0') || 0
+    if (precioNumber <= 0) return false
+    const status = (appointment.status ?? '').toLowerCase()
+    if (status === 'cancelada' || status === 'no asistio') return false
+    return true
+  }
+
   const handleSaveQuotas = async () => {
     if (!data) return
     setQuotasFormError(null)
@@ -625,7 +738,10 @@ const handleSaveSessions = async () => {
     singleAddMonto > 0 &&
     Number.isFinite(Number(numberFromCurrency(operation.price))) &&
     singleAddMonto +
-      operation.quotas.reduce((acc, q) => acc + (Number(q.amountValue) || 0), 0) >
+      operation.quotas.reduce(
+        (acc, q) => acc + (Number(q.paidAmountValue) || 0),
+        0,
+      ) >
       Number(numberFromCurrency(operation.price))
 
   return (
@@ -882,16 +998,50 @@ const handleSaveSessions = async () => {
                     // cancelar-verificacion/ del spec appointment-states).
                     const isRevertible =
                       normalized === 'realizada pendiente de verificación'
+                    // "Cobrar cita" puede aparecer junto a cualquiera de
+                    // las acciones de lifecycle de arriba, siempre que
+                    // `precio > 0` y el estado no sea terminal. Si la
+                    // cita no califica para ninguna accion de lifecycle
+                    // pero SI es cobrable (ej. CONFIRMADA sin cierre),
+                    // seguimos mostrando el boton aislado.
+                    const canCobrar = canCobrarAppointment(appointment)
                     if (
                       !isCancelable &&
                       !isCloseable &&
                       !isMarkPending &&
-                      !isRevertible
+                      !isRevertible &&
+                      !canCobrar
                     ) {
                       return null
                     }
                     return (
                       <div className="table-actions">
+                        {canCobrar ? (
+                          <button
+                            className="button button--ghost button--compact"
+                            type="button"
+                            disabled={isCobrarSubmitting}
+                            aria-label={`Cobrar cita ${appointment.rawId}`}
+                            data-testid={`cobrar-cita-operation-${appointment.rawId}`}
+                            onClick={() => {
+                              setCobrarError(null)
+                              // El modal solo necesita `rawId`,
+                              // `dateTime` y los cuatro campos de
+                              // breakdown (`precio` / `saldoPendiente` /
+                              // `pagos_count` / `pagos`) que
+                              // `OperationDetailAppointment` ya expone
+                              // via el helper backend `_cita_payment_breakdown`.
+                              // Cast through `unknown` to satisfy TS: the
+                              // two types are intentionally divergent
+                              // (the admin operation detail uses a
+                              // narrower shape) but the fields the
+                              // modal reads overlap.
+                              setCobrarAppointment(appointment as unknown as AdminAppointment)
+                            }}
+                          >
+                            Cobrar cita
+                          </button>
+                        ) : null}
                         {isCancelable ? (
                           <button
                             className="button button--ghost button--compact"
@@ -989,6 +1139,9 @@ const handleSaveSessions = async () => {
               <div>
                 <span>Plan de pagos</span>
                 <strong>{operation.quotas.length} cuota(s)</strong>
+                <small className="field__hint">
+                  Precio del tratamiento: {operation.price}
+                </small>
               </div>
               {isAddingQuota ? (
                 <div className="table-actions">
@@ -1112,32 +1265,33 @@ const handleSaveSessions = async () => {
                   </div>
                   <small className="field__hint">
                     {(() => {
-                      // Saldo restante = precio total - suma de montos ya
-                      // programados (los existentes + el nuevo que el admin
-                      // esta tipeando). Sirve de pista: despues de guardar
-                      // esta cuota, ese sera el monto que aun queda por
-                      // distribuir entre las siguientes cuotas. Si el
-                      // restante es negativo, la suma EXCEDE el precio
-                      // total y el backend rechazara el guardado.
+                      // Saldo restante = precio total - lo ya pagado -
+                      // el monto que el admin esta tipeando. Refleja
+                      // cuanto queda por distribuir entre esta cuota y
+                      // las siguientes. Los pagos aprobados sobre cuotas
+                      // existentes ya cubrieron parte del precio total y
+                      // liberan cupo. Si el restante es negativo, la suma
+                      // EXCEDE el precio total y el backend rechazara el
+                      // guardado.
                       const precioTotal = Number(numberFromCurrency(operation.price))
                       if (!Number.isFinite(precioTotal) || precioTotal <= 0) return null
-                      const programadoExistente = operation.quotas.reduce(
-                        (acc, q) => acc + (Number(q.amountValue) || 0),
+                      const pagadoExistente = operation.quotas.reduce(
+                        (acc, q) => acc + (Number(q.paidAmountValue) || 0),
                         0,
                       )
                       const digitado = Number(newQuotaDraft.montoProgramado) || 0
-                      const restante = precioTotal - programadoExistente - digitado
+                      const restante = precioTotal - pagadoExistente - digitado
                       if (restante < 0) {
                         return (
                           <span className="field__error">
-                            La suma ({precioTotal.toFixed(2)} de precio + {digitado.toFixed(2)} de esta cuota menos lo ya programado de {programadoExistente.toFixed(2)}) excederia el precio total en Bs {Math.abs(restante).toFixed(2)}.
+                            La suma (precio total Bs {precioTotal.toFixed(2)} - ya pagado Bs {pagadoExistente.toFixed(2)} + esta cuota Bs {digitado.toFixed(2)}) excederia el precio total en Bs {Math.abs(restante).toFixed(2)}.
                           </span>
                         )
                       }
                       return (
                         <>
                           Saldo restante despues de esta cuota:{' '}
-                          <strong>Bs {restante.toFixed(2)}</strong> (de Bs {precioTotal.toFixed(2)}).
+                          <strong>Bs {restante.toFixed(2)}</strong> (de Bs {precioTotal.toFixed(2)}, ya pagado Bs {pagadoExistente.toFixed(2)}).
                         </>
                       )
                     })()}
@@ -1154,19 +1308,34 @@ const handleSaveSessions = async () => {
                   // error exacto al guardar.
                   const backendQuota = operation.quotas.find((q2) => q2.number === q.nroCuota)
                   const isPagada = backendQuota?.status === 'Pagado'
-                  const hasPayments = (backendQuota?.paymentsCount ?? 0) > 0
+                  const hasPendingReview = backendQuota?.hasPendingReview ?? false
+                  const hasRejectedPayments = backendQuota?.hasRejectedPayments ?? false
                   const lockReason = isPagada
                     ? 'Esta cuota ya fue pagada y no se puede editar.'
-                    : hasPayments
-                      ? 'Esta cuota tiene un comprobante registrado; el backend puede bloquear la edicion si esta en revision.'
-                      : null
+                    : hasPendingReview
+                      ? 'Esta cuota tiene un comprobante en revision; revisa o espera la aprobacion antes de editar.'
+                      : hasRejectedPayments
+                        ? 'Esta cuota tiene un comprobante observado; revisa antes de editar.'
+                        : null
                   return (
                     <article className="operation-detail-item" key={`quota-edit-${q.nroCuota}`}>
                       <div className="operation-detail-item__header">
                         <strong>Cuota {q.nroCuota}</strong>
                         {lockReason ? (
-                          <StatusBadge tone={isPagada ? 'success' : 'warning'}>
-                            {isPagada ? 'Pagada' : 'Con comprobante'}
+                          <StatusBadge
+                            tone={
+                              isPagada
+                                ? 'success'
+                                : hasRejectedPayments
+                                  ? 'danger'
+                                  : 'warning'
+                            }
+                          >
+                            {isPagada
+                              ? 'Pagada'
+                              : hasRejectedPayments
+                                ? 'Observado'
+                                : 'En revision'}
                           </StatusBadge>
                         ) : null}
                       </div>
@@ -1209,36 +1378,92 @@ const handleSaveSessions = async () => {
                   // mismos casos para evitar enviar un POST que
                   // retornaria 400.
                   const isPagada = quota.status === 'Pagado'
-                  const hasPayments = (quota.paymentsCount ?? 0) > 0
-                  const canDelete = !isPagada && !hasPayments && canEditPricePlan
+                  const hasPendingReview = quota.hasPendingReview ?? false
+                  const hasRejectedPayments = quota.hasRejectedPayments ?? false
+                  const canDelete =
+                    !isPagada &&
+                    !hasPendingReview &&
+                    !hasRejectedPayments &&
+                    canEditPricePlan
                   const isDeleting = deletingQuotaNumber === quota.number
+                  // Solo cuotas NO pagadas admiten registrar un pago
+                  // nuevo. La decision la confirma el backend; aca
+                  // bloqueamos el boton para evitar un POST que siempre
+                  // retornaria 400.
+                  const canRegisterPayment = !isPagada && !isRegistering
                   return (
                     <article className="operation-detail-item" key={quota.id}>
                       <div className="operation-detail-item__header">
                         <strong>Cuota {quota.number}</strong>
-                        {canDelete ? (
-                          <button
-                            className="button button--ghost button--compact"
-                            type="button"
-                            onClick={() => void handleDeleteQuota(quota.number)}
-                            disabled={isDeleting || deletingQuotaNumber !== null}
-                            aria-label={`Quitar cuota ${quota.number}`}
-                          >
-                            {isDeleting ? 'Eliminando...' : 'Quitar'}
-                          </button>
-                        ) : (
-                          <small className="field__hint">
-                            {isPagada
-                              ? 'Pagada: no se puede eliminar.'
-                              : hasPayments
-                                ? 'Con comprobante: revisar antes de eliminar.'
-                                : null}
-                          </small>
-                        )}
+                        <div className="table-actions">
+                          {canRegisterPayment ? (
+                            <button
+                              className="button button--ghost button--compact"
+                              type="button"
+                              onClick={() => {
+                                // Sin `patientId` no podemos armar el
+                                // modal (la cuota necesita el id del
+                                // cliente para futuras referencias). El
+                                // backend SIEMPRE lo expone en esta ruta,
+                                // asi que es una defensa en caso de que
+                                // un dia deje de venir.
+                                if (operation.patientId === undefined) {
+                                  showNotification({
+                                    title: 'No se pudo registrar el pago',
+                                    message:
+                                      'La operacion no expone el id del cliente; recarga la pagina.',
+                                    tone: 'danger',
+                                  })
+                                  return
+                                }
+                                setRegisterError(null)
+                                setRegisterQuota({
+                                  id: quota.id,
+                                  rawId: quota.rawId,
+                                  clientId: operation.patientId,
+                                  patient: operation.patient,
+                                  operation: operation.procedure,
+                                  quotaNumber: quota.number,
+                                  amount: quota.amountValue ?? quota.amount,
+                                  paidAmount: quota.paidAmountValue,
+                                  dueDate: quota.dueDate,
+                                  status: quota.status,
+                                  paymentsCount: quota.paymentsCount,
+                                })
+                              }}
+                              disabled={isRegistering}
+                              aria-label={`Registrar pago de cuota ${quota.number}`}
+                            >
+                              Registrar pago
+                            </button>
+                          ) : null}
+                          {canDelete ? (
+                            <button
+                              className="button button--ghost button--compact"
+                              type="button"
+                              onClick={() => void handleDeleteQuota(quota.number)}
+                              disabled={isDeleting || deletingQuotaNumber !== null}
+                              aria-label={`Quitar cuota ${quota.number}`}
+                            >
+                              {isDeleting ? 'Eliminando...' : 'Quitar'}
+                            </button>
+                          ) : !canRegisterPayment ? (
+                            <small className="field__hint">
+                              {isPagada
+                                ? 'Pagada: no se puede eliminar.'
+                                : hasPendingReview
+                                  ? 'Con comprobante pendiente de revision: revisar antes de eliminar.'
+                                  : hasRejectedPayments
+                                    ? 'Con comprobante observado: revisar antes de eliminar.'
+                                    : null}
+                            </small>
+                          ) : null}
+                        </div>
                       </div>
-                      <p>{quota.amount} | vence: {quota.dueDate}</p>
+                      <p>
+                        {quota.paidAmount ?? 'Bs 0.00'} / {quota.amount} | vence: {quota.dueDate}
+                      </p>
                       <span>{quota.status}</span>
-                      <small>Pagos registrados: {quota.paymentsCount}</small>
                     </article>
                   )
                 })}
@@ -1550,6 +1775,24 @@ const handleSaveSessions = async () => {
       */}
 
       <ConfirmDialog />
+
+      <AdminRegisterPaymentModal
+        quota={registerQuota}
+        isOpen={registerQuota !== null}
+        isSubmitting={isRegistering}
+        errorMessage={registerError}
+        onClose={closeRegisterModal}
+        onSubmit={handleRegisterPayment}
+      />
+
+      <AdminRegisterAppointmentPaymentModal
+        appointment={cobrarAppointment}
+        isOpen={cobrarAppointment !== null}
+        isSubmitting={isCobrarSubmitting}
+        errorMessage={cobrarError}
+        onClose={closeCobrarAppointmentModal}
+        onSubmit={handleCobrarAppointment}
+      />
 
       {photoPreviewUrl ? (
         <div

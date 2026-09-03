@@ -38,6 +38,95 @@ export type VerificationPayment = {
   dueDate?: string
   receiptUrl?: string
   verifier?: string
+  /** Payment channel — `VIRTUAL` / `FISICO` / `MIXTO`. */
+  paymentMethod?: string
+  /** Formatted "Bs X.XX" — present for every method. */
+  physicalAmount?: string
+  virtualAmount?: string
+}
+
+/**
+ * Payload used by `registerAdminPayment`. Mirrors the write serializer on
+ * the backend (`PagoRealizadoCreateSerializer`): `paymentMethod` is
+ * always required; `montoFisico` / `montoVirtual` are required only when
+ * the method is `MIXTO`. Receipt and details are optional regardless of
+ * method — admins may register a desk cash payment without a receipt.
+ */
+export type RegisterAdminPaymentPayload = {
+  paymentMethod: 'VIRTUAL' | 'FISICO' | 'MIXTO'
+  amount: string
+  montoFisico?: string
+  montoVirtual?: string
+  receiptFile?: File
+  details?: string
+}
+
+export type RegisterAdminPaymentResponse = {
+  detail: string
+  payment: VerificationPayment
+}
+
+/**
+ * Single `PagoCita` row as serialised by `PagoCitaSerializer` on the backend.
+ * Mirrors the read payload exactly (`monto_pagado`, `metodo_pago`,
+ * `monto_fisico`, `monto_virtual`, `comprobante_url`, `estado_verificacion`,
+ * `detalles_pago`, `created_at`) so the frontend can render the cita's
+ * payment breakdown without remapping.
+ */
+export type AdminAppointmentPayment = {
+  id: number
+  monto_pagado: string
+  metodo_pago: 'VIRTUAL' | 'FISICO' | 'MIXTO'
+  monto_fisico: string
+  monto_virtual: string
+  comprobante_url: string
+  estado_verificacion: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO'
+  detalles_pago: string
+  created_at: string
+}
+
+/**
+ * Cita union passed into `AdminRegisterAppointmentPaymentModal`.
+ * Extends `ClientAppointment` so the modal can reuse the same
+ * `operation` / `specialist` / `dateTime` / `isFreeMedicalAppointment`
+ * fields already rendered by the cita sections. The four payment
+ * fields (`precio`, `saldoPendiente`, `pagos_count`, `pagos`) are
+ * optional here because not every call-site payload surfaces them
+ * yet (e.g. client portal / kiosko); the modal reads them defensively
+ * and the admin detail page always populates them.
+ */
+export type AdminAppointment = ClientAppointment & {
+  /** Cita price (Bs, formatted "0.00"); backend default is 0. */
+  precio?: string
+  /** Residual balance after APROBADO payments (Bs, formatted). */
+  saldoPendiente?: string
+  /** Count of `PagoCita` rows attached to the cita. */
+  pagos_count?: number
+  /** Read serializer payments array (may be absent on legacy payloads). */
+  pagos?: AdminAppointmentPayment[]
+}
+
+/**
+ * Payload for `registerAdminAppointmentPayment` /
+ * `registerAdminFreeAppointmentPayment`. Mirrors the backend
+ * `PagoCitaCreateSerializer`: `paymentMethod` always required,
+ * `montoFisico` / `montoVirtual` only for `MIXTO`, receipt optional
+ * regardless of method (admin collected in person).
+ */
+export type RegisterAdminAppointmentPaymentPayload = {
+  paymentMethod: 'VIRTUAL' | 'FISICO' | 'MIXTO'
+  amount: string
+  montoFisico?: string
+  montoVirtual?: string
+  receiptFile?: File
+  details?: string
+}
+
+export type RegisterAdminAppointmentPaymentResponse = {
+  detail: string
+  payment: AdminAppointmentPayment
+  /** Refreshed cita item carrying the new `precio` / `saldoPendiente` / `pagos[]`. */
+  appointment: AdminAppointment
 }
 
 export type UpcomingPayment = {
@@ -242,6 +331,11 @@ export type ProspectMedicalAppointment = {
   statusValue?: string
   statusTone?: 'approved' | 'danger' | 'observed' | 'pending'
   canCancel: boolean
+  // --- citas-pagos follow-on: pago breakdown surfaced by the backend ---
+  precio?: string
+  saldoPendiente?: string
+  pagos_count?: number
+  pagos?: AdminAppointmentPayment[]
 }
 
 export type OperationCardData = {
@@ -449,6 +543,25 @@ export type OperationDetailAppointment = {
   }>
   fotoAntesUrl?: string
   fotoDespuesUrl?: string
+  // --- Cita-level payment breakdown (mirrors the client-detail payload
+  // so the operation-detail page can drive the same Cobrar cita modal).
+  // `precio` / `saldoPendiente` / `pagos_count` / `pagos` are produced
+  // by the backend helper `_cita_payment_breakdown`; they are optional
+  // here because legacy payloads from before PR 2 may not surface them.
+  precio?: string
+  saldoPendiente?: string
+  pagos_count?: number
+  pagos?: Array<{
+    id: number
+    monto_pagado: string
+    metodo_pago: 'VIRTUAL' | 'FISICO' | 'MIXTO'
+    monto_fisico: string
+    monto_virtual: string
+    comprobante_url: string
+    estado_verificacion: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO'
+    detalles_pago: string
+    created_at: string
+  }>
 }
 
 export type OperationDetailQuota = {
@@ -457,9 +570,13 @@ export type OperationDetailQuota = {
   number: number
   amount: string
   amountValue: string
+  paidAmount?: string
+  paidAmountValue?: string
   dueDate: string
   status: string
   paymentsCount: number
+  hasPendingReview?: boolean
+  hasRejectedPayments?: boolean
 }
 
 export type OperacionFoto = {
@@ -583,6 +700,7 @@ export type AdminPaymentQuota = {
   operation: string
   quotaNumber: number
   amount: string
+  paidAmount?: string
   dueDate: string
   status: string
   paymentsCount: number
@@ -590,6 +708,10 @@ export type AdminPaymentQuota = {
 
 export type UpdateAdminPaymentQrConfigResponse = {
   detail: string
+  paymentQrConfig: PaymentQrConfig
+}
+
+export type GetAdminPaymentQrConfigResponse = {
   paymentQrConfig: PaymentQrConfig
 }
 

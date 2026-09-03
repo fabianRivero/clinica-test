@@ -27,7 +27,14 @@ def _request_ip(request):
 
 
 from accounts.models import Rol, Usuario
-from billing.models import CategoriaGasto, ConfiguracionPagoQR, CuotaPlanPago, GastoSucursal, PagoRealizado
+from billing.models import (
+    CategoriaGasto,
+    ConfiguracionPagoQR,
+    CuotaPlanPago,
+    GastoSucursal,
+    PagoCita,
+    PagoRealizado,
+)
 from catalogs.models import (
     GrupoOpciones,
     Maquinaria,
@@ -84,6 +91,7 @@ from config.api.helpers_operations import (
     operation_reference_appointment,
     prospect_appointment_operation_card,
     quota_display_status,
+    quota_paid_amount,
     quota_programmed_amount,
     quota_status,
     appointment_biometric_status,
@@ -91,6 +99,7 @@ from config.api.helpers_operations import (
 from config.client_api_views import (
     _appointment_item as _client_appointment_item,
     _build_operation_slot_map as _client_operation_slot_map,
+    _cita_payment_breakdown,
     _operation_item as _client_operation_item,
     _payment_item as _client_payment_item,
     _quota_item as _client_quota_item,
@@ -115,6 +124,7 @@ _agenda_verification_method = agenda_verification_method
 _quota_status = quota_status
 _quota_programmed_amount = quota_programmed_amount
 _quota_display_status = quota_display_status
+_quota_paid_amount = quota_paid_amount
 _operation_reference_appointment = operation_reference_appointment
 _operation_branch = operation_branch
 _operation_branch_id = operation_branch_id
@@ -417,7 +427,9 @@ def _operation_detail_queryset():
     ).prefetch_related(
         Prefetch(
             "citas_medicas",
-            queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
+            queryset=CitaMedica.objects.select_related()
+            .prefetch_related("pagos_cita")
+            .order_by("fecha_hora"),
         ),
         Prefetch(
             "cuotas_plan_pagos",
@@ -474,9 +486,17 @@ def _operation_detail(operacion, request=None):
             "rawId": cuota.pk,
             "amount": currency(_quota_programmed_amount(cuota)),
             "amountValue": f"{_quota_programmed_amount(cuota):.2f}",
+            "paidAmount": currency(_quota_paid_amount(cuota)),
+            "paidAmountValue": f"{_quota_paid_amount(cuota):.2f}",
             "dueDate": date_label(cuota.fecha_vencimiento),
             "status": _quota_display_status(cuota),
             "paymentsCount": cuota.pagos_realizados.count(),
+            "hasPendingReview": cuota.pagos_realizados.filter(
+                estado_verificacion=PagoRealizado.EstadoVerificacion.PENDIENTE
+            ).exists(),
+            "hasRejectedPayments": cuota.pagos_realizados.filter(
+                estado_verificacion=PagoRealizado.EstadoVerificacion.RECHAZADO
+            ).exists(),
         }
         for cuota in operacion.cuotas_plan_pagos.all()
     ]
@@ -624,6 +644,12 @@ def _operation_detail(operacion, request=None):
                 # Empty string when the photo is missing.
                 "fotoAntesUrl": cita.foto_antes.url if cita.foto_antes else "",
                 "fotoDespuesUrl": cita.foto_despues.url if cita.foto_despues else "",
+                # Pricing + payment breakdown so the operation-detail page
+                # can render the "Cobrar cita" button and the modal with
+                # the same ``precio`` / ``saldoPendiente`` / ``pagos`` shape
+                # that the client-detail page exposes via
+                # ``_client_appointment_item``.
+                **_cita_payment_breakdown(cita, request=request),
             }
             for cita in operacion.citas_medicas.all()
         ],
@@ -633,7 +659,7 @@ def _operation_detail(operacion, request=None):
     }
 
 
-def _prospect_item(prospecto):
+def _prospect_item(prospecto, request=None):
     active_appointment = next(
         (
             cita
@@ -662,14 +688,14 @@ def _prospect_item(prospecto):
         "observations": prospecto.observaciones,
         "createdAt": _datetime_label(prospecto.created_at),
         "convertedAt": _datetime_label(prospecto.fecha_conversion) if prospecto.fecha_conversion else "-",
-        "medicalAppointments": [_prospect_appointment_item(c) for c in citas],
+        "medicalAppointments": [_prospect_appointment_item(c, request=request) for c in citas],
     }
 
 
-def _prospect_appointment_item(appointment):
+def _prospect_appointment_item(appointment, request=None):
     if not appointment:
         return None
-    return {
+    base = {
         "id": f"CPR-{appointment.pk:04d}",
         "rawId": appointment.pk,
         "prospectRawId": appointment.prospecto_id,
@@ -685,12 +711,14 @@ def _prospect_appointment_item(appointment):
         ),
         "canCancel": appointment.estado == CitaProspecto.Estado.PROGRAMADA and appointment.fecha_hora > timezone.now(),
     }
+    base.update(_cita_payment_breakdown(appointment, request=request))
+    return base
 
 
-def _free_client_appointment_item(appointment):
+def _free_client_appointment_item(appointment, request=None):
     if not appointment:
         return None
-    return {
+    base = {
         "id": f"CLI-CIT-{appointment.pk:04d}",
         "rawId": appointment.pk,
         "operationRawId": None,
@@ -713,6 +741,8 @@ def _free_client_appointment_item(appointment):
         "biometricMockTemplate": "",
         "isFreeMedicalAppointment": True,
     }
+    base.update(_cita_payment_breakdown(appointment, request=request))
+    return base
 
 
 def _medical_appointment_service_config():
@@ -839,7 +869,7 @@ def _admin_client_queryset():
     )
 
 
-def _admin_client_detail(cliente):
+def _admin_client_detail(cliente, request=None):
     operations = list(cliente.operaciones.all())
     appointments = [
         cita
@@ -880,14 +910,14 @@ def _admin_client_detail(cliente):
             metric(
                 "admin-client-appointments",
                 "Citas reservadas",
-                len(appointments),
+                len(appointments) + len(free_appointments),
                 f"{len(upcoming_appointments)} próxima(s)",
                 "primary",
             ),
             metric(
                 "admin-client-sessions",
-                "Sesiones realizadas",
-                len(appointments),
+                "Sesiones",
+                len(appointments) + len(free_appointments),
                 "Todas las sesiones",
                 "success",
             ),
@@ -908,12 +938,12 @@ def _admin_client_detail(cliente):
         ],
         "operations": [_client_operation_item(operacion) for operacion in operations],
         "appointments": [
-            *[_client_appointment_item(cita) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
-            *[_free_client_appointment_item(cita) for cita in sorted(free_appointments, key=lambda item: item.fecha_hora)],
+            *[_client_appointment_item(cita, request=request) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
+            *[_free_client_appointment_item(cita, request=request) for cita in sorted(free_appointments, key=lambda item: item.fecha_hora)],
         ],
         "sessions": [
-            *[_client_appointment_item(cita) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
-            *[_free_client_appointment_item(cita) for cita in sorted(free_appointments, key=lambda item: item.fecha_hora)],
+            *[_client_appointment_item(cita, request=request) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
+            *[_free_client_appointment_item(cita, request=request) for cita in sorted(free_appointments, key=lambda item: item.fecha_hora)],
         ],
         "payments": [_client_payment_item(payment) for payment in sorted(payments, key=lambda item: item.created_at, reverse=True)],
         "pendingQuotas": [_client_quota_item(cuota) for cuota in sorted(pending_quotas, key=lambda item: (item.fecha_vencimiento, item.nro_cuota))],
@@ -3166,7 +3196,7 @@ def admin_prospectos(request):
                 "danger",
             ),
         ],
-        "prospects": [_prospect_item(prospecto) for prospecto in prospectos_qs],
+        "prospects": [_prospect_item(prospecto, request=request) for prospecto in prospectos_qs],
         "clients": [_client_item(cliente) for cliente in clientes_qs],
     }
     return json_response(data)
@@ -3199,7 +3229,7 @@ def admin_prospect_medical_availability(request, prospecto_id):
 
     return json_response(
         {
-            "prospect": _prospect_item(prospecto),
+            "prospect": _prospect_item(prospecto, request=request),
             "service": {
                 "rawId": service_config.pk,
                 "name": service_config.tipo_servicio.tipo,
@@ -3241,7 +3271,23 @@ def admin_create_prospect_medical_appointment(request, prospecto_id):
     fecha_hora_str = payload.get("dateTime")
     if not sucursal_id or not fecha_hora_str:
         return json_response({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
-        
+
+    # Optional precio — captured at booking time so the admin can reserve
+    # and bill in the same step (or set 0 and bill later via the cobrar
+    # endpoint once the prospect decides to pay).
+    raw_precio = payload.get("precio")
+    if raw_precio is None or raw_precio == "":
+        precio = Decimal("0")
+    else:
+        try:
+            precio = Decimal(str(raw_precio))
+        except (InvalidOperation, ValueError):
+            return json_response({"detail": "precio invalido."}, status=400)
+        if precio < 0:
+            return json_response(
+                {"detail": "precio debe ser mayor o igual a 0."}, status=400
+            )
+
     try:
         from django.utils import dateparse
         fecha_hora = dateparse.parse_datetime(fecha_hora_str)
@@ -3259,13 +3305,216 @@ def admin_create_prospect_medical_appointment(request, prospecto_id):
         fecha_hora=fecha_hora,
         estado=CitaProspecto.Estado.PROGRAMADA,
         detalles_cita="Cita medica agendada libremente por administracion.",
+        precio=precio,
     )
     return json_response(
         {
             "detail": "La cita medica fue agendada correctamente para el prospecto.",
-            "appointment": _prospect_appointment_item(appointment),
+            "appointment": _prospect_appointment_item(appointment, request=request),
         },
         status=201,
+    )
+
+
+# --- citas-pagos follow-on: cobrar cita de prospecto ------------------
+# Endpoint espejo de los de cliente pero con prefijo ``prospectos``.
+# Mismo payload (``paymentMethod``, ``amount``, ``montoFisico?``,
+# ``montoVirtual?``, ``receiptFile?``, ``details?``) y mismas reglas:
+# branch isolation (403 cross-branch), rechazo si ``precio==0`` o si
+# el estado es terminal (CANCELADA/NO_ASISTIO), over-payment guard, y
+# ``PagoCita`` creado directamente en APROBADO.
+@require_POST
+@admin_required
+@transaction.atomic
+def admin_cobrar_prospect_medical_appointment(request, cita_id):
+    from rest_framework.exceptions import (
+        PermissionDenied as DRFPermissionDenied,
+        ValidationError as DRFValidationError,
+    )
+
+    from billing.models import PagoCita
+    from billing.validators import (
+        assert_cita_in_user_branch,
+        assert_not_over_cita_payment,
+    )
+    from config.api.serializers.payments import (
+        PagoCitaCreateSerializer,
+        PagoCitaSerializer,
+    )
+
+    cita = (
+        CitaProspecto.objects.select_for_update(of=("self",))
+        .select_related("prospecto")
+        .filter(pk=cita_id)
+        .first()
+    )
+    if not cita:
+        return json_response(
+            {"detail": "No encontramos la cita solicitada."}, status=404
+        )
+
+    # Branch isolation — DRF PermissionDenied → 403. Function-based
+    # view does NOT auto-convert, so we catch + translate here.
+    try:
+        assert_cita_in_user_branch(request, cita)
+    except DRFPermissionDenied as exc:
+        return json_response({"detail": str(exc.detail)}, status=403)
+
+    # precio == 0 → reject (admin must set a price first).
+    if not cita.precio or cita.precio <= 0:
+        return json_response(
+            {"detail": "Debes asignar un precio a la cita antes de cobrar."},
+            status=400,
+        )
+
+    # Terminal states reject new cobrars (audit trail preserved).
+    if cita.estado in {
+        CitaProspecto.Estado.CANCELADA,
+        CitaProspecto.Estado.NO_ASISTIO,
+    }:
+        return json_response(
+            {"detail": "No puedes cobrar una cita cancelada o sin asistencia."},
+            status=400,
+        )
+
+    # Function-based view (not DRF) → read either multipart (when a
+    # receipt is attached) or JSON. ``PagoCitaCreateSerializer`` only
+    # needs ``paymentMethod``, ``monto_pagado`` + optional breakdown.
+    if request.content_type and request.content_type.startswith("multipart/"):
+        raw = request.POST
+        receipt_file = request.FILES.get("receiptFile")
+    else:
+        raw = load_payload(request) or {}
+        receipt_file = None
+
+    serializer = PagoCitaCreateSerializer(data=raw)
+    if not serializer.is_valid():
+        errors = serializer.errors
+        first_field = next(iter(errors.keys()), None)
+        first_messages = errors.get(first_field, []) if first_field else []
+        summary = (
+            f"{first_field}: {first_messages[0]}"
+            if first_field and first_messages
+            else "Los datos del pago no son validos."
+        )
+        return json_response(
+            {"detail": summary, "errors": errors}, status=400
+        )
+
+    attrs = serializer.validated_data
+
+    # Over-payment guard via the shared helper. Function-based view
+    # does NOT auto-convert DRF ValidationError → 400, so we translate.
+    try:
+        assert_not_over_cita_payment(cita, attrs["monto_pagado"])
+    except DRFValidationError as exc:
+        return json_response(
+            {"detail": exc.detail.get("detail", "Pago rechazado.")},
+            status=400,
+        )
+
+    details = (
+        attrs.get("details")
+        or "Pago de cita de prospecto registrado por administracion."
+    )
+
+    pago = PagoCita.objects.create(
+        cita_prospecto=cita,
+        monto_pagado=attrs["monto_pagado"],
+        metodo_pago=attrs["paymentMethod"],
+        monto_fisico=attrs.get("montoFisico") or 0,
+        monto_virtual=attrs.get("montoVirtual") or 0,
+        comprobante_url=receipt_file or "",
+        detalles_pago=details,
+        estado_verificacion=PagoCita.EstadoVerificacion.APROBADO,
+        verificado_por=request.user,
+        fecha_verificacion=timezone.now(),
+    )
+
+    # ``select_for_update`` keeps the cita row locked; the prefetched
+    # ``pagos_cita`` cache is now stale — refresh before serializing.
+    cita.refresh_from_db()
+    cita.pagos_cita.all()  # drop the prefetch cache
+
+    return json_response(
+        {
+            "detail": "El pago de la cita del prospecto fue registrado y aprobado correctamente.",
+            "payment": PagoCitaSerializer(
+                pago, context={"request": request}
+            ).data,
+            "appointment": _prospect_appointment_item(cita, request=request),
+        },
+        status=201,
+    )
+
+
+# --- citas-pagos follow-on: editar precio de CitaProspecto -----------
+# Admins may edit ``precio`` until the first APROBADO PagoCita exists.
+# Once APROBADO the price is locked (audit trail integrity). The admin
+# may ALSO edit precio through the booking modal at reservation time,
+# so this endpoint is the post-booking correction surface.
+@require_POST
+@admin_required
+@transaction.atomic
+def admin_update_prospect_medical_appointment_precio(request, cita_id):
+    from billing.models import PagoCita
+
+    cita = (
+        CitaProspecto.objects.select_for_update(of=("self",))
+        .filter(pk=cita_id)
+        .first()
+    )
+    if not cita:
+        return json_response(
+            {"detail": "No encontramos la cita solicitada."}, status=404
+        )
+
+    payload = load_payload(request)
+    if payload is None:
+        return json_response(
+            {"detail": "El cuerpo de la solicitud no es JSON valido."},
+            status=400,
+        )
+
+    raw_precio = payload.get("precio")
+    if raw_precio is None or raw_precio == "":
+        return json_response(
+            {"detail": "Debes indicar el nuevo precio."}, status=400
+        )
+    try:
+        new_precio = Decimal(str(raw_precio))
+    except (InvalidOperation, ValueError):
+        return json_response(
+            {"detail": "precio invalido."}, status=400
+        )
+    if new_precio < 0:
+        return json_response(
+            {"detail": "precio debe ser mayor o igual a 0."}, status=400
+        )
+
+    # Lock once the first APROBADO payment lands — audit trail integrity.
+    if cita.pagos_cita.filter(
+        estado_verificacion=PagoCita.EstadoVerificacion.APROBADO
+    ).exists():
+        return json_response(
+            {
+                "detail": (
+                    "No puedes cambiar el precio despues de registrar un "
+                    "cobro aprobado. El precio queda fijo para mantener la "
+                    "traza de auditoria."
+                )
+            },
+            status=400,
+        )
+
+    cita.precio = new_precio
+    cita.save(update_fields=["precio", "updated_at"])
+
+    return json_response(
+        {
+            "detail": "Precio actualizado correctamente.",
+            "appointment": _prospect_appointment_item(cita, request=request),
+        }
     )
 
 
@@ -3336,7 +3585,7 @@ def admin_update_prospect(request, prospecto_id):
     return json_response(
         {
             "detail": "Datos del prospecto y estados de citas actualizados correctamente.",
-            "prospect": _prospect_item(prospecto),
+            "prospect": _prospect_item(prospecto, request=request),
         }
     )
 
@@ -3363,7 +3612,7 @@ def admin_cancel_prospect_medical_appointment(request, appointment_id):
     return json_response(
         {
             "detail": "La cita medica del prospecto fue cancelada correctamente.",
-            "appointment": _prospect_appointment_item(appointment),
+            "appointment": _prospect_appointment_item(appointment, request=request),
         }
     )
 
@@ -3395,7 +3644,7 @@ def admin_update_prospect_medical_appointment(request, appointment_id):
     return json_response(
         {
             "detail": "Cita medica actualizada correctamente.",
-            "prospect": _prospect_item(appointment.prospecto),
+            "prospect": _prospect_item(appointment.prospecto, request=request),
         }
     )
 
@@ -3408,7 +3657,7 @@ def admin_cliente_detalle(request, client_id):
     if not cliente:
         return json_response({"detail": "No encontramos el cliente solicitado."}, status=404)
 
-    return json_response(_admin_client_detail(cliente))
+    return json_response(_admin_client_detail(cliente, request=request))
 
 
 @require_GET
@@ -3481,16 +3730,32 @@ def admin_cliente_create_free_medical_appointment(request, client_id):
     payload = load_payload(request)
     if payload is None:
         return json_response({"detail": "El cuerpo de la solicitud no es JSON valido."}, status=400)
-        
+
     sucursal_id = payload.get("branchId")
     fecha_hora_str = payload.get("dateTime")
     if not sucursal_id or not fecha_hora_str:
         return json_response({"detail": "Faltan datos de sucursal o fecha/hora."}, status=400)
-        
+
+    # Optional precio — captured at booking time so the admin can
+    # reserve and bill in the same step (or set 0 and bill later via
+    # the cobrar endpoint once the cliente decides to pay).
+    raw_precio = payload.get("precio")
+    if raw_precio is None or raw_precio == "":
+        precio = Decimal("0")
+    else:
+        try:
+            precio = Decimal(str(raw_precio))
+        except (InvalidOperation, ValueError):
+            return json_response({"detail": "precio invalido."}, status=400)
+        if precio < 0:
+            return json_response(
+                {"detail": "precio debe ser mayor o igual a 0."}, status=400
+            )
+
     try:
         from django.utils import dateparse
         fecha_hora = dateparse.parse_datetime(fecha_hora_str)
-        if fecha_hora and timezone.is_naive(fecha_hora):
+        if timezone.is_naive(fecha_hora):
             fecha_hora = timezone.make_aware(fecha_hora)
         if not fecha_hora:
             raise ValueError
@@ -3504,6 +3769,7 @@ def admin_cliente_create_free_medical_appointment(request, client_id):
         fecha_hora=fecha_hora,
         estado=CitaClienteLibre.Estado.PROGRAMADA,
         detalles_cita="Cita medica libre agendada por administracion.",
+        precio=precio,
     )
     _notify_client_appointment_scheduled(
         cliente=cliente,
@@ -4476,7 +4742,7 @@ def admin_crear_prospecto(request):
     return json_response(
         {
             "detail": "Prospecto registrado correctamente.",
-            "prospect": _prospect_item(prospecto),
+            "prospect": _prospect_item(prospecto, request=request),
         },
         status=201,
     )
@@ -7468,18 +7734,36 @@ def _report_prospect_row(prospecto):
     }
 
 
-def _report_income_row(payment):
-    """Build a single ReportIncome row from a ``PagoRealizado`` instance."""
-    operacion = payment.cuota.operacion
+def _report_income_row(payment, *, cita=None, person_label=None, service_label=None):
+    """Build a single ReportIncome row from a ``PagoRealizado`` OR ``PagoCita``.
+
+    For ``PagoRealizado`` we still resolve the cita via
+    ``payment.cuota.operacion`` (legacy cuota-payment path).
+
+    For ``PagoCita`` the caller passes the resolved ``cita``,
+    ``person_label`` (e.g. ``"Juan Dominguez"`` or ``"Prospecto: Juan Dominguez"``),
+    and ``service_label`` (e.g. ``"Cita de consulta"``). The cita fecha_hora
+    is used as the report date so the row lives in the month of the cita,
+    not in the month the cobro landed.
+    """
     submitted = payment.created_at
     invoice_field = payment.comprobante_url
+    if cita is not None:
+        report_dt = cita.fecha_hora
+        client_name = person_label or "—"
+        service_name = service_label or "—"
+    else:
+        operacion = payment.cuota.operacion
+        report_dt = submitted
+        client_name = full_name(operacion.paciente.usuario)
+        service_name = procedure_name(operacion)
     return {
         "paymentId": payment.pk,
-        "date": submitted.date().isoformat() if submitted else "",
-        "time": submitted.strftime("%H:%M") if submitted else "",
+        "date": report_dt.date().isoformat() if report_dt else "",
+        "time": report_dt.strftime("%H:%M") if report_dt else "",
         "amount": str(payment.monto_pagado),
-        "clientName": full_name(operacion.paciente.usuario),
-        "serviceName": procedure_name(operacion),
+        "clientName": client_name,
+        "serviceName": service_name,
         "status": _payment_status(payment),
         "invoiceUrl": invoice_field.url if invoice_field else "",
         "invoiceName": PurePosixPath(invoice_field.name).name if invoice_field else "",
@@ -7549,7 +7833,22 @@ def admin_report_prospects(request):
 @require_GET
 @admin_required
 def admin_report_income(request):
-    """Branch-scoped read-only monthly income dataset for the admin reports area."""
+    """Branch-scoped read-only monthly income dataset for the admin reports area.
+
+    Includes two payment sources that surface in the same row format:
+
+    * ``PagoRealizado`` — cuota-plan payments tied to an ``Operacion``.
+      Filtered by ``cuota__fecha_vencimiento`` (the historical proxy the
+      admin dashboard has always used).
+    * ``PagoCita`` — appointment payments for ``CitaMedica`` /
+      ``CitaClienteLibre`` / ``CitaProspecto``. Filtered by the cita's
+      ``fecha_hora`` (devengo, not caja) so a cobro made in February for
+      a January cita still shows up in January.
+
+    Both sources share the global ``REPORT_ROW_CAP``; rows are sorted by
+    report date descending so the most recent income lands at the top
+    regardless of which table it came from.
+    """
     from config.api_serializers import ReportIncomeSerializer
 
     branch = get_user_branch(request)
@@ -7566,6 +7865,7 @@ def admin_report_income(request):
         end = date(year, month + 1, 1) - timedelta(days=1)
     start = date(year, month, 1)
 
+    # 1) Cuota-plan payments (legacy).
     pagos_qs = (
         PagoRealizado.objects.select_related(
             "cuota__operacion__paciente__usuario",
@@ -7580,8 +7880,89 @@ def admin_report_income(request):
         pagos_qs = pagos_qs.filter(
             cuota__operacion__paciente__usuario__sucursal_id=branch
         ).distinct()
+    cuota_rows = [_report_income_row(payment) for payment in pagos_qs]
 
-    rows = [_report_income_row(payment) for payment in pagos_qs[:REPORT_ROW_CAP]]
+    # 2) Appointment payments (citas-pagos). Filter by fecha_hora of
+    # the cita so the row lives in the month the service was rendered.
+    cita_pagos_qs = (
+        PagoCita.objects.select_related(
+            "cita_medica__operacion__paciente__usuario",
+            "cita_medica__operacion__servicio_config__tipo_servicio",
+            "cita_medica__sucursal",
+            "cita_cliente_libre__cliente__usuario",
+            "cita_cliente_libre__servicio_config__tipo_servicio",
+            "cita_cliente_libre__sucursal",
+            "cita_prospecto__prospecto",
+            "cita_prospecto__servicio_config__tipo_servicio",
+            "cita_prospecto__sucursal",
+            "verificado_por",
+        )
+        .filter(
+            models.Q(cita_medica__fecha_hora__range=(start, end))
+            | models.Q(cita_cliente_libre__fecha_hora__range=(start, end))
+            | models.Q(cita_prospecto__fecha_hora__range=(start, end))
+        )
+        .order_by("-created_at")
+    )
+    if branch:
+        cita_pagos_qs = cita_pagos_qs.filter(
+            models.Q(cita_medica__sucursal_id=branch)
+            | models.Q(cita_cliente_libre__sucursal_id=branch)
+            | models.Q(cita_prospecto__sucursal_id=branch)
+        )
+
+    cita_rows = []
+    for pago in cita_pagos_qs:
+        cita = (
+            pago.cita_medica
+            or pago.cita_cliente_libre
+            or pago.cita_prospecto
+        )
+        if cita is None:
+            # Shouldn't happen — XOR enforced at the model level —
+            # but skip silently if it does.
+            continue
+        # Person label: "Prospecto: <name>" for CitaProspecto so the
+        # admin can distinguish them from clients in the report.
+        if pago.cita_prospecto_id:
+            prospecto = pago.cita_prospecto.prospecto
+            prospecto_name = (
+                f"{prospecto.primer_nombre} {prospecto.apellido_paterno}".strip()
+            )
+            person_label = (
+                f"Prospecto: {prospecto_name}" if prospecto_name else "Prospecto"
+            )
+        elif pago.cita_medica_id:
+            cliente = pago.cita_medica.operacion.paciente
+            person_label = full_name(cliente.usuario)
+        else:
+            cliente = pago.cita_cliente_libre.cliente
+            person_label = full_name(cliente.usuario)
+        # Service label: cita de consulta for free/prospecto citas;
+        # procedure name for CitaMedica (cita inside an operacion).
+        if pago.cita_medica_id:
+            service_label = procedure_name(pago.cita_medica.operacion)
+        else:
+            service_label = cita.servicio_config.tipo_servicio.tipo
+        cita_rows.append(
+            _report_income_row(
+                pago,
+                cita=cita,
+                person_label=person_label,
+                service_label=service_label,
+            )
+        )
+
+    # Combine + sort by report date (date + time) desc, then by paymentId
+    # desc for stable ordering when two rows share the same timestamp.
+    all_rows = cuota_rows + cita_rows
+    all_rows.sort(
+        key=lambda row: (row["date"], row["time"], row["paymentId"]),
+        reverse=True,
+    )
+    total_count = len(all_rows)
+    truncated = total_count > REPORT_ROW_CAP
+    rows = all_rows[:REPORT_ROW_CAP]
     serialized = ReportIncomeSerializer(rows, many=True).data
 
     return json_response(
@@ -7591,7 +7972,7 @@ def admin_report_income(request):
             "year": year,
             "rows": serialized,
             "cap": REPORT_ROW_CAP,
-            "truncated": pagos_qs.count() > REPORT_ROW_CAP,
+            "truncated": truncated,
         }
     )
 

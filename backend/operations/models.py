@@ -195,6 +195,16 @@ class CitaMedica(TimeStampedModel):
     )
     detalles_cita = models.TextField(blank=True)
 
+    # --- Appointment payment (citas-pagos) ---------------------------------
+    # Default 0 so legacy rows stay non-billable. Admins set this before
+    # registering the first APROBADO PagoCita via the cobrar endpoint.
+    precio = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=0,
+    )
+
     # --- Appointment reservation redesign (planning fields) -----------------
     # Captured at reservation time. All optional so legacy rows keep working.
     duracion_estimada_minutos = models.PositiveIntegerField(
@@ -452,6 +462,15 @@ class CitaProspecto(TimeStampedModel):
         default=Estado.PROGRAMADA,
     )
     detalles_cita = models.TextField(blank=True)
+    # --- citas-pagos follow-on: precio editable hasta el primer APROBADO ---
+    # Default 0 keeps legacy prospect rows non-billable until the admin sets
+    # a price. Mirrors ``CitaMedica.precio`` and ``CitaClienteLibre.precio``.
+    precio = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=0,
+    )
 
     class Meta:
         db_table = "citas_prospectos"
@@ -505,6 +524,16 @@ class CitaClienteLibre(TimeStampedModel):
         default=Estado.PROGRAMADA,
     )
     detalles_cita = models.TextField(blank=True)
+
+    # --- Appointment payment (citas-pagos) ---------------------------------
+    # Default 0 so legacy rows stay non-billable. Admins set this before
+    # registering the first APROBADO PagoCita via the cobrar endpoint.
+    precio = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=0,
+    )
 
     class Meta:
         db_table = "citas_clientes_libres"

@@ -20,8 +20,8 @@ from config.api.viewsets.clientes import (
 clientes_router = DefaultRouter(trailing_slash=True)
 clientes_router.register(r"clientes", ClientesViewSet, basename="admin-cliente")
 
-# OperacionesViewSet router (operation reservations)
-operaciones_router = DefaultRouter(trailing_slash=False)
+# OperacionesViewSet router (operation reservations + cobrar cita)
+operaciones_router = DefaultRouter(trailing_slash=True)
 operaciones_router.register(r"operaciones", OperacionesViewSet, basename="admin-operacion")
 
 # FreeMedicalAppointmentViewSet router

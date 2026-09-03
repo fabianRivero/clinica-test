@@ -17,16 +17,23 @@ import { useBranchContext } from '../../providers/BranchProvider'
 import {
   type AdminPaymentsFilters,
   getAdminPayments,
+  registerAdminPayment,
   updateAdminPaymentQrConfig,
   updateAdminPaymentStatus,
 } from '../../services/api/admin'
-import type { UpdateAdminPaymentStatusPayload } from '../../types/admin'
+import type {
+  AdminPaymentQuota,
+  RegisterAdminPaymentPayload,
+  UpdateAdminPaymentStatusPayload,
+} from '../../types/admin'
 import {
   matchesFieldFilters,
   type FieldDef,
   type FieldFilters,
 } from '../../utils/matchesFieldFilters'
+import { formatPaymentBreakdown } from '../../utils/payments'
 import { monthNames } from './expenses/expenseUtils'
+import { AdminRegisterPaymentModal } from '../../components/admin/AdminRegisterPaymentModal'
 
 export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuotas' }) {
   const { activeBranch } = useBranchContext()
@@ -52,6 +59,9 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
   const [showMonthPicker, setShowMonthPicker] = useState(false)
   const [pickerMonth, setPickerMonth] = useState(month)
   const [pickerYear, setPickerYear] = useState(year)
+  const [registerQuota, setRegisterQuota] = useState<AdminPaymentQuota | null>(null)
+  const [isRegistering, setIsRegistering] = useState(false)
+  const [registerError, setRegisterError] = useState<string | null>(null)
   const viewedMonthLabel = `${monthNames[month - 1]} ${year}`
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const loader = useCallback(
@@ -169,6 +179,37 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
       ...current,
       [paymentId]: note,
     }))
+  }
+
+  const handleRegisterPayment = async (
+    payload: RegisterAdminPaymentPayload,
+  ) => {
+    if (!registerQuota) return
+    setIsRegistering(true)
+    setRegisterError(null)
+    try {
+      const response = await registerAdminPayment(registerQuota.rawId, payload)
+      showNotification({
+        title: 'Pago registrado',
+        message: response.detail,
+        tone: 'success',
+      })
+      setRegisterQuota(null)
+      reload()
+    } catch (requestError) {
+      setRegisterError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo registrar el pago.',
+      )
+    } finally {
+      setIsRegistering(false)
+    }
+  }
+
+  const closeRegisterModal = () => {
+    setRegisterQuota(null)
+    setRegisterError(null)
   }
 
   const handlePaymentStatusUpdate = async (
@@ -419,32 +460,38 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                           </td>
                         <td>{payment.operation}</td>
                         <td>{payment.quota}</td>
-                        <td>{payment.amount}</td>
-                        <td>{payment.dueDate}</td>
-                        <td>
-                          <StatusBadge
-                            tone={
-                              payment.status === 'aprobado'
-                                ? 'approved'
-                                : payment.status === 'observado' || payment.status === 'cancelado'
-                                  ? 'observed'
-                                  : 'pending'
-                            }
-                          >
-                            {payment.status}
-                          </StatusBadge>
-                        </td>
-                        <td>
-                          <div className="table-cell-stack">
-                            {payment.receiptUrl ? (
-                              <a
-                                className="button button--ghost button--compact"
-                                href={payment.receiptUrl}
-                                rel="noreferrer"
-                                target="_blank"
-                              >
-                                Ver comprobante
-                              </a>
+<td>
+                            {payment.amount}
+                            {(() => {
+                              const breakdown = formatPaymentBreakdown(payment)
+                              return breakdown ? <small className="field__hint">{breakdown}</small> : null
+                            })()}
+                          </td>
+                          <td>{payment.dueDate}</td>
+                          <td>
+                            <StatusBadge
+                              tone={
+                                payment.status === 'aprobado'
+                                  ? 'approved'
+                                  : payment.status === 'observado' || payment.status === 'cancelado'
+                                    ? 'observed'
+                                    : 'pending'
+                              }
+                            >
+                              {payment.status}
+                            </StatusBadge>
+                          </td>
+                          <td>
+                            <div className="table-cell-stack">
+                              {payment.receiptUrl ? (
+                                <a
+                                  className="button button--ghost button--compact"
+                                  href={payment.receiptUrl}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                >
+                                  Ver comprobante
+                                </a>
                             ) : (
                               <span className="table-muted">Sin comprobante</span>
                             )}
@@ -592,6 +639,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                         <th>Vencimiento</th>
                         <th>Estado</th>
                         <th>Pagos registrados</th>
+                        <th>Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -621,6 +669,18 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                             </StatusBadge>
                           </td>
                           <td>{quota.paymentsCount}</td>
+                          <td>
+                            <button
+                              className="button button--ghost button--compact"
+                              type="button"
+                              onClick={() => {
+                                setRegisterError(null)
+                                setRegisterQuota(quota)
+                              }}
+                            >
+                              Registrar pago
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -719,6 +779,15 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
             </div>
           </div>
         ) : null}
+
+        <AdminRegisterPaymentModal
+          quota={registerQuota}
+          isOpen={registerQuota !== null}
+          isSubmitting={isRegistering}
+          errorMessage={registerError}
+          onClose={closeRegisterModal}
+          onSubmit={handleRegisterPayment}
+        />
         </>
       ) : null}
     </div>

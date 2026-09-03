@@ -86,7 +86,21 @@ export type CancelClientReservationResponse = {
 export type UploadClientPaymentReceiptPayload = {
   amount: string
   details: string
-  receiptFile: File
+  /**
+   * `VIRTUAL` requires the receipt file, `FISICO` and `MIXTO` leave it
+   * optional. UI keeps the file picker visible in all modes (with helper
+   * text) so the same form shape works for every method.
+   */
+  receiptFile?: File
+  /**
+   * Payment channel. `VIRTUAL` (default) requires a receipt;
+   * `FISICO` records a desk payment; `MIXTO` expects the breakdown.
+   */
+  paymentMethod: 'VIRTUAL' | 'FISICO' | 'MIXTO'
+  /** Required when `paymentMethod === 'MIXTO'`. Decimal string. */
+  montoFisico?: string
+  /** Required when `paymentMethod === 'MIXTO'`. Decimal string. */
+  montoVirtual?: string
 }
 
 export type UploadClientPaymentReceiptResponse = {

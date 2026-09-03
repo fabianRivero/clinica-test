@@ -15,11 +15,13 @@ from django.utils.dateparse import parse_datetime
 
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from customers.models import Cliente
 from operations.models import CitaMedica, CitaClienteLibre, Operacion
-from billing.models import CuotaPlanPago, PagoRealizado
+from billing.models import CuotaPlanPago, PagoCita, PagoRealizado
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 
 from config.api.permissions import AdminRequired
@@ -37,6 +39,7 @@ from config.api_helpers import full_name, currency, date_label, datetime_label, 
 from config.client_api_views import (
     _operation_item as _client_operation_item,
     _appointment_item as _client_appointment_item,
+    _cita_payment_breakdown,
     _payment_item as _client_payment_item,
     _quota_item as _client_quota_item,
     BLOCKING_RESERVATION_STATES,
@@ -63,6 +66,18 @@ def _client_item(cliente):
 def _admin_client_queryset():
     """Return a prefetched queryset for admin client detail."""
     mark_expired_programmed_appointments_as_no_show()
+    # Prefetch ``PagoCita`` rows attached to both cita kinds so the
+    # appointment payload can surface ``precio`` / ``saldoPendiente`` /
+    # ``pagos`` without N+1 queries. The reverse manager is ``pagos_cita``
+    # on both ``CitaMedica`` and ``CitaClienteLibre``.
+    cita_medica_pagos = Prefetch(
+        "pagos_cita",
+        queryset=PagoCita.objects.select_related("verificado_por").order_by("-created_at"),
+    )
+    cita_libre_pagos = Prefetch(
+        "pagos_cita",
+        queryset=PagoCita.objects.select_related("verificado_por").order_by("-created_at"),
+    )
     return (
         Cliente.objects.select_related("usuario")
         .prefetch_related(
@@ -80,7 +95,9 @@ def _admin_client_queryset():
                 .prefetch_related(
                     Prefetch(
                         "citas_medicas",
-                        queryset=CitaMedica.objects.select_related().order_by("fecha_hora"),
+                        queryset=CitaMedica.objects.select_related().prefetch_related(
+                            cita_medica_pagos
+                        ).order_by("fecha_hora"),
                     ),
                     Prefetch(
                         "cuotas_plan_pagos",
@@ -96,13 +113,15 @@ def _admin_client_queryset():
             "analisis_esteticos",
             Prefetch(
                 "citas_medicas_libres",
-                queryset=CitaClienteLibre.objects.select_related().order_by("fecha_hora"),
+                queryset=CitaClienteLibre.objects.select_related().prefetch_related(
+                    cita_libre_pagos
+                ).order_by("fecha_hora"),
             ),
         )
     )
 
 
-def _admin_client_detail(cliente):
+def _admin_client_detail(cliente, request=None):
     """Build the full client detail response dict."""
     operations = list(cliente.operaciones.all())
     appointments = [
@@ -172,21 +191,21 @@ def _admin_client_detail(cliente):
         ],
         "operations": [_client_operation_item(operacion) for operacion in operations],
         "appointments": [
-            *[_client_appointment_item(cita) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
-            *[_free_client_appointment_item(cita) for cita in sorted(free_appointments, key=lambda item: item.fecha_hora)],
+            *[_client_appointment_item(cita, request=request) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
+            *[_free_client_appointment_item(cita, request=request) for cita in sorted(free_appointments, key=lambda item: item.fecha_hora)],
         ],
         "sessions": [
-            *[_client_appointment_item(cita) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
-            *[_free_client_appointment_item(cita) for cita in sorted(free_appointments, key=lambda item: item.fecha_hora)],
+            *[_client_appointment_item(cita, request=request) for cita in sorted(appointments, key=lambda item: item.fecha_hora)],
+            *[_free_client_appointment_item(cita, request=request) for cita in sorted(free_appointments, key=lambda item: item.fecha_hora)],
         ],
         "payments": [_client_payment_item(payment) for payment in sorted(payments, key=lambda item: item.created_at, reverse=True)],
         "pendingQuotas": [_client_quota_item(cuota) for cuota in sorted(pending_quotas, key=lambda item: (item.fecha_vencimiento, item.nro_cuota))],
     }
 
 
-def _free_client_appointment_item(appointment):
+def _free_client_appointment_item(appointment, request=None):
     """Build a free client appointment dict."""
-    return {
+    payload = {
         "id": f"LIB-{appointment.pk:04d}",
         "rawId": appointment.pk,
         "dateTime": datetime_label(appointment.fecha_hora),
@@ -205,6 +224,8 @@ def _free_client_appointment_item(appointment):
         "branchId": appointment.sucursal_id,
         "branchName": appointment.sucursal.nombre if appointment.sucursal else "Sin sucursal",
     }
+    payload.update(_cita_payment_breakdown(appointment, request=request))
+    return payload
 
 
 def _client_has_pending_reservations(cliente):
@@ -321,7 +342,7 @@ class ClientesViewSet(viewsets.ViewSet):
         if not cliente:
             return Response({"detail": "No encontramos el cliente solicitado."}, status=404)
 
-        data = _admin_client_detail(cliente)
+        data = _admin_client_detail(cliente, request=request)
         return Response(data)
 
     @action(detail=True, methods=["post"], url_path="inactivar")
@@ -470,11 +491,13 @@ class OperacionesViewSet(viewsets.ViewSet):
     Endpoints:
     - GET  /operaciones/<int:operation_id>/reserva/disponibilidad/ → check availability
     - POST /operaciones/<int:operation_id>/reserva/               → create reservation
+    - POST /operaciones/<int:operation_id>/citas/<int:cita_id>/cobrar/ → charge a CitaMedica
     """
 
     permission_classes = [AdminRequired]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
-    @action(detail=True, methods=["get"], url_path="reserva/disponibilidad")
+    @action(detail=True, methods=["get"], url_path="reserva/disponibilidad/")
     def reserva_disponibilidad(self, request, pk=None):
         """
         GET /operaciones/<int:operation_id>/reserva/disponibilidad/
@@ -510,7 +533,7 @@ class OperacionesViewSet(viewsets.ViewSet):
 
         return Response({"operation": _client_operation_item(operacion)})
 
-    @action(detail=True, methods=["post"], url_path="reserva")
+    @action(detail=True, methods=["post"], url_path="reserva/")
     def reserva(self, request, pk=None):
         """
         POST /operaciones/<int:operation_id>/reserva/
@@ -566,7 +589,131 @@ class OperacionesViewSet(viewsets.ViewSet):
         return Response(
             {
                 "detail": "La cita fue reservada correctamente.",
-                "appointment": _client_appointment_item(cita),
+                "appointment": _client_appointment_item(cita, request=request),
+            },
+            status=201,
+        )
+
+    @action(detail=True, methods=["post"], url_path=r"citas/(?P<cita_id>\d+)/cobrar")
+    def cobrar_cita(self, request, pk=None, cita_id=None):
+        """
+        POST /operaciones/<int:operation_id>/citas/<int:cita_id>/cobrar/
+        Admin charges a ``CitaMedica`` at the consultorio.
+
+        Mirrors the proven ``PagosViewSet.register_payment`` flow but:
+
+        * Locks the cita row with ``select_for_update`` so concurrent
+          admins do not race the over-payment guard.
+        * Uses ``assert_cita_in_user_branch`` (raises ``PermissionDenied``
+          → HTTP 403) instead of the cuota helper (which raises
+          ``Http404``). Spec mandates 403 so admins can tell cross-branch
+          config errors apart from missing rows.
+        * Rejects ``precio == 0`` (admin must set a price first) and
+          terminal states (``CANCELADA`` / ``NO_ASISTIO`` — cancellation
+          preserves rows for audit but blocks new cobrars).
+        * Creates ``PagoCita`` directly in ``APROBADO`` state — the
+          admin is the same person who verified the collection.
+        * Returns the updated cita payload so the frontend can refresh
+          without a second ``GET``.
+        """
+        from billing.validators import assert_cita_in_user_branch, assert_not_over_cita_payment
+        from config.api.serializers.payments import (
+            PagoCitaCreateSerializer,
+            PagoCitaSerializer,
+        )
+
+        # ``pk`` here is the operation_id (the viewset is registered
+        # under ``operaciones/<pk>/``). We need the cita scoped to the
+        # operation so a different operation's cita_id cannot be charged
+        # through this URL.
+        cita = (
+            CitaMedica.objects.select_for_update(of=("self",))
+            .select_related("operacion")
+            .filter(pk=cita_id, operacion_id=pk)
+            .first()
+        )
+        if not cita:
+            return Response(
+                {"detail": "No encontramos la cita solicitada."}, status=404
+            )
+
+        # Branch isolation — raises ``PermissionDenied`` (HTTP 403) on
+        # cross-branch attempts.
+        assert_cita_in_user_branch(request, cita)
+
+        # precio == 0 → reject (admins must set a price first).
+        if not cita.precio or cita.precio <= 0:
+            return Response(
+                {"detail": "Debes asignar un precio a la cita antes de cobrar."},
+                status=400,
+            )
+
+        # Terminal states reject new cobrars (rows still exist for audit).
+        if cita.estado in {
+            CitaMedica.Estado.CANCELADA,
+            CitaMedica.Estado.NO_ASISTIO,
+        }:
+            return Response(
+                {"detail": "No puedes cobrar una cita cancelada o sin asistencia."},
+                status=400,
+            )
+
+        serializer = PagoCitaCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            errors = serializer.errors
+            first_field = next(iter(errors.keys()), None)
+            first_messages = errors.get(first_field, []) if first_field else []
+            summary = (
+                f"{first_field}: {first_messages[0]}"
+                if first_field and first_messages
+                else "Los datos del pago no son validos."
+            )
+            return Response(
+                {"detail": summary, "errors": errors},
+                status=400,
+            )
+
+        attrs = serializer.validated_data
+
+        # Over-payment guard — raises ``DRFValidationError`` (HTTP 400)
+        # if the new payment, added to already-approved rows, would
+        # exceed ``cita.precio``. ``PENDIENTE`` / ``RECHAZADO`` /
+        # ``CANCELADO`` rows do NOT count toward the aggregate (mirrors
+        # the cuota helper's semantics).
+        assert_not_over_cita_payment(cita, attrs["monto_pagado"])
+
+        details = (
+            attrs.get("details")
+            or "Pago de cita registrado por administracion."
+        )
+        receipt_file = attrs.get("receiptFile")
+
+        pago = PagoCita.objects.create(
+            cita_medica=cita,
+            monto_pagado=attrs["monto_pagado"],
+            metodo_pago=attrs["paymentMethod"],
+            monto_fisico=attrs.get("montoFisico") or 0,
+            monto_virtual=attrs.get("montoVirtual") or 0,
+            comprobante_url=receipt_file or "",
+            detalles_pago=details,
+            estado_verificacion=PagoCita.EstadoVerificacion.APROBADO,
+            verificado_por=request.user,
+            fecha_verificacion=timezone.now(),
+        )
+
+        # ``select_for_update`` already locks the cita row, but the
+        # prefetched ``pagos_cita`` cache is now stale. Refresh so the
+        # next serializer pass sees the just-created row.
+        cita.refresh_from_db()
+        cita.pagos_cita.all()  # trigger fresh queryset (drops prefetch cache)
+
+        return Response(
+            {
+                "detail": "El pago de la cita fue registrado y aprobado correctamente.",
+                "payment": PagoCitaSerializer(
+                    pago, context={"request": request}
+                ).data,
+                "appointment": _client_appointment_item(cita, request=request),
             },
             status=201,
         )
@@ -583,9 +730,11 @@ class FreeMedicalAppointmentViewSet(viewsets.ViewSet):
     Endpoints:
     - GET  /citas-medicas-libres/<int:client_id>/disponibilidad/ → get availability info
     - POST /citas-medicas-libres/<int:client_id>/                 → create free appointment
+    - POST /citas-medicas-libres/<int:appointment_id>/cobrar/     → charge the free appointment
     """
 
     permission_classes = [AdminRequired]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @action(detail=True, methods=["get"], url_path="disponibilidad")
     def disponibilidad(self, request, pk=None):
@@ -655,7 +804,7 @@ class FreeMedicalAppointmentViewSet(viewsets.ViewSet):
         return Response(
             {
                 "detail": "La cita medica libre fue agendada correctamente para el cliente.",
-                "appointment": _free_client_appointment_item(appointment),
+                "appointment": _free_client_appointment_item(appointment, request=request),
             },
             status=201,
         )
@@ -678,7 +827,7 @@ class FreeMedicalAppointmentViewSet(viewsets.ViewSet):
 
         return Response({
             "detail": "La cita medica libre fue cancelada correctamente.",
-            "appointment": _free_client_appointment_item(appointment),
+            "appointment": _free_client_appointment_item(appointment, request=request),
         })
 
     @action(detail=True, methods=["post"], url_path="confirmar")
@@ -698,5 +847,160 @@ class FreeMedicalAppointmentViewSet(viewsets.ViewSet):
 
         return Response({
             "detail": "La cita medica libre fue confirmada correctamente.",
-            "appointment": _free_client_appointment_item(appointment),
+            "appointment": _free_client_appointment_item(appointment, request=request),
         })
+
+    @action(detail=True, methods=["post"], url_path="precio")
+    def update_precio(self, request, pk=None):
+        """
+        POST /citas-medicas-libres/<int:appointment_id>/precio/
+        Edit the ``precio`` of a free medical appointment.
+
+        Locked once the first APROBADO PagoCita exists (audit trail
+        integrity). Mirrors the same contract as
+        ``admin_update_prospect_medical_appointment_precio``.
+        """
+        from decimal import Decimal, InvalidOperation
+        from billing.models import PagoCita
+
+        cita = (
+            CitaClienteLibre.objects.select_for_update(of=("self",))
+            .filter(pk=pk)
+            .first()
+        )
+        if not cita:
+            return Response(
+                {"detail": "No encontramos la cita solicitada."}, status=404
+            )
+
+        raw = request.data.get("precio")
+        if raw is None or raw == "":
+            return Response(
+                {"detail": "Debes indicar el nuevo precio."}, status=400
+            )
+        try:
+            new_precio = Decimal(str(raw))
+        except (InvalidOperation, ValueError):
+            return Response({"detail": "precio invalido."}, status=400)
+        if new_precio < 0:
+            return Response(
+                {"detail": "precio debe ser mayor o igual a 0."}, status=400
+            )
+
+        if cita.pagos_cita.filter(
+            estado_verificacion=PagoCita.EstadoVerificacion.APROBADO
+        ).exists():
+            return Response(
+                {
+                    "detail": (
+                        "No puedes cambiar el precio despues de registrar un "
+                        "cobro aprobado. El precio queda fijo para mantener la "
+                        "traza de auditoria."
+                    )
+                },
+                status=400,
+            )
+
+        cita.precio = new_precio
+        cita.save(update_fields=["precio", "updated_at"])
+
+        return Response({
+            "detail": "Precio actualizado correctamente.",
+            "appointment": _free_client_appointment_item(cita, request=request),
+        })
+
+    @action(detail=True, methods=["post"], url_path="cobrar")
+    def cobrar(self, request, pk=None):
+        """
+        POST /citas-medicas-libres/<int:appointment_id>/cobrar/
+        Admin charges a ``CitaClienteLibre`` at the consultorio.
+
+        Mirrors ``OperacionesViewSet.cobrar_cita`` exactly. The two
+        endpoints stay independent because the cita kinds live on
+        separate tables; sharing the helper module keeps the guards
+        identical.
+        """
+        from billing.validators import assert_cita_in_user_branch, assert_not_over_cita_payment
+        from config.api.serializers.payments import (
+            PagoCitaCreateSerializer,
+            PagoCitaSerializer,
+        )
+
+        cita = (
+            CitaClienteLibre.objects.select_for_update(of=("self",))
+            .filter(pk=pk)
+            .first()
+        )
+        if not cita:
+            return Response(
+                {"detail": "No encontramos la cita solicitada."}, status=404
+            )
+
+        assert_cita_in_user_branch(request, cita)
+
+        if not cita.precio or cita.precio <= 0:
+            return Response(
+                {"detail": "Debes asignar un precio a la cita antes de cobrar."},
+                status=400,
+            )
+
+        if cita.estado in {
+            CitaClienteLibre.Estado.CANCELADA,
+            CitaClienteLibre.Estado.NO_ASISTIO,
+        }:
+            return Response(
+                {"detail": "No puedes cobrar una cita cancelada o sin asistencia."},
+                status=400,
+            )
+
+        serializer = PagoCitaCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            errors = serializer.errors
+            first_field = next(iter(errors.keys()), None)
+            first_messages = errors.get(first_field, []) if first_field else []
+            summary = (
+                f"{first_field}: {first_messages[0]}"
+                if first_field and first_messages
+                else "Los datos del pago no son validos."
+            )
+            return Response(
+                {"detail": summary, "errors": errors},
+                status=400,
+            )
+
+        attrs = serializer.validated_data
+
+        assert_not_over_cita_payment(cita, attrs["monto_pagado"])
+
+        details = (
+            attrs.get("details")
+            or "Pago de cita libre registrado por administracion."
+        )
+        receipt_file = attrs.get("receiptFile")
+
+        pago = PagoCita.objects.create(
+            cita_cliente_libre=cita,
+            monto_pagado=attrs["monto_pagado"],
+            metodo_pago=attrs["paymentMethod"],
+            monto_fisico=attrs.get("montoFisico") or 0,
+            monto_virtual=attrs.get("montoVirtual") or 0,
+            comprobante_url=receipt_file or "",
+            detalles_pago=details,
+            estado_verificacion=PagoCita.EstadoVerificacion.APROBADO,
+            verificado_por=request.user,
+            fecha_verificacion=timezone.now(),
+        )
+
+        cita.refresh_from_db()
+        cita.pagos_cita.all()  # trigger fresh queryset (drops prefetch cache)
+
+        return Response(
+            {
+                "detail": "El pago de la cita libre fue registrado y aprobado correctamente.",
+                "payment": PagoCitaSerializer(
+                    pago, context={"request": request}
+                ).data,
+                "appointment": _free_client_appointment_item(cita, request=request),
+            },
+            status=201,
+        )

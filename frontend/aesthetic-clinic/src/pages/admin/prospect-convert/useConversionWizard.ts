@@ -80,6 +80,9 @@ type UseConversionWizardReturn = {
   shouldRegisterFirstPayment: boolean
   firstPaymentReceipt: File | null
   firstPaymentDetails: string
+  firstPaymentMethod: 'VIRTUAL' | 'FISICO' | 'MIXTO'
+  firstPaymentFisico: string
+  firstPaymentVirtual: string
   selectedService: ProspectConversionResponse['serviceConfigs'][number] | null
   firstPaymentAmount: string
   today: string
@@ -92,6 +95,9 @@ type UseConversionWizardReturn = {
   setShouldRegisterFirstPayment: (value: boolean) => void
   setFirstPaymentReceipt: (value: File | null) => void
   setFirstPaymentDetails: (value: string) => void
+  setFirstPaymentMethod: (value: 'VIRTUAL' | 'FISICO' | 'MIXTO') => void
+  setFirstPaymentFisico: (value: string) => void
+  setFirstPaymentVirtual: (value: string) => void
   setQrModalOpen: (value: boolean) => void
   handleUserChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void
   handleNameBlur: () => void
@@ -156,14 +162,35 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
   const [shouldRegisterFirstPayment, setShouldRegisterFirstPayment] = useState(false)
   const [firstPaymentReceipt, setFirstPaymentReceipt] = useState<File | null>(null)
   const [firstPaymentDetails, setFirstPaymentDetails] = useState('')
+  const [firstPaymentMethod, setFirstPaymentMethod] = useState<'VIRTUAL' | 'FISICO' | 'MIXTO'>('VIRTUAL')
+  const [firstPaymentFisico, setFirstPaymentFisico] = useState('')
+  const [firstPaymentVirtual, setFirstPaymentVirtual] = useState('')
 
   const firstPaymentAmount = useMemo(() => {
-    if (!operationForm) return ''
+    // MIXTO always reflects fisico + virtual, independent of the (possibly
+    // null) cuotasTotales — the admin writes both parts directly and we just
+    // display the running total so they can verify the breakdown matches the
+    // cuota they're about to register.
+    if (firstPaymentMethod === 'MIXTO') {
+      const fisico = Number(firstPaymentFisico || '0')
+      const virtual = Number(firstPaymentVirtual || '0')
+      if (!Number.isFinite(fisico) || !Number.isFinite(virtual)) return '0.00'
+      return (fisico + virtual).toFixed(2)
+    }
+    if (!operationForm) return '0.00'
     const total = Number(operationForm.precioTotal)
     const cuotas = Number(operationForm.cuotasTotales)
-    if (!Number.isFinite(total) || !Number.isFinite(cuotas) || cuotas <= 0) return ''
-    return (total / cuotas).toFixed(2)
-  }, [operationForm])
+    const basePerCuota =
+      Number.isFinite(total) && Number.isFinite(cuotas) && cuotas > 0
+        ? (total / cuotas).toFixed(2)
+        : Number.isFinite(total)
+          ? total.toFixed(2)
+          : '0.00'
+    if (firstPaymentMethod === 'FISICO') {
+      return firstPaymentFisico || basePerCuota
+    }
+    return firstPaymentVirtual || basePerCuota
+  }, [operationForm, firstPaymentMethod, firstPaymentFisico, firstPaymentVirtual])
 
   useEffect(() => {
     let cancelled = false
@@ -663,10 +690,6 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
   const handleFinalize = async (event: FormEvent) => {
     event.preventDefault()
     resetFeedback()
-    if (shouldRegisterFirstPayment && !firstPaymentReceipt) {
-      setFieldErrors({ primerPagoComprobante: 'Debes adjuntar un comprobante para registrar el primer pago.' })
-      return
-    }
     if (shouldRegisterFirstPayment && !firstPaymentAmount) {
       setFieldErrors({ primerPagoMonto: 'No se pudo calcular el monto del primer pago.' })
       return
@@ -683,7 +706,14 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     setIsSaving(true)
     try {
       const firstPaymentPayload = shouldRegisterFirstPayment
-        ? { receiptFile: firstPaymentReceipt, amount: firstPaymentAmount, details: firstPaymentDetails }
+        ? {
+            paymentMethod: firstPaymentMethod,
+            montoFisico: firstPaymentFisico || undefined,
+            montoVirtual: firstPaymentVirtual || undefined,
+            receiptFile: firstPaymentReceipt,
+            amount: firstPaymentAmount,
+            details: firstPaymentDetails,
+          }
         : undefined
       const finalizeResponse = isReactivation
         ? await finalizeAdminClientReactivation(clientId, medicalDocumentFile || undefined, firstPaymentPayload)
@@ -783,9 +813,15 @@ export function useConversionWizard({ prospectId, clientId, isReactivation }: Us
     shouldRegisterFirstPayment,
     firstPaymentReceipt,
     firstPaymentDetails,
+    firstPaymentMethod,
+    firstPaymentFisico,
+    firstPaymentVirtual,
     setShouldRegisterFirstPayment,
     setFirstPaymentReceipt,
     setFirstPaymentDetails,
+    setFirstPaymentMethod,
+    setFirstPaymentFisico,
+    setFirstPaymentVirtual,
     setQrModalOpen,
     selectedService,
     firstPaymentAmount,

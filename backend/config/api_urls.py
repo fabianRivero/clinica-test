@@ -1,7 +1,7 @@
 from django.urls import include, path
 
 from config.api.routers_operaciones import citas_d8_router
-from config.api.routers_clientes import clientes_router, free_medical_router
+from config.api.routers_clientes import clientes_router, free_medical_router, operaciones_router
 from config.api.routers_payments import pagos_router
 from config.worker_urls import worker_urlpatterns
 
@@ -51,6 +51,7 @@ from config.api_views import (
     admin_crear_especialista,
     admin_crear_prospecto,
     admin_cancel_prospect_medical_appointment,
+    admin_cobrar_prospect_medical_appointment,
     admin_create_prospect_medical_appointment,
     admin_dashboard,
     admin_dashboard_payments,
@@ -78,6 +79,7 @@ from config.api_views import (
     admin_update_payment_status,
     admin_update_payment_qr_config,
     admin_update_prospect_medical_appointment,
+    admin_update_prospect_medical_appointment_precio,
     admin_update_appointment_notes,
     admin_update_appointment_status,
     admin_update_prospect,
@@ -174,6 +176,16 @@ urlpatterns = [
         "prospectos/citas-medicas/<int:appointment_id>/cancelar/",
         admin_cancel_prospect_medical_appointment,
         name="admin-prospect-medical-cancel-api",
+    ),
+    path(
+        "prospectos/citas/<int:cita_id>/cobrar/",
+        admin_cobrar_prospect_medical_appointment,
+        name="admin-prospect-medical-charge-api",
+    ),
+    path(
+        "prospectos/citas/<int:cita_id>/precio/",
+        admin_update_prospect_medical_appointment_precio,
+        name="admin-prospect-medical-price-api",
     ),
     path("clientes/buscar-global/", admin_clientes_global_search, name="admin-clientes-global-search-api"),
     path("clientes/<int:client_id>/", admin_cliente_detalle, name="admin-client-detail-api"),
@@ -495,4 +507,10 @@ urlpatterns = [
     ),
     path("", include(free_medical_router.urls)),
     path("", include(clientes_router.urls)),
+    # OperacionesViewSet (Domain 6 — reservations + cobrar cita). The
+    # router URLs (`operaciones/<pk>/reserva/`, `citas/<int:cita_id>/cobrar/`)
+    # coexist with the function-based ``operaciones/<int:operacion_id>/...``
+    # paths above because the router URLs carry longer suffixes that the
+    # function-based regex never matches.
+    path("", include(operaciones_router.urls)),
 ]

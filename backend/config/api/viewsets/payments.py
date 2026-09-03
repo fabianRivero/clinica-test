@@ -5,8 +5,9 @@ Domain 3 of Phase 6.
 
 import calendar
 import os
+from decimal import Decimal
 
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from rest_framework import status, viewsets
@@ -15,11 +16,16 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from billing.models import CuotaPlanPago, PagoRealizado, ConfiguracionPagoQR
+from billing.validators import assert_cuota_in_user_branch, assert_not_over_payment
 from notifications.models import Notification
-from notifications.services import create_notification
+from notifications.services import (
+    admins_for_specialist_branch,
+    create_notification,
+)
 
 from config.api.permissions import AdminRequired
 from config.api.serializers.payments import (
+    PagoRealizadoCreateSerializer,
     PagoRealizadoSerializer,
     CuotaPlanPagoSerializer,
     ConfiguracionPagoQRSerializer,
@@ -156,8 +162,38 @@ class PagosViewSet(viewsets.ViewSet):
             "quotas": [self._admin_quota_item(c) for c in cuotas_qs],
         })
 
-    @action(detail=False, methods=["post"], url_path="configuracion-qr")
-    def update_qr_config(self, request):
+    @action(
+        detail=False,
+        methods=["get", "post"],
+        url_path="configuracion-qr",
+    )
+    def qr_config(self, request):
+        """GET/POST /pagos/configuracion-qr/ — read or update the branch QR config.
+
+        GET returns the current QR config (with ``hasQr: false`` when
+        none is configured) so the admin cobro modal can surface the
+        QR image under the ``Método de pago`` selector when VIRTUAL or
+        MIXTO is selected.
+
+        POST updates the QR config (multipart). DRF only allows ONE
+        ``@action`` per ``url_path`` — having two separate actions with
+        the same ``url_path`` would silently overwrite each other when
+        the router is built (the POST would win, breaking the GET).
+        Combined dispatch keeps the endpoint self-documenting.
+        """
+        if request.method == "GET":
+            branch = get_user_branch(request)
+            config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
+            storage_provider = os.getenv("STORAGE_PROVIDER", "local")
+            return Response({
+                "paymentQrConfig": self._payment_qr_config_item(
+                    config, storage_provider
+                ),
+            })
+        # POST — fall through to the original update logic.
+        return self._update_qr_config(request)
+
+    def _update_qr_config(self, request):
         """POST /pagos/configuracion-qr/ — update QR config (multipart)."""
         import logging
         import traceback
@@ -263,6 +299,110 @@ class PagosViewSet(viewsets.ViewSet):
         except Exception as exc:
             logger.error(f"[QR-UPDATE] Error: {exc}\n{traceback.format_exc()}")
             return Response({"detail": f"Error al guardar imagen: {exc}"}, status=500)
+
+    @action(detail=False, methods=["post"], url_path=r"cuotas/(?P<cuota_id>\d+)/pagos")
+    def register_payment(self, request, cuota_id=None):
+        """POST /pagos/cuotas/<cuota_id>/pagos/ — admin registers a payment on behalf of a client.
+
+        Creates a ``PagoRealizado`` in ``PENDIENTE`` for the given cuota and
+        fires one ``ADMIN_PAYMENT_PENDING_CONFIRMATION`` notification per
+        branch-admin in the cuota's branch. Enforces branch isolation
+        (raises ``Http404`` for cross-branch requests) and the
+        spec's quota over-payment rule (returns 400).
+        """
+        cuota = (
+            CuotaPlanPago.objects.select_for_update(of=("self",))
+            .select_related(
+                "operacion__paciente__usuario",
+                "operacion__servicio_config__tipo_servicio",
+            )
+            .prefetch_related("pagos_realizados")
+            .filter(pk=cuota_id)
+            .first()
+        )
+        if not cuota:
+            return Response({"detail": "No encontramos la cuota solicitada."}, status=404)
+
+        # Branch isolation — raises Http404 when the admin's branch does
+        # not match the cuota's client branch (see validators.py).
+        assert_cuota_in_user_branch(request, cuota)
+
+        serializer = PagoRealizadoCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            # Surface a friendly top-level detail plus the field-level
+            # errors so the modal can render both.
+            errors = serializer.errors
+            first_field = next(iter(errors.keys()), None)
+            first_messages = errors.get(first_field, []) if first_field else []
+            summary = (
+                f"{first_field}: {first_messages[0]}"
+                if first_field and first_messages
+                else "Los datos del pago no son validos."
+            )
+            return Response(
+                {"detail": summary, "errors": errors},
+                status=400,
+            )
+
+        attrs = serializer.validated_data
+        assert_not_over_payment(cuota, attrs["monto_pagado"])
+
+        details = (attrs.get("details") or "").strip() or "Pago registrado por administración."
+        receipt_file = attrs.get("receiptFile")
+        # The admin registering the payment is the same person who
+        # confirms it was collected (cash at the desk, QR verified in
+        # person, etc.), so the row lands APROBADO and the cuota status
+        # is updated immediately. No admin-pending-review notification is
+        # fired — there is no second pair of eyes needed, mirroring the
+        # conversion wizard's step-5 first payment.
+        payment = PagoRealizado.objects.create(
+            cuota=cuota,
+            monto_pagado=attrs["monto_pagado"],
+            metodo_pago=attrs["paymentMethod"],
+            monto_fisico=attrs.get("montoFisico") or 0,
+            monto_virtual=attrs.get("montoVirtual") or 0,
+            comprobante_url=receipt_file or "",
+            detalles_pago=details,
+            estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
+            verificado=True,
+            verificado_por=request.user,
+            fecha_verificacion=timezone.now(),
+            observacion_verificacion="Pago confirmado durante el registro administrativo.",
+        )
+
+        # Notify the client that their payment was confirmed so they see
+        # the impact on their portal without having to refresh.
+        paciente_user = payment.cuota.operacion.paciente.usuario
+        sucursal = payment.cuota.operacion.paciente.usuario.sucursal
+        nro_cuota = payment.cuota.nro_cuota
+        procedimiento = payment.cuota.operacion.servicio_config.proc_estetico.proceso
+        create_notification(
+            recipient=paciente_user,
+            branch=sucursal,
+            type=Notification.Type.CLIENT_PAYMENT_CONFIRMED,
+            title="Pago confirmado",
+            message=(
+                f"El pago de la cuota Nro {nro_cuota} por Bs {payment.monto_pagado} "
+                f"del procedimiento {procedimiento} fue confirmado."
+            ),
+            action_url="/cliente/pagos",
+            source_event="payment.admin_registered_and_confirmed",
+            source_entity_type="payment",
+            source_entity_id=payment.id,
+            created_by_type="admin",
+            created_by_id=request.user.id,
+        )
+
+        cuota.refresh_from_db(fields=["estado"])
+
+        return Response(
+            {
+                "detail": "El pago fue registrado y aprobado correctamente.",
+                "payment": self._payment_item(payment),
+                "quota": self._admin_quota_item(cuota),
+            },
+            status=201,
+        )
 
     @action(detail=True, methods=["post"], url_path="estado")
     def update_status(self, request, pk=None):
@@ -475,11 +615,20 @@ class PagosViewSet(viewsets.ViewSet):
             "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Sin revisar",
             "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
             "note": payment.observacion_verificacion or payment.detalles_pago or "",
+            "paymentMethod": payment.metodo_pago,
+            "physicalAmount": currency(payment.monto_fisico),
+            "virtualAmount": currency(payment.monto_virtual),
         }
 
     def _admin_quota_item(self, cuota):
         operacion = cuota.operacion
         paciente = operacion.paciente
+        paid_amount = (
+            cuota.pagos_realizados.filter(
+                estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO
+            ).aggregate(s=Sum("monto_pagado"))["s"]
+            or Decimal("0")
+        )
         return {
             "id": cuota.pk,
             "clienteCodigo": paciente.cliente_codigo,
@@ -494,6 +643,7 @@ class PagosViewSet(viewsets.ViewSet):
             ),
             "quotaNumber": cuota.nro_cuota,
             "amount": str(cuota.monto_programado),
+            "paidAmount": str(paid_amount),
             "dueDate": cuota.fecha_vencimiento.isoformat(),
             "status": cuota.estado,
             "paymentsCount": cuota.pagos_realizados.count(),
