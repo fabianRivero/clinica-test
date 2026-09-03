@@ -6,6 +6,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { AdminRegisterPaymentModal } from '../../components/admin/AdminRegisterPaymentModal'
+import { AdminRegisterAppointmentPaymentModal } from '../../components/admin/AdminRegisterAppointmentPaymentModal'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
@@ -20,14 +21,18 @@ import {
   deleteAdminOperationQuota,
   getAdminOperationDetail,
   markAdminAppointmentPendingBiometric,
+  registerAdminAppointmentPayment,
   registerAdminPayment,
   rescheduleAdminAppointment,
   updateAdminOperationDetails,
   updateAdminOperationPricePlan,
 } from '../../services/api/admin'
 import type {
+  AdminAppointment,
   AdminPaymentQuota,
   AdminReservationExtendedPayload,
+  OperationDetailAppointment,
+  RegisterAdminAppointmentPaymentPayload,
   RegisterAdminPaymentPayload,
 } from '../../types/admin'
 
@@ -112,6 +117,14 @@ export function AdminOperationDetailPage() {
   const [registerQuota, setRegisterQuota] = useState<AdminPaymentQuota | null>(null)
   const [isRegistering, setIsRegistering] = useState(false)
   const [registerError, setRegisterError] = useState<string | null>(null)
+  // Estado del modal `AdminRegisterAppointmentPaymentModal` reusado desde
+  // el bloque "Citas medicas" para que el admin cobre una cita al
+  // consultorio sin salir del detalle de operacion. El payload de la cita
+  // ya incluye `precio` / `saldoPendiente` / `pagos[]` (ver
+  // `_operation_detail` en backend/config/api_views.py).
+  const [cobrarAppointment, setCobrarAppointment] = useState<AdminAppointment | null>(null)
+  const [isCobrarSubmitting, setIsCobrarSubmitting] = useState(false)
+  const [cobrarError, setCobrarError] = useState<string | null>(null)
   // El precio y los montos por cuota se editan desde el bloque "Citas y
 // cuotas" (sub-bloque Plan de pagos). El save reutiliza el mismo
 // endpoint `actualizar-precio` con la lista `quotas` opcional.
@@ -510,6 +523,56 @@ const handleSaveSessions = async () => {
   const closeRegisterModal = () => {
     setRegisterQuota(null)
     setRegisterError(null)
+  }
+
+  // Handler del modal `AdminRegisterAppointmentPaymentModal`. El cita
+  // ya viene con `precio` / `saldoPendiente` del payload de la operacion;
+  // solo necesitamos su `rawId` + el `operationRawId` del padre (para
+  // armar el POST a `/operaciones/<op>/citas/<cita>/cobrar/`).
+  const handleCobrarAppointment = async (
+    payload: RegisterAdminAppointmentPaymentPayload,
+  ) => {
+    if (!cobrarAppointment || !data) return
+    setIsCobrarSubmitting(true)
+    setCobrarError(null)
+    try {
+      const response = await registerAdminAppointmentPayment(
+        data.operation.rawId,
+        cobrarAppointment.rawId,
+        payload,
+      )
+      showNotification({
+        title: 'Pago registrado',
+        message: response.detail,
+        tone: 'success',
+      })
+      setCobrarAppointment(null)
+      reload()
+    } catch (requestError) {
+      setCobrarError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo registrar el pago de la cita.',
+      )
+    } finally {
+      setIsCobrarSubmitting(false)
+    }
+  }
+
+  const closeCobrarAppointmentModal = () => {
+    setCobrarAppointment(null)
+    setCobrarError(null)
+  }
+
+  // Misma regla de habilitacion que ClientAppointmentSection: precio
+  // positivo y estado no terminal. CANCELADA / NO_ASISTIO son rechazados
+  // por el backend con 400.
+  const canCobrarAppointment = (appointment: OperationDetailAppointment): boolean => {
+    const precioNumber = Number(appointment.precio ?? '0') || 0
+    if (precioNumber <= 0) return false
+    const status = (appointment.status ?? '').toLowerCase()
+    if (status === 'cancelada' || status === 'no asistio') return false
+    return true
   }
 
   const handleSaveQuotas = async () => {
@@ -935,16 +998,50 @@ const handleSaveSessions = async () => {
                     // cancelar-verificacion/ del spec appointment-states).
                     const isRevertible =
                       normalized === 'realizada pendiente de verificación'
+                    // "Cobrar cita" puede aparecer junto a cualquiera de
+                    // las acciones de lifecycle de arriba, siempre que
+                    // `precio > 0` y el estado no sea terminal. Si la
+                    // cita no califica para ninguna accion de lifecycle
+                    // pero SI es cobrable (ej. CONFIRMADA sin cierre),
+                    // seguimos mostrando el boton aislado.
+                    const canCobrar = canCobrarAppointment(appointment)
                     if (
                       !isCancelable &&
                       !isCloseable &&
                       !isMarkPending &&
-                      !isRevertible
+                      !isRevertible &&
+                      !canCobrar
                     ) {
                       return null
                     }
                     return (
                       <div className="table-actions">
+                        {canCobrar ? (
+                          <button
+                            className="button button--ghost button--compact"
+                            type="button"
+                            disabled={isCobrarSubmitting}
+                            aria-label={`Cobrar cita ${appointment.rawId}`}
+                            data-testid={`cobrar-cita-operation-${appointment.rawId}`}
+                            onClick={() => {
+                              setCobrarError(null)
+                              // El modal solo necesita `rawId`,
+                              // `dateTime` y los cuatro campos de
+                              // breakdown (`precio` / `saldoPendiente` /
+                              // `pagos_count` / `pagos`) que
+                              // `OperationDetailAppointment` ya expone
+                              // via el helper backend `_cita_payment_breakdown`.
+                              // Cast through `unknown` to satisfy TS: the
+                              // two types are intentionally divergent
+                              // (the admin operation detail uses a
+                              // narrower shape) but the fields the
+                              // modal reads overlap.
+                              setCobrarAppointment(appointment as unknown as AdminAppointment)
+                            }}
+                          >
+                            Cobrar cita
+                          </button>
+                        ) : null}
                         {isCancelable ? (
                           <button
                             className="button button--ghost button--compact"
@@ -1686,6 +1783,15 @@ const handleSaveSessions = async () => {
         errorMessage={registerError}
         onClose={closeRegisterModal}
         onSubmit={handleRegisterPayment}
+      />
+
+      <AdminRegisterAppointmentPaymentModal
+        appointment={cobrarAppointment}
+        isOpen={cobrarAppointment !== null}
+        isSubmitting={isCobrarSubmitting}
+        errorMessage={cobrarError}
+        onClose={closeCobrarAppointmentModal}
+        onSubmit={handleCobrarAppointment}
       />
 
       {photoPreviewUrl ? (

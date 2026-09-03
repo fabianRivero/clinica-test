@@ -48,6 +48,8 @@ import type {
   ProspectsResponse,
   RegisterAdminPaymentPayload,
   RegisterAdminPaymentResponse,
+  RegisterAdminAppointmentPaymentPayload,
+  RegisterAdminAppointmentPaymentResponse,
   ReportClient,
   ReportIncomeItem,
   ReportProspect,
@@ -61,6 +63,7 @@ import type {
   UpsertAdminHabitualSchedulePayload,
   UpsertAdminExpensePayload,
   UpdateAdminPaymentQrConfigResponse,
+  GetAdminPaymentQrConfigResponse,
   UpdateAdminPaymentStatusPayload,
   UpdateAdminPaymentStatusResponse,
   AdminConcurrencyCheckResponse,
@@ -113,7 +116,7 @@ export function getAdminProspectMedicalAvailability(prospectId: number, branchId
   )
 }
 
-export function createAdminProspectMedicalAppointment(prospectId: number, data: { branchId: number, dateTime: string }) {
+export function createAdminProspectMedicalAppointment(prospectId: number, data: { branchId: number, dateTime: string, precio?: string }) {
   return requestJsonWithBody<CreateAdminProspectMedicalAppointmentResponse>(
     `/api/admin/prospectos/${prospectId}/cita-medica/reservar/`,
     data,
@@ -124,6 +127,56 @@ export function cancelAdminProspectMedicalAppointment(appointmentId: number) {
   return requestJsonWithBody<CancelAdminProspectMedicalAppointmentResponse>(
     `/api/admin/prospectos/citas-medicas/${appointmentId}/cancelar/`,
     {},
+  )
+}
+
+// --- citas-pagos follow-on: cobrar cita de prospecto --------------------
+// Same payload shape as ``registerAdminAppointmentPayment`` (admin flow,
+// receipt optional regardless of method). The ``rawId`` here is the
+// CitaProspecto id, NOT the prospecto id.
+export function chargeAdminProspectAppointment(citaId: number, payload: {
+  paymentMethod: 'VIRTUAL' | 'FISICO' | 'MIXTO'
+  amount: string
+  montoFisico?: string
+  montoVirtual?: string
+  receiptFile?: File
+  details?: string
+}) {
+  // Must use the multipart helper — the receiptFile needs a real
+  // multipart payload (Content-Type: multipart/form-data + boundary
+  // header set automatically by the browser when given FormData).
+  // ``requestJsonWithBody`` would ``JSON.stringify`` the FormData into
+  // ``"{}"`` and the backend would 400 because paymentMethod and
+  // monto_pagado would be missing.
+  const form = new FormData()
+  form.append('paymentMethod', payload.paymentMethod)
+  form.append('monto_pagado', payload.amount)
+  if (payload.montoFisico) form.append('montoFisico', payload.montoFisico)
+  if (payload.montoVirtual) form.append('montoVirtual', payload.montoVirtual)
+  if (payload.receiptFile) form.append('receiptFile', payload.receiptFile)
+  if (payload.details) form.append('details', payload.details)
+  return requestFormDataWithBody<unknown>(
+    `/api/admin/prospectos/citas/${citaId}/cobrar/`,
+    form,
+  )
+}
+
+// Edit the appointment's ``precio`` after booking. Locked once the first
+// APROBADO PagoCita exists; the backend returns 400 in that case.
+export function updateAdminProspectAppointmentPrice(citaId: number, precio: string) {
+  return requestJsonWithBody<unknown>(
+    `/api/admin/prospectos/citas/${citaId}/precio/`,
+    { precio },
+  )
+}
+
+// --- citas-pagos follow-on: edit precio on a free CitaClienteLibre.
+// Same contract as ``updateAdminProspectAppointmentPrice`` but the
+// endpoint path lives under the free appointments viewset.
+export function updateAdminFreeAppointmentPrice(citaId: number, precio: string) {
+  return requestJsonWithBody<unknown>(
+    `/api/admin/citas-medicas-libres/${citaId}/precio/`,
+    { precio },
   )
 }
 
@@ -311,7 +364,10 @@ export function patchAppointmentNotes(
   )
 }
 
-export function createAdminClientFreeMedicalAppointment(clientId: number, data: { branchId: number, dateTime: string }) {
+export function createAdminClientFreeMedicalAppointment(
+  clientId: number,
+  data: { branchId: number; dateTime: string; precio?: string },
+) {
   return requestJsonWithBody<CreateAdminClientFreeMedicalAppointmentResponse>(
     `/api/admin/clientes/${clientId}/cita-medica/reservar/`,
     data,
@@ -481,6 +537,16 @@ export function getAdminPayments(month: number, year: number, filters?: AdminPay
   return requestJson<PaymentsResponse>(`/api/admin/pagos/?${query}`)
 }
 
+// --- citas-pagos follow-on: read the branch QR for cobro modals ---
+// Used by AdminRegisterAppointmentPaymentModal to surface the QR image
+// under the ``Método de pago`` selector when the admin picks VIRTUAL or
+// MIXTO. Mirrors the read-side of the existing POST endpoint.
+export function getAdminPaymentQrConfig() {
+  return requestJson<GetAdminPaymentQrConfigResponse>(
+    '/api/admin/pagos/configuracion-qr/',
+  )
+}
+
 export function updateAdminPaymentQrConfig(file: File, instructions: string) {
   const formData = new FormData()
   formData.append('qrImage', file)
@@ -525,6 +591,58 @@ export function registerAdminPayment(
   return requestFormDataWithBody<RegisterAdminPaymentResponse>(
     `/api/admin/pagos/cuotas/${cuotaId}/pagos/`,
     formData,
+  )
+}
+
+/**
+ * Multipart builder shared by both cita cobrar endpoints. Mirrors
+ * `registerAdminPayment` byte-for-byte (same field names) so the
+ * backend `PagoCitaCreateSerializer` can validate against the same
+ * contract as `PagoRealizadoCreateSerializer`.
+ */
+function appointmentPaymentPayloadToFormData(
+  payload: RegisterAdminAppointmentPaymentPayload,
+): FormData {
+  const formData = new FormData()
+  formData.append('paymentMethod', payload.paymentMethod)
+  formData.append('monto_pagado', payload.amount)
+  if (payload.montoFisico) formData.append('montoFisico', payload.montoFisico)
+  if (payload.montoVirtual) formData.append('montoVirtual', payload.montoVirtual)
+  if (payload.receiptFile) formData.append('receiptFile', payload.receiptFile)
+  if (payload.details) formData.append('details', payload.details)
+  return formData
+}
+
+/**
+ * Charge a `CitaMedica` at the consultorio. Mirrors
+ * `registerAdminPayment` but POSTs to the new operation-detail
+ * cobrar action and returns the refreshed cita item (carrying the
+ * new `precio` / `saldoPendiente` / `pagos[]`).
+ */
+export function registerAdminAppointmentPayment(
+  operationId: number,
+  citaId: number,
+  payload: RegisterAdminAppointmentPaymentPayload,
+) {
+  return requestFormDataWithBody<RegisterAdminAppointmentPaymentResponse>(
+    `/api/admin/operaciones/${operationId}/citas/${citaId}/cobrar/`,
+    appointmentPaymentPayloadToFormData(payload),
+  )
+}
+
+/**
+ * Charge a `CitaClienteLibre` at the consultorio. Same payload
+ * contract as `registerAdminAppointmentPayment`, no nested
+ * `operationId` because free appointments are not attached to an
+ * operation.
+ */
+export function registerAdminFreeAppointmentPayment(
+  appointmentId: number,
+  payload: RegisterAdminAppointmentPaymentPayload,
+) {
+  return requestFormDataWithBody<RegisterAdminAppointmentPaymentResponse>(
+    `/api/admin/citas-medicas-libres/${appointmentId}/cobrar/`,
+    appointmentPaymentPayloadToFormData(payload),
   )
 }
 

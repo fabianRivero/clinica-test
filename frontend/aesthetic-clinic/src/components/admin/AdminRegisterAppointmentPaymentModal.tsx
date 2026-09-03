@@ -1,12 +1,12 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 
-import type { AdminPaymentQuota } from '../../types/admin'
+import type { AdminAppointment } from '../../types/admin'
 import { PaymentQrPanel } from './PaymentQrPanel'
 
 type PaymentMethod = 'VIRTUAL' | 'FISICO' | 'MIXTO'
 
-export type AdminRegisterPaymentModalProps = {
-  quota: AdminPaymentQuota | null
+export type AdminRegisterAppointmentPaymentModalProps = {
+  appointment: AdminAppointment | null
   isOpen: boolean
   isSubmitting: boolean
   errorMessage: string | null
@@ -28,32 +28,41 @@ export type AdminRegisterPaymentModalProps = {
 }
 
 /**
- * Modal opened from the admin "Todas las cuotas" tab to register a
- * payment on behalf of a client. Reuses the same form shape as the
- * client page (VIRTUAL / FISICO / MIXTO selector + conditional
- * fields) but keeps the receipt optional regardless of method.
+ * Parameter variant of `AdminRegisterPaymentModal`. Opens from the
+ * admin cita sections to charge a `CitaMedica` or `CitaClienteLibre`
+ * at the consultorio. Header shows `<patient> | Cita <datetime>`,
+ * reuses the VIRTUAL/FISICO/MIXTO + optional receipt form, and
+ * disables submit when `precio == 0 || saldoPendiente == 0` per the
+ * spec.
+ *
+ * Mirrors the cuota modal intentionally (no shared hook): the
+ * disabled-when-over-paid rule, header shape, and submit payload
+ * diverge enough that a shared `usePaymentForm` would carry more
+ * conditionals than it removes. PR 3 keeps the form copy explicit
+ * so the modal's contract is readable on its own.
  */
-export function AdminRegisterPaymentModal({
-  quota,
+export function AdminRegisterAppointmentPaymentModal({
+  appointment,
   isOpen,
   isSubmitting,
   errorMessage,
   onClose,
   onSubmit,
-}: AdminRegisterPaymentModalProps) {
-  // Derive a stable key for the open session; remounting on quota change
-  // resets the form fields without an effect-driven setState cascade.
-  const sessionKey = isOpen && quota ? `${quota.rawId}:${quota.amount}` : 'closed'
+}: AdminRegisterAppointmentPaymentModalProps) {
+  // Derive a stable key for the open session; remounting on appointment
+  // change resets the form fields without an effect-driven setState cascade.
+  const sessionKey =
+    isOpen && appointment ? `${appointment.rawId}:${appointment.precio ?? '0'}` : 'closed'
 
-  if (!isOpen || !quota) {
+  if (!isOpen || !appointment) {
     return null
   }
 
   return (
-    <AdminRegisterPaymentModalBody
+    <AdminRegisterAppointmentPaymentModalBody
       key={sessionKey}
       isOpen={isOpen}
-      quota={quota}
+      appointment={appointment}
       isSubmitting={isSubmitting}
       errorMessage={errorMessage}
       onClose={onClose}
@@ -62,32 +71,46 @@ export function AdminRegisterPaymentModal({
   )
 }
 
-function AdminRegisterPaymentModalBody({
+function AdminRegisterAppointmentPaymentModalBody({
   isOpen,
-  quota,
+  appointment,
   isSubmitting,
   errorMessage,
   onClose,
   onSubmit,
 }: {
   isOpen: boolean
-  quota: AdminPaymentQuota
+  appointment: AdminAppointment
   isSubmitting: boolean
   errorMessage: string | null
   onClose: () => void
-  onSubmit: AdminRegisterPaymentModalProps['onSubmit']
+  onSubmit: AdminRegisterAppointmentPaymentModalProps['onSubmit']
 }) {
-  // The amount to register is fixed: it's the residual balance on the
-  // cuota (programado - ya pagado). The admin registers the full
-  // outstanding amount against the cuota; partial sub-payments are
-  // tracked through the breakdown for MIXTO and the backend still
-  // validates that the total matches the cuota before saving.
-  const saldoPendiente = (() => {
-    const programado = Number(quota.amount) || 0
-    const pagado = Number(quota.paidAmount ?? '0') || 0
-    const restante = programado - pagado
-    return restante > 0 ? restante : programado
-  })()
+  // ``precio`` arrives from the backend formatted by ``currency()`` as
+  // either ``"Bs 80.00"`` or just ``"0.00"`` (legacy zero stays
+  // prefix-less). Parse defensively so both shapes work.
+  const parseCurrency = (raw: string | undefined): number => {
+    if (raw === undefined || raw === null || raw === '') return 0
+    const cleaned = String(raw).replace(/^Bs\s*/i, '').replace(/,/g, '').trim()
+    const num = Number(cleaned)
+    return Number.isFinite(num) ? num : 0
+  }
+  const precioNumber = parseCurrency(appointment.precio)
+  // Mirror the backend derivation: `precio - sum(APROBADO)`. We trust
+  // the server-supplied `saldoPendiente` when present; otherwise fall
+  // back to `precio` minus the sum of approved rows in the local
+  // `pagos[]`.
+  const approvedSum = (appointment.pagos ?? []).reduce((acc, pago) => {
+    if (pago.estado_verificacion !== 'APROBADO') return acc
+    const amount = Number(pago.monto_pagado) || 0
+    return acc + amount
+  }, 0)
+  const backendSaldoRaw = parseCurrency(appointment.saldoPendiente)
+  const backendSaldo = backendSaldoRaw > 0 ? backendSaldoRaw : 0
+  const computedSaldo = backendSaldo > 0
+    ? backendSaldo
+    : Math.max(precioNumber - approvedSum, 0)
+  const saldoPendiente = computedSaldo > 0 ? computedSaldo : 0
   const amount = saldoPendiente.toFixed(2)
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('FISICO')
@@ -99,6 +122,9 @@ function AdminRegisterPaymentModalBody({
   const [montoVirtual, setMontoVirtual] = useState(halfAmount)
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
   const [details, setDetails] = useState('')
+  // The branch QR is loaded + rendered by ``PaymentQrPanel`` (shared
+  // with the cuota cobro modal). It owns its own fetch / lightbox
+  // state so this modal stays focused on the form.
 
   const handleReceiptFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     setReceiptFile(event.target.files?.[0] || null)
@@ -145,10 +171,27 @@ function AdminRegisterPaymentModalBody({
     })
   }
 
+  // The spec disables submit when `precio == 0` (legacy non-billable
+  // cita) OR when `saldoPendiente == 0` (already paid in full).
+  const submitDisabled =
+    precioNumber === 0 || saldoPendiente === 0 || isSubmitting
+
+  // Header: `<patient> | Cita <datetime>`. For free appointments the
+  // patient string is absent on the cita row itself; the parent page
+  // resolves the patient label and forwards it via `operation` as a
+  // visual stand-in (matching the cuota-modal contract). We fall back
+  // to a generic label otherwise.
+  const headerPatient = appointment.operation || appointment.specialist || 'Cita'
+
   return (
-    <div className="payment-modal" role="dialog" aria-modal="true" aria-label="Registrar pago">
+    <div
+      className="payment-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Cobrar cita"
+    >
       <button
-        aria-label="Cerrar modal de pago"
+        aria-label="Cerrar modal de cobro"
         className="payment-modal__backdrop"
         type="button"
         onClick={onClose}
@@ -156,10 +199,8 @@ function AdminRegisterPaymentModalBody({
       <div className="payment-modal__content">
         <header className="payment-modal__header">
           <div>
-            <span>{quota.patient}</span>
-            <strong>
-              {quota.operation} | Cuota {quota.quotaNumber}
-            </strong>
+            <span>{headerPatient}</span>
+            <strong>Cita {appointment.dateTime}</strong>
           </div>
           <button
             className="button button--ghost button--compact"
@@ -173,10 +214,13 @@ function AdminRegisterPaymentModalBody({
           <div className="payment-upload-form__grid">
             <label className="field">
               <span>
+                Precio: Bs {precioNumber.toFixed(2)}
+                {approvedSum > 0 ? ` (ya aprobado Bs ${approvedSum.toFixed(2)})` : ''}
+              </span>
+            </label>
+            <label className="field">
+              <span>
                 Saldo pendiente: Bs {amount}
-                {quota.paidAmount && Number(quota.paidAmount) > 0
-                  ? ` (programado Bs ${quota.amount}, ya pagado Bs ${quota.paidAmount})`
-                  : ''}
               </span>
               <input
                 className="input"
@@ -253,6 +297,16 @@ function AdminRegisterPaymentModalBody({
             </label>
           </div>
           {errorMessage ? <div className="form-error">{errorMessage}</div> : null}
+          {precioNumber === 0 ? (
+            <div className="form-error">
+              Esta cita no tiene precio asignado; asigna uno antes de cobrar.
+            </div>
+          ) : null}
+          {precioNumber > 0 && saldoPendiente === 0 ? (
+            <div className="form-error">
+              Esta cita ya fue cobrada en su totalidad.
+            </div>
+          ) : null}
           <div className="form-actions">
             <button
               className="button button--ghost"
@@ -262,8 +316,12 @@ function AdminRegisterPaymentModalBody({
             >
               Cancelar
             </button>
-            <button className="button" disabled={isSubmitting} type="submit">
-              {isSubmitting ? 'Registrando pago...' : 'Registrar pago'}
+            <button
+              className="button"
+              disabled={submitDisabled}
+              type="submit"
+            >
+              {isSubmitting ? 'Registrando cobro...' : 'Cobrar cita'}
             </button>
           </div>
         </form>

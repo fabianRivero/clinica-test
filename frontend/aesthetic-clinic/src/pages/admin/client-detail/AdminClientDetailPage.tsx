@@ -97,6 +97,7 @@ export function AdminClientDetailPage() {
     setSessionProcedureFilter,
     sessionProcedures,
     filteredSessions,
+    freeSessions,
 
     // Appointment actions
     appointmentActionId,
@@ -281,11 +282,23 @@ export function AdminClientDetailPage() {
         setFreeConcurrencyInfo={setFreeConcurrencyInfo}
         handleCheckFreeConcurrency={handleCheckFreeConcurrency}
         handleReserveFreeMedicalAppointment={handleReserveFreeMedicalAppointment}
+        // Filter free appointments (CitaClienteLibre) from the merged
+        // `data.appointments` list so this section can render the
+        // "Cobrar cita" button per row. The free variant posts to the
+        // dedicated /citas-medicas-libres/<id>/cobrar/ endpoint.
+        freeAppointments={(data?.appointments ?? []).filter(
+          (apt: any) => apt.isFreeMedicalAppointment === true,
+        )}
+        onPaymentRegistered={reload}
       />
 
-      <SectionCard eyebrow="Sesiones" title="Sesiones realizadas" description="Todas las sesiones del cliente.">
+      <SectionCard eyebrow="Sesiones" title="Sesiones" description="Todas las sesiones del cliente, incluyendo las citas medicas libres.">
         {data.sessions.length ? (
           <>
+            {/* Filter controls apply ONLY to operation-bounded sessions
+                (CitaMedica). Free appointments (CitaClienteLibre) are
+                rendered separately below the filter so the admin can
+                always see them regardless of the chosen filter. */}
             <div className="_flex _gap-sm _mb-sm">
               <label className="field">
                 <span>Estado</span>
@@ -310,8 +323,17 @@ export function AdminClientDetailPage() {
               {visibleSessions.map((session: any) => (
                 <article className="capacity-item" key={session.id}>
                   <div className="capacity-item__header">
-                    <div><strong>{session.operation}</strong><p>{session.dateTime} | {session.specialist}</p><p className="table-muted">{session.zona}</p></div>
-                    <StatusBadge tone={session.statusTone}>{session.status}</StatusBadge>
+                    <div>
+                      <strong>{session.operation}</strong>
+                      <p>{session.dateTime} | {session.specialist}</p>
+                      <p className="table-muted">{session.zona}</p>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
+                      {session.isFreeMedicalAppointment ? (
+                        <StatusBadge tone="neutral">Libre</StatusBadge>
+                      ) : null}
+                      <StatusBadge tone={session.statusTone}>{session.status}</StatusBadge>
+                    </div>
                   </div>
                   <div className="capacity-item__actions">
                     {session.canMarkPendingBiometric ? (
@@ -409,6 +431,50 @@ export function AdminClientDetailPage() {
                   )}
                 </div>
               </div>
+            ) : null}
+
+            {/* Free medical appointments live in their own sub-section
+                below the filter controls so the dropdowns above never
+                hide them. The cobro + edit-precio controls already live
+                in the "Citas libres registradas" panel above; here we
+                just show the row for visibility. */}
+            {freeSessions.length > 0 ? (
+              <>
+                <div
+                  style={{
+                    marginTop: '1.25rem',
+                    paddingTop: '0.75rem',
+                    borderTop: '1px solid var(--color-border)',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: 'var(--color-text-soft)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  Citas medicas libres
+                </div>
+                <div className="capacity-list">
+                  {freeSessions.map((session: any) => (
+                    <article className="capacity-item" key={session.id}>
+                      <div className="capacity-item__header">
+                        <div>
+                          <strong>{session.operation}</strong>
+                          <p>{session.dateTime} | {session.specialist}</p>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
+                          <StatusBadge tone="neutral">Libre</StatusBadge>
+                          <StatusBadge tone={session.statusTone}>{session.status}</StatusBadge>
+                        </div>
+                      </div>
+                      {/* Free citas here are READ-ONLY. The cobro / edit-precio
+                          controls already exist in the "Citas libres
+                          registradas" panel above. Showing them twice
+                          would confuse the admin about which modal is open. */}
+                    </article>
+                  ))}
+                </div>
+              </>
             ) : null}
           </>
         ) : <DataState title="Sin sesiones" message="No hay sesiones registradas para este cliente." />}

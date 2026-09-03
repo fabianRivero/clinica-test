@@ -142,10 +142,27 @@ export function useClientDetail(clientId: string) {
     () => (data ? Array.from(new Set(data.sessions.map((session) => session.operation))) : []),
     [data],
   )
+  // Filter dropdowns apply ONLY to operation-bounded sessions
+  // (CitaMedica). Free appointments (CitaClienteLibre) always render
+  // in their own sub-section below so the admin can always see them
+  // regardless of the filter — this matches the data model where a
+  // free cita has no operation and therefore no procedure to filter by.
+  const freeSessions = useMemo(
+    () =>
+      data
+        ? data.sessions.filter(
+            (session) => session.isFreeMedicalAppointment === true,
+          )
+        : [],
+    [data],
+  )
   const filteredSessions = useMemo(
     () =>
       data
         ? data.sessions.filter((session) => {
+            // Free appointments have their own sub-section and never
+            // honor the operation/procedure filters.
+            if (session.isFreeMedicalAppointment === true) return false
             const statusMatch = sessionStatusFilter ? session.status === sessionStatusFilter : true
             const procedureMatch = sessionProcedureFilter ? session.operation === sessionProcedureFilter : true
             return statusMatch && procedureMatch
@@ -509,14 +526,18 @@ export function useClientDetail(clientId: string) {
     }
   }
 
-  async function handleReserveFreeMedicalAppointment() {
+  async function handleReserveFreeMedicalAppointment(bookingPrecio: string) {
     if (!data || !activeBranch) return
     setIsFreeBookingKey('booking')
 
     try {
       const response = await createAdminClientFreeMedicalAppointment(data.client.rawId, {
         branchId: activeBranch.id,
-        dateTime: `${freeSelectedDate}T${freeSelectedTime}:00`
+        dateTime: `${freeSelectedDate}T${freeSelectedTime}:00`,
+        // citas-pagos follow-on: optional precio captured at booking.
+        // Empty string is treated as 0 by the backend (cita stays
+        // non-billable until the admin sets a price later).
+        precio: bookingPrecio || undefined,
       })
       showNotification({ title: 'Cita medica registrada', message: response.detail, tone: 'success' })
       reload()
@@ -825,6 +846,7 @@ export function useClientDetail(clientId: string) {
     setSessionProcedureFilter,
     sessionProcedures,
     filteredSessions,
+    freeSessions,
 
     // Operations pagination
     visibleOperations,

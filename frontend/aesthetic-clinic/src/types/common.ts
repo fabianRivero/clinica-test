@@ -123,6 +123,27 @@ export type ClientAppointment = {
   }>
   fotoAntesUrl?: string
   fotoDespuesUrl?: string
+  // --- Cita-level payment breakdown (populated by the admin detail /
+  // operation detail payloads; absent on the client portal + kiosko
+  // payloads because those pages don't need the breakdown).
+  /** Cita price (Bs, formatted "0.00"); backend default is 0. */
+  precio?: string
+  /** Residual balance after APROBADO `PagoCita` rows (Bs, formatted). */
+  saldoPendiente?: string
+  /** Count of `PagoCita` rows attached to the cita. */
+  pagos_count?: number
+  /** Read serializer payments array. */
+  pagos?: Array<{
+    id: number
+    monto_pagado: string
+    metodo_pago: 'VIRTUAL' | 'FISICO' | 'MIXTO'
+    monto_fisico: string
+    monto_virtual: string
+    comprobante_url: string
+    estado_verificacion: 'PENDIENTE' | 'APROBADO' | 'RECHAZADO' | 'CANCELADO'
+    detalles_pago: string
+    created_at: string
+  }>
 }
 
 export type ClientReservationSlot = {

@@ -10,10 +10,12 @@ import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
 import {
   cancelAdminProspectMedicalAppointment,
+  chargeAdminProspectAppointment,
   createAdminProspectMedicalAppointment,
   getAdminProspectMedicalAvailability,
   getAdminProspects,
   updateAdminProspect,
+  updateAdminProspectAppointmentPrice,
   migrateAdminProspect,
   updateAdminProspectAppointmentStatus,
 } from '../../services/api/admin'
@@ -21,8 +23,11 @@ import { useAuth } from '../../providers/AuthProvider'
 import type {
   AdminProspectMedicalAvailabilityResponse,
   AdminConcurrencyCheckResponse,
-  ProspectLead
+  ProspectLead,
+  ProspectMedicalAppointment,
 } from '../../types/admin'
+import { AdminRegisterAppointmentPaymentModal } from '../../components/admin/AdminRegisterAppointmentPaymentModal'
+import { EditAppointmentPriceModal } from '../../components/admin/EditAppointmentPriceModal'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { checkAdminConcurrency } from '../../services/api/admin'
 import { Link, useLocation } from 'react-router-dom'
@@ -44,6 +49,7 @@ export function AdminProspectsPage() {
 
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
+  const [bookingPrecio, setBookingPrecio] = useState('')  // citas-pagos follow-on
   const [concurrencyInfo, setConcurrencyInfo] = useState<AdminConcurrencyCheckResponse | null>(null)
   const [isChecking, setIsChecking] = useState(false)
 
@@ -152,13 +158,18 @@ export function AdminProspectsPage() {
     try {
       const response = await createAdminProspectMedicalAppointment(bookingProspect.rawId, {
         branchId: activeBranch.id,
-        dateTime: `${selectedDate}T${selectedTime}:00`
+        dateTime: `${selectedDate}T${selectedTime}:00`,
+        // citas-pagos follow-on: optional precio captured at booking time.
+        // Empty string is treated as 0 by the backend (cita stays non-billable
+        // until the admin explicitly sets a price later).
+        precio: bookingPrecio || undefined,
       })
       showNotification({ title: 'Cita medica agendada', message: response.detail, tone: 'success' })
       setBookingProspect(null)
       setAvailability(null)
       setSelectedDate('')
       setSelectedTime('')
+      setBookingPrecio('')
       setConcurrencyInfo(null)
       reload()
       // Actualizar editingProspect con datos frescos si este prospecto está en edición
@@ -230,6 +241,83 @@ export function AdminProspectsPage() {
       showNotification({
         title: 'No se pudo actualizar',
         message: requestError instanceof Error ? requestError.message : 'Intenta nuevamente en unos segundos.',
+        tone: 'danger',
+      })
+    }
+  }
+
+  // --- citas-pagos follow-on: cobrar cita + editar precio ------------
+  const [chargingCita, setChargingCita] = useState<ProspectMedicalAppointment | null>(null)
+  const [editingPrecioCita, setEditingPrecioCita] = useState<ProspectMedicalAppointment | null>(null)
+
+  // Wrappers used by the child ``EditProspectModal`` — TS strict mode
+  // forbids unused local symbols, and the child's callbacks need the
+  // cita row from inside the EditProspectModal scope, not from here.
+  function handleChargeAppointmentFromChild(cita: ProspectMedicalAppointment) {
+    // Resolve the fresh cita from the current prospects array so the
+    // cobro modal shows the up-to-date precio / saldoPendiente
+    // (not the stale reference the admin clicked before ``reload()``
+    // completed after a previous cobro).
+    const fresh =
+      (data?.prospects ?? [])
+        .find((p) => p.rawId === cita.prospectRawId)
+        ?.medicalAppointments?.find((c) => c.rawId === cita.rawId) ?? cita;
+    setChargingCita(fresh);
+  }
+
+  function handleEditPriceFromChild(cita: ProspectMedicalAppointment) {
+    // Always resolve the FRESH cita object from the current prospects
+    // array so the modal shows the up-to-date precio (not the stale
+    // reference the admin clicked on before ``reload()`` completed).
+    const fresh =
+      (data?.prospects ?? [])
+        .find((p) => p.rawId === cita.prospectRawId)
+        ?.medicalAppointments?.find((c) => c.rawId === cita.rawId) ?? cita;
+    setEditingPrecioCita(fresh);
+  }
+
+  async function handleConfirmCharge(payload: {
+    paymentMethod: 'VIRTUAL' | 'FISICO' | 'MIXTO'
+    amount: string
+    montoFisico?: string
+    montoVirtual?: string
+    receiptFile?: File
+    details?: string
+  }) {
+    if (!chargingCita) return
+    try {
+      await chargeAdminProspectAppointment(chargingCita.rawId, payload)
+      showNotification({
+        title: 'Pago registrado',
+        message: 'El cobro de la cita fue aprobado correctamente.',
+        tone: 'success',
+      })
+      setChargingCita(null)
+      reload()
+    } catch (requestError: any) {
+      showNotification({
+        title: 'No se pudo cobrar',
+        message: requestError.message,
+        tone: 'danger',
+      })
+    }
+  }
+
+  async function handleConfirmEditPrice(newPrecio: string) {
+    if (!editingPrecioCita) return
+    try {
+      await updateAdminProspectAppointmentPrice(editingPrecioCita.rawId, newPrecio)
+      showNotification({
+        title: 'Precio actualizado',
+        message: 'El precio de la cita fue actualizado.',
+        tone: 'success',
+      })
+      setEditingPrecioCita(null)
+      reload()
+    } catch (requestError: any) {
+      showNotification({
+        title: 'No se pudo actualizar',
+        message: requestError.message,
         tone: 'danger',
       })
     }
@@ -474,6 +562,8 @@ export function AdminProspectsPage() {
               isUpdating={isUpdating}
               handleCancelAppointment={(appointmentId) => handleCancelAppointment(appointmentId, editingProspect.rawId)}
               handleMarkAppointmentAsCompleted={(appointmentId) => handleMarkAppointmentAsCompleted(appointmentId, editingProspect.rawId)}
+              onChargeAppointment={handleChargeAppointmentFromChild}
+              onEditAppointmentPrice={handleEditPriceFromChild}
             />
           )}
 
@@ -488,6 +578,7 @@ export function AdminProspectsPage() {
                 setAvailability(null)
                 setSelectedDate('')
                 setSelectedTime('')
+                setBookingPrecio('')
                 setConcurrencyInfo(null)
               }}
               onReserve={handleReserve}
@@ -495,11 +586,68 @@ export function AdminProspectsPage() {
               setSelectedDate={setSelectedDate}
               selectedTime={selectedTime}
               setSelectedTime={setSelectedTime}
+              bookingPrecio={bookingPrecio}
+              setBookingPrecio={setBookingPrecio}
               concurrencyInfo={concurrencyInfo}
               setConcurrencyInfo={setConcurrencyInfo}
               handleCheckConcurrency={handleCheckConcurrency}
               isChecking={isChecking}
               isBooking={Boolean(isBookingKey)}
+            />
+          ) : null}
+
+          {/* citas-pagos follow-on: cobrar cita + editar precio */}
+          {chargingCita ? (
+            (() => {
+              // Resolve the prospect name once — used as the modal
+              // header label via the existing `operation` field.
+              const prospect = bookingProspect
+                ?? (data?.prospects ?? []).find(p => p.rawId === chargingCita.prospectRawId)
+              const headerLabel = prospect?.name ?? 'Prospecto'
+              return (
+                <AdminRegisterAppointmentPaymentModal
+                  appointment={{
+                    rawId: chargingCita.rawId,
+                    id: chargingCita.id,
+                    operationRawId: null,
+                    operation: headerLabel,
+                    specialist: chargingCita.specialist,
+                    dateTime: chargingCita.dateTime,
+                    status: chargingCita.status,
+                    statusTone: chargingCita.statusTone ?? 'approved',
+                    verificationStatus: 'no_requerida',
+                    verificationMethod: null,
+                    details: '',
+                    canManage: false,
+                    canMarkPendingBiometric: false,
+                    canConfirmBiometric: false,
+                    canCancelFromVerification: false,
+                    precio: chargingCita.precio,
+                    saldoPendiente: chargingCita.saldoPendiente,
+                    pagos_count: chargingCita.pagos_count,
+                    pagos: chargingCita.pagos,
+                  }}
+                  isOpen={Boolean(chargingCita)}
+                  isSubmitting={false}
+                  errorMessage={null}
+                  onClose={() => setChargingCita(null)}
+                  onSubmit={handleConfirmCharge}
+                />
+              )
+            })()
+          ) : null}
+          {editingPrecioCita ? (
+            // ``key={editingPrecioCita.rawId}`` forces the modal to remount
+            // when the admin switches between citas without unmounting in
+            // between — without it, the controlled <input> can latch onto
+            // a stale ``draft`` from the previous cita (price 0 when the
+            // new cita has precio 80).
+            <EditAppointmentPriceModal
+              key={editingPrecioCita.rawId}
+              citaRawId={editingPrecioCita.rawId}
+              currentPrecio={editingPrecioCita.precio ?? 'Bs 0.00'}
+              onClose={() => setEditingPrecioCita(null)}
+              onSubmit={handleConfirmEditPrice}
             />
           ) : null}
         </>
@@ -520,6 +668,8 @@ function BookingModal({
   setSelectedDate,
   selectedTime,
   setSelectedTime,
+  bookingPrecio,
+  setBookingPrecio,
   concurrencyInfo,
   setConcurrencyInfo,
   handleCheckConcurrency,
@@ -536,6 +686,8 @@ function BookingModal({
   setSelectedDate: (d: string) => void
   selectedTime: string
   setSelectedTime: (t: string) => void
+  bookingPrecio: string
+  setBookingPrecio: (p: string) => void
   concurrencyInfo: AdminConcurrencyCheckResponse | null
   setConcurrencyInfo: (info: AdminConcurrencyCheckResponse | null) => void
   handleCheckConcurrency: () => Promise<void>
@@ -726,6 +878,22 @@ function BookingModal({
                       <p className="concurrency-warning">No hay especialistas en este horario.</p>
                     )}
 
+                    <label className="field" style={{ marginTop: '1rem' }}>
+                      <span>Precio de la cita (opcional)</span>
+                      <input
+                        type="number"
+                        className="input"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={bookingPrecio}
+                        onChange={(e) => setBookingPrecio(e.target.value)}
+                      />
+                      <small className="field__hint">
+                        Deja en 0 para agendar sin cobrar. Podras asignar el precio despues.
+                      </small>
+                    </label>
+
                     <button
                       type="button"
                       className="button button--primary"
@@ -753,6 +921,8 @@ function EditProspectModal({
   isUpdating,
   handleCancelAppointment,
   handleMarkAppointmentAsCompleted,
+  onChargeAppointment,
+  onEditAppointmentPrice,
 }: {
   prospect: ProspectLead
   onClose: () => void
@@ -760,6 +930,8 @@ function EditProspectModal({
   isUpdating: boolean
   handleCancelAppointment: (id: number) => Promise<void>
   handleMarkAppointmentAsCompleted: (appointmentId: number, prospectId?: number) => Promise<void>
+  onChargeAppointment: (cita: ProspectMedicalAppointment) => void
+  onEditAppointmentPrice: (cita: ProspectMedicalAppointment) => void
 }) {
   const [primerNombre, setPrimerNombre] = useState(prospect.primerNombre || prospect.firstName || '')
   const [segundoNombre, setSegundoNombre] = useState(prospect.segundoNombre || '')
@@ -774,6 +946,35 @@ function EditProspectModal({
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null)
 
   const isEditable = prospect.state !== 'Convertido'
+
+  // citas-pagos follow-on: derive cobro state per cita so the JSX
+  // can disable 'Cobrar cita' / 'Editar precio' once the cita is
+  // fully paid, and surface a small 'cobrada' hint below the status
+  // badge. Backend already locks ``precio`` after the first APROBADO
+  // row — the UI just needs to mirror that contract.
+  const parseCurrencyLocal = (raw: string | undefined | null): number => {
+    if (raw === undefined || raw === null || raw === '') return 0
+    const cleaned = String(raw).replace(/^Bs\s*/i, '').replace(/,/g, '').trim()
+    const num = Number(cleaned)
+    return Number.isFinite(num) ? num : 0
+  }
+  function deriveCobroState(cita: ProspectMedicalAppointment) {
+    const precio = parseCurrencyLocal(cita.precio)
+    const saldo = parseCurrencyLocal(cita.saldoPendiente)
+    const pagosCount = cita.pagos_count ?? 0
+    const approvedSum = (cita.pagos ?? []).reduce((acc, p) => {
+      if (p.estado_verificacion !== 'APROBADO') return acc
+      return acc + (Number(p.monto_pagado) || 0)
+    }, 0)
+    return {
+      precio,
+      saldo,
+      approvedSum,
+      pagosCount,
+      isFullyPaid: precio > 0 && saldo <= 0,
+      isPartiallyPaid: approvedSum > 0 && saldo > 0,
+    }
+  }
 
   return (
     <div className="booking-modal-overlay">
@@ -877,6 +1078,43 @@ function EditProspectModal({
                     <div key={cita.rawId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: 'var(--color-surface-alt)', borderRadius: '12px' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 'bold' }}>{cita.dateTime}</div>
+                        {/* citas-pagos follow-on: precio / saldoPendiente per cita */}
+                        <div style={{ marginTop: '0.4rem', fontSize: '0.85rem', color: 'var(--color-text-soft)' }}>
+                          Precio: {cita.precio ?? 'Bs 0.00'} — Saldo pendiente: {cita.saldoPendiente ?? 'Bs 0.00'}
+                        </div>
+                        {(() => {
+                          const cobro = deriveCobroState(cita)
+                          if (cobro.isFullyPaid) {
+                            const pagoWord = cobro.pagosCount === 1 ? 'pago' : 'pagos'
+                            return (
+                              <div
+                                style={{
+                                  marginTop: '0.4rem',
+                                  fontSize: '0.8rem',
+                                  color: 'var(--color-text-soft)',
+                                  fontWeight: 500,
+                                }}
+                              >
+                                Ya cobrada — Bs {cobro.approvedSum.toFixed(2)} ({cobro.pagosCount} {pagoWord}).
+                              </div>
+                            )
+                          }
+                          if (cobro.isPartiallyPaid) {
+                            return (
+                              <div
+                                style={{
+                                  marginTop: '0.4rem',
+                                  fontSize: '0.8rem',
+                                  color: 'var(--color-text-soft)',
+                                  fontWeight: 500,
+                                }}
+                              >
+                                Cobrado Bs {cobro.approvedSum.toFixed(2)} — falta Bs {cobro.saldo.toFixed(2)}.
+                              </div>
+                            )
+                          }
+                          return null
+                        })()}
                         <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                           {isBeingEdited ? (
                             <select
@@ -921,8 +1159,62 @@ function EditProspectModal({
                           )}
                         </div>
                       </div>
-                      {isEditable && cita.canCancel && !tempStatuses[cita.rawId] && (
+                      {isEditable && !tempStatuses[cita.rawId] && (
                         <>
+                          {/* citas-pagos follow-on: cobrar cita + editar precio.
+                              These are visible whenever the cita is in
+                              PROGRAMADA, regardless of the hora — admins
+                              must still be able to cobrar/edit/mark a cita
+                              that is happening right now (e.g. the
+                              ``02/09 19:20`` cita at 19:30). They get
+                              disabled once the cita is fully paid (the
+                              backend locks the price after the first
+                              APROBADO row). Partial payments keep the
+                              buttons live so the admin can complete the
+                              cobro. */}
+                          {(() => {
+                            const cobro = deriveCobroState(cita)
+                            const isFullyPaid = cobro.isFullyPaid
+                            const buttonsDisabled = isFullyPaid
+                            return (
+                              <>
+                                {currentStatusValue === 'PROGRAMADA' && (
+                                  <button
+                                    className="button button--compact"
+                                    style={{
+                                      background: 'var(--color-success, #16a34a)',
+                                      color: '#fff',
+                                      opacity: buttonsDisabled ? 0.5 : 1,
+                                      cursor: buttonsDisabled ? 'not-allowed' : 'pointer',
+                                    }}
+                                    disabled={buttonsDisabled}
+                                    title={
+                                      buttonsDisabled
+                                        ? 'La cita ya esta cobrada en su totalidad.'
+                                        : undefined
+                                    }
+                                    onClick={() => onChargeAppointment(cita)}
+                                  >
+                                    Cobrar cita
+                                  </button>
+                                )}
+                                {currentStatusValue === 'PROGRAMADA' && (
+                                  <button
+                                    className="button button--ghost button--compact"
+                                    disabled={buttonsDisabled}
+                                    title={
+                                      buttonsDisabled
+                                        ? 'No puedes cambiar el precio despues de un cobro aprobado.'
+                                        : undefined
+                                    }
+                                    onClick={() => onEditAppointmentPrice(cita)}
+                                  >
+                                    Editar precio
+                                  </button>
+                                )}
+                              </>
+                            )
+                          })()}
                           {currentStatusValue === 'PROGRAMADA' && (
                             <button
                               className="button button--primary button--compact"
@@ -934,15 +1226,22 @@ function EditProspectModal({
                               Realizada
                             </button>
                           )}
-                          <button
-                            className="button button--danger button--compact"
-                            onClick={() => {
-                              void handleCancelAppointment(cita.rawId)
-                              onClose()
-                            }}
-                          >
-                            Anular
-                          </button>
+                          {/* Anular is gated by ``canCancel`` because
+                              cancelling a past appointment makes no sense —
+                              the backend would also reject it. The cobro /
+                              edit / realizada buttons above do NOT need
+                              that gate. */}
+                          {cita.canCancel && (
+                            <button
+                              className="button button--danger button--compact"
+                              onClick={() => {
+                                void handleCancelAppointment(cita.rawId)
+                                onClose()
+                              }}
+                            >
+                              Anular
+                            </button>
+                          )}
                         </>
                       )}
                     </div>

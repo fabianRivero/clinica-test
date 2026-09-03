@@ -1,8 +1,20 @@
+import { useState } from 'react'
+
 import { verificationStatusLabel } from '../../../constants/verification'
 import { StatusBadge } from '../../../components/admin/StatusBadge'
 import { DataState } from '../../../components/admin/DataState'
 import { SectionCard } from '../../../components/admin/SectionCard'
-import type { AdminConcurrencyCheckResponse } from '../../../types/admin'
+import { AdminRegisterAppointmentPaymentModal } from '../../../components/admin/AdminRegisterAppointmentPaymentModal'
+import { useNotifications } from '../../../providers/NotificationProvider'
+import {
+  registerAdminAppointmentPayment,
+  registerAdminFreeAppointmentPayment,
+} from '../../../services/api/admin'
+import type {
+  AdminAppointment,
+  AdminConcurrencyCheckResponse,
+  RegisterAdminAppointmentPaymentPayload,
+} from '../../../types/admin'
 import type { ClientAppointment } from '../../../types/common'
 
 interface ClientAppointmentSectionProps {
@@ -44,6 +56,10 @@ interface ClientAppointmentSectionProps {
   onCheckRescheduleAvailability: () => void
   onRescheduleAppointment: () => void
   onCancelReschedule: () => void
+  // Refetch the surrounding page after a successful cobro so the cita
+  // row re-renders with the new `pagos[]` / `saldoPendiente`. The
+  // parent owns the data fetch (useClientDetail / useApiResource).
+  onPaymentRegistered: () => void
 }
 
 export function ClientAppointmentSection({
@@ -77,7 +93,70 @@ export function ClientAppointmentSection({
   onCheckRescheduleAvailability,
   onRescheduleAppointment,
   onCancelReschedule,
+  onPaymentRegistered,
 }: ClientAppointmentSectionProps) {
+  const { showNotification } = useNotifications()
+  // Estado local del modal `AdminRegisterAppointmentPaymentModal`. Lo
+  // mantiene este componente (no la pagina padre) porque la accion solo
+  // aparece dentro de la tabla de citas; pasamos el `AdminAppointment`
+  // resuelto al modal y disparamos el POST desde aca. El modal ya sabe
+  // cuando `precio == 0` o `saldoPendiente == 0` y deshabilita el submit.
+  const [cobrarAppointment, setCobrarAppointment] = useState<AdminAppointment | null>(null)
+  const [cobrarError, setCobrarError] = useState<string | null>(null)
+  const [isCobrarSubmitting, setIsCobrarSubmitting] = useState(false)
+
+  const closeCobrarModal = () => {
+    setCobrarAppointment(null)
+    setCobrarError(null)
+  }
+
+  const handleCobrarSubmit = async (
+    payload: RegisterAdminAppointmentPaymentPayload,
+  ) => {
+    if (!cobrarAppointment) return
+    setIsCobrarSubmitting(true)
+    setCobrarError(null)
+    try {
+      // Las citas medicas requieren operationId en el URL; las libres
+      // usan un endpoint sin operationId. Discriminamos por la flag que
+      // expone el backend en cada row.
+      const response = cobrarAppointment.isFreeMedicalAppointment
+        ? await registerAdminFreeAppointmentPayment(cobrarAppointment.rawId, payload)
+        : await registerAdminAppointmentPayment(
+            cobrarAppointment.operationRawId ?? 0,
+            cobrarAppointment.rawId,
+            payload,
+          )
+      showNotification({
+        title: 'Pago registrado',
+        message: response.detail,
+        tone: 'success',
+      })
+      setCobrarAppointment(null)
+      onPaymentRegistered()
+    } catch (requestError) {
+      setCobrarError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo registrar el pago de la cita.',
+      )
+    } finally {
+      setIsCobrarSubmitting(false)
+    }
+  }
+
+  // Habilita el boton "Cobrar cita" cuando la cita tiene precio y
+  // esta en un estado que admite cobros. CANCELADA / NO_ASISTIO son
+  // terminales segun el spec y el backend rechaza con 400, asi que
+  // bloqueamos aca para evitar un POST que siempre retornaria 400.
+  const canCobrarAppointment = (appointment: ClientAppointment): boolean => {
+    const precioNumber = Number(appointment.precio ?? '0') || 0
+    if (precioNumber <= 0) return false
+    const status = (appointment.status ?? '').toLowerCase()
+    if (status === 'cancelada' || status === 'no asistio') return false
+    return true
+  }
+
   return (
     <SectionCard
       eyebrow="Agenda"
@@ -202,6 +281,21 @@ export function ClientAppointmentSection({
                           Cancelar
                         </button>
                       ) : null}
+                      {canCobrarAppointment(appointment) ? (
+                        <button
+                          className="button button--ghost button--compact"
+                          disabled={isCobrarSubmitting}
+                          type="button"
+                          aria-label={`Cobrar cita ${appointment.rawId}`}
+                          data-testid={`cobrar-cita-${appointment.rawId}`}
+                          onClick={() => {
+                            setCobrarError(null)
+                            setCobrarAppointment(appointment as AdminAppointment)
+                          }}
+                        >
+                          Cobrar cita
+                        </button>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -269,6 +363,15 @@ export function ClientAppointmentSection({
           ) : null}
         </div>
       ) : null}
+
+      <AdminRegisterAppointmentPaymentModal
+        appointment={cobrarAppointment}
+        isOpen={cobrarAppointment !== null}
+        isSubmitting={isCobrarSubmitting}
+        errorMessage={cobrarError}
+        onClose={closeCobrarModal}
+        onSubmit={handleCobrarSubmit}
+      />
     </SectionCard>
   )
 }
