@@ -1753,29 +1753,19 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             observaciones=user_data.get("observacionesCliente", ""),
         )
     else:
-        # Actualizacion de cliente existente (reactivacion)
+        # Actualizacion de cliente existente (reactivacion).
+        #
+        # Live profile updates during reactivation must go through
+        # ``PATCH /api/admin/clientes/<id>/perfil/``. This wizard only
+        # persists clinical annotations for the new procedure
+        # (``observacionesCliente``); identity/contact fields stay on
+        # the live ``Usuario``/``Cliente`` rows untouched so a stray
+        # edit in step 1 of an in-flight draft cannot silently
+        # rewrite the live identity on finalize.
         cliente = draft.cliente
-        user = cliente.usuario
-        
-        # Actualizamos datos del usuario
-        user.primer_nombre = user_data["primerNombre"]
-        user.segundo_nombre = user_data.get("segundoNombre", "")
-        user.apellido_paterno = user_data["apellidoPaterno"]
-        user.apellido_materno = user_data.get("apellidoMaterno", "")
-        user.email = user_data.get("email", "")
-        if user_data.get("passwordHash"):
-            user.password = user_data["passwordHash"]
-        user.save()
-        
-        # Actualizamos datos del cliente
-        cliente.ci = user_data.get("ci", "")
-        cliente.fecha_nacimiento = date.fromisoformat(user_data["fechaNacimiento"])
-        cliente.nro_hijos = int(user_data.get("nroHijos") or 0)
-        cliente.direccion_domicilio = user_data.get("direccionDomicilio", "")
-        cliente.telefono = user_data.get("telefono", "")
-        cliente.ocupacion = user_data.get("ocupacion", "")
-        cliente.observaciones = user_data.get("observacionesCliente", "")
-        cliente.save()
+        if user_data.get("observacionesCliente") is not None:
+            cliente.observaciones = user_data.get("observacionesCliente") or ""
+            cliente.save(update_fields=["observaciones", "updated_at"])
 
     # If the prospect enrollment endpoint already captured the fingerprint
     # during the wizard (step 4 now triggers a real capture), the row
