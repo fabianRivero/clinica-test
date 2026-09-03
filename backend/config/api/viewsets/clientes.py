@@ -3,7 +3,7 @@ Client ViewSets for DRF migration.
 Domain 6 of Phase 6.
 
 Three ViewSets:
-- ClientesViewSet: search, detail, inactivate, migrar
+- ClientesViewSet: search, detail, inactivate, migrar, perfil (PATCH live profile)
 - OperacionesViewSet: reservation availability + create (nested under operations)
 - FreeMedicalAppointmentViewSet: free medical appointment availability + create
 """
@@ -26,6 +26,7 @@ from operations.scheduling import mark_expired_programmed_appointments_as_no_sho
 
 from config.api.permissions import AdminRequired
 from config.api.serializers.clientes import (
+    AdminClientProfileWriteSerializer,
     ClientSearchSerializer,
     ClientDetailSerializer,
     ClientInactivateSerializer,
@@ -44,6 +45,10 @@ from config.client_api_views import (
     _quota_item as _client_quota_item,
     BLOCKING_RESERVATION_STATES,
 )
+# ``_build_initial_client_user_data`` is the canonical camelCase serializer
+# for the modal's user data. Re-using it here means the PATCH response and
+# the wizard's draft response share one shape (and one test surface).
+from config.prospect_conversion_views import _build_initial_client_user_data
 
 
 # =============================================================================
@@ -267,13 +272,15 @@ class ClientesViewSet(viewsets.ViewSet):
     """
     DRF ViewSet for client management.
     Public endpoints: search (list)
-    Admin-required: detail, inactivate, migrar
+    Admin-required: detail, inactivate, migrar, perfil
 
     Endpoints:
     - GET  /clientes/buscar/              → global search (PUBLIC, min 3 chars)
     - GET  /clientes/<int:client_id>/    → client detail with metrics
     - POST /clientes/<int:client_id>/inactivar/ → inactivate client
     - POST /clientes/<int:client_id>/migrar/    → migrate client to different branch
+    - PATCH /clientes/<int:client_id>/perfil/    → live profile update (13 fields,
+                                                   atomic, no password)
     """
 
 
@@ -477,6 +484,65 @@ class ClientesViewSet(viewsets.ViewSet):
         return Response({
             "detail": f"Cliente migrado exitosamente a {branch.nombre}.",
             "branch": {"id": branch.id, "name": branch.nombre},
+        })
+
+    @action(detail=True, methods=["patch"], url_path="perfil")
+    def perfil(self, request, pk=None):
+        """
+        PATCH /clientes/<int:client_id>/perfil/
+        Admin-only partial update of the live ``Cliente`` + ``Usuario``
+        profile. The 13 contract fields are dispatched by ownership
+        inside ``AdminClientProfileWriteSerializer.update``:
+
+            primerNombre/segundoNombre/apellidoPaterno/apellidoMaterno/
+            username/email   → ``instance.usuario``
+            telefono         → ``instance.usuario.telefono`` AND
+                               ``instance.telefono`` (synced, both saved)
+            fechaNacimiento  → ``instance.fecha_nacimiento`` ONLY
+            ci/nroHijos/direccionDomicilio/ocupacion/observacionesCliente
+                            → ``instance``
+
+        ``password`` is rejected by the serializer; unknown fields are
+        rejected too. The full update runs inside ``transaction.atomic``
+        so a failed write rolls both rows back.
+
+        The response envelope (``{"client": ...}``) is built from
+        ``_build_initial_client_user_data`` so the modal hydrates from
+        one source of truth shared with the reactivation wizard.
+        """
+        cliente = (
+            Cliente.objects.select_related("usuario")
+            .filter(pk=pk)
+            .first()
+        )
+        if not cliente:
+            return Response({"detail": "No encontramos el cliente solicitado."}, status=404)
+
+        serializer = AdminClientProfileWriteSerializer(
+            instance=cliente, data=request.data, partial=True
+        )
+        if not serializer.is_valid():
+            # First error wins for the user-facing summary; the full
+            # ``errors`` map is returned for the modal to display
+            # field-level messages.
+            errors = serializer.errors
+            first_field = next(iter(errors.keys()), None)
+            first_messages = errors.get(first_field, []) if first_field else []
+            summary = (
+                f"{first_field}: {first_messages[0]}"
+                if first_field and first_messages
+                else "Los datos del perfil no son validos."
+            )
+            return Response(
+                {"detail": summary, "errors": errors},
+                status=400,
+            )
+
+        with transaction.atomic():
+            serializer.save()
+
+        return Response({
+            "client": _build_initial_client_user_data(cliente),
         })
 
 

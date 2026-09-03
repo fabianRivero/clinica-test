@@ -8,6 +8,7 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db.models import Prefetch
 from django.utils import timezone
 
+from accounts.models import Usuario
 from customers.models import Cliente, Prospecto
 from operations.models import CitaMedica, CitaClienteLibre, Operacion
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
@@ -282,3 +283,163 @@ class FreeMedicalAppointmentCreateSerializer(serializers.Serializer):
         if not fecha_hora:
             raise serializers.ValidationError("Formato de fecha/hora inválido.")
         return value
+
+
+# =============================================================================
+# Admin Client Profile Editing (Slice 1 — backend foundation)
+# =============================================================================
+#
+# Change: reactivacion-perfil-cliente
+#
+# This serializer is the single source of truth for the 13 contract fields
+# the modal can PATCH against ``/api/admin/clientes/<id>/perfil/``. The
+# response envelope is built by ``config.prospect_conversion_views._build_initial_client_user_data``
+# so the modal and the reactivation wizard share one camelCase shape; the
+# field set here intentionally mirrors that shape (plus ``hasPassword``)
+# for reviewers reading the contract.
+#
+# Field ownership (see design.md / proposal.md for the full rationale):
+#
+#   primerNombre, segundoNombre, apellidoPaterno, apellidoMaterno, username,
+#   email -> instance.usuario (OneToOne, always present)
+#   telefono                            -> instance.usuario.telefono AND
+#                                         instance.telefono (sync, both saved)
+#   fechaNacimiento                     -> instance.fecha_nacimiento ONLY
+#                                         (Usuario.fecha_nacimiento is intentionally
+#                                          not mirrored; finalize never wrote it,
+#                                          the serializer keeps parity)
+#   ci, nroHijos, direccionDomicilio,
+#   ocupacion, observacionesCliente     -> instance
+#
+# PATCH semantics: every field is optional; omitted fields keep their value.
+# ``password`` is NOT a field on the serializer, so any payload that includes
+# it is rejected by the explicit ``validate()`` guard below.
+# -----------------------------------------------------------------------------
+
+
+class AdminClientProfileWriteSerializer(serializers.Serializer):
+    """Partial-update serializer for the admin live-client-profile endpoint.
+
+    Mirrors ``_build_initial_client_user_data(cliente)`` keys so the modal can
+    hydrate from one source of truth (``hasPassword`` is added by the helper,
+    not by this serializer — see ``ClientesViewSet.perfil``).
+    """
+
+    primerNombre = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    segundoNombre = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    apellidoPaterno = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    apellidoMaterno = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    ci = serializers.CharField(max_length=30, required=False, allow_blank=True)
+    username = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    telefono = serializers.CharField(max_length=30, required=False, allow_blank=True)
+    fechaNacimiento = serializers.DateField(required=False, allow_null=True)
+    nroHijos = serializers.IntegerField(required=False, min_value=0, default=0)
+    ocupacion = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    direccionDomicilio = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    observacionesCliente = serializers.CharField(required=False, allow_blank=True)
+
+    # Map of camelCase input -> snake_case Usuario attribute.
+    # Kept as a class attribute so reviewers can see the field-ownership
+    # contract without reading update().
+    USER_FIELDS = {
+        "primerNombre": "primer_nombre",
+        "segundoNombre": "segundo_nombre",
+        "apellidoPaterno": "apellido_paterno",
+        "apellidoMaterno": "apellido_materno",
+        "username": "username",
+        "email": "email",
+    }
+    # Map of camelCase input -> snake_case Cliente attribute.
+    CLIENTE_FIELDS = {
+        "ci": "ci",
+        "fechaNacimiento": "fecha_nacimiento",
+        "nroHijos": "nro_hijos",
+        "direccionDomicilio": "direccion_domicilio",
+        "ocupacion": "ocupacion",
+        "observacionesCliente": "observaciones",
+    }
+
+    def validate(self, attrs):
+        # Belt-and-braces: ``password`` is intentionally not declared as a
+        # field, so DRF would otherwise silently drop it. Explicit reject
+        # returns a clear 400 instead.
+        if "password" in self.initial_data:
+            raise serializers.ValidationError(
+                {"password": "password is not editable through this endpoint"}
+            )
+        # Reject any key that is not one of the 13 declared contract fields.
+        # DRF's default Serializer.run_validation silently drops unknown
+        # keys; the spec requires a 400 instead so misbehaving clients get
+        # loud feedback. ``hasPassword`` is intentionally tolerated because
+        # the modal may send it back from the response shape and it is
+        # informational only (no live side effect).
+        declared = set(self.fields.keys())
+        allowed_extras = {"hasPassword"}
+        for key in self.initial_data.keys():
+            if key in declared or key in allowed_extras:
+                continue
+            raise serializers.ValidationError(
+                {key: f"Unknown field '{key}'. Only the 13 declared profile fields are editable."}
+            )
+        return attrs
+
+    def validate_username(self, value):
+        # Empty string is allowed (the field is optional + allow_blank), but
+        # when present the username must be unique across all Usuario rows
+        # except the one attached to the current Cliente.
+        if not value:
+            return value
+        instance = self.instance
+        qs = Usuario.objects.filter(username=value)
+        if instance is not None and getattr(instance, "usuario_id", None) is not None:
+            qs = qs.exclude(pk=instance.usuario_id)
+        if qs.exists():
+            raise serializers.ValidationError(
+                "El nombre de usuario ya esta en uso."
+            )
+        return value
+
+    def validate_ci(self, value):
+        # CI uniqueness check excludes the current row. Empty CI is allowed
+        # (matches the existing model convention — ``Cliente.ci`` is
+        # ``blank=True`` and not ``unique=True``; we only protect against
+        # collisions when the admin explicitly types a value).
+        if not value:
+            return value
+        instance = self.instance
+        qs = Cliente.objects.filter(ci=value)
+        if instance is not None:
+            qs = qs.exclude(pk=instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                "Ya existe otro cliente con ese CI."
+            )
+        return value
+
+    def update(self, instance, validated_data):
+        """Dispatch each accepted field to its owning row.
+
+        Wrapped in ``transaction.atomic`` at the view layer so any
+        failure (e.g. an unexpected DB constraint) rolls back the whole
+        write — the modal must never see a half-applied profile.
+        """
+        user = instance.usuario  # OneToOne, always present on Cliente.
+
+        for camel, snake in self.USER_FIELDS.items():
+            if camel in validated_data:
+                setattr(user, snake, validated_data[camel])
+
+        if "telefono" in validated_data:
+            value = validated_data["telefono"] or ""
+            user.telefono = value
+            instance.telefono = value
+
+        for camel, snake in self.CLIENTE_FIELDS.items():
+            if camel in validated_data:
+                setattr(instance, snake, validated_data[camel])
+
+        user.save()
+        instance.save()
+        return instance
+
