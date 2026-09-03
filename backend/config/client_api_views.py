@@ -11,9 +11,9 @@ from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_GET, require_POST
 from django.conf import settings
 
-from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoRealizado
+from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoCita, PagoRealizado
 from billing.validators import assert_not_over_payment
-from config.api.serializers.payments import PagoRealizadoCreateSerializer
+from config.api.serializers.payments import PagoCitaSerializer, PagoRealizadoCreateSerializer
 from clinical.models import AnalisisEstetico
 from notifications.models import Notification
 from notifications.services import create_notification, admins_for_specialist_branch
@@ -178,6 +178,38 @@ def _appointment_tone(cita):
     if cita.estado == CitaMedica.Estado.NO_ASISTIO:
         return "observed"
     return "pending"
+
+
+def _cita_payment_breakdown(cita, request=None):
+    """Return the new ``precio`` / ``saldoPendiente`` / ``pagos`` payload.
+
+    Shared by the admin client-detail view and the client portal
+    (``_appointment_item``) so the four new fields appear consistently
+    everywhere a cita is rendered. ``PagoCita`` rows are surfaced via
+    the ``pagos_cita`` reverse manager declared on both cita kinds.
+
+    Only ``APROBADO`` rows count toward ``saldoPendiente``. ``PENDIENTE``,
+    ``RECHAZADO`` and ``CANCELADO`` rows stay visible in ``pagos`` for
+    audit but do not reduce the balance.
+
+    The endpoint cobrars create rows as ``APROBADO`` (admin collected in
+    person) so they immediately reduce the balance.
+    """
+    pagos = list(cita.pagos_cita.all())
+    approved_sum = sum(
+        (p.monto_pagado for p in pagos if p.estado_verificacion == PagoCita.EstadoVerificacion.APROBADO),
+        Decimal("0"),
+    )
+    precio = Decimal(str(getattr(cita, "precio", 0) or 0))
+    saldo = max(Decimal("0"), precio - approved_sum)
+    return {
+        "precio": currency(precio),
+        "saldoPendiente": currency(saldo),
+        "pagos_count": len(pagos),
+        "pagos": PagoCitaSerializer(
+            pagos, many=True, context={"request": request}
+        ).data,
+    }
 
 
 def _reserve_message(operacion):
@@ -396,7 +428,7 @@ def _payment_qr_config_item(config):
     }
 
 
-def _appointment_item(cita, appointment_index=None, total_appointments=None):
+def _appointment_item(cita, appointment_index=None, total_appointments=None, request=None):
     can_manage = cita.estado == CitaMedica.Estado.PROGRAMADA
 
     verification_status_map = {
@@ -419,7 +451,7 @@ def _appointment_item(cita, appointment_index=None, total_appointments=None):
     zona = ", ".join(
         [value for value in [cita.operacion.zona_general, cita.operacion.zona_especifica] if value]
     ) or "Sin zona registrada"
-    return {
+    payload = {
         "id": f"CIT-{cita.pk:04d}",
         "rawId": cita.pk,
         "operationRawId": cita.operacion_id,
@@ -521,6 +553,11 @@ def _appointment_item(cita, appointment_index=None, total_appointments=None):
         "fotoAntesUrl": cita.foto_antes.url if cita.foto_antes else "",
         "fotoDespuesUrl": cita.foto_despues.url if cita.foto_despues else "",
     }
+    # Pricing + payment breakdown (mirrors ``_free_client_appointment_item`` in
+    # the admin viewset so the client portal and the admin detail surface
+    # the same ``precio`` / ``saldoPendiente`` / ``pagos`` shape).
+    payload.update(_cita_payment_breakdown(cita, request=request))
+    return payload
 
 
 def _client_alerts(cliente, active_operations, pending_quotas, pending_payments, upcoming_appointments):

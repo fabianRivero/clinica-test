@@ -1,19 +1,34 @@
-"""Cross-cutting validators for the ``payment-physical-virtual`` capability.
+"""Cross-cutting validators for the ``payment-physical-virtual`` and
+``appointment-payment`` capabilities.
 
-Two helpers are exposed here so they can be reached from both the admin
-endpoint (``PagosViewSet.register_payment``, landing in PR 2) and the
-client upload path (``client_upload_payment_receipt``, also PR 2):
+Helpers exposed here are reachable from both the admin endpoint
+(``PagosViewSet.register_payment``, landing in PR 2 of
+``pagos-fisicos-virtuales``) and the new cita cobrar endpoints
+(``OperacionesViewSet.cobrar_cita`` / ``FreeMedicalAppointmentViewSet.cobrar``,
+landing in PR 2 of ``citas-pagos``):
 
 * ``assert_cuota_in_user_branch(request, cuota)`` — raises ``Http404``
   when the cuota's client is not in the admin's active branch. Used to
-  scope the admin endpoint to a single branch.
+  scope the cuota admin endpoint to a single branch.
 
 * ``assert_not_over_payment(cuota, new_amount)`` — raises
   ``rest_framework.exceptions.ValidationError`` when the new payment,
   added to already-approved payments on the cuota, would exceed the
-  scheduled amount. Enforces the spec's quota over-payment rule.
+  scheduled amount. Enforces the spec's cuota over-payment rule.
 
-Both helpers are intentionally decoupled from the model ``clean()``
+* ``assert_cita_in_user_branch(request, cita)`` — raises
+  ``rest_framework.exceptions.PermissionDenied`` (HTTP 403) when the
+  cita's ``sucursal`` is not the admin's active branch. Used by both
+  cita cobrar endpoints. Distinct from the cuota helper: the cita
+  spec mandates 403 so admins can distinguish cross-branch (config
+  error) from missing cita (404).
+
+* ``assert_not_over_cita_payment(cita, new_amount)`` — raises
+  ``rest_framework.exceptions.ValidationError`` when the new payment,
+  added to already-approved ``PagoCita`` rows, would exceed the
+  cita's ``precio``.
+
+All helpers are intentionally decoupled from the model ``clean()``
 method: ``clean()`` only sees the row in memory, so cross-row aggregate
 checks must live at the view layer.
 """
@@ -23,9 +38,12 @@ from decimal import Decimal
 from django.db.models import Sum
 from django.http import Http404
 
-from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.exceptions import (
+    PermissionDenied,
+    ValidationError as DRFValidationError,
+)
 
-from billing.models import PagoRealizado
+from billing.models import PagoCita, PagoRealizado
 from config.api_helpers import get_user_branch
 
 
@@ -81,4 +99,58 @@ def assert_not_over_payment(cuota, new_amount):
     if approved_sum + new_amount > cuota.monto_programado:
         raise DRFValidationError(
             {"detail": "El pago supera el saldo pendiente de la cuota."}
+        )
+
+
+def assert_cita_in_user_branch(request, cita):
+    """Raise ``PermissionDenied`` (HTTP 403) when the cita is cross-branch.
+
+    Both ``CitaMedica`` and ``CitaClienteLibre`` carry a direct
+    ``sucursal`` FK, so the check does not have to walk through the
+    cita's parent operation. Super admins with no selected branch fall
+    through to the principal branch via ``get_user_branch`` so the
+    helper stays consistent with the cuota flavour.
+
+    The cita spec mandates HTTP 403 (not 404) on cross-branch so admins
+    can tell "you tried the wrong branch" apart from "the cita does
+    not exist at all".
+    """
+    branch = get_user_branch(request)
+    if branch is None:
+        raise PermissionDenied("No tienes una sucursal activa seleccionada.")
+    cita_branch_id = getattr(cita, "sucursal_id", None)
+    if cita_branch_id != branch.id:
+        raise PermissionDenied(
+            "No puedes cobrar citas de una sucursal distinta a la tuya."
+        )
+    return branch
+
+
+def assert_not_over_cita_payment(cita, new_amount):
+    """Raise ``DRFValidationError`` when the cita would be over-paid.
+
+    Sums already-approved ``PagoCita`` rows on the cita (either kind)
+    and adds ``new_amount``. If the sum exceeds ``cita.precio`` the
+    cita is considered fully covered and the new payment is rejected.
+    Mirrors ``assert_not_over_payment`` but scopes the aggregation to
+    the new ``PagoCita`` table so the two flows stay independent.
+
+    Uses the ``pagos_cita`` reverse relation declared on both cita
+    models, so a single helper works for ``CitaMedica`` and
+    ``CitaClienteLibre`` without caring which FK side is set.
+    """
+    if new_amount is None:
+        return
+    new_amount = Decimal(str(new_amount))
+    if new_amount <= 0:
+        return
+    approved_sum = (
+        cita.pagos_cita.filter(
+            estado_verificacion=PagoCita.EstadoVerificacion.APROBADO
+        ).aggregate(s=Sum("monto_pagado"))["s"]
+        or Decimal("0")
+    )
+    if approved_sum + new_amount > Decimal(str(cita.precio)):
+        raise DRFValidationError(
+            {"detail": "El pago supera el saldo pendiente de la cita."}
         )

@@ -162,8 +162,38 @@ class PagosViewSet(viewsets.ViewSet):
             "quotas": [self._admin_quota_item(c) for c in cuotas_qs],
         })
 
-    @action(detail=False, methods=["post"], url_path="configuracion-qr")
-    def update_qr_config(self, request):
+    @action(
+        detail=False,
+        methods=["get", "post"],
+        url_path="configuracion-qr",
+    )
+    def qr_config(self, request):
+        """GET/POST /pagos/configuracion-qr/ — read or update the branch QR config.
+
+        GET returns the current QR config (with ``hasQr: false`` when
+        none is configured) so the admin cobro modal can surface the
+        QR image under the ``Método de pago`` selector when VIRTUAL or
+        MIXTO is selected.
+
+        POST updates the QR config (multipart). DRF only allows ONE
+        ``@action`` per ``url_path`` — having two separate actions with
+        the same ``url_path`` would silently overwrite each other when
+        the router is built (the POST would win, breaking the GET).
+        Combined dispatch keeps the endpoint self-documenting.
+        """
+        if request.method == "GET":
+            branch = get_user_branch(request)
+            config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
+            storage_provider = os.getenv("STORAGE_PROVIDER", "local")
+            return Response({
+                "paymentQrConfig": self._payment_qr_config_item(
+                    config, storage_provider
+                ),
+            })
+        # POST — fall through to the original update logic.
+        return self._update_qr_config(request)
+
+    def _update_qr_config(self, request):
         """POST /pagos/configuracion-qr/ — update QR config (multipart)."""
         import logging
         import traceback

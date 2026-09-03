@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from billing.models import CuotaPlanPago, PagoRealizado, ConfiguracionPagoQR
+from billing.models import CuotaPlanPago, PagoCita, PagoRealizado, ConfiguracionPagoQR
 from operations.models import Operacion
 
 
@@ -143,3 +143,97 @@ class PaymentStatusUpdateSerializer(serializers.Serializer):
         if value not in {choice[0] for choice in PagoRealizado.EstadoVerificacion.choices}:
             raise serializers.ValidationError("Estado no valido.")
         return value
+
+
+class PagoCitaCreateSerializer(serializers.Serializer):
+    """Write serializer for admin cobrar endpoints.
+
+    Mirrors ``PagoRealizadoCreateSerializer`` but the receipt is OPTIONAL
+    regardless of method — the admin collected the payment at the
+    consultorio (cash at the desk, QR verified in person, etc.), so there
+    is no second pair of eyes needing a screenshot. The viewset still
+    validates the breakdown via the model's ``clean()`` AND the helper
+    ``_validate_metodo_pago_amounts`` (same rules as ``PagoRealizado``).
+
+    Field naming follows the established ``PagoRealizadoCreateSerializer``
+    camelCase contract so the same frontend multipart builder works for
+    both endpoints.
+    """
+    paymentMethod = serializers.ChoiceField(choices=PagoRealizado.MetodoPago.choices)
+    monto_pagado = serializers.DecimalField(
+        max_digits=10, decimal_places=2, min_value=Decimal("0.01")
+    )
+    montoFisico = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True, min_value=0
+    )
+    montoVirtual = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True, min_value=0
+    )
+    receiptFile = serializers.FileField(required=False, allow_null=True)
+    details = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        method = attrs["paymentMethod"]
+        fisico = attrs.get("montoFisico")
+        virtual = attrs.get("montoVirtual")
+        total = attrs["monto_pagado"]
+
+        if method == PagoRealizado.MetodoPago.VIRTUAL:
+            # Admin path: receipt is optional (collected in person).
+            attrs["montoVirtual"] = total
+            attrs["montoFisico"] = Decimal("0")
+        elif method == PagoRealizado.MetodoPago.FISICO:
+            attrs["montoFisico"] = total
+            attrs["montoVirtual"] = Decimal("0")
+        else:  # MIXTO
+            if not fisico or not virtual or fisico <= 0 or virtual <= 0:
+                raise serializers.ValidationError(
+                    "Para pagos MIXTO debes indicar montoFisico y montoVirtual mayores a 0."
+                )
+            if fisico + virtual != total:
+                raise serializers.ValidationError(
+                    "montoFisico + montoVirtual debe ser igual a monto_pagado."
+                )
+        return attrs
+
+
+class PagoCitaSerializer(serializers.ModelSerializer):
+    """Read serializer for ``PagoCita``.
+
+    Mirrors the shape consumed by the admin detail modal:
+
+    * ``monto_pagado`` / ``monto_fisico`` / ``monto_virtual`` are
+      rendered as currency strings so the frontend can render them
+      directly without reformatting.
+    * ``comprobante_url`` is exposed as an absolute URL when a request is
+      in context, mirroring ``CuotaPlanPagoSerializer`` / ``ConfiguracionPagoQRSerializer``.
+    * ``estado_verificacion`` is the raw choice value so the admin modal
+      can translate it on the frontend side.
+
+    The model itself enforces the XOR via ``clean()`` and the DB
+    ``CheckConstraint``; this serializer is read-only and trusts the
+    caller.
+    """
+    comprobante_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PagoCita
+        fields = [
+            "id",
+            "monto_pagado",
+            "metodo_pago",
+            "monto_fisico",
+            "monto_virtual",
+            "comprobante_url",
+            "estado_verificacion",
+            "detalles_pago",
+            "created_at",
+        ]
+
+    def get_comprobante_url(self, obj):
+        if not obj.comprobante_url:
+            return ""
+        request = self.context.get("request")
+        if request:
+            return request.build_absolute_uri(obj.comprobante_url.url)
+        return obj.comprobante_url.url

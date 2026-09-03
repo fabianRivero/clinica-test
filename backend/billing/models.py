@@ -243,6 +243,162 @@ class PagoRealizado(TimeStampedModel):
         return f"Pago #{self.pk} - Cuota #{self.cuota_id}"
 
 
+class PagoCita(TimeStampedModel):
+    """Sibling payment table for ``CitaMedica`` / ``CitaClienteLibre`` /
+    ``CitaProspecto``.
+
+    Mirrors ``PagoRealizado`` (VIRTUAL / FISICO / MIXTO with breakdown
+    amounts, optional receipt, ``estado_verificacion``) but lives on a
+    separate table so the admin cobro flow for citas cannot accidentally
+    feed the cuota ``actualizar_estado_por_pagos`` aggregator.
+
+    Exactly one of ``cita_medica`` / ``cita_cliente_libre`` /
+    ``cita_prospecto`` MUST be set (XOR enforced in ``clean()`` AND as a
+    ``CheckConstraint`` so the database also rejects it). Each FK gets
+    an index so admin detail payloads can prefetch the related cita in
+    a single query.
+    """
+
+    MetodoPago = PagoRealizado.MetodoPago
+    EstadoVerificacion = PagoRealizado.EstadoVerificacion
+
+    cita_medica = models.ForeignKey(
+        "operations.CitaMedica",
+        on_delete=models.CASCADE,
+        related_name="pagos_cita",
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    cita_cliente_libre = models.ForeignKey(
+        "operations.CitaClienteLibre",
+        on_delete=models.CASCADE,
+        related_name="pagos_cita",
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    cita_prospecto = models.ForeignKey(
+        "operations.CitaProspecto",
+        on_delete=models.CASCADE,
+        related_name="pagos_cita",
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+    monto_pagado = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+    )
+    metodo_pago = models.CharField(
+        max_length=10,
+        choices=MetodoPago.choices,
+        default=MetodoPago.VIRTUAL,
+    )
+    monto_fisico = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=0,
+    )
+    monto_virtual = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        default=0,
+    )
+    comprobante_url = models.FileField(
+        upload_to="comprobantes_citas/%Y/%m/",
+        blank=True,
+        validators=[FileExtensionValidator(["png", "jpg", "jpeg", "webp", "pdf"])],
+    )
+    estado_verificacion = models.CharField(
+        max_length=20,
+        choices=EstadoVerificacion.choices,
+        default=EstadoVerificacion.PENDIENTE,
+    )
+    verificado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="pagos_cita_verificados",
+        null=True,
+        blank=True,
+    )
+    fecha_verificacion = models.DateTimeField(null=True, blank=True)
+    detalles_pago = models.TextField(blank=True)
+
+    class Meta:
+        db_table = "pagos_citas"
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["cita_medica", "-created_at"]),
+            models.Index(fields=["cita_cliente_libre", "-created_at"]),
+            models.Index(fields=["cita_prospecto", "-created_at"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    # cita_medica set, others null
+                    (
+                        models.Q(
+                            cita_medica__isnull=False,
+                            cita_cliente_libre__isnull=True,
+                            cita_prospecto__isnull=True,
+                        )
+                    )
+                    # cita_cliente_libre set, others null
+                    | (
+                        models.Q(
+                            cita_medica__isnull=True,
+                            cita_cliente_libre__isnull=False,
+                            cita_prospecto__isnull=True,
+                        )
+                    )
+                    # cita_prospecto set, others null
+                    | (
+                        models.Q(
+                            cita_medica__isnull=True,
+                            cita_cliente_libre__isnull=True,
+                            cita_prospecto__isnull=False,
+                        )
+                    )
+                ),
+                name="pago_cita_xor_cita_fk",
+            ),
+        ]
+
+    def clean(self):
+        errors = {}
+
+        # ---- XOR: exactly one of three cita FKs must be set ----
+        flags = (
+            bool(self.cita_medica_id),
+            bool(self.cita_cliente_libre_id),
+            bool(self.cita_prospecto_id),
+        )
+        if sum(flags) != 1:
+            errors["__all__"] = (
+                "PagoCita requiere exactamente una cita asociada "
+                "(cita_medica XOR cita_cliente_libre XOR cita_prospecto)."
+            )
+
+        # ---- Method-driven amount rules (shared helper) ----
+        amount_errors = _validate_metodo_pago_amounts(self)
+        errors.update(amount_errors)
+
+        if errors:
+            raise ValidationError(errors)
+
+    def __str__(self):
+        target = (
+            self.cita_medica_id
+            or self.cita_cliente_libre_id
+            or self.cita_prospecto_id
+        )
+        return f"PagoCita #{self.pk} - Cita #{target}"
+
+
 class CategoriaGasto(CatalogoEditableModel):
     nombre = models.CharField(max_length=120, unique=True)
 
@@ -388,3 +544,56 @@ def eliminar_archivo_qr_al_borrar_configuracion(sender, instance, **kwargs):
         _safe_delete_file(instance.imagen_qr.name)
 
 # Create your models here.
+
+
+def _validate_metodo_pago_amounts(payment):
+    """Validate the VIRTUAL / FISICO / MIXTO breakdown rules shared by
+    ``PagoRealizado`` and ``PagoCita``.
+
+    The helper checks ONLY the amount fields (``monto_pagado``,
+    ``monto_fisico``, ``monto_virtual``) so it can be reused by both
+    models — the receipt-required rule is ``PagoRealizado``-specific
+    (client portal uploads) and stays in that model's ``clean()``.
+
+    Return value is a ``dict`` suitable for merging into a
+    ``ValidationError({...})``. Empty dict means the breakdown is valid.
+
+    Rules (mirror of the spec table for ``appointment-payment`` / the
+    existing rules in ``PagoRealizado.clean()``):
+
+    * ``VIRTUAL``: ``monto_virtual == monto_pagado`` AND ``monto_fisico == 0``.
+    * ``FISICO``:  ``monto_fisico  == monto_pagado`` AND ``monto_virtual == 0``.
+    * ``MIXTO``:   ``monto_fisico > 0`` AND ``monto_virtual > 0`` AND
+      ``monto_fisico + monto_virtual == monto_pagado``.
+    """
+    errors = {}
+
+    if payment.metodo_pago == PagoRealizado.MetodoPago.VIRTUAL:
+        if payment.monto_virtual != payment.monto_pagado:
+            errors["monto_virtual"] = (
+                "monto_virtual debe ser igual a monto_pagado para pagos virtuales."
+            )
+        if payment.monto_fisico != 0:
+            errors["monto_fisico"] = (
+                "monto_fisico debe ser 0 para pagos virtuales."
+            )
+    elif payment.metodo_pago == PagoRealizado.MetodoPago.FISICO:
+        if payment.monto_fisico != payment.monto_pagado:
+            errors["monto_fisico"] = (
+                "monto_fisico debe ser igual a monto_pagado para pagos fisicos."
+            )
+        if payment.monto_virtual != 0:
+            errors["monto_virtual"] = (
+                "monto_virtual debe ser 0 para pagos fisicos."
+            )
+    elif payment.metodo_pago == PagoRealizado.MetodoPago.MIXTO:
+        if payment.monto_fisico <= 0 or payment.monto_virtual <= 0:
+            errors["monto_pagado"] = (
+                "Ambos montos (fisico y virtual) deben ser mayores a 0."
+            )
+        if (payment.monto_fisico + payment.monto_virtual) != payment.monto_pagado:
+            errors["monto_pagado"] = (
+                "monto_fisico + monto_virtual debe ser igual a monto_pagado."
+            )
+
+    return errors
