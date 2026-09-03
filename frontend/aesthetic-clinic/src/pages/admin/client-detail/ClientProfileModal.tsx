@@ -1,5 +1,6 @@
 import { type ChangeEvent, type FormEvent, useEffect, useState } from 'react'
 
+import { useNotifications } from '../../../providers/NotificationProvider'
 import {
   getAdminClientReactivation,
   patchAdminClientProfile,
@@ -16,6 +17,7 @@ type Props = {
 }
 
 export function ClientProfileModal({ clientId, isOpen, onClose }: Props) {
+  const { showNotification } = useNotifications()
   const [form, setForm] = useState<ProspectConversionUserData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -75,9 +77,20 @@ export function ClientProfileModal({ clientId, isOpen, onClose }: Props) {
       // we keep the existing codBiometrico since the live endpoint does
       // not surface it.
       setForm({ codBiometrico: form.codBiometrico, ...response.client })
+      showNotification({
+        title: 'Perfil actualizado',
+        message: 'Los cambios del perfil se guardaron correctamente.',
+        tone: 'success',
+      })
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'No se pudo guardar')
+      const message = err instanceof Error ? err.message : 'No se pudo guardar el perfil.'
+      setError(message)
+      showNotification({
+        title: 'No se pudo guardar el perfil',
+        message,
+        tone: 'danger',
+      })
     } finally {
       setIsSaving(false)
     }
