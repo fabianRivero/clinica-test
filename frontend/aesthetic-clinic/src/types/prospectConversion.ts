@@ -106,6 +106,14 @@ export type ProspectConversionAnalysisData = {
   gradoDeshidratacionId: string
   grosorPielId: string
   patologiaIds: number[]
+  /**
+   * Lista libre de productos a los que el cliente es alergico. Cada
+   * entrada es texto libre (no se selecciona de un catalogo). La lista
+   * puede quedar vacia si el cliente no reporta alergias; en ese caso
+   * finalize persiste el campo como `[]` y el backend lo acepta sin
+   * disparar errores.
+   */
+  alergiasProductos: string[]
 }
 
 export type ProspectConversionMedicalData = {

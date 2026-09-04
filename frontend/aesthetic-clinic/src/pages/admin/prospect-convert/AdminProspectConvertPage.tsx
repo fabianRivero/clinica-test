@@ -11,7 +11,7 @@ import { ConversionStepOperation } from './ConversionStepOperation'
 import { ConversionStepPayment } from './ConversionStepPayment'
 import { ConversionStepUser } from './ConversionStepUser'
 import { useConversionWizard } from './useConversionWizard'
-import { blankAntecedente, blankCirugia, blankImplante } from './conversionHelpers'
+import { blankAlergiaProducto, blankAntecedente, blankCirugia, blankImplante } from './conversionHelpers'
 
 /**
  * Wizard mode derived from URL params. The URL is the single source of truth
@@ -82,6 +82,7 @@ export function AdminProspectConvertPage() {
     updateFieldResponse,
     updateAnalisisField,
     togglePatologia,
+    updateAlergiaProducto,
     handleSaveStep1,
     handleSaveStep2,
     handleSaveStep3,
@@ -294,6 +295,21 @@ export function AdminProspectConvertPage() {
             onUpdateFieldResponse={updateFieldResponse}
             onUpdateAnalisisField={updateAnalisisField}
             onTogglePatologia={togglePatologia}
+            onUpdateAlergiaProducto={updateAlergiaProducto}
+            onAddAlergiaProducto={() => wizard.setMedicalForm({
+              ...medicalForm,
+              analisisEstetico: {
+                ...medicalForm.analisisEstetico,
+                alergiasProductos: [...(medicalForm.analisisEstetico.alergiasProductos || []), blankAlergiaProducto()],
+              },
+            })}
+            onRemoveAlergiaProducto={(index) => wizard.setMedicalForm({
+              ...medicalForm,
+              analisisEstetico: {
+                ...medicalForm.analisisEstetico,
+                alergiasProductos: (medicalForm.analisisEstetico.alergiasProductos || []).filter((_, i) => i !== index),
+              },
+            })}
             onSubmit={handleSaveStep3}
             onBack={() => setActiveStep(2)}
             onCancel={handleCancelDraft}

@@ -59,6 +59,14 @@ export function blankCirugia(): ProspectConversionCirugia {
   }
 }
 
+export function blankAlergiaProducto(): string {
+  // Cada alergia es una cadena de texto libre. Devolver un string vacio
+  // permite que el admin escriba directamente sin necesidad de poblar
+  // catalogos (ProductoAlergia / TipoAlergia / GravedadAlergia viven
+  // vacios por diseno de la baseline).
+  return ''
+}
+
 export function blankBiometricData(): ProspectConversionBiometricData {
   return {
     provider: 'DIGITAL_PERSONA',

@@ -29,6 +29,9 @@ type Props = {
   onUpdateFieldResponse: (fieldId: number, updater: (current: ProspectConversionFieldResponse) => ProspectConversionFieldResponse) => void
   onUpdateAnalisisField: (key: 'tipoPielId' | 'gradoDeshidratacionId' | 'grosorPielId', value: string) => void
   onTogglePatologia: (patologiaId: number, checked: boolean) => void
+  onUpdateAlergiaProducto: (index: number, value: string) => void
+  onAddAlergiaProducto: () => void
+  onRemoveAlergiaProducto: (index: number) => void
   onSubmit: (event: FormEvent) => void
   onBack: () => void
   onCancel: () => void
@@ -233,6 +236,9 @@ export function ConversionStepMedical({
   onUpdateFieldResponse,
   onUpdateAnalisisField,
   onTogglePatologia,
+  onUpdateAlergiaProducto,
+  onAddAlergiaProducto,
+  onRemoveAlergiaProducto,
   onSubmit,
   onBack,
   onCancel,
@@ -510,6 +516,52 @@ export function ConversionStepMedical({
               <small className="field__error">{fieldErrors['analisisEstetico.patologiaIds']}</small>
             ) : null}
           </div>
+        </div>
+      </div>
+
+      <div className="wizard-block field--full">
+        <div className="wizard-block__header">
+          <div>
+            <strong>Alergia a productos</strong>
+            <p>Lista los productos a los que el cliente es alergico. Puedes dejar la lista vacia si no aplica; cada entrada es texto libre.</p>
+          </div>
+          <button
+            className="button button--ghost button--compact"
+            type="button"
+            onClick={onAddAlergiaProducto}
+          >
+            Agregar alergia
+          </button>
+        </div>
+        <div className="wizard-list">
+          {(medicalForm.analisisEstetico.alergiasProductos || []).map((item, index) => (
+            <div className="wizard-list__item" key={`alergia-${index}`}>
+              <label className="field field--full">
+                <span>Producto</span>
+                <input
+                  className="input"
+                  value={item}
+                  onChange={(event) => onUpdateAlergiaProducto(index, event.target.value)}
+                  placeholder="Ej. Latex, penicilina, sulfas..."
+                />
+                {fieldErrors[`analisisEstetico.alergiasProductos.${index}`] ? (
+                  <small className="field__error">
+                    {fieldErrors[`analisisEstetico.alergiasProductos.${index}`]}
+                  </small>
+                ) : null}
+              </label>
+              <button
+                className="button button--ghost button--compact"
+                type="button"
+                onClick={() => onRemoveAlergiaProducto(index)}
+              >
+                Quitar
+              </button>
+            </div>
+          ))}
+          {(medicalForm.analisisEstetico.alergiasProductos || []).length === 0 ? (
+            <p className="field__hint">Sin alergias registradas. Agrega una con el boton superior si el cliente reporta alguna.</p>
+          ) : null}
         </div>
       </div>
 

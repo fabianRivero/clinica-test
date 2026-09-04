@@ -127,6 +127,7 @@ type UseConversionWizardReturn = {
   updateFieldResponse: (fieldId: number, updater: (current: ProspectConversionFieldResponse) => ProspectConversionFieldResponse) => void
   updateAnalisisField: (key: 'tipoPielId' | 'gradoDeshidratacionId' | 'grosorPielId', value: string) => void
   togglePatologia: (patologiaId: number, checked: boolean) => void
+  updateAlergiaProducto: (index: number, value: string) => void
   handleSaveStep1: (event: FormEvent) => Promise<void>
   handleSaveStep2: (event: FormEvent) => Promise<void>
   handleSaveStep3: (event: FormEvent) => Promise<void>
@@ -268,7 +269,7 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
         }
         setOperationForm(draftOpData)
 
-        setMedicalForm(response.draft.medicalData)
+        setMedicalForm(_normalizeMedicalData(response.draft.medicalData))
         setBiometricForm(response.draft.biometricData)
         setMedicalDocumentFile(null)
         setActiveStep(getInitialStep(response.draft))
@@ -299,7 +300,26 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
       ? data.serviceConfigs.find((item) => String(item.id) === String(operationForm.serviceConfigId)) || null
       : null
 
-const today = new Date().toLocaleDateString('en-CA')
+  const today = new Date().toLocaleDateString('en-CA')
+
+  /**
+   * Backfill defensivo para slots que se agregaron al schema del wizard
+   * despues de commits anteriores. Si el backend devuelve un `medicalData`
+   * de un borrador legacy o de un cliente con fichas antiguas, los campos
+   * nuevos podrian llegar `undefined`. Inicializamos esos slots con
+   * valores vacios para que el formulario siempre pueda renderizar sin
+   * lanzar errores de tipos. Solo aplica al objeto raiz; el resto del
+   * schema del backend es estable y se asume correcto.
+   */
+  const _normalizeMedicalData = (
+    medicalData: ProspectConversionMedicalData,
+  ): ProspectConversionMedicalData => ({
+    ...medicalData,
+    analisisEstetico: {
+      ...medicalData.analisisEstetico,
+      alergiasProductos: medicalData.analisisEstetico.alergiasProductos || [],
+    },
+  })
 
   const hasPassword = !!userForm?.hasPassword
 
@@ -316,7 +336,7 @@ const today = new Date().toLocaleDateString('en-CA')
     setData(response)
     setUserForm(response.draft.userData)
     setOperationForm(response.draft.operationData)
-    setMedicalForm(response.draft.medicalData)
+    setMedicalForm(_normalizeMedicalData(response.draft.medicalData))
     setBiometricForm(response.draft.biometricData)
   }
 
@@ -515,6 +535,26 @@ const today = new Date().toLocaleDateString('en-CA')
     setFieldErrors((current) => ({
       ...current,
       'analisisEstetico.patologiaIds': '',
+    }))
+    setSubmitError(null)
+  }
+
+  const updateAlergiaProducto = (index: number, value: string) => {
+    if (!medicalForm) return
+    const currentList = medicalForm.analisisEstetico.alergiasProductos || []
+    if (index < 0 || index >= currentList.length) return
+    const nextList = [...currentList]
+    nextList[index] = value
+    setMedicalForm({
+      ...medicalForm,
+      analisisEstetico: {
+        ...medicalForm.analisisEstetico,
+        alergiasProductos: nextList,
+      },
+    })
+    setFieldErrors((current) => ({
+      ...current,
+      [`analisisEstetico.alergiasProductos.${index}`]: '',
     }))
     setSubmitError(null)
   }
@@ -938,6 +978,7 @@ resetFeedback()
     updateFieldResponse,
     updateAnalisisField,
     togglePatologia,
+    updateAlergiaProducto,
     handleSaveStep1,
     handleSaveStep2,
     handleSaveStep3,
