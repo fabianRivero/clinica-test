@@ -28,6 +28,14 @@ class AnalisisEstetico(TimeStampedModel):
         related_name="analisis_esteticos",
     )
     observaciones = models.TextField(blank=True)
+    # Lista libre de productos a los que el cliente es alergico, capturada
+    # durante el analisis estetico de la ficha medica. Cada item es texto
+    # libre (max 120 chars por entrada) para no obligar al admin a
+    # seleccionar de un catalogo que suele estar vacio. Se persiste como
+    # JSON para que la lista sobreviva a reordenamientos sin tener que
+    # agregar una tabla paralela solo para este caso. Queda en blanco si
+    # el cliente no reporta alergias.
+    alergias_productos_texto = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = "analisis_estetico"

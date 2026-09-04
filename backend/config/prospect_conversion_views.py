@@ -322,6 +322,7 @@ def _blank_medical_data():
             "gradoDeshidratacionId": "",
             "grosorPielId": "",
             "patologiaIds": [],
+            "alergiasProductos": [],
         },
         "antecedentes": [],
         "implantes": [],
@@ -372,6 +373,7 @@ def _is_effectively_empty_medical_data(medical_data):
             analisis.get("gradoDeshidratacionId"),
             analisis.get("grosorPielId"),
             analisis.get("patologiaIds"),
+            analisis.get("alergiasProductos"),
         ]
     )
 
@@ -1083,6 +1085,37 @@ def _validate_medical_step(payload, service_config):
         seen_patologia_ids.add(patologia_id)
         patologia_ids.append(patologia_id)
 
+    # Lista libre de productos a los que el cliente es alergico. Cada
+    # entrada es texto libre (no se obliga a elegir de un catalogo). Se
+    # recortan espacios, se descartan strings vacios y se limita cada
+    # entrada para evitar abuso del campo. La lista puede llegar vacia
+    # sin disparar error — el cliente puede no reportar alergias.
+    raw_alergias = analisis_payload.get("alergiasProductos") or []
+    alergias_productos_validated = []
+    seen_alergias_normalized = set()
+    for index, raw_item in enumerate(raw_alergias):
+        if not isinstance(raw_item, str):
+            errors[f"analisisEstetico.alergiasProductos.{index}"] = (
+                "Cada alergia debe ser un texto."
+            )
+            continue
+        cleaned = _cap(raw_item)
+        if not cleaned:
+            continue
+        if len(cleaned) > 120:
+            errors[f"analisisEstetico.alergiasProductos.{index}"] = (
+                "Cada alergia no puede superar 120 caracteres."
+            )
+            continue
+        normalized = cleaned.lower()
+        if normalized in seen_alergias_normalized:
+            # Deduplicado silencioso: si la persona escribe dos veces
+            # "latex" no hace falta rechazar el borrador, basta con
+            # guardar una sola entrada en la lista persistida.
+            continue
+        seen_alergias_normalized.add(normalized)
+        alergias_productos_validated.append(cleaned)
+
     antecedentes_validated = []
     antecedentes_seen = set()
     for index, item in enumerate(antecedentes_payload):
@@ -1262,6 +1295,7 @@ def _validate_medical_step(payload, service_config):
             "gradoDeshidratacionId": str(grado_deshidratacion_id or ""),
             "grosorPielId": str(grosor_piel_id or ""),
             "patologiaIds": patologia_ids,
+            "alergiasProductos": alergias_productos_validated,
         },
         "antecedentes": antecedentes_validated,
         "implantes": implantes_validated,
@@ -1966,6 +2000,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         grado_deshidratacion_id=int(analisis_data["gradoDeshidratacionId"]),
         grosor_piel_id=int(analisis_data["grosorPielId"]),
         observaciones=medical_data.get("observaciones", ""),
+        alergias_productos_texto=analisis_data.get("alergiasProductos") or [],
     )
     for patologia_id in analisis_data.get("patologiaIds") or []:
         PatologiaPorAnalisis.objects.create(

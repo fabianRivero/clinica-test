@@ -267,105 +267,6 @@ export function ConversionStepMedical({
       <div className="wizard-block field--full">
         <div className="wizard-block__header">
           <div>
-            <strong>Parte 5. Analisis estético</strong>
-            <p>Estos datos alimentan el historial clínico del paciente y se guardan como un análisis estético inicial.</p>
-          </div>
-        </div>
-        <div className="form-grid">
-          <label className="field">
-            <span>Tipo de piel <span className="_text-danger">*</span></span>
-            <select
-              className="input"
-              value={medicalForm.analisisEstetico.tipoPielId}
-              onChange={(event) => onUpdateAnalisisField('tipoPielId', event.target.value)}
-            >
-              <option value="">Seleccionar</option>
-              {data.medicalConfig.tiposPiel.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.nombre}
-                </option>
-              ))}
-            </select>
-            {fieldErrors['analisisEstetico.tipoPielId'] ? (
-              <small className="field__error">{fieldErrors['analisisEstetico.tipoPielId']}</small>
-            ) : null}
-          </label>
-          <label className="field">
-            <span>Grado de deshidratacion <span className="_text-danger">*</span></span>
-            <select
-              className="input"
-              value={medicalForm.analisisEstetico.gradoDeshidratacionId}
-              onChange={(event) => onUpdateAnalisisField('gradoDeshidratacionId', event.target.value)}
-            >
-              <option value="">Seleccionar</option>
-              {data.medicalConfig.gradosDeshidratacion.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.nombre}
-                </option>
-              ))}
-            </select>
-            {fieldErrors['analisisEstetico.gradoDeshidratacionId'] ? (
-              <small className="field__error">{fieldErrors['analisisEstetico.gradoDeshidratacionId']}</small>
-            ) : null}
-          </label>
-          <label className="field">
-            <span>Grosor de piel <span className="_text-danger">*</span></span>
-            <select
-              className="input"
-              value={medicalForm.analisisEstetico.grosorPielId}
-              onChange={(event) => onUpdateAnalisisField('grosorPielId', event.target.value)}
-            >
-              <option value="">Seleccionar</option>
-              {data.medicalConfig.grosoresPiel.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.nombre}
-                </option>
-              ))}
-            </select>
-            {fieldErrors['analisisEstetico.grosorPielId'] ? (
-              <small className="field__error">{fieldErrors['analisisEstetico.grosorPielId']}</small>
-            ) : null}
-          </label>
-          <div className="field field--full">
-            <span>Patologias cutaneas</span>
-            <div className="checkbox-grid">
-              {data.medicalConfig.patologiasCutaneas.map((option) => {
-                const checked = medicalForm.analisisEstetico.patologiaIds.includes(option.id)
-                return (
-                  <label className="checkbox-pill" key={option.id}>
-                    <input
-                      checked={checked}
-                      type="checkbox"
-                      onChange={(event) => onTogglePatologia(option.id, event.target.checked)}
-                    />
-                    <span>{option.nombre}</span>
-                  </label>
-                )
-              })}
-            </div>
-            {fieldErrors['analisisEstetico.patologiaIds'] ? (
-              <small className="field__error">{fieldErrors['analisisEstetico.patologiaIds']}</small>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="wizard-block field--full">
-        <div className="wizard-block__header">
-          <div>
-            <strong>Parte 6. Observaciones</strong>
-            <p>Registra observaciones generales importantes para el tratamiento, seguimiento o conducta clínica.</p>
-          </div>
-        </div>
-        <label className="field field--full">
-          <span>Observaciones</span>
-          <textarea className="input textarea" name="observaciones" rows={4} value={medicalForm.observaciones} onChange={onChange} />
-        </label>
-      </div>
-
-      <div className="wizard-block field--full">
-        <div className="wizard-block__header">
-          <div>
             <strong>Antecedentes medicos</strong>
             <p>Usa el mismo catálogo para antecedentes personales y familiares.</p>
           </div>
@@ -525,6 +426,105 @@ export function ConversionStepMedical({
           />
         </div>
       )}
+
+      <div className="wizard-block field--full">
+        <div className="wizard-block__header">
+          <div>
+            <strong>Parte 5. Analisis estético</strong>
+            <p>Estos datos alimentan el historial clínico del paciente y se guardan como un análisis estético inicial.</p>
+          </div>
+        </div>
+        <div className="form-grid">
+          <label className="field">
+            <span>Tipo de piel <span className="_text-danger">*</span></span>
+            <select
+              className="input"
+              value={medicalForm.analisisEstetico.tipoPielId}
+              onChange={(event) => onUpdateAnalisisField('tipoPielId', event.target.value)}
+            >
+              <option value="">Seleccionar</option>
+              {data.medicalConfig.tiposPiel.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.nombre}
+                </option>
+              ))}
+            </select>
+            {fieldErrors['analisisEstetico.tipoPielId'] ? (
+              <small className="field__error">{fieldErrors['analisisEstetico.tipoPielId']}</small>
+            ) : null}
+          </label>
+          <label className="field">
+            <span>Grado de deshidratacion <span className="_text-danger">*</span></span>
+            <select
+              className="input"
+              value={medicalForm.analisisEstetico.gradoDeshidratacionId}
+              onChange={(event) => onUpdateAnalisisField('gradoDeshidratacionId', event.target.value)}
+            >
+              <option value="">Seleccionar</option>
+              {data.medicalConfig.gradosDeshidratacion.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.nombre}
+                </option>
+              ))}
+            </select>
+            {fieldErrors['analisisEstetico.gradoDeshidratacionId'] ? (
+              <small className="field__error">{fieldErrors['analisisEstetico.gradoDeshidratacionId']}</small>
+            ) : null}
+          </label>
+          <label className="field">
+            <span>Grosor de piel <span className="_text-danger">*</span></span>
+            <select
+              className="input"
+              value={medicalForm.analisisEstetico.grosorPielId}
+              onChange={(event) => onUpdateAnalisisField('grosorPielId', event.target.value)}
+            >
+              <option value="">Seleccionar</option>
+              {data.medicalConfig.grosoresPiel.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.nombre}
+                </option>
+              ))}
+            </select>
+            {fieldErrors['analisisEstetico.grosorPielId'] ? (
+              <small className="field__error">{fieldErrors['analisisEstetico.grosorPielId']}</small>
+            ) : null}
+          </label>
+          <div className="field field--full">
+            <span>Patologias cutaneas</span>
+            <div className="checkbox-grid">
+              {data.medicalConfig.patologiasCutaneas.map((option) => {
+                const checked = medicalForm.analisisEstetico.patologiaIds.includes(option.id)
+                return (
+                  <label className="checkbox-pill" key={option.id}>
+                    <input
+                      checked={checked}
+                      type="checkbox"
+                      onChange={(event) => onTogglePatologia(option.id, event.target.checked)}
+                    />
+                    <span>{option.nombre}</span>
+                  </label>
+                )
+              })}
+            </div>
+            {fieldErrors['analisisEstetico.patologiaIds'] ? (
+              <small className="field__error">{fieldErrors['analisisEstetico.patologiaIds']}</small>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="wizard-block field--full">
+        <div className="wizard-block__header">
+          <div>
+            <strong>Parte 6. Observaciones</strong>
+            <p>Registra observaciones generales importantes para el tratamiento, seguimiento o conducta clínica.</p>
+          </div>
+        </div>
+        <label className="field field--full">
+          <span>Observaciones</span>
+          <textarea className="input textarea" name="observaciones" rows={4} value={medicalForm.observaciones} onChange={onChange} />
+        </label>
+      </div>
 
       <div className="wizard-block field--full">
         <div className="wizard-block__header">

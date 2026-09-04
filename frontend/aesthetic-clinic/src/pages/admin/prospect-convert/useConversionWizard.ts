@@ -299,7 +299,7 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
       ? data.serviceConfigs.find((item) => String(item.id) === String(operationForm.serviceConfigId)) || null
       : null
 
-  const today = new Date().toLocaleDateString('en-CA')
+const today = new Date().toLocaleDateString('en-CA')
 
   const hasPassword = !!userForm?.hasPassword
 
