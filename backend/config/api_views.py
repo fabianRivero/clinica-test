@@ -59,6 +59,7 @@ from operations.models import (
     EventoConfirmacionCita,
     Operacion,
     OperacionFoto,
+    OperacionPrecondicionNoCumplida,
     BranchAdminAuditLog,
     TabletKiosko,
 )
@@ -585,8 +586,20 @@ def _operation_detail(operacion, request=None):
                         "especialista__usuario__username",
                     )
                 ),
-                "maquinariaPlanificada": list(
-                    cita.maquinaria_items.filter(planificada=True)
+                "maquinariaPlanificada": [
+                    {
+                        # camelCase keys so the reschedule modal can
+                        # consume the list directly. Shape matches what
+                        # the modal expects (``maquinariaId``, ``cantidad``,
+                        # ``nombre``, ``marca``). Kept symmetric with the
+                        # rest of the operation detail payload which is
+                        # camelCase throughout.
+                        "maquinariaId": item["maquinaria_id"],
+                        "cantidad": item["cantidad"],
+                        "nombre": item.get("maquinaria__nombre", ""),
+                        "marca": item.get("maquinaria__marca", ""),
+                    }
+                    for item in cita.maquinaria_items.filter(planificada=True)
                     .select_related("maquinaria")
                     .values(
                         "maquinaria_id",
@@ -594,6 +607,15 @@ def _operation_detail(operacion, request=None):
                         "maquinaria__nombre",
                         "maquinaria__marca",
                     )
+                ],
+                # ISO datetime of the cita. The admin reschedule modal
+                # uses this to prefill the date/time inputs (the existing
+                # ``dateTime`` field is a display label like "15/09 14:30"
+                # and can't be parsed back into <input type="date">).
+                "fechaHoraIso": (
+                    timezone.localtime(cita.fecha_hora).isoformat()
+                    if cita.fecha_hora
+                    else None
                 ),
                 # Real-time close data (filled via /cerrar/ once the
                 # client confirms and the admin sets the close fields).
@@ -5564,6 +5586,142 @@ def admin_delete_operation_quota(request, operacion_id):
     )
     return json_response({
         "detail": f"Cuota #{nro_cuota} eliminada correctamente.",
+        "operation": _operation_detail(operacion, request=request),
+    })
+
+
+# ----------------------------------------------------------------------
+# Manual closure endpoints (operation-manual-closure)
+# ----------------------------------------------------------------------
+#
+# Both endpoints intentionally live in ``api_views.py`` next to the
+# other operation lifecycle endpoints (``admin_update_operation_details``
+# / ``admin_update_operation_price_plan`` / ...) instead of in a
+# Domain-8 ``OperacionesViewSet`` action. The existing endpoints are
+# function-based Django views and the Operations ViewSet's router
+# (``operaciones_d8_router``) is not currently mounted under
+# ``api_urls.py``; re-mounting it to host two new actions would be a much
+# bigger blast radius than the spec warrants. Following the existing
+# pattern keeps the change additive and reversible.
+#
+# Contract:
+# * 200 — closure succeeded; returns the canonical ``_operation_detail``
+#         payload under ``operation`` so the admin detail page can
+#         re-render without a follow-up GET.
+# * 409 — closure rejected. Two distinct shapes:
+#         * precondition failure -> ``{"estado": "...", "preconditions": {...}}``
+#         * source-state rejection -> ``{"detail": "...", "estado": "..."}``
+#         The 409 status code is the same in both cases; the body shape
+#         disambiguates for the frontend (the modal re-renders the
+#         precondition list, the disabled tooltip stays on the button).
+# * 404 — operacion not found.
+# * 403 — handled by ``@admin_required``.
+#
+# All audit fields (``finalized_by``, ``finalized_at``, ``finalization_kind``)
+# are written atomically by ``cerrar_como_*`` inside the ``@transaction.atomic``
+# decorator.
+
+
+@require_POST
+@admin_required
+@transaction.atomic
+def admin_finalize_operation(request, operacion_id):
+    """POST /api/admin/operaciones/<id>/finalizar/.
+
+    Transitions ``Operacion`` from ``EN_PROCESO`` to ``FINALIZADA``
+    when all preconditions pass (sesiones confirmadas + reservas
+    activas + pendientes de verificacion >= sesiones_totales; every
+    cuota ``PAGADO`` or ``NO_PAGADA``; suma de ``monto_programado``
+    igual a ``precio_total``).
+
+    409 + structured ``preconditions`` payload on failure; 409 +
+    ``{"detail": "..."}`` when the source state is not ``EN_PROCESO``.
+    """
+    operacion = (
+        Operacion.objects.select_for_update(of=("self",))
+        .filter(pk=operacion_id)
+        .first()
+    )
+    if not operacion:
+        return json_response(
+            {"detail": "No encontramos la operacion solicitada."},
+            status=404,
+        )
+
+    try:
+        operacion.cerrar_como_finalizada(request.user)
+    except OperacionPrecondicionNoCumplida as exc:
+        # 409 with the structured precondition report. The frontend
+        # uses ``preconditions`` to repaint the confirmation modal so
+        # the admin can see exactly what to fix before retrying.
+        return json_response(
+            {"estado": exc.operacion.estado, "preconditions": exc.report},
+            status=409,
+        )
+    except ValidationError as exc:
+        # Source-state rejection (operacion not in EN_PROCESO).
+        return json_response(
+            {
+                "detail": "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc),
+                "estado": operacion.estado,
+            },
+            status=409,
+        )
+
+    # The Cliente auto-state rule no longer flips ``EN_PROCESO ->
+    # FINALIZADA`` (operation-manual-closure), but we still call it for
+    # backwards compatibility with other side-effects (e.g. it may move
+    # the Cliente between ACTIVO/INACTIVO based on remaining pendientes).
+    operacion.paciente.actualizar_estado_automaticamente()
+
+    operacion = _operation_detail_queryset().get(pk=operacion.pk)
+    return json_response({
+        "detail": "La operacion fue finalizada correctamente.",
+        "operation": _operation_detail(operacion, request=request),
+    })
+
+
+@require_POST
+@admin_required
+@transaction.atomic
+def admin_suspend_operation(request, operacion_id):
+    """POST /api/admin/operaciones/<id>/suspender/.
+
+    Transitions ``Operacion`` from ``EN_PROCESO`` to ``SUSPENDIDA``
+    unconditionally. No precondition check — suspension is the
+    explicit escape hatch when the admin chooses to abandon the
+    treatment even with unresolved sesiones/cuotas/monto.
+
+    409 + ``{"detail": "...", "estado": "..."}`` when the source state
+    is not ``EN_PROCESO``.
+    """
+    operacion = (
+        Operacion.objects.select_for_update(of=("self",))
+        .filter(pk=operacion_id)
+        .first()
+    )
+    if not operacion:
+        return json_response(
+            {"detail": "No encontramos la operacion solicitada."},
+            status=404,
+        )
+
+    try:
+        operacion.cerrar_como_suspendida(request.user)
+    except ValidationError as exc:
+        return json_response(
+            {
+                "detail": "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc),
+                "estado": operacion.estado,
+            },
+            status=409,
+        )
+
+    operacion.paciente.actualizar_estado_automaticamente()
+
+    operacion = _operation_detail_queryset().get(pk=operacion.pk)
+    return json_response({
+        "detail": "La operacion fue suspendida correctamente.",
         "operation": _operation_detail(operacion, request=request),
     })
 

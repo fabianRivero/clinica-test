@@ -1,5 +1,7 @@
 import uuid
+from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
@@ -9,6 +11,26 @@ from django.dispatch import receiver
 from django.utils import timezone
 
 from common.models import CatalogoEditableModel, TimeStampedModel
+
+
+class OperacionPrecondicionNoCumplida(Exception):
+    """Raised when ``Operacion.cerrar_como_finalizada`` cannot transition
+    the operation because one of its preconditions failed.
+
+    Carries the structured ``preconditions`` report (sesiones / cuotas /
+    monto) so the DRF viewset can surface it verbatim as a 409 response
+    body. Source-state rejections (``Operacion`` not in ``EN_PROCESO``)
+    raise a plain ``ValidationError`` instead — they are NOT precondition
+    failures and must not be wrapped in this exception.
+    """
+
+    def __init__(self, operacion, report):
+        self.operacion = operacion
+        self.report = report
+        super().__init__(
+            "Precondiciones de cierre no cumplidas para la operacion "
+            f"#{operacion.pk}."
+        )
 
 
 class DiaSemana(models.IntegerChoices):
@@ -27,6 +49,11 @@ class Operacion(TimeStampedModel):
         EN_PROCESO = "EN_PROCESO", "En proceso"
         FINALIZADA = "FINALIZADA", "Finalizada"
         CANCELADA = "CANCELADA", "Cancelada"
+        SUSPENDIDA = "SUSPENDIDA", "Suspendida"
+
+    class FinalizationKind(models.TextChoices):
+        MANUAL_FINALIZADA = "MANUAL_FINALIZADA", "Finalizada manualmente"
+        MANUAL_SUSPENDIDA = "MANUAL_SUSPENDIDA", "Suspendida manualmente"
 
     paciente = models.ForeignKey(
         "customers.Cliente",
@@ -56,6 +83,25 @@ class Operacion(TimeStampedModel):
     )
     detalles_op = models.TextField(blank=True)
     recomendaciones = models.TextField(blank=True)
+
+    # --- Manual closure audit trail (operation-manual-closure) ----------
+    # Nullable on purpose: legacy ``Operacion`` rows that closed under the
+    # old auto-finalization rule have no historical admin and we don't
+    # want to invent one during the migration.
+    finalized_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="operaciones_finalizadas",
+        null=True,
+        blank=True,
+    )
+    finalized_at = models.DateTimeField(null=True, blank=True)
+    finalization_kind = models.CharField(
+        max_length=24,
+        choices=FinalizationKind.choices,
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         db_table = "operaciones"
@@ -126,6 +172,196 @@ class Operacion(TimeStampedModel):
         if self.sesiones_disponibles <= 0:
             return "Tu tratamiento ya no tiene sesiones disponibles para nuevas reservas."
         return ""
+
+    # ------------------------------------------------------------------ #
+    # Manual closure (operation-manual-closure)                           #
+    # ------------------------------------------------------------------ #
+    #
+    # ``puede_cerrar`` is the single source of truth for "is this
+    # operation ready to be finalized". It powers the server's 409
+    # response AND the frontend's disabled-state + modal preview, so both
+    # consumers always agree on the same precondition shape.
+    #
+    # The shape is deliberately kept minimal and quantised:
+    #   * boolean ``ok`` is the global gate (True iff every precondition
+    #     section is True)
+    #   * each section exposes enough detail to render the modal without a
+    #     second round-trip
+    #   * monetary fields are 2dp DECIMAL STRINGS (NOT Decimals or
+    #     floats) so the JSON payload survives float round-trip in
+    #     JavaScript without precision loss
+    _CENT = Decimal("0.01")
+
+    def puede_cerrar(self):
+        """Return ``(ok, preconditions)``.
+
+        ``preconditions`` mirrors the contract documented in the
+        ``operation-manual-closure`` design doc:
+
+        ```
+        {
+          "ok": false,
+          "sesiones": {
+            "ok": false,
+            "expected": 5,
+            "confirmed": 3,
+            "reserved": 1,    # diagnostico only (PROGRAMADA)
+            "pending": 1,     # diagnostico only (REALIZADA_PENDIENTE_VERIFICACION)
+            "missing": 2      # expected - confirmed
+          },
+          "cuotas": {
+            "ok": false,
+            "pending": [{"nroCuota": 2, "estado": "PENDIENTE"}]
+          },
+          "monto": {
+            "ok": false,
+            "precioTotal": "100.00",
+            "sumaMontoProgramado": "95.00",
+            "diff": "-5.00"
+          }
+        }
+        ```
+
+        ``diff = precioTotal - sumaMontoProgramado`` (2dp quantised).
+        Negative means sumaMontoProgramado > precioTotal.
+
+        Sesion "realizada" semantics: ONLY ``CitaMedica.Estado.CONFIRMADA``
+        counts towards ``consumed``. A reservation in ``PROGRAMADA`` or a
+        session the specialist marked as attended but the client has not
+        yet approved in the tablet (``REALIZADA_PENDIENTE_VERIFICACION``)
+        do NOT count as realized sessions and BLOCK closure. The
+        ``reserved`` and ``pending`` counts remain in the report so the
+        admin can see exactly what's pending in the diagnostic UI.
+        """
+        # ----- sesiones -----
+        # Only CONFIRMADA counts as a realized session. PROGRAMADA
+        # (just reserved, not yet performed) and
+        # REALIZADA_PENDIENTE_VERIFICACION (performed but not yet
+        # client-approved) both BLOCK closure.
+        confirmed = self.citas_medicas.filter(
+            estado=CitaMedica.Estado.CONFIRMADA
+        ).count()
+        # Diagnostic counts (do NOT contribute to consumed).
+        reserved = self.citas_medicas.filter(
+            estado=CitaMedica.Estado.PROGRAMADA
+        ).count()
+        pending = self.citas_medicas.filter(
+            estado=CitaMedica.Estado.REALIZADA_PENDIENTE_VERIFICACION
+        ).count()
+        expected = int(self.sesiones_totales or 0)
+        consumed = confirmed  # only CONFIRMADA counts.
+        missing = max(expected - consumed, 0)
+        sesiones_ok = missing == 0 and expected > 0
+
+        # ----- cuotas -----
+        qs_cuotas = self.cuotas_plan_pagos.exclude(
+            estado__in={"PAGADO", "NO_PAGADA"}
+        ).order_by("nro_cuota")
+        cuotas_pending = [
+            {"nroCuota": c.nro_cuota, "estado": c.estado}
+            for c in qs_cuotas
+        ]
+        cuotas_ok = not cuotas_pending
+
+        # ----- monto -----
+        precio_total = (self.precio_total or Decimal("0")).quantize(self._CENT)
+        suma_monto = sum(
+            (c.monto_programado or Decimal("0"))
+            for c in self.cuotas_plan_pagos.all()
+        ).quantize(self._CENT)
+        diff = (precio_total - suma_monto).quantize(self._CENT)
+        monto_ok = diff == Decimal("0.00")
+
+        report = {
+            "ok": sesiones_ok and cuotas_ok and monto_ok,
+            "sesiones": {
+                "ok": sesiones_ok,
+                "expected": expected,
+                "confirmed": confirmed,
+                "reserved": reserved,
+                "pending": pending,
+                "missing": missing,
+            },
+            "cuotas": {
+                "ok": cuotas_ok,
+                "pending": cuotas_pending,
+            },
+            "monto": {
+                "ok": monto_ok,
+                "precioTotal": str(precio_total),
+                "sumaMontoProgramado": str(suma_monto),
+                "diff": str(diff),
+            },
+        }
+        return report["ok"], report
+
+    def cerrar_como_finalizada(self, user):
+        """Transition ``self`` ``EN_PROCESO -> FINALIZADA`` atomically.
+
+        Writes the three audit fields (``finalized_by``, ``finalized_at``,
+        ``finalization_kind``) inside the same ``save()`` so partial
+        writes are impossible — readers will either see ``EN_PROCESO``
+        with audit fields null or ``FINALIZADA`` with the full audit
+        trail.
+
+        Raises ``OperacionPrecondicionNoCumplida`` when the precondition
+        report is not OK. Raises ``ValidationError`` when the source
+        state is not ``EN_PROCESO``.
+        """
+        from django.core.exceptions import ValidationError
+
+        if self.estado != self.Estado.EN_PROCESO:
+            raise ValidationError(
+                f"Solo se pueden finalizar operaciones en proceso "
+                f"(estado actual: {self.get_estado_display()})."
+            )
+
+        ok, report = self.puede_cerrar()
+        if not ok:
+            raise OperacionPrecondicionNoCumplida(self, report)
+
+        now = timezone.now()
+        self.estado = self.Estado.FINALIZADA
+        self.finalized_by = user
+        self.finalized_at = now
+        self.finalization_kind = self.FinalizationKind.MANUAL_FINALIZADA
+        self.save(update_fields=[
+            "estado",
+            "finalized_by",
+            "finalized_at",
+            "finalization_kind",
+            "updated_at",
+        ])
+
+    def cerrar_como_suspendida(self, user):
+        """Transition ``self`` ``EN_PROCESO -> SUSPENDIDA`` unconditionally.
+
+        No precondition check — the admin explicitly chose to suspend the
+        treatment even when sesiones/cuotas/monto don't reconcile.
+
+        Raises ``ValidationError`` when the source state is not
+        ``EN_PROCESO``. (Same shape as ``cerrar_como_finalizada``.)
+        """
+        from django.core.exceptions import ValidationError
+
+        if self.estado != self.Estado.EN_PROCESO:
+            raise ValidationError(
+                f"Solo se pueden suspender operaciones en proceso "
+                f"(estado actual: {self.get_estado_display()})."
+            )
+
+        now = timezone.now()
+        self.estado = self.Estado.SUSPENDIDA
+        self.finalized_by = user
+        self.finalized_at = now
+        self.finalization_kind = self.FinalizationKind.MANUAL_SUSPENDIDA
+        self.save(update_fields=[
+            "estado",
+            "finalized_by",
+            "finalized_at",
+            "finalization_kind",
+            "updated_at",
+        ])
 
     def __str__(self):
         return f"Operacion #{self.pk} - {self.paciente}"

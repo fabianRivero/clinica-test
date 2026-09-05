@@ -13,12 +13,14 @@ import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
 import { ReservationModal } from './components/ReservationModal'
 import { CerrarCitaModal, type CerrarCitaPayload } from './components/CerrarCitaModal'
+import { OperationClosureConfirmModal, deriveOperationClosurePreconditions } from './components/OperationClosureConfirmModal'
 import { OperationObservationsSection } from './components/OperationObservationsSection'
 import {
   cancelAdminAppointment,
   cancelAdminAppointmentVerification,
   createAdminClientReservation,
   deleteAdminOperationQuota,
+  fetchAdminOperationClosureResponse,
   getAdminOperationDetail,
   markAdminAppointmentPendingBiometric,
   registerAdminAppointmentPayment,
@@ -32,6 +34,8 @@ import type {
   AdminPaymentQuota,
   AdminReservationExtendedPayload,
   OperationDetailAppointment,
+  OperationDetailData,
+  OperationClosurePreconditionsReport,
   RegisterAdminAppointmentPaymentPayload,
   RegisterAdminPaymentPayload,
 } from '../../types/admin'
@@ -125,6 +129,17 @@ export function AdminOperationDetailPage() {
   const [cobrarAppointment, setCobrarAppointment] = useState<AdminAppointment | null>(null)
   const [isCobrarSubmitting, setIsCobrarSubmitting] = useState(false)
   const [cobrarError, setCobrarError] = useState<string | null>(null)
+  // operation-manual-closure: manual closure actions. The two buttons
+  // share a single confirmation modal (`OperationClosureConfirmModal`)
+  // that pre-fills its precondition list from the locally-derived
+  // report (for client-side disable + happy-path UX). If the server
+  // returns 409, the modal re-populates from the authoritative
+  // structured payload via `fetchAdminOperationClosureResponse`.
+  const [closureModalOpen, setClosureModalOpen] = useState(false)
+  const [closureMode, setClosureMode] = useState<'finalizar' | 'suspender' | null>(null)
+  const [closureReport, setClosureReport] = useState<OperationClosurePreconditionsReport | null>(null)
+  const [closureSourceError, setClosureSourceError] = useState<string | null>(null)
+  const [isClosureSubmitting, setIsClosureSubmitting] = useState(false)
   // El precio y los montos por cuota se editan desde el bloque "Citas y
 // cuotas" (sub-bloque Plan de pagos). El save reutiliza el mismo
 // endpoint `actualizar-precio` con la lista `quotas` opcional.
@@ -250,6 +265,29 @@ export function AdminOperationDetailPage() {
     const match = data.operation.sessions.match(/^(\d+)/)
     return match ? Number(match[1]) : null
   }, [data])
+
+  // Derived client-side precondition report for the closure buttons.
+  // Mirrors ``Operacion.puede_cerrar`` on the backend. Recomputed on
+  // every data reload so the button's disabled state and the helper
+  // text below it stay in sync with the backend truth. The modal opens
+  // with this same report pre-populated; if the server disagrees on
+  // submit (race / cached data), the 409 handler in
+  // ``handleConfirmClosure`` replaces it with the authoritative payload.
+  const closureReportLive = useMemo<OperationClosurePreconditionsReport | null>(() => {
+    if (!data) return null
+    return deriveOperationClosurePreconditions({
+      sesionesTotales: currentSessions ?? 0,
+      appointments: (data.operation.appointments ?? []).map((apt) => ({
+        status: apt.status ?? '',
+      })),
+      quotas: (data.operation.quotas ?? []).map((quota) => ({
+        number: quota.number,
+        status: quota.status ?? '',
+        amountValue: quota.amountValue,
+      })),
+      precioTotalLabel: data.operation.price ?? '0',
+    })
+  }, [data, currentSessions])
 
   // -------- handlers del bloque "Citas y cuotas" ----------
 
@@ -583,7 +621,7 @@ const handleSaveSessions = async () => {
     // los items que vamos a mandar. El backend luego valida suma
     // exacta contra el saldo pendiente.
     const editableItems = quotasDraft.filter(
-      (item) => operation.quotas.find((q) => q.number === item.nroCuota)?.status !== 'Pagado',
+      (item) => data.operation.quotas.find((q) => q.number === item.nroCuota)?.status !== 'Pagado',
     )
     for (const item of editableItems) {
       if (!item.montoProgramado || !item.fechaVencimiento) {
@@ -629,6 +667,100 @@ const handleSaveSessions = async () => {
       setIsSavingPrice(false)
     }
   }
+
+  // -----------------------------------------------------------------
+  // operation-manual-closure: manual cierre / suspension
+  // -----------------------------------------------------------------
+
+  // Same helper used by both buttons: open the shared confirmation
+  // modal pre-populated with a client-derived precondition report.
+  // The report is already live (see ``closureReportLive`` above), so we
+  // just adopt it as the modal's snapshot. The 409 handler in
+  // ``handleConfirmClosure`` may overwrite it with the server's
+  // authoritative payload.
+  const openClosureModal = (mode: 'finalizar' | 'suspender') => {
+    if (!data) return
+    setClosureMode(mode)
+    setClosureReport(closureReportLive)
+    setClosureSourceError(null)
+    setClosureModalOpen(true)
+  }
+
+  const closeClosureModal = () => {
+    setClosureModalOpen(false)
+    setClosureMode(null)
+    setClosureReport(null)
+    setClosureSourceError(null)
+  }
+
+  const handleConfirmClosure = async () => {
+    if (!data || !closureMode) return
+    setIsClosureSubmitting(true)
+    setClosureSourceError(null)
+    try {
+      const result = await fetchAdminOperationClosureResponse(
+        data.operation.rawId,
+        closureMode,
+      )
+      if (result.ok) {
+        showNotification({
+          title:
+            closureMode === 'finalizar'
+              ? 'Operacion finalizada'
+              : 'Operacion suspendida',
+          message:
+            result.data.detail ??
+            (closureMode === 'finalizar'
+              ? 'La operacion se cerro correctamente.'
+              : 'La operacion fue suspendida.'),
+          tone: 'success',
+        })
+        closeClosureModal()
+        reload()
+        return
+      }
+      // 409 path: server is authoritative. If the failure carries
+      // a structured precondition report, repaint the modal from it.
+      if (result.data.preconditions) {
+        setClosureReport(result.data.preconditions)
+        setClosureSourceError(null)
+      } else {
+        setClosureSourceError(
+          result.data.detail ??
+            'La operacion no esta en un estado valido para esta accion.',
+        )
+      }
+    } catch (requestError) {
+      // Transport-level failure (network, CSRF, etc.). Show inside the
+      // modal so the admin can retry without losing context.
+      setClosureSourceError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo conectar con el servidor.',
+      )
+    } finally {
+      setIsClosureSubmitting(false)
+    }
+  }
+
+  // The two closure buttons are visible only while `estado === 'En proceso'`.
+  // Mirrors `puede_reservar` and follows the spec: outside EN_PROCESO the
+  // manual closure flow is hidden (the operation is already terminal).
+  // We reuse `canEditPricePlan` (declared below after the `data`
+  // destructuring) for the same gate — both are true exactly while the
+  // operation is "en proceso". Keeping a single source of truth avoids the
+  // TDZ risk of referring to `operation` before `const { operation } = data`.
+  const finalizarTooltip = closureReportLive && !closureReportLive.ok
+    ? closureReportLive.monto.ok === false
+      ? `No puedes finalizar: la suma del plan de pagos no cierra con el precio total (diferencia Bs ${closureReportLive.monto.diff}).`
+      : closureReportLive.cuotas.ok === false
+        ? `No puedes finalizar: hay ${closureReportLive.cuotas.pending.length} cuota(s) pendiente(s) o vencida(s).`
+        : closureReportLive.sesiones.missing > 0
+          ? `No puedes finalizar: faltan ${closureReportLive.sesiones.missing} sesion(es) por realizar.`
+          : closureReportLive.sesiones.reserved > 0
+            ? `No puedes finalizar: hay ${closureReportLive.sesiones.reserved} cita(s) reservada(s) que aun no se realizan.`
+            : `No puedes finalizar: hay ${closureReportLive.sesiones.pending} cita(s) que esperan aprobacion del cliente en /tablet.`
+    : undefined
 
   if (isLoading && !data) {
     return (
@@ -770,6 +902,55 @@ const handleSaveSessions = async () => {
               </div>
               <StatusBadge tone={getStatusTone(operation.status)}>{operation.status}</StatusBadge>
             </div>
+            {canEditPricePlan ? (
+              <div
+                className="table-actions _mt-sm"
+                data-testid="operation-closure-actions"
+              >
+                <button
+                  type="button"
+                  className="button button--primary button--compact"
+                  onClick={() => openClosureModal('finalizar')}
+                  disabled={!closureReportLive || !closureReportLive.ok}
+                  title={finalizarTooltip}
+                  data-testid="operation-finalizar-button"
+                >
+                  Finalizar tratamiento
+                </button>
+                <button
+                  type="button"
+                  className="button button--ghost button--compact"
+                  onClick={() => openClosureModal('suspender')}
+                  data-testid="operation-suspender-button"
+                >
+                  Suspender
+                </button>
+                {/* Helper text under "Finalizar tratamiento": explains why
+                    the button is disabled (if it is) or confirms the
+                    operation is ready to close. Mirrors the live
+                    precondition report so the admin never has to open
+                    the modal just to know what's missing. */}
+                <p
+                  className="_mt-xs"
+                  style={{ fontSize: '0.85rem', color: 'var(--color-text-muted, #666)' }}
+                  data-testid="operation-finalizar-help"
+                >
+                  {closureReportLive
+                    ? closureReportLive.monto.ok === false
+                      ? `Para habilitar "Finalizar tratamiento": la suma del plan de pagos debe cerrar exactamente con el precio total (diferencia actual Bs ${closureReportLive.monto.diff}).`
+                      : closureReportLive.cuotas.ok === false
+                        ? `Para habilitar "Finalizar tratamiento": paga o cancela las ${closureReportLive.cuotas.pending.length} cuota(s) pendiente(s) o vencida(s).`
+                        : closureReportLive.sesiones.ok === false
+                          ? closureReportLive.sesiones.missing > 0
+                            ? `Para habilitar "Finalizar tratamiento": faltan ${closureReportLive.sesiones.missing} sesion(es) por realizar (solo cuentan las citas confirmadas por el cliente).`
+                            : closureReportLive.sesiones.reserved > 0
+                              ? `Para habilitar "Finalizar tratamiento": tienes ${closureReportLive.sesiones.reserved} cita(s) reservada(s) que aun no se realizan.`
+                              : `Para habilitar "Finalizar tratamiento": tienes ${closureReportLive.sesiones.pending} cita(s) que esperan aprobacion del cliente en /tablet.`
+                          : 'Todas las precondiciones se cumplen: puedes cerrar este tratamiento.'
+                    : 'Cargando precondiciones...'}
+                </p>
+              </div>
+            ) : null}
             <dl className="operation-detail-list">
               <div>
                 <dt>Paciente</dt>
@@ -1783,6 +1964,36 @@ const handleSaveSessions = async () => {
         errorMessage={registerError}
         onClose={closeRegisterModal}
         onSubmit={handleRegisterPayment}
+      />
+
+      <OperationClosureConfirmModal
+        open={closureModalOpen && closureMode !== null && closureReport !== null}
+        mode={closureMode ?? 'finalizar'}
+        report={
+          closureReport ?? {
+            ok: false,
+            sesiones: {
+              ok: false,
+              expected: 0,
+              confirmed: 0,
+              reserved: 0,
+              pending: 0,
+              missing: 0,
+            },
+            cuotas: { ok: false, pending: [] },
+            monto: {
+              ok: false,
+              precioTotal: '0.00',
+              sumaMontoProgramado: '0.00',
+              diff: '0.00',
+            },
+          }
+        }
+        operationLabel={operation.procedure}
+        sourceStateError={closureSourceError}
+        isSubmitting={isClosureSubmitting}
+        onClose={closeClosureModal}
+        onConfirm={() => void handleConfirmClosure()}
       />
 
       <AdminRegisterAppointmentPaymentModal

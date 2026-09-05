@@ -41,6 +41,8 @@ import type {
   ExpensesResponse,
   ManageAdminGlobalAvailabilityPayload,
   OperationDetailResponse,
+  OperationClosureResponse,
+  OperationClosurePreconditionFailure,
   UpdateAdminOperationObservacionesResponse,
   UploadAdminOperationPhotosResponse,
   OperationsResponse,
@@ -512,6 +514,90 @@ export function deleteAdminOperationQuota(
     `/api/admin/operaciones/${operationId}/eliminar-cuota/`,
     payload,
   )
+}
+
+/**
+ * POST /api/admin/operaciones/<id>/finalizar/
+ *
+ * Transitions the operation EN_PROCESO -> FINALIZADA when all
+ * preconditions hold. The server returns 409 with a structured
+ * precondition report on failure; ``requestJsonWithBody`` throws an
+ * ``Error`` whose message contains the server-side ``detail`` (the
+ * `preconditions` payload is not surfaced by `apiClient.ts`; callers
+ * that need it for the modal must re-fetch or look at the raw
+ * response). Both shapes are mirrored by ``OperationClosureResponse``
+ * + ``OperationClosurePreconditionFailure`` in types/admin.ts.
+ */
+export function finalizeAdminOperation(operationId: number) {
+  return requestJsonWithBody<OperationClosureResponse>(
+    `/api/admin/operaciones/${operationId}/finalizar/`,
+    {},
+  )
+}
+
+/**
+ * POST /api/admin/operaciones/<id>/suspender/
+ *
+ * Transitions the operation EN_PROCESO -> SUSPENDIDA unconditionally
+ * (no preconditions). 409 on a wrong source state with a plain
+ * ``{detail, estado}`` envelope; 200 with the refreshed operation
+ * payload otherwise.
+ */
+export function suspendAdminOperation(operationId: number) {
+  return requestJsonWithBody<OperationClosureResponse>(
+    `/api/admin/operaciones/${operationId}/suspender/`,
+    {},
+  )
+}
+
+/**
+ * Escape hatch for the operation-detail page's confirmation modal:
+ * the server's 409 response is NOT surfaced through the standard
+ * ``apiClient.ts`` error pipeline, so the page can't read
+ * ``preconditions`` off the thrown Error. This raw fetch variant
+ * returns the parsed body (success or failure) and only throws on
+ * network / non-JSON failures.
+ */
+export async function fetchAdminOperationClosureResponse(
+  operationId: number,
+  mode: 'finalizar' | 'suspender',
+): Promise<
+  | { ok: true; data: OperationClosureResponse }
+  | { ok: false; data: OperationClosurePreconditionFailure }
+> {
+  const csrf = await fetch('/api/csrf/', { credentials: 'include' }).catch(() => null)
+  // Best-effort: fall back to ensureCsrfCookie below.
+  void csrf
+  const { ensureCsrfCookie } = await import('./auth')
+  const csrfToken = await ensureCsrfCookie()
+  const branchId = (await import('./activeBranch')).getActiveBranchId()
+  const response = await fetch(
+    `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/api/admin/operaciones/${operationId}/${mode}/`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken,
+        ...(branchId ? { 'X-Selected-Branch-Id': String(branchId) } : {}),
+      },
+      body: JSON.stringify({}),
+    },
+  )
+  const body = (await response.json().catch(() => null)) as
+    | OperationClosureResponse
+    | OperationClosurePreconditionFailure
+    | null
+  if (response.ok) {
+    return { ok: true, data: body as OperationClosureResponse }
+  }
+  return {
+    ok: false,
+    data: (body as OperationClosurePreconditionFailure) ?? {
+      detail: `No se pudo ${mode} la operacion (${response.status}).`,
+      estado: 'EN_PROCESO',
+    },
+  }
 }
 
 export function getAdminAvailability(_branchId?: number | null) {

@@ -212,8 +212,47 @@ class OperationReservationCreateSerializer(serializers.Serializer):
     zonaCuerpoPlanificada = serializers.CharField(
         required=False, allow_blank=True, max_length=200
     )
+    def _coerce_especialista_id(value):
+        # Field-level coercion so we accept both shapes the frontend
+        # might send (see class docstring). Used as ``child`` of the
+        # ``especialistasPlanificados`` ListField below.
+        if isinstance(value, bool):
+            raise serializers.ValidationError(
+                "Debe ser un entero o un objeto con id de especialista."
+            )
+        if isinstance(value, int):
+            return value
+        if isinstance(value, dict):
+            candidate = (
+                value.get("especialista_id")
+                if "especialista_id" in value
+                else value.get("id")
+            )
+            try:
+                return int(candidate)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(
+                    "No contiene un id de especialista valido."
+                )
+        raise serializers.ValidationError(
+            "Debe ser un entero o un objeto con id de especialista."
+        )
+
+    class EspecialistaIdField(serializers.Field):
+        """Coerce ``int`` or ``{"especialista_id": int}`` (or ``{"id": int}``)
+        to a plain integer. Used as the ``child`` of the
+        ``especialistasPlanificados`` list so DRF runs the coercion
+        before the standard ``IntegerField`` validator chokes on dicts.
+        """
+
+        def to_internal_value(self, data):
+            return OperationReservationCreateSerializer._coerce_especialista_id(data)
+
+        def to_representation(self, value):
+            return int(value)
+
     especialistasPlanificados = serializers.ListField(
-        child=serializers.IntegerField(),
+        child=EspecialistaIdField(),
         required=False,
         default=list,
     )

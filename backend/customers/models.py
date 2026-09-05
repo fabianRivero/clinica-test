@@ -205,7 +205,10 @@ class Cliente(TimeStampedModel):
         return self.estado_cliente
 
     def procedimiento_tiene_pendientes(self, operacion):
-        if operacion.estado in {"CANCELADA", "FINALIZADA"}:
+        # SUSPENDIDA is now a terminal state alongside CANCELADA /
+        # FINALIZADA — the operation has no pendientes because the admin
+        # explicitly closed it (operation-manual-closure).
+        if operacion.estado in {"CANCELADA", "FINALIZADA", "SUSPENDIDA"}:
             return False
         sesiones_pendientes = operacion.sesiones_confirmadas < operacion.sesiones_totales
         pagos_pendientes = operacion.cuotas_plan_pagos.exclude(
@@ -236,14 +239,18 @@ class Cliente(TimeStampedModel):
         if self.estado_cliente == self.Estado.INACTIVO and self.bloqueo_reactivacion_automatica:
             return self.estado_cliente
 
-        tiene_pendientes = False
-        for operacion in self.operaciones.prefetch_related("cuotas_plan_pagos", "citas_medicas"):
-            if self.procedimiento_tiene_pendientes(operacion):
-                tiene_pendientes = True
-                continue
-            if operacion.estado == "EN_PROCESO":
-                operacion.estado = "FINALIZADA"
-                operacion.save(update_fields=["estado", "updated_at"])
+        # operation-manual-closure: the implicit EN_PROCESO -> FINALIZADA
+        # rule is gone. Closure now happens explicitly through the admin
+        # ``finalizar`` / ``suspender`` actions. ``procedimiento_tiene_pendientes``
+        # already treats SUSPENDIDA + FINALIZADA + CANCELADA as terminal,
+        # so simplementa no longer needs to second-guess the operation's
+        # lifecycle here.
+        tiene_pendientes = any(
+            self.procedimiento_tiene_pendientes(operacion)
+            for operacion in self.operaciones.prefetch_related(
+                "cuotas_plan_pagos", "citas_medicas"
+            )
+        )
 
         nuevo_estado = self.Estado.ACTIVO if tiene_pendientes else self.Estado.INACTIVO
         return self.cambiar_estado(nuevo_estado, save=save)

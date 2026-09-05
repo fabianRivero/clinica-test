@@ -53,6 +53,44 @@ class AppointmentStatusUpdateSerializer(serializers.Serializer):
     )
 
 
+class EspecialistaIdFieldReschedule(serializers.Field):
+    """Coerce ``int`` or ``{"especialista_id": int}`` (or ``{"id": int}``)
+    to a plain integer. Mirrors ``OperationReservationCreateSerializer.
+    EspecialistaIdField`` so the reschedule endpoint accepts the same
+    shapes the frontend can send.
+    """
+
+    @staticmethod
+    def _coerce(value):
+        if isinstance(value, bool):
+            raise serializers.ValidationError(
+                "Debe ser un entero o un objeto con id de especialista."
+            )
+        if isinstance(value, int):
+            return value
+        if isinstance(value, dict):
+            candidate = (
+                value.get("especialista_id")
+                if "especialista_id" in value
+                else value.get("id")
+            )
+            try:
+                return int(candidate)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(
+                    "No contiene un id de especialista valido."
+                )
+        raise serializers.ValidationError(
+            "Debe ser un entero o un objeto con id de especialista."
+        )
+
+    def to_internal_value(self, data):
+        return self._coerce(data)
+
+    def to_representation(self, value):
+        return int(value)
+
+
 class AppointmentRescheduleSerializer(serializers.Serializer):
     """Input for rescheduling an appointment.
 
@@ -77,8 +115,11 @@ class AppointmentRescheduleSerializer(serializers.Serializer):
     zonaCuerpoPlanificada = serializers.CharField(
         required=False, allow_blank=True, max_length=200
     )
+    # Use the lenient EspecialistaIdFieldReschedule so the frontend can
+    # send ``[{especialista_id: N}]`` (the shape it builds from the
+    # reschedule prefill) without the serializer choking on the dict.
     especialistasPlanificados = serializers.ListField(
-        child=serializers.IntegerField(),
+        child=EspecialistaIdFieldReschedule(),
         required=False,
         default=list,
     )

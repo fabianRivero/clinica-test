@@ -73,6 +73,8 @@ from config.api_views import (
     admin_update_operation_details,
     admin_update_operation_price_plan,
     admin_delete_operation_quota,
+    admin_finalize_operation,
+    admin_suspend_operation,
     admin_update_operation_observaciones,
     admin_upload_operation_photos,
     admin_delete_operation_photo,
@@ -374,6 +376,18 @@ urlpatterns = [
         "operaciones/<int:operacion_id>/eliminar-cuota/",
         admin_delete_operation_quota,
         name="admin-operation-delete-quota-api",
+    ),
+    # operation-manual-closure: explicit admin-driven transitions.
+    # 200 on success, 409 with structured precondition detail on failure.
+    path(
+        "operaciones/<int:operacion_id>/finalizar/",
+        admin_finalize_operation,
+        name="admin-operation-finalize-api",
+    ),
+    path(
+        "operaciones/<int:operacion_id>/suspender/",
+        admin_suspend_operation,
+        name="admin-operation-suspend-api",
     ),
     path("citas/<int:appointment_id>/cancelar/", admin_cancel_appointment, name="admin-appointment-cancel-api"),
     path(

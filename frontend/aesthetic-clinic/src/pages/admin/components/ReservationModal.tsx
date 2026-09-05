@@ -72,12 +72,26 @@ interface ReservationModalProps {
     procedimientoPlanificado?: string
     zonaCuerpoPlanificada?: string
     /**
+     * ISO datetime from the backend (local time, ``YYYY-MM-DDTHH:MM:SS``).
+     * Used to prefill the date/time inputs in reschedule mode.
+     */
+    fechaHoraIso?: string | null
+    /**
      * Backend response shape (object with name + id) OR legacy shape
      * (just the id). The modal accepts both so the reschedule prefill
      * works regardless of which response variant the backend emits.
      */
     especialistasPlanificados?: Array<number | { especialista_id: number }>
-    maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
+    /**
+     * Machinery plan: accepts both the reshaped camelCase payload
+     * (``maquinariaId``, ``cantidad``) and the raw snake_case ORM
+     * values (``maquinaria_id``, ``cantidad``) so the modal works
+     * against either backend response.
+     */
+    maquinariaPlanificada?: Array<
+      | { maquinariaId: number; cantidad: number }
+      | { maquinaria_id: number; cantidad: number }
+    >
   }
   /** Callback que dispara la reserva. El padre arma el payload final con
    *  los IDs de operacion + branchId y dispara `createAdminClientReservation`
@@ -164,9 +178,29 @@ export function ReservationModal({
     setOperationId(reservableOperations[0]?.rawId ?? '')
     if (mode === 'reschedule' && prefillCita) {
       // Prepopulate planning fields from the cita being rescheduled.
-      // date/time stay empty so the admin picks a new slot.
-      setDate('')
-      setTime('')
+      // Date/time come prefilled too so the admin sees the original
+      // slot and only has to nudge them if the new slot is close.
+      if (prefillCita.fechaHoraIso) {
+        const dt = new Date(prefillCita.fechaHoraIso)
+        if (!Number.isNaN(dt.getTime())) {
+          // Use the local clock components for the input values;
+          // ``fechaHoraIso`` is already in local time because the
+          // backend runs ``timezone.localtime`` before serialising.
+          const yyyy = dt.getFullYear()
+          const mm = String(dt.getMonth() + 1).padStart(2, '0')
+          const dd = String(dt.getDate()).padStart(2, '0')
+          const hh = String(dt.getHours()).padStart(2, '0')
+          const mi = String(dt.getMinutes()).padStart(2, '0')
+          setDate(`${yyyy}-${mm}-${dd}`)
+          setTime(`${hh}:${mi}`)
+        } else {
+          setDate('')
+          setTime('')
+        }
+      } else {
+        setDate('')
+        setTime('')
+      }
       setDuracionMinutos(prefillCita.duracionEstimadaMinutos ?? DURACION_DEFAULT)
       setDescripcionGeneral(prefillCita.descripcionGeneral ?? '')
       setNotasPrevias(prefillCita.notasPrevias ?? '')
@@ -178,7 +212,10 @@ export function ReservationModal({
       // the <select> would show an option that the catalog doesn't
       // expose and the native dropdown would jump to the first visible
       // option (bug the admin saw with CrioRes from Sur when the
-      // active branch was Norte).
+      // active branch was Norte). The ``maquinariaPlanificada`` payload
+      // may arrive as either ``{maquinariaId}`` (camelCase, after the
+      // backend reshapes it) or ``{maquinaria_id}`` (snake_case from
+      // the raw ORM values()), so read whichever is present.
       const visibleMaquinariaIds = new Set(maquinariaOptions.map((opt) => opt.id))
       const visibleEspecialistaIds = new Set(staffOptions.map((s) => s.id))
       setEspecialistas(
@@ -188,10 +225,21 @@ export function ReservationModal({
       )
       setMaquinariaRows(
         (prefillCita.maquinariaPlanificada ?? [])
-          .filter((item) => visibleMaquinariaIds.has(item.maquinariaId))
+          .map((item) => ({
+            maquinariaId:
+              (item as { maquinariaId?: number }).maquinariaId ??
+              (item as { maquinaria_id?: number }).maquinaria_id ??
+              null,
+            cantidad: item.cantidad ?? 1,
+          }))
+          .filter(
+            (item) =>
+              item.maquinariaId !== null &&
+              visibleMaquinariaIds.has(item.maquinariaId),
+          )
           .map((item) => ({
             rowId: crypto.randomUUID(),
-            maquinariaId: item.maquinariaId,
+            maquinariaId: item.maquinariaId as number,
             cantidad: Math.max(1, item.cantidad),
           })),
       )

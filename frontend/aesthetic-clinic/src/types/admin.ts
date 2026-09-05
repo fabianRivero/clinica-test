@@ -648,6 +648,77 @@ export type UpdateAdminOperationDetailsPayload = {
   sessionsTotal: number
 }
 
+/**
+ * Precondition report shared by ``Operacion.puede_cerrar`` (server)
+ * and the client-side helper that powers the disabled state +
+ * confirmation modal. Mirrors the backend JSON shape exactly:
+ *
+ *   {
+ *     ok: false,
+ *     sesiones: { ok, expected, confirmed, reserved, pending, missing },
+ *     cuotas:  { ok, pending: [{ nroCuota, estado }, ...] },
+ *     monto:   { ok, precioTotal, sumaMontoProgramado, diff }
+ *   }
+ *
+ * Monetary fields are 2dp DECIMAL STRINGS (not numbers) to preserve
+ * precision in the JSON round-trip and in JavaScript arithmetic.
+ */
+export type OperationClosurePreconditionSectionSesiones = {
+  ok: boolean
+  expected: number
+  confirmed: number
+  reserved: number
+  pending: number
+  missing: number
+}
+
+export type OperationClosurePreconditionSectionCuotas = {
+  ok: boolean
+  pending: Array<{ nroCuota: number; estado: string }>
+}
+
+export type OperationClosurePreconditionSectionMonto = {
+  ok: boolean
+  precioTotal: string
+  sumaMontoProgramado: string
+  diff: string
+}
+
+export type OperationClosurePreconditionsReport = {
+  ok: boolean
+  sesiones: OperationClosurePreconditionSectionSesiones
+  cuotas: OperationClosurePreconditionSectionCuotas
+  monto: OperationClosurePreconditionSectionMonto
+}
+
+/**
+ * Successful 200 response from ``POST /api/admin/operaciones/<id>/finalizar/``
+ * and ``POST /api/admin/operaciones/<id>/suspender/``. Shape mirrors
+ * ``admin_update_operation_details`` so the page can ``reload()``
+ * without a follow-up GET.
+ */
+export type OperationClosureResponse = {
+  detail: string
+  operation: OperationDetailData
+}
+
+/**
+ * 409 response. Two sub-shapes share the same envelope:
+ *
+ *   * Precondition failure:
+ *       { estado, preconditions: OperationClosurePreconditionsReport }
+ *   * Source-state rejection:
+ *       { detail: string, estado: string }
+ *
+ * The presence of ``preconditions`` is the discriminator. The page
+ * helper checks it first and falls back to ``detail`` otherwise.
+ */
+export type OperationClosurePreconditionFailure = {
+  detail?: string
+  estado?: string
+  preconditions?: OperationClosurePreconditionsReport
+}
+
 export type UpdateAdminOperationObservacionesResponse = {
   detail: string
   operation: OperationDetailData
