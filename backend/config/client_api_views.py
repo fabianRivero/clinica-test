@@ -408,6 +408,10 @@ def _payment_item(payment):
         "quotaLabel": f"Cuota {payment.cuota.nro_cuota}",
         "amount": currency(payment.monto_pagado),
         "submittedAt": datetime_label(payment.created_at),
+        # ISO timestamp exposed to the admin client-detail page so its
+        # date-range filter can compare against it without parsing the
+        # human-readable ``submittedAt`` label.
+        "createdAt": payment.created_at.isoformat(),
         "status": payment.get_estado_verificacion_display(),
         "statusTone": _payment_tone(payment),
         "dueDate": date_label(payment.cuota.fecha_vencimiento),

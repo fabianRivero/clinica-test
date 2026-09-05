@@ -99,9 +99,16 @@ class ClientPaymentSerializer(serializers.Serializer):
     operation = serializers.CharField()
     amount = serializers.CharField()
     submittedAt = serializers.CharField()
+    # ISO timestamp of the payment creation — used by the date-range
+    # filter on the client detail payments blocks. ``submittedAt`` is
+    # the human-readable label and is shown in the table; this is the
+    # only field the filter can compare against.
+    createdAt = serializers.CharField()
     bank = serializers.CharField()
     status = serializers.CharField()
+    statusTone = serializers.CharField()
     quota = serializers.CharField()
+    quotaLabel = serializers.CharField()
     dueDate = serializers.CharField()
     verifier = serializers.CharField()
     receiptUrl = serializers.CharField()

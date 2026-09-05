@@ -892,6 +892,17 @@ def _admin_client_detail(cliente, request=None):
         for cuota in quotas
         if cuota.estado != CuotaPlanPago.Estado.PAGADO
         and cuota.operacion.estado == Operacion.Estado.EN_PROCESO
+        # Exclude quotas that already have a payment waiting for admin
+        # review — those are surfaced in the dedicated "Pagos pendientes
+        # de verificación" block via the `payments` collection, not as
+        # unpaid quotas. Once the admin approves/rejects the payment,
+        # the quota reappears here (rejected → no pending payment) or
+        # flips to PAGADO (approved → not in this filter).
+        and not any(
+            pago.estado_verificacion
+            == PagoRealizado.EstadoVerificacion.PENDIENTE
+            for pago in cuota.pagos_realizados.all()
+        )
     ]
     completed_sessions = [
         cita
