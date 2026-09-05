@@ -23,6 +23,11 @@ class PagoRealizadoCreateSerializer(serializers.Serializer):
     field requirements differ from the read shape (camelCase input keys,
     optional breakdown, optional receipt) and decoupling keeps the
     existing read serializer untouched.
+
+    NOTE: This serializer is the ADMIN write path. The client write path
+    uses :class:`PagoRealizadoClientCreateSerializer` which restricts the
+    method to ``VIRTUAL``. Do NOT route ``client_upload_payment_receipt``
+    through this class.
     """
     paymentMethod = serializers.ChoiceField(choices=PagoRealizado.MetodoPago.choices)
     monto_pagado = serializers.DecimalField(
@@ -63,6 +68,50 @@ class PagoRealizadoCreateSerializer(serializers.Serializer):
                 raise serializers.ValidationError(
                     "montoFisico + montoVirtual debe ser igual a monto_pagado."
                 )
+        return attrs
+
+
+class PagoRealizadoClientCreateSerializer(serializers.Serializer):
+    """Client-portal write serializer. Forces ``VIRTUAL`` end-to-end.
+
+    Business rule: a client may ONLY submit a virtual payment (QR
+    transfer + receipt) from the portal. ``FISICO`` and ``MIXTO``
+    payments are desk-only and must be captured by the admin via
+    ``PagosViewSet.register_payment``. The restriction lives at the
+    client write boundary — the model field and the admin serializer
+    still accept all three methods.
+
+    Inbound ``paymentMethod`` is **ignored**: any value (including the
+    legacy ``FISICO`` / ``MIXTO``) is coerced to ``VIRTUAL``. The same
+    goes for ``montoFisico`` / ``montoVirtual`` (always overwritten to
+    ``0`` / ``monto_pagado``). This guarantees that a future
+    client-side bug, a stale tab, or a hand-crafted curl cannot smuggle
+    a cash or split payment through the client endpoint.
+    """
+    paymentMethod = serializers.CharField(required=False, allow_blank=True)
+    monto_pagado = serializers.DecimalField(
+        max_digits=10, decimal_places=2, min_value=Decimal("0.01")
+    )
+    montoFisico = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True, min_value=0
+    )
+    montoVirtual = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True, min_value=0
+    )
+    receiptFile = serializers.FileField(required=False, allow_null=True)
+    details = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        total = attrs["monto_pagado"]
+        receipt = attrs.get("receiptFile")
+        if not receipt:
+            raise serializers.ValidationError(
+                {"receiptFile": "Debes adjuntar el comprobante."}
+            )
+        # Always VIRTUAL — coerce regardless of any inbound value.
+        attrs["paymentMethod"] = PagoRealizado.MetodoPago.VIRTUAL
+        attrs["montoVirtual"] = total
+        attrs["montoFisico"] = Decimal("0")
         return attrs
 
 

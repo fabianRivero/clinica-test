@@ -1,14 +1,18 @@
 """Tests for the refactored ``client_upload_payment_receipt`` endpoint.
 
-The endpoint at ``POST /api/client/pagos/cuotas/<id>/comprobante/`` now
-delegates shape validation to ``PagoRealizadoCreateSerializer`` and
-supports the new ``paymentMethod`` field. Tests below cover:
+The endpoint at ``POST /api/client/pagos/cuotas/<id>/comprobante/`` is
+the client's only payment-submission path and is restricted to
+``VIRTUAL`` (transfer + receipt). ``FISICO`` and ``MIXTO`` payments are
+desk-only and must be captured by the admin via
+``PagosViewSet.register_payment``. The restriction is enforced by
+``PagoRealizadoClientCreateSerializer``, which coerces any inbound
+``paymentMethod`` to ``VIRTUAL`` and requires the receipt file.
+
+Tests below cover:
 
 * VIRTUAL happy path: row created with receipt, breakdown, notification.
-* FISICO without receipt: row created, no error (per spec, receipt
-  optional for non-virtual flows).
-* MIXTO happy path: row created with both breakdown amounts.
-* MIXTO mismatch: ``montoFisico + montoVirtual != monto_pagado`` → 400.
+* VIRTUAL-without-receipt: 400, no row, legacy detail message.
+* Smuggled ``FISICO`` / ``MIXTO`` methods: coerced to ``VIRTUAL`` (regression).
 * Resubmission: a REJECTED row exists, the client re-uploads → row is
   reused (same pk), no new notification fires.
 * Over-payment: existing APROBADO sum + new > ``monto_programado`` → 400.
@@ -118,7 +122,7 @@ class _ClientPaymentGraph:
 
 
 class ClientUploadPaymentReceiptHappyPathTests(TestCase):
-    """Fresh-row creation paths (VIRTUAL, FISICO, MIXTO)."""
+    """Fresh-row creation path: VIRTUAL only (client portal restriction)."""
 
     def setUp(self):
         self.g = _ClientPaymentGraph.build()
@@ -162,34 +166,6 @@ class ClientUploadPaymentReceiptHappyPathTests(TestCase):
         self.assertEqual(kwargs["source_event"], "payment.pending_submission")
         self.assertEqual(kwargs["created_by_type"], "client")
 
-    def test_fisico_without_receipt_succeeds(self):
-        response = self.client.post(
-            _url(self.g["cuota"].pk),
-            {"paymentMethod": "FISICO", "amount": "120.00"},
-        )
-        self.assertEqual(response.status_code, 201, response.content)
-        payment = PagoRealizado.objects.get()
-        self.assertEqual(payment.metodo_pago, PagoRealizado.MetodoPago.FISICO)
-        self.assertEqual(payment.monto_fisico, Decimal("120.00"))
-        self.assertEqual(payment.monto_virtual, Decimal("0"))
-
-    def test_mixto_with_valid_breakdown_creates_row(self):
-        response = self.client.post(
-            _url(self.g["cuota"].pk),
-            {
-                "paymentMethod": "MIXTO",
-                "amount": "120.00",
-                "montoFisico": "40.00",
-                "montoVirtual": "80.00",
-            },
-        )
-        self.assertEqual(response.status_code, 201, response.content)
-        payment = PagoRealizado.objects.get()
-        self.assertEqual(payment.metodo_pago, PagoRealizado.MetodoPago.MIXTO)
-        self.assertEqual(payment.monto_fisico, Decimal("40.00"))
-        self.assertEqual(payment.monto_virtual, Decimal("80.00"))
-        self.assertEqual(payment.monto_pagado, Decimal("120.00"))
-
 
 class ClientUploadPaymentReceiptValidationTests(TestCase):
     """Error paths surface as 400 with the legacy detail messages."""
@@ -198,20 +174,6 @@ class ClientUploadPaymentReceiptValidationTests(TestCase):
         self.g = _ClientPaymentGraph.build()
         self.client = Client()
         self.client.force_login(self.g["cliente_user"])
-
-    def test_mixto_with_mismatched_breakdown_returns_400(self):
-        before = PagoRealizado.objects.count()
-        response = self.client.post(
-            _url(self.g["cuota"].pk),
-            {
-                "paymentMethod": "MIXTO",
-                "amount": "100.00",
-                "montoFisico": "40.00",
-                "montoVirtual": "30.00",  # 40 + 30 != 100
-            },
-        )
-        self.assertEqual(response.status_code, 400, response.content)
-        self.assertEqual(PagoRealizado.objects.count(), before)
 
     def test_virtual_without_receipt_returns_400(self):
         """The serializer maps VIRTUAL-without-receipt to the legacy
@@ -227,6 +189,57 @@ class ClientUploadPaymentReceiptValidationTests(TestCase):
         self.assertIn("detail", body)
         self.assertIn("comprobante", body["detail"].lower())
         self.assertEqual(PagoRealizado.objects.count(), before)
+
+
+class ClientUploadPaymentReceiptChannelRestrictionTests(TestCase):
+    """The client portal is VIRTUAL-only — FISICO/MIXTO are desk-only.
+
+    The dedicated ``PagoRealizadoClientCreateSerializer`` coerces any
+    inbound ``paymentMethod`` to ``VIRTUAL`` and overwrites the breakdown
+    so a stale tab or hand-crafted curl cannot smuggle a cash or split
+    payment through the client endpoint.
+    """
+
+    def setUp(self):
+        self.g = _ClientPaymentGraph.build()
+        self.client = Client()
+        self.client.force_login(self.g["cliente_user"])
+
+    def test_fisico_method_is_coerced_to_virtual(self):
+        response = self.client.post(
+            _url(self.g["cuota"].pk),
+            {
+                "paymentMethod": "FISICO",
+                "amount": "120.00",
+                "receiptFile": _receipt(),
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        payment = PagoRealizado.objects.get()
+        self.assertEqual(payment.metodo_pago, PagoRealizado.MetodoPago.VIRTUAL)
+        self.assertEqual(payment.monto_virtual, Decimal("120.00"))
+        self.assertEqual(payment.monto_fisico, Decimal("0"))
+
+    def test_mixto_method_is_coerced_to_virtual(self):
+        # The inbound breakdown is intentionally inconsistent (40 + 30
+        # != 100) to prove the client serializer does NOT honor it. The
+        # row lands VIRTUAL with monto_virtual == monto_pagado.
+        response = self.client.post(
+            _url(self.g["cuota"].pk),
+            {
+                "paymentMethod": "MIXTO",
+                "amount": "100.00",
+                "montoFisico": "40.00",
+                "montoVirtual": "30.00",
+                "receiptFile": _receipt(),
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        payment = PagoRealizado.objects.get()
+        self.assertEqual(payment.metodo_pago, PagoRealizado.MetodoPago.VIRTUAL)
+        self.assertEqual(payment.monto_pagado, Decimal("100.00"))
+        self.assertEqual(payment.monto_virtual, Decimal("100.00"))
+        self.assertEqual(payment.monto_fisico, Decimal("0"))
 
 
 class ClientUploadPaymentReceiptResubmissionTests(TestCase):
@@ -301,7 +314,11 @@ class ClientUploadPaymentReceiptOverPaymentTests(TestCase):
         before = PagoRealizado.objects.count()
         response = self.client.post(
             _url(self.g["cuota"].pk),
-            {"paymentMethod": "FISICO", "amount": "50.00"},
+            {
+                "paymentMethod": "VIRTUAL",
+                "amount": "50.00",
+                "receiptFile": _receipt(),
+            },
         )
         self.assertEqual(response.status_code, 400, response.content)
         self.assertEqual(PagoRealizado.objects.count(), before)

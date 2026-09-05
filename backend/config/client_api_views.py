@@ -13,7 +13,11 @@ from django.conf import settings
 
 from billing.models import ConfiguracionPagoQR, CuotaPlanPago, PagoCita, PagoRealizado
 from billing.validators import assert_not_over_payment
-from config.api.serializers.payments import PagoCitaSerializer, PagoRealizadoCreateSerializer
+from config.api.serializers.payments import (
+    PagoCitaSerializer,
+    PagoRealizadoClientCreateSerializer,
+    PagoRealizadoCreateSerializer,
+)
 from clinical.models import AnalisisEstetico
 from notifications.models import Notification
 from notifications.services import create_notification, admins_for_specialist_branch
@@ -877,7 +881,10 @@ def client_upload_payment_receipt(request, quota_id):
     # ``monto_pagado``. Translate here so both clients share one shape.
     if "amount" in payload and "monto_pagado" not in payload:
         payload["monto_pagado"] = payload["amount"]
-    serializer = PagoRealizadoCreateSerializer(data=payload)
+    # Client portal is VIRTUAL-only: the dedicated serializer coerces
+    # ``paymentMethod`` to ``VIRTUAL`` regardless of any inbound value
+    # and requires the receipt. ``FISICO`` / ``MIXTO`` are desk-only.
+    serializer = PagoRealizadoClientCreateSerializer(data=payload)
     if not serializer.is_valid():
         # Translate the VIRTUAL-without-receipt case into the original
         # legacy message so the existing client tests keep working.

@@ -35,9 +35,6 @@ export function ClientPaymentsPage() {
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentDetails, setPaymentDetails] = useState('')
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
-  const [paymentMethod, setPaymentMethod] = useState<'VIRTUAL' | 'FISICO' | 'MIXTO'>('VIRTUAL')
-  const [montoFisico, setMontoFisico] = useState('')
-  const [montoVirtual, setMontoVirtual] = useState('')
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('')
@@ -100,9 +97,6 @@ export function ClientPaymentsPage() {
     setPaymentAmount(amountValue)
     setPaymentDetails('')
     setReceiptFile(null)
-    setPaymentMethod('VIRTUAL')
-    setMontoFisico('')
-    setMontoVirtual('')
     setSubmitError(null)
   }
 
@@ -111,14 +105,6 @@ export function ClientPaymentsPage() {
     setPaymentAmount('')
     setPaymentDetails('')
     setReceiptFile(null)
-    setPaymentMethod('VIRTUAL')
-    setMontoFisico('')
-    setMontoVirtual('')
-    setSubmitError(null)
-  }
-
-  const handlePaymentMethodChange = (value: 'VIRTUAL' | 'FISICO' | 'MIXTO') => {
-    setPaymentMethod(value)
     setSubmitError(null)
   }
 
@@ -130,7 +116,8 @@ export function ClientPaymentsPage() {
   const handleUploadReceipt = async (event: FormEvent) => {
     event.preventDefault()
     if (!selectedQuotaId) return
-    if (paymentMethod === 'VIRTUAL' && !receiptFile) {
+    // Client portal is VIRTUAL-only — receipt is mandatory.
+    if (!receiptFile) {
       setSubmitError('Debes adjuntar el comprobante de pago antes de enviarlo.')
       return
     }
@@ -141,10 +128,7 @@ export function ClientPaymentsPage() {
       const response = await uploadClientPaymentReceipt(selectedQuotaId, {
         amount: paymentAmount,
         details: paymentDetails,
-        paymentMethod,
-        montoFisico: montoFisico || undefined,
-        montoVirtual: montoVirtual || undefined,
-        ...(receiptFile ? { receiptFile } : {}),
+        receiptFile,
       })
       setPageData((current) => {
         if (!current) return current
@@ -326,82 +310,34 @@ export function ClientPaymentsPage() {
                           </label>
                           <label className="field">
                             <span>Metodo de pago</span>
-                            <select
+                            <input
                               className="input"
-                              value={paymentMethod}
-                              onChange={(event) =>
-                                handlePaymentMethodChange(
-                                  event.target.value as 'VIRTUAL' | 'FISICO' | 'MIXTO',
-                                )
-                              }
-                            >
-                              <option value="VIRTUAL">Virtual (QR + comprobante)</option>
-                              <option value="FISICO">Fisico (caja del consultorio)</option>
-                              <option value="MIXTO">Mixto (parte QR + parte caja)</option>
-                            </select>
+                              type="text"
+                              value="Virtual (QR + comprobante)"
+                              readOnly
+                              aria-readonly="true"
+                            />
+                            <small className="field__hint">
+                              Los pagos en caja (efectivo o mixto) se registran en
+                              consultorio; desde el portal solo puedes enviar
+                              comprobantes de transferencias QR.
+                            </small>
                           </label>
-                          {paymentMethod !== 'MIXTO' ? (
-                            <label className="field">
-                              <span>Comprobante</span>
-                              <input
-                                accept=".png,.jpg,.jpeg,.webp,.pdf,image/png,image/jpeg,image/webp,application/pdf"
-                                className="input input--file"
-                                type="file"
-                                onChange={handleReceiptFileChange}
-                                required={paymentMethod === 'VIRTUAL'}
-                              />
-                              <small className="field__hint">
-                                {receiptFile
-                                  ? `Archivo seleccionado: ${receiptFile.name}`
-                                  : paymentMethod === 'VIRTUAL'
-                                    ? 'Puedes adjuntar imagen o PDF del comprobante.'
-                                    : 'No requiere comprobante para pagos en caja.'}
-                              </small>
-                            </label>
-                          ) : null}
-                          {paymentMethod === 'MIXTO' ? (
-                            <>
-                              <label className="field">
-                                <span>Bs fisico</span>
-                                <input
-                                  className="input"
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={montoFisico}
-                                  onChange={(event) => setMontoFisico(event.target.value)}
-                                />
-                              </label>
-                              <label className="field">
-                                <span>Bs virtual</span>
-                                <input
-                                  className="input"
-                                  type="number"
-                                  min="0"
-                                  step="0.01"
-                                  value={montoVirtual}
-                                  onChange={(event) => setMontoVirtual(event.target.value)}
-                                />
-                              </label>
-                              <small className="field__hint field--full">
-                                La suma debe ser igual al monto a pagar.
-                              </small>
-                              <label className="field field--full">
-                                <span>Comprobante (opcional)</span>
-                                <input
-                                  accept=".png,.jpg,.jpeg,.webp,.pdf,image/png,image/jpeg,image/webp,application/pdf"
-                                  className="input input--file"
-                                  type="file"
-                                  onChange={handleReceiptFileChange}
-                                />
-                                <small className="field__hint">
-                                  {receiptFile
-                                    ? `Archivo seleccionado: ${receiptFile.name}`
-                                    : 'Puedes adjuntar un solo comprobante para el componente virtual.'}
-                                </small>
-                              </label>
-                            </>
-                          ) : null}
+                          <label className="field">
+                            <span>Comprobante</span>
+                            <input
+                              accept=".png,.jpg,.jpeg,.webp,.pdf,image/png,image/jpeg,image/webp,application/pdf"
+                              className="input input--file"
+                              type="file"
+                              onChange={handleReceiptFileChange}
+                              required
+                            />
+                            <small className="field__hint">
+                              {receiptFile
+                                ? `Archivo seleccionado: ${receiptFile.name}`
+                                : 'Puedes adjuntar imagen o PDF del comprobante.'}
+                            </small>
+                          </label>
                           <label className="field field--full">
                             <span>Detalle adicional</span>
                             <textarea

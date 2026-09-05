@@ -88,3 +88,41 @@ The factory-call patch from Phase 4.3 was moved into Commit 2 of PR 1 because th
 - [ ] 7.1 `python manage.py test` (all green).
 - [ ] 7.2 `npm run lint && npx tsc --noEmit && npm run build` (all green).
 - [ ] 7.3 `python manage.py migrate billing 0008 --plan` (reverse callable).
+
+## Phase 8: Restrict client payment creation to VIRTUAL only
+
+Delta over Phases 4 and 5. Business rule: the client portal may ONLY
+submit `VIRTUAL` payments (transfer + receipt). Cash and split payments
+remain a desk-only flow, captured by the admin via
+`PagosViewSet.register_payment`. The model field and the admin
+serializer are intentionally untouched — the restriction lives at the
+**client write boundary**, not in `PagoRealizado.clean()`.
+
+- [ ] 8.1 Add `PagoRealizadoClientCreateSerializer` in
+      `config/api/serializers/payments.py` — read-only `paymentMethod`
+      forced to `VIRTUAL` regardless of the inbound value, optional
+      `montoFisico` / `montoVirtual` (ignored), receipt required,
+      `montoVirtual = monto_pagado` and `montoFisico = 0` set in
+      `validate()`.
+- [ ] 8.2 Switch `client_upload_payment_receipt` in
+      `config/client_api_views.py` to use the new serializer; the
+      view's remaining contract (over-payment guard, rejected-row
+      reuse, notification fan-out) is preserved.
+- [ ] 8.3 Update `test_client_upload_payment_receipt.py`: drop the
+      `FISICO` / `MIXTO` happy-path cases, drop the `MIXTO` mismatch
+      case, and add a regression test that the new serializer
+      ignores an inbound `paymentMethod=FISICO` and still creates a
+      `VIRTUAL` row. Keep the VIRTUAL happy path, VIRTUAL-without-
+      receipt 400, rejected-row reuse, and over-payment cases.
+- [ ] 8.4 Frontend: in `src/pages/client/ClientPaymentsPage.tsx`,
+      remove the `<select>` method picker and the `MIXTO` breakdown
+      block; the form collapses to `monto (read-only)` + `comprobante
+      (required)` + `detalle`. The local `paymentMethod` state and
+      its handler are deleted.
+- [ ] 8.5 Frontend: in `src/types/client.ts`, narrow
+      `UploadClientPaymentReceiptPayload` so `paymentMethod`,
+      `montoFisico`, and `montoVirtual` are no longer part of the
+      public contract. Update the call site in
+      `ClientPaymentsPage.tsx` accordingly.
+
+**Verify**: `python manage.py test billing.tests.test_client_upload_payment_receipt billing.tests.test_pago_realizado_create_serializer` and `cd frontend/aesthetic-clinic && npm run lint && npx tsc --noEmit && npm run build`.
