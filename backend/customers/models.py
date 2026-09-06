@@ -138,6 +138,17 @@ class Cliente(TimeStampedModel):
         ACTIVO = "ACTIVO", "Activo"
         INACTIVO = "INACTIVO", "Inactivo"
 
+    class Origen(models.TextChoices):
+        """Tag every Cliente with how they entered the system.
+
+        ``NUEVO`` covers the typical prospect→cliente funnel; a pre-system
+        returning patient is onboarded as ``RECURRENTE_PRE_SISTEMA`` so the
+        cobrable-appointment path can reuse the existing ``CitaMedica``
+        model without introducing a separate ``CitaProspecto`` row.
+        """
+        NUEVO = "NUEVO", "Nuevo"
+        RECURRENTE_PRE_SISTEMA = "RECURRENTE_PRE_SISTEMA", "Recurrente pre-sistema"
+
     usuario = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -175,6 +186,12 @@ class Cliente(TimeStampedModel):
         default=Estado.INACTIVO,
     )
     bloqueo_reactivacion_automatica = models.BooleanField(default=False)
+
+    origen = models.CharField(
+        max_length=32,
+        choices=Origen.choices,
+        default=Origen.NUEVO,
+    )
 
     fecha_nacimiento = models.DateField()
     nro_hijos = models.PositiveIntegerField(default=0)

@@ -116,6 +116,7 @@ type UseConversionWizardReturn = {
   setFirstPaymentVirtual: (value: string) => void
   setQrModalOpen: (value: boolean) => void
   handleUserChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void
+  handleOrigenChange: (value: 'NUEVO' | 'RECURRENTE_PRE_SISTEMA') => void
   handleNameBlur: () => void
   handleOperationChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void
   updateDueDate: (index: number, value: string) => void
@@ -384,6 +385,20 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
   }
 
   /**
+   * Updates the direct-mode origin radio value. Lifted into
+   * ``userForm.origen`` so the wizard shares a single draft payload
+   * across all three modes (per the design's "Wizard data shape"
+   * decision). Clears any stale `origen` field error so the radio
+   * re-enables the "Siguiente" control as soon as the admin makes a
+   * selection.
+   */
+  const handleOrigenChange = (value: 'NUEVO' | 'RECURRENTE_PRE_SISTEMA') => {
+    setUserForm((current) => (current ? { ...current, origen: value } : current))
+    setFieldErrors((current) => ({ ...current, origen: '' }))
+    setSubmitError(null)
+  }
+
+  /**
    * Fires when `primerNombre` or `apellidoPaterno` loses focus. Seeding the
    * username on blur — not on every keystroke — avoids the slug getting
    * frozen mid-typing (e.g. "Juan" + "G" producing "juang" before the
@@ -564,6 +579,17 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
     if (!userForm) return
 
     resetFeedback()
+    // Direct-mode origin radio is required per the
+    // ``admin-prospect-conversion › Step 1 ReadOnly Behavior Per Mode``
+    // spec. Block the save with a `origen` field error so the wizard
+    // stays on step 1 instead of bouncing off the backend's unknown-
+    // value 400 (and so the highlighted control matches the spec's
+    // "Direct step 1 blocks advancing without an origin choice"
+    // scenario). Prospect and reactivation never carry ``origen``.
+    if (isDirect && !userForm.origen) {
+      setFieldErrors({ origen: 'Selecciona si el cliente ya fue paciente de la clínica.' })
+      return
+    }
     if ((!userForm.hasPassword && !password) || (password && password !== confirmPassword)) {
       setFieldErrors({
         password:
@@ -967,6 +993,7 @@ resetFeedback()
     today,
     hasPassword,
     handleUserChange,
+    handleOrigenChange,
     handleNameBlur,
     handleOperationChange,
     updateDueDate,

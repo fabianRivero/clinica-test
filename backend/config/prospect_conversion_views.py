@@ -212,6 +212,13 @@ def _build_initial_client_user_data(cliente):
         "ocupacion": cliente.ocupacion,
         "observacionesCliente": cliente.observaciones,
         "hasPassword": True,
+        # ``origen`` — read-only surfaced value per the ``cliente-origen``
+        # spec requirement that the perfil modal see the entry-channel
+        # tag. The modal cannot write it (write-once contract); this is
+        # the only place that re-exposes it on the envelope shape shared
+        # by the reactivation draft, the profile-edit response, and the
+        # admin client-detail modal hydration.
+        "origen": cliente.origen,
     }
 
 
@@ -1790,6 +1797,23 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
     biometric_data = draft.datos_biometria or {}
     analisis_data = medical_data.get("analisisEstetico") or {}
 
+    # Direct-mode ``origen`` validation — the field is collected on
+    # step 1's required radio and travels through ``datos_usuario``.
+    # Validate up front so a stale draft carrying an unknown value
+    # fails fast with a clear 400 instead of crashing the model
+    # ``full_clean`` later in the flow. The default ``NUEVO`` covers
+    # drafts that omit the key entirely (mirrors the spec's
+    # "Omitting origen in the payload defaults it to NUEVO"
+    # scenario). Prospect and reactivation branches never carry
+    # ``origen`` here, so the check is effectively direct-only.
+    raw_origen = user_data.get("origen")
+    if draft.prospecto is None and draft.cliente is None:
+        if raw_origen is not None and raw_origen not in dict(Cliente.Origen.choices):
+            return json_response(
+                {"detail": "El origen del cliente no es valido."},
+                status=400,
+            )
+
     service_config = (
         ServicioConfig.objects.select_related("tipo_servicio", "proc_estetico")
         .filter(pk=operation_data.get("serviceConfigId"), activo=True)
@@ -1914,6 +1938,13 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             telefono=user_data.get("telefono", ""),
             ocupacion=user_data.get("ocupacion", ""),
             observaciones=user_data.get("observacionesCliente", ""),
+            # ``origen`` is collected by the direct-mode wizard's step 1
+            # radio and threaded through ``datos_usuario``. Invalid
+            # values are caught by ``Cliente.full_clean`` and surface as
+            # a 400 — matches the spec's "Unknown origin value rejected
+            # on creation" scenario. When the draft omits the key the
+            # model default of ``NUEVO`` applies.
+            origen=user_data.get("origen") or Cliente.Origen.NUEVO,
         )
 
     # If the prospect enrollment endpoint already captured the fingerprint

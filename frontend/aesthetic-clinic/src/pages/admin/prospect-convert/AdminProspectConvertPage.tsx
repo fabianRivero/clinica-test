@@ -71,6 +71,7 @@ export function AdminProspectConvertPage() {
     today,
     hasPassword,
     handleUserChange,
+    handleOrigenChange,
     handleNameBlur,
     handleOperationChange,
     updateDueDate,
@@ -238,6 +239,7 @@ export function AdminProspectConvertPage() {
             isSaving={isSaving}
             isCancelling={isCancelling}
             isReactivation={isReactivation}
+            isDirect={isDirect}
             hasPassword={hasPassword}
             onChangePassword={(value) => wizard.setPassword(value)}
             onChangeConfirmPassword={(value) => wizard.setConfirmPassword(value)}
@@ -246,6 +248,7 @@ export function AdminProspectConvertPage() {
             onSubmit={handleSaveStep1}
             onCancel={handleCancelDraft}
             onUserChange={handleUserChange}
+            onOrigenChange={handleOrigenChange}
             onNameBlur={handleNameBlur}
           />
         </SectionCard>

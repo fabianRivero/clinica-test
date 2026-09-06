@@ -14,6 +14,12 @@ type Props = {
   isSaving: boolean
   isCancelling: boolean
   isReactivation: boolean
+  /**
+   * Threaded through `AdminProspectConvertPage` so the required
+   * origin radio at the top of step 1 only renders in direct mode.
+   * Prospect and reactivation step 1 stay byte-for-byte unchanged.
+   */
+  isDirect: boolean
   hasPassword: boolean
   onChangePassword: (value: string) => void
   onChangeConfirmPassword: (value: string) => void
@@ -22,6 +28,7 @@ type Props = {
   onSubmit: (event: FormEvent) => void
   onCancel: () => void
   onUserChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void
+  onOrigenChange: (value: 'NUEVO' | 'RECURRENTE_PRE_SISTEMA') => void
   onNameBlur: () => void
 }
 
@@ -35,6 +42,7 @@ export function ConversionStepUser({
   isSaving,
   isCancelling,
   isReactivation,
+  isDirect,
   hasPassword,
   onChangePassword,
   onChangeConfirmPassword,
@@ -43,10 +51,52 @@ export function ConversionStepUser({
   onSubmit,
   onCancel,
   onUserChange,
+  onOrigenChange,
   onNameBlur,
 }: Props) {
   return (
     <form className="form-grid" onSubmit={onSubmit}>
+      {isDirect && (
+        <fieldset
+          className="field field--full origen-fieldset"
+          data-testid="step-user-origen-fieldset"
+        >
+          <legend>
+            <span>Ya fue cliente de la clínica? <abbr title="obligatorio" className="required-mark">*</abbr></span>
+          </legend>
+          <div className="origen-fieldset__options">
+            <label className="origen-option">
+              <input
+                type="radio"
+                name="origen"
+                value="RECURRENTE_PRE_SISTEMA"
+                checked={userForm.origen === 'RECURRENTE_PRE_SISTEMA'}
+                onChange={() => onOrigenChange('RECURRENTE_PRE_SISTEMA')}
+                disabled={isSaving || isCancelling}
+                data-testid="step-user-origen-recurrente"
+              />
+              <span>Sí, ya fue paciente</span>
+            </label>
+            <label className="origen-option">
+              <input
+                type="radio"
+                name="origen"
+                value="NUEVO"
+                checked={userForm.origen === 'NUEVO'}
+                onChange={() => onOrigenChange('NUEVO')}
+                disabled={isSaving || isCancelling}
+                data-testid="step-user-origen-nuevo"
+              />
+              <span>No, es nuevo</span>
+            </label>
+          </div>
+          {fieldErrors.origen ? (
+            <small className="field__error" data-testid="step-user-origen-error">
+              {fieldErrors.origen}
+            </small>
+          ) : null}
+        </fieldset>
+      )}
       {isReactivation && (
         <p className="_col-full field__hint">
           Datos del perfil del cliente. Para editarlos, use el botón &quot;Ver perfil del cliente&quot; en la página del cliente.

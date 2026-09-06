@@ -852,6 +852,10 @@ def _client_item(cliente):
         "lastAnalysis": date_label(analisis.fecha_analisis) if analisis else "Sin analisis",
         "scheduledAppointments": scheduled_appointments[:1],
         "hasBiometricEnrollment": bool(huella and huella.activo),
+        # ``origen`` (NUEVO | RECURRENTE_PRE_SISTEMA) — surfaced per the
+        # ``cliente-origen`` spec requirement that every Cliente-shaped
+        # payload expose this field for reporting visibility.
+        "origen": cliente.origen,
     }
 
 
@@ -3142,19 +3146,14 @@ def admin_clientes_global_search(request):
         citas_medicas_libres__fecha_hora__gte=timezone.now(),
     ).distinct().order_by("usuario__username")[:10]
 
+    # Use the canonical ``ClientSearchSerializer`` so the ``origen`` tag
+    # is exposed consistently with the rest of the admin client search
+    # surfaces (the spec requires every Cliente-shaped payload to carry
+    # the entry-channel value).
+    from config.api.serializers.clientes import ClientSearchSerializer
+
     return json_response({
-        "clients": [
-            {
-                "id": c.pk,
-                "name": c.usuario.nombre_completo,
-                "ci": c.ci,
-                "phone": c.telefono,
-                "branchId": c.usuario.sucursal_id,
-                "branchName": c.usuario.sucursal.nombre if c.usuario.sucursal else "Sin sucursal",
-                "cityName": c.usuario.sucursal.ciudad if c.usuario.sucursal else "Sin ciudad"
-            }
-            for c in clients_qs
-        ]
+        "clients": ClientSearchSerializer(clients_qs, many=True).data,
     })
 
 

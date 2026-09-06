@@ -5,8 +5,8 @@ from customers.models import Cliente, HuellaBiometricaCliente, Prospecto
 
 @admin.register(Cliente)
 class ClienteAdmin(admin.ModelAdmin):
-    list_display = ("id", "usuario", "estado_cliente", "telefono")
-    list_filter = ("estado_cliente",)
+    list_display = ("id", "usuario", "estado_cliente", "origen", "telefono")
+    list_filter = ("estado_cliente", "origen")
     search_fields = (
         "usuario__username",
         "usuario__primer_nombre",

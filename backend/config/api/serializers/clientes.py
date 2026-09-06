@@ -37,6 +37,11 @@ class ClientSearchSerializer(serializers.Serializer):
     branchId = serializers.IntegerField(source="usuario.sucursal_id")
     branchName = serializers.SerializerMethodField()
     cityName = serializers.SerializerMethodField()
+    # ``origen`` is the entry-channel tag (NUEVO vs RECURRENTE_PRE_SISTEMA)
+    # the spec exposes through every Cliente serializer. Default to the
+    # model literal so rows that somehow bypass the model default still
+    # emit a parseable value to the client.
+    origen = serializers.CharField(default=Cliente.Origen.NUEVO)
 
     def get_name(self, obj):
         return full_name(obj.usuario)

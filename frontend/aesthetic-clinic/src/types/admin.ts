@@ -399,6 +399,11 @@ export type ClientSnapshot = {
   hasBiometricEnrollment?: boolean
   email?: string
   clienteCodigo?: string
+  // Entry-channel tag (NUEVO | RECURRENTE_PRE_SISTEMA) — surfaced per the
+  // ``cliente-origen`` spec requirement that every Cliente-shaped payload
+  // expose this field. The frontend renders it as a badge on the
+  // ``/cms/clientes`` listing.
+  origen?: 'NUEVO' | 'RECURRENTE_PRE_SISTEMA'
 }
 
 export type ClientScheduledAppointment = {

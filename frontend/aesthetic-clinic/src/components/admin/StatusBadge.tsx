@@ -1,3 +1,5 @@
+import type { HTMLAttributes } from 'react'
+
 type StatusBadgeProps = {
   tone:
     | 'primary'
@@ -9,8 +11,12 @@ type StatusBadgeProps = {
     | 'observed'
     | 'approved'
   children: string
-}
+} & Omit<HTMLAttributes<HTMLSpanElement>, 'children'>
 
-export function StatusBadge({ tone, children }: StatusBadgeProps) {
-  return <span className={`status-badge status-badge--${tone}`}>{children}</span>
+export function StatusBadge({ tone, children, ...rest }: StatusBadgeProps) {
+  return (
+    <span className={`status-badge status-badge--${tone}`} {...rest}>
+      {children}
+    </span>
+  )
 }

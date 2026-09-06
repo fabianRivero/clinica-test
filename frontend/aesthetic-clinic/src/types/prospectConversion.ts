@@ -18,6 +18,15 @@ export type ProspectConversionUserData = {
   ocupacion: string
   observacionesCliente: string
   hasPassword: boolean
+  /**
+   * Required origin tag for direct-mode client creation. Only set on
+   * the direct-mode wizard's step 1 radio (mirrors the backend
+   * ``Cliente.origen`` field); prospect and reactivation flows never
+   * surface it. Optional because prospect/reactivation drafts in the
+   * wild don't carry the field and we want the existing payloads to
+   * keep typing cleanly.
+   */
+  origen?: 'NUEVO' | 'RECURRENTE_PRE_SISTEMA'
 }
 
 /**

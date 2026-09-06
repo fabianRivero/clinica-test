@@ -65,6 +65,9 @@ def _client_item(cliente):
         "branchId": cliente.usuario.sucursal_id,
         "branchName": cliente.usuario.sucursal.nombre if cliente.usuario.sucursal else "Sin sucursal",
         "cityName": cliente.usuario.sucursal.ciudad if cliente.usuario.sucursal else "Sin ciudad",
+        # ``origen`` — surfaced per the ``cliente-origen`` spec requirement
+        # that every Cliente-shaped payload expose this field.
+        "origen": cliente.origen,
     }
 
 

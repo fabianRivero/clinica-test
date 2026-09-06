@@ -178,9 +178,6 @@ export function AdminClientsPage() {
         eyebrow="Relacion comercial"
         title="Clientes"
         description="Consulta los clientes consolidados que ya tienen cuenta, historial clinico y acceso al portal para pagos y reservas."
-        actions={[
-          { label: 'Crear cliente directo', variant: 'primary', to: '/cms/clientes/nuevo' },
-        ]}
       />
 
       <AdminRelationshipTabs />
@@ -405,6 +402,7 @@ export function AdminClientsPage() {
                       <th>Nombre</th>
                       <th>Código</th>
                       <th>Estado</th>
+                      <th>Origen</th>
                       <th>CI</th>
                       <th>Teléfono</th>
                       <th>Email</th>
@@ -426,6 +424,16 @@ export function AdminClientsPage() {
                         <td>
                           <StatusBadge tone={client.status === 'Activo' ? 'success' : 'neutral'}>
                             {client.status}
+                          </StatusBadge>
+                        </td>
+                        <td>
+                          <StatusBadge
+                            tone={client.origen === 'RECURRENTE_PRE_SISTEMA' ? 'warning' : 'primary'}
+                            data-testid={`client-origen-${client.rawId}`}
+                          >
+                            {client.origen === 'RECURRENTE_PRE_SISTEMA'
+                              ? 'Recurrente pre-sistema'
+                              : 'Nuevo'}
                           </StatusBadge>
                         </td>
                         <td>{client.ci}</td>

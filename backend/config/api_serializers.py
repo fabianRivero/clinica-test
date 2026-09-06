@@ -33,6 +33,11 @@ class ReportClientSerializer(serializers.Serializer):
     nextAppointmentDate = serializers.SerializerMethodField()
     lastPaymentDate = serializers.SerializerMethodField()
     nextPaymentDate = serializers.SerializerMethodField()
+    # ``origen`` — surfaced per the ``cliente-origen`` spec requirement
+    # that every Cliente-shaped payload expose this field for reporting
+    # visibility. Default keeps the field safe even if a future caller
+    # forgets to include it in the row dict.
+    origen = serializers.CharField(default="NUEVO")
 
     def _nullable(self, obj, key):
         value = obj.get(key)
