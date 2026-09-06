@@ -314,6 +314,8 @@ export type ProspectLead = {
   stage: string
   state?: string
   stateValue?: string
+  /** Origen del prospecto, emitido por el backend en el payload de listado. */
+  origen?: 'NUEVO' | 'RECURRENTE_PRE_SISTEMA'
   observations?: string
   createdAt?: string
   convertedAt?: string

@@ -63,6 +63,7 @@ export function AdminProspectsPage() {
   const { branches } = useBranchContext()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('TODOS')
+  const [origenFilter, setOrigenFilter] = useState<'TODOS' | 'NUEVO' | 'RECURRENTE_PRE_SISTEMA'>('TODOS')
   const [editingProspect, setEditingProspect] = useState<ProspectLead | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
   const [visibleCount, setVisibleCount] = useState(10)
@@ -79,9 +80,10 @@ export function AdminProspectsPage() {
         !normalizedSearch ||
         lead.name.toLowerCase().includes(normalizedSearch)
       const matchesStatus = statusFilter === 'TODOS' || lead.state === statusFilter
-      return matchesSearch && matchesStatus
+      const matchesOrigen = origenFilter === 'TODOS' || lead.origen === origenFilter
+      return matchesSearch && matchesStatus && matchesOrigen
     })
-  }, [data, searchTerm, statusFilter])
+  }, [data, searchTerm, statusFilter, origenFilter])
 
   const visibleProspects = useMemo(() => {
     return filteredProspects.slice(0, visibleCount)
@@ -409,6 +411,20 @@ export function AdminProspectsPage() {
                   ))}
                 </select>
               </label>
+              <label className="field">
+                <span>Origen</span>
+                <select
+                  className="input"
+                  value={origenFilter}
+                  onChange={(event) =>
+                    setOrigenFilter(event.target.value as 'TODOS' | 'NUEVO' | 'RECURRENTE_PRE_SISTEMA')
+                  }
+                >
+                  <option value="TODOS">Todos</option>
+                  <option value="NUEVO">Nuevo</option>
+                  <option value="RECURRENTE_PRE_SISTEMA">Recurrente pre-sistema</option>
+                </select>
+              </label>
             </div>
 
             {filteredProspects.length ? (
@@ -420,6 +436,7 @@ export function AdminProspectsPage() {
                       <th>Teléfono</th>
                       <th>Interés</th>
                       <th>Registrado por</th>
+                      <th>Origen</th>
                       <th>Etapa</th>
                       <th>Estado</th>
                       <th>Acciones</th>
@@ -443,6 +460,13 @@ export function AdminProspectsPage() {
                           <td>{lead.phone}</td>
                           <td>{lead.interest}</td>
                           <td>{lead.registeredBy}</td>
+                          <td>
+                            <StatusBadge
+                              tone={lead.origen === 'RECURRENTE_PRE_SISTEMA' ? 'warning' : 'info'}
+                            >
+                              {lead.origen === 'RECURRENTE_PRE_SISTEMA' ? 'Recurrente pre-sistema' : 'Nuevo'}
+                            </StatusBadge>
+                          </td>
                           <td>
                             <StatusBadge
                               tone={
