@@ -483,3 +483,195 @@ class ConversionFirstPaymentTests(TestCase):
         self.assertFalse(
             PagoRealizado.objects.filter(cuota__operacion__paciente=self.cliente).exists()
         )
+
+    # ------------------------- Rebalance: Path A (fecha coincide) ----------
+
+    def test_rebalance_path_a_fecha_coincide_reemplaza_cuota(self):
+        """When ``fecha_pago`` matches the ``fecha_vencimiento`` of an
+        existing cuota, that cuota absorbs the paid amount and the other
+        cuotas keep their nro/fecha but get their ``monto_programado``
+        re-scaled so the totals still match ``precioTotal``.
+
+        Scenario: 700 total, 2 cuotas on self.today and today+9 days.
+        The admin pays 400 today. Expected:
+
+          * cuota 1 (self.today) → monto_programado = 400 (paid today).
+          * cuota 2 (today+9)   → monto_programado = 300 (700 − 400).
+
+        Both totals add up to 700; the second cuota absorbs the saldo
+        restante so the plan still reflects the full price.
+        """
+        future = date.fromordinal(self.today.toordinal() + 9)
+        draft = _make_full_draft(
+            cliente=self.cliente,
+            usuario=self.admin,
+            servicio=self.servicio,
+            today=self.today,
+            catalog_ids=self.catalog_ids,
+        )
+        draft.datos_operacion["precioTotal"] = "700.00"
+        draft.datos_operacion["cuotasTotales"] = 2
+        draft.datos_operacion["fechasVencimientoCuotas"] = [
+            str(self.today),
+            str(future),
+        ]
+        draft.save(update_fields=["datos_operacion"])
+        self._login()
+        response = self._post_finalize(
+            draft,
+            primerPagoMetodo="FISICO",
+            primerPagoMonto="400.00",
+            primerPagoMontoFisico="400.00",
+        )
+        self.assertEqual(response.status_code, 201)
+        operacion = Operacion.objects.get(paciente=self.cliente)
+        cuotas = list(
+            CuotaPlanPago.objects.filter(operacion=operacion).order_by("nro_cuota")
+        )
+        self.assertEqual(len(cuotas), 2)
+        # Cuota 1 keeps its fecha_vencimiento and nro_cuota, monto = pago.
+        self.assertEqual(cuotas[0].nro_cuota, 1)
+        self.assertEqual(cuotas[0].fecha_vencimiento, self.today)
+        self.assertEqual(cuotas[0].monto_programado, Decimal("400.00"))
+        self.assertEqual(cuotas[0].estado, CuotaPlanPago.Estado.PAGADO)
+        # Cuota 2 absorbs the saldo restante and keeps its fecha_vencimiento.
+        self.assertEqual(cuotas[1].nro_cuota, 2)
+        self.assertEqual(cuotas[1].fecha_vencimiento, future)
+        self.assertEqual(cuotas[1].monto_programado, Decimal("300.00"))
+        self.assertEqual(cuotas[1].estado, CuotaPlanPago.Estado.PENDIENTE)
+        # PagoRealizado lands on cuota 1.
+        pago = PagoRealizado.objects.get(cuota=cuotas[0])
+        self.assertEqual(pago.monto_pagado, Decimal("400.00"))
+
+    # ------------------------- Rebalance: Path B (fecha no coincide) ------
+
+    def test_rebalance_path_b_fecha_no_coincide_inserta_cuota(self):
+        """When ``fecha_pago`` does NOT match any existing cuota's
+        ``fecha_vencimiento``, a new cuota #1 is inserted with that
+        fecha and the original cuotas are renumbered 2..N+1 with their
+        ``monto_programado`` re-scaled.
+
+        Scenario: 700 total, 2 cuotas on today+4 and today+9 days.
+        The admin pays 400 today. Expected:
+
+          * New cuota #1 (self.today) → monto_programado = 400 (paid).
+          * Original cuota (today+4)  → renumbered to 2, monto = 150.
+          * Original cuota (today+9)  → renumbered to 3, monto = 150.
+
+        Totals: 400 + 150 + 150 = 700.
+        """
+        d1 = date.fromordinal(self.today.toordinal() + 4)
+        d2 = date.fromordinal(self.today.toordinal() + 9)
+        draft = _make_full_draft(
+            cliente=self.cliente,
+            usuario=self.admin,
+            servicio=self.servicio,
+            today=self.today,
+            catalog_ids=self.catalog_ids,
+        )
+        draft.datos_operacion["precioTotal"] = "700.00"
+        draft.datos_operacion["cuotasTotales"] = 2
+        draft.datos_operacion["fechasVencimientoCuotas"] = [
+            str(d1),
+            str(d2),
+        ]
+        draft.save(update_fields=["datos_operacion"])
+        self._login()
+        response = self._post_finalize(
+            draft,
+            primerPagoMetodo="FISICO",
+            primerPagoMonto="400.00",
+            primerPagoMontoFisico="400.00",
+        )
+        self.assertEqual(response.status_code, 201)
+        operacion = Operacion.objects.get(paciente=self.cliente)
+        cuotas = list(
+            CuotaPlanPago.objects.filter(operacion=operacion).order_by("nro_cuota")
+        )
+        self.assertEqual(len(cuotas), 3)
+        # New cuota #1 holds the paid amount on today's date.
+        self.assertEqual(cuotas[0].nro_cuota, 1)
+        self.assertEqual(cuotas[0].fecha_vencimiento, self.today)
+        self.assertEqual(cuotas[0].monto_programado, Decimal("400.00"))
+        self.assertEqual(cuotas[0].estado, CuotaPlanPago.Estado.PAGADO)
+        # Originals renumbered to 2, 3 with equal split of the saldo.
+        self.assertEqual(cuotas[1].nro_cuota, 2)
+        self.assertEqual(cuotas[1].fecha_vencimiento, d1)
+        self.assertEqual(cuotas[1].monto_programado, Decimal("150.00"))
+        self.assertEqual(cuotas[2].nro_cuota, 3)
+        self.assertEqual(cuotas[2].fecha_vencimiento, d2)
+        self.assertEqual(cuotas[2].monto_programado, Decimal("150.00"))
+        # PagoRealizado lands on the new cuota #1.
+        pago = PagoRealizado.objects.get(cuota=cuotas[0])
+        self.assertEqual(pago.monto_pagado, Decimal("400.00"))
+
+    # ------------------------- Rebalance: hard cap -----------------------
+
+    def test_rebalance_blocks_payment_greater_than_precio_total(self):
+        """The first payment must never exceed ``operacion.precio_total``.
+        Otherwise the saldo_restante would be negative and the rebalance
+        would produce nonsensical quotas. The view must surface a 400.
+        """
+        draft = _make_full_draft(
+            cliente=self.cliente,
+            usuario=self.admin,
+            servicio=self.servicio,
+            today=self.today,
+            catalog_ids=self.catalog_ids,
+        )
+        future = date.fromordinal(self.today.toordinal() + 30)
+        draft.datos_operacion["precioTotal"] = "100.00"
+        draft.datos_operacion["cuotasTotales"] = 2
+        draft.datos_operacion["fechasVencimientoCuotas"] = [
+            str(self.today),
+            str(future),
+        ]
+        draft.save(update_fields=["datos_operacion"])
+        self._login()
+        response = self._post_finalize(
+            draft,
+            primerPagoMetodo="FISICO",
+            primerPagoMonto="500.00",
+            primerPagoMontoFisico="500.00",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("precio total", response.json().get("detail", "").lower())
+        # No cuota / no pago created.
+        self.assertFalse(
+            PagoRealizado.objects.filter(cuota__operacion__paciente=self.cliente).exists()
+        )
+        # Conversion rolled back — borrador still exists.
+        self.assertTrue(
+            ProspectoConversionBorrador.objects.filter(pk=draft.id).exists()
+        )
+
+    # ------------------------- Rebalance: single-cuota legacy -----------
+
+    def test_single_cuota_plan_does_not_rebalance(self):
+        """When step 2 only produced ONE cuota (either because the admin
+        chose ``cuotasTotales=1`` or because the fallback path auto-
+        created a single cuota), the rebalance helper is a no-op and the
+        legacy behaviour is preserved: the cuota's ``monto_programado``
+        equals the paid amount and the cuota resolves to PAGADO.
+        """
+        draft = _make_full_draft(
+            cliente=self.cliente,
+            usuario=self.admin,
+            servicio=self.servicio,
+            today=self.today,
+            catalog_ids=self.catalog_ids,
+        )
+        # Single cuota, precio 100, paid 100. Should NOT touch the cuota.
+        self._login()
+        response = self._post_finalize(
+            draft,
+            primerPagoMetodo="FISICO",
+            primerPagoMonto="100.00",
+            primerPagoMontoFisico="100.00",
+        )
+        self.assertEqual(response.status_code, 201)
+        operacion = Operacion.objects.get(paciente=self.cliente)
+        cuotas = list(CuotaPlanPago.objects.filter(operacion=operacion))
+        self.assertEqual(len(cuotas), 1)
+        self.assertEqual(cuotas[0].monto_programado, Decimal("100.00"))
+        self.assertEqual(cuotas[0].estado, CuotaPlanPago.Estado.PAGADO)

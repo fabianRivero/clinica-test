@@ -1626,6 +1626,108 @@ def admin_prospect_conversion_biometric_step(request, prospecto_id=None, cliente
     return json_response(_admin_conversion_detail(draft))
 
 
+def _rebalance_plan_after_first_payment(operacion, fecha_pago, monto_pago):
+    """Rebalance ``operacion``'s plan so the step-5 first payment becomes the
+    first cuota in the plan and the remaining saldo is split equally across
+    the rest of the cuotas.
+
+    Two paths, both implementing the same rule: "the first payment is the
+    cuota that the admin just paid". The remaining ``precioTotal - pago`` is
+    redistributed in equal parts (rounded to the cent, remainder on the last
+    cuota) over the cuotas that were NOT paid today.
+
+    Path A — ``fecha_pago`` matches an existing cuota's ``fecha_vencimiento``:
+        That cuota absorbs the payment (``monto_programado = monto_pago``,
+        stays PAGADA after the payment lands). The other cuotas keep their
+        ``nro_cuota`` and ``fecha_vencimiento``; only their ``monto_programado``
+        is re-scaled so the totals still add up to ``precioTotal``.
+
+    Path B — ``fecha_pago`` does NOT match any existing cuota:
+        A new cuota #1 is created with ``fecha_vencimiento = fecha_pago`` and
+        ``monto_programado = monto_pago``. The cuotas that came from step 2
+        are renumbered 2..N+1 (preserving their original order), and their
+        ``monto_programado`` is re-scaled to fit ``precioTotal - monto_pago``
+        split evenly among them.
+
+    The helper is intentionally idempotent w.r.t. cuotas that already exist:
+    it reads the current rows, decides the new shape, and ``.save()`` each
+    row with the new fields. The caller (``_register_first_payment_from_request``)
+    is responsible for blocking ``monto_pago > operacion.precio_total`` BEFORE
+    calling this helper — that case raises ``_PrimerPagoValidationError`` at
+    the view layer.
+
+    Parameters
+    ----------
+    operacion : ``operations.Operacion``
+        Operation whose plan will be rebalanced. Its ``precio_total`` is the
+        canonical sum the new plan must match.
+    fecha_pago : ``datetime.date``
+        Local "today" used as the new cuota's ``fecha_vencimiento`` (Path B)
+        or as the lookup key (Path A).
+    monto_pago : ``decimal.Decimal``
+        Amount paid in step 5. Must be > 0 and <= ``operacion.precio_total``
+        (the caller enforces the upper bound).
+    """
+    precio_total = operacion.precio_total
+    saldo_restante = (precio_total - monto_pago).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
+
+    # Locked read of the existing plan ordered by insertion order. The plan
+    # was just created a few lines above in finalize, so it's already in
+    # memory; we still go through the ORM to keep the helper self-contained.
+    cuotas_existentes = list(
+        operacion.cuotas_plan_pagos.order_by("nro_cuota", "fecha_vencimiento")
+    )
+
+    # Path A: fecha_pago matches an existing cuota → reuse that row.
+    cuota_reemplazo = next(
+        (c for c in cuotas_existentes if c.fecha_vencimiento == fecha_pago),
+        None,
+    )
+    if cuota_reemplazo is not None:
+        # The matched cuota keeps its nro_cuota + fecha_vencimiento; only its
+        # monto_programado moves to the paid amount.
+        cuota_reemplazo.monto_programado = monto_pago
+        cuota_reemplazo.save(update_fields=["monto_programado", "updated_at"])
+
+        otras = [c for c in cuotas_existentes if c.id != cuota_reemplazo.id]
+        if otras:
+            nuevos_montos = split_amount(saldo_restante, len(otras))
+            for cuota, nuevo_monto in zip(otras, nuevos_montos):
+                cuota.monto_programado = nuevo_monto
+                cuota.save(update_fields=["monto_programado", "updated_at"])
+        return
+
+    # Path B: no cuota for today → insert a new cuota #1, renumber the rest.
+    # We have to renumber because the UniqueConstraint on
+    # (operacion, nro_cuota) would reject inserting nro_cuota=1 while the
+    # old row #1 still holds it. Two-phase update avoids the constraint
+    # blowing up: shift old rows to a safe offset first, then assign the
+    # final numbers.
+    OFFSET = 10_000
+
+    for index, cuota in enumerate(cuotas_existentes):
+        cuota.nro_cuota = OFFSET + index
+        cuota.save(update_fields=["nro_cuota", "updated_at"])
+
+    nueva_cuota = CuotaPlanPago.objects.create(
+        operacion=operacion,
+        nro_cuota=1,
+        fecha_vencimiento=fecha_pago,
+        monto_programado=monto_pago,
+    )
+
+    # Now split saldo_restante across the original cuotas (now renumbered
+    # to OFFSET+index) and assign their final nro_cuota = index + 2 so the
+    # visible plan reads [1=pagada hoy, 2=primera del paso 2, ...].
+    nuevos_montos = split_amount(saldo_restante, len(cuotas_existentes))
+    for index, cuota in enumerate(cuotas_existentes):
+        cuota.nro_cuota = index + 2
+        cuota.monto_programado = nuevos_montos[index]
+        cuota.save(update_fields=["nro_cuota", "monto_programado", "updated_at"])
+
+
 def _register_first_payment_from_request(request, operacion):
     """Create an APROBADO ``PagoRealizado`` for the first quota when the
     admin submits the optional first-payment block during conversion or
@@ -1653,6 +1755,13 @@ def _register_first_payment_from_request(request, operacion):
     ``assert_not_over_payment``; the surrounding view runs inside
     ``transaction.atomic`` so the failure rolls back the whole
     conversion.
+
+    When the admin submits a payment AND a cuotas plan already exists from
+    step 2, the helper also calls ``_rebalance_plan_after_first_payment`` so
+    the paid cuota reflects the amount that was just paid and the remaining
+    saldo is split equally across the other cuotas. See that helper's
+    docstring for the exact rule (Path A: fecha matches → reuse; Path B:
+    fecha differs → insert new cuota #1 and renumber the rest).
     """
     primer_pago_comprobante = request.FILES.get("primerPagoComprobante")
     primer_pago_monto_raw = (request.POST.get("primerPagoMonto") or "").strip()
@@ -1676,9 +1785,15 @@ def _register_first_payment_from_request(request, operacion):
     if not has_amount_signal and not primer_pago_comprobante:
         return None
 
-    primera_cuota = operacion.cuotas_plan_pagos.order_by(
-        "nro_cuota", "fecha_vencimiento"
-    ).first()
+    # Snapshot of the pre-existing plan BEFORE any rebalancing. Used to
+    # distinguish "the admin already had cuotas from step 2" (rebalance path)
+    # from "the fallback just created a single cuota because step 2 was
+    # skipped" (legacy path — no rebalance, the existing helper code stays).
+    cuotas_previas = list(
+        operacion.cuotas_plan_pagos.order_by("nro_cuota", "fecha_vencimiento")
+    )
+
+    primera_cuota = cuotas_previas[0] if cuotas_previas else None
     if primera_cuota is None:
         return None
 
@@ -1733,10 +1848,40 @@ def _register_first_payment_from_request(request, operacion):
     if monto_pagado <= 0:
         return None
 
-    assert_not_over_payment(primera_cuota, monto_pagado)
+    # Hard cap: the first payment can never exceed the operation's price
+    # total. The rebalance helper assumes ``monto_pago <= precio_total`` so
+    # the saldo_restante stays non-negative; reject anything larger with a
+    # 400 instead of silently producing negative cuotas.
+    if monto_pagado > operacion.precio_total:
+        raise _PrimerPagoValidationError(
+            {"detail": "El pago no puede superar el precio total del tratamiento."}
+        )
+
+    # Rebalance the plan so the paid cuota reflects the amount that was
+    # just paid. Only applies when step 2 produced more than one cuota
+    # (i.e. there is an actual plan to redistribute). The fallback path
+    # (single auto-created cuota) keeps the legacy behaviour: the cuota's
+    # ``monto_programado`` was already set to ``first_payment_amount`` by
+    # the caller in ``admin_prospect_conversion_finalize``.
+    if len(cuotas_previas) >= 2:
+        _rebalance_plan_after_first_payment(
+            operacion,
+            fecha_pago=timezone.localdate(),
+            monto_pago=monto_pagado,
+        )
+
+    # Re-fetch the cuota that should hold this payment AFTER the rebalance.
+    # Path A keeps ``nro_cuota`` of the matched cuota; Path B inserts a new
+    # ``nro_cuota=1``. Either way the first cuota after rebalance is the
+    # one the payment lands against.
+    cuota_destino = operacion.cuotas_plan_pagos.order_by(
+        "nro_cuota", "fecha_vencimiento"
+    ).first()
+
+    assert_not_over_payment(cuota_destino, monto_pagado)
 
     pago = PagoRealizado(
-        cuota=primera_cuota,
+        cuota=cuota_destino,
         monto_pagado=monto_pagado,
         metodo_pago=primer_pago_metodo,
         monto_fisico=monto_fisico,
@@ -2102,10 +2247,13 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
     # least one ``CuotaPlanPago`` for the payment to land against. Without
     # this row ``_register_first_payment_from_request`` would skip silently
     # (no cuota → no row) and the operation would render as "0 cuota(s)"
-    # in /cms/operaciones/<id>. The cuota's monto_programado is set to the
-    # remaining balance after the first payment (precioTotal - pago), so
-    # the cuota reflects the saldo pendiente and the cuota status auto-
-    # resolves to PAGADO once the payment is recorded.
+    # in /cms/operaciones/<id>. The rebalance helper
+    # ``_rebalance_plan_after_first_payment`` only runs when the plan has
+    # >= 2 cuotas, so this single-cuota fallback keeps the legacy
+    # behaviour: ``monto_programado`` is set to the amount the admin just
+    # paid (not the full precio_total), the cuota resolves to PAGADO as
+    # soon as the payment lands, and any residual saldo can be split into
+    # additional cuotas from /cms/operaciones/<id>.
     first_payment_signal = any(
         [
             (request.POST.get("primerPagoMonto") or "").strip(),
@@ -2123,12 +2271,10 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             except (InvalidOperation, ValueError):
                 return Decimal("0")
 
-        # The cuota's monto_programado is the amount the admin just paid
-        # (not the full precio_total). This way the cuota reflects exactly
-        # what was committed in step 5 and resolves to PAGADO immediately.
-        # If the admin wants to distribute the residual into additional
-        # cuotas they can do so from /cms/operaciones/<id>; the saldo
-        # restante helper already accounts for the already-paid amount.
+        # The cuota's monto_programado equals the amount the admin just
+        # paid, so the cuota resolves to PAGADO as soon as the payment is
+        # recorded. If the admin wants to distribute the residual into
+        # additional cuotas they can do so from /cms/operaciones/<id>.
         first_payment_amount = (
             _parse_amount(request.POST.get("primerPagoMontoFisico"))
             + _parse_amount(request.POST.get("primerPagoMontoVirtual"))
