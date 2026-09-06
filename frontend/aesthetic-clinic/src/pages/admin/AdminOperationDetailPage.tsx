@@ -34,7 +34,6 @@ import type {
   AdminPaymentQuota,
   AdminReservationExtendedPayload,
   OperationDetailAppointment,
-  OperationDetailData,
   OperationClosurePreconditionsReport,
   RegisterAdminAppointmentPaymentPayload,
   RegisterAdminPaymentPayload,

@@ -358,7 +358,10 @@ export function ReservationModal({
     const selectedEspIds = selectedEsp.map((e) =>
       typeof e === 'number' ? e : e.especialista_id,
     )
-    const maqItems = selectedMaq.map((it) => ({ maquinariaId: it.maquinariaId, cantidad: it.cantidad }))
+    const maqItems = selectedMaq.map((it) => {
+      const maquinariaId = 'maquinariaId' in it ? it.maquinariaId : it.maquinaria_id
+      return { maquinariaId, cantidad: it.cantidad }
+    })
     const maqIds = maqItems.map((it) => it.maquinariaId)
     const maqCantidades = maqItems.map((it) => it.cantidad)
     let cancelled = false
