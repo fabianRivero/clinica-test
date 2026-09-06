@@ -1869,6 +1869,15 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
             telefono=user_data.get("telefono", ""),
             ocupacion=user_data.get("ocupacion", ""),
             observaciones=user_data.get("observacionesCliente", ""),
+            # ``origen`` is collected by the prospect-create page's
+            # required radio and threaded onto ``Prospecto.origen`` at
+            # creation time. Finalize MUST copy the source prospect's
+            # tag verbatim — the prospect branch is metadata-driven,
+            # so the draft's step-1 field (which only exists in
+            # ``mode='direct'``) is irrelevant here. ``default="NUEVO"``
+            # on the model keeps legacy prospects backfilled by
+            # migration 0016 on the safe side.
+            origen=draft.prospecto.origen,
         )
     elif draft.cliente:
         # Actualizacion de cliente existente (reactivacion).
@@ -1880,6 +1889,12 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         # the live ``Usuario``/``Cliente`` rows untouched so a stray
         # edit in step 1 of an in-flight draft cannot silently
         # rewrite the live identity on finalize.
+        #
+        # ``origen`` is also write-once: the reactivation branch MUST
+        # NOT overwrite the live value even if the draft happens to
+        # carry a different one — that mirrors the write-once contract
+        # the perfil endpoint already enforces and prevents a stale
+        # draft from silently re-tagging a returning patient.
         cliente = draft.cliente
         if user_data.get("observacionesCliente") is not None:
             cliente.observaciones = user_data.get("observacionesCliente") or ""

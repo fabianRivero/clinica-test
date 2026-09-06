@@ -21,6 +21,17 @@ class Prospecto(TimeStampedModel):
         CONVERTIDO = "CONVERTIDO", "Convertido"
         DESCARTADO = "DESCARTADO", "Descartado"
 
+    class Origen(models.TextChoices):
+        """Tag every Prospecto with how the person entered the funnel.
+
+        Mirrors ``Cliente.Origen`` so ``admin_prospect_conversion_finalize``
+        can propagate the same signal into ``Cliente.origen`` at finalize
+        time — keeps the cobrable eligibility contract identical across
+        the prospect and direct paths.
+        """
+        NUEVO = "NUEVO", "Nuevo"
+        RECURRENTE_PRE_SISTEMA = "RECURRENTE_PRE_SISTEMA", "Recurrente pre-sistema"
+
     primer_nombre = models.CharField(max_length=120)
     segundo_nombre = models.CharField(max_length=120, blank=True, default="")
     apellido_paterno = models.CharField(max_length=120)
@@ -31,6 +42,12 @@ class Prospecto(TimeStampedModel):
         max_length=20,
         choices=Estado.choices,
         default=Estado.PASAJERO,
+    )
+    origen = models.CharField(
+        max_length=32,
+        choices=Origen.choices,
+        default=Origen.NUEVO,
+        db_default=Origen.NUEVO,
     )
     observaciones = models.TextField(blank=True)
     registrado_por = models.ForeignKey(

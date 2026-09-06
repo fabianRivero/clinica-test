@@ -922,6 +922,14 @@ export type CreateAdminProspectPayload = {
   telefono: string
   estado: 'PASAJERO' | 'DESCARTADO'
   observaciones: string
+  /**
+   * Tag the prospect with the entry-channel the radio at the top of
+   * ``AdminProspectCreatePage`` collects. Mirrors the literal
+   * union on ``Cliente.origen``; omitting the field falls back to
+   * ``NUEVO`` at the backend (see migration 0016 and the
+   * ``admin_crear_prospecto`` handler).
+   */
+  origen?: 'NUEVO' | 'RECURRENTE_PRE_SISTEMA'
 }
 
 export type CreateAdminProspectResponse = {

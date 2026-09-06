@@ -707,6 +707,14 @@ def _prospect_item(prospecto, request=None):
         "stage": _prospect_stage(prospecto),
         "state": prospecto.get_estado_display(),
         "stateValue": prospecto.estado,
+        # ``origen`` surfaces here so the conversion wizard payload
+        # (``mode='prospect'`` initialize response) carries the tag
+        # forward — ``admin_prospect_conversion_finalize`` reads it
+        # directly off the model row, but exposing the literal keeps
+        # the serializer contract symmetric with the Cliente-shaped
+        # serializers and the spec scenario "origen exposed in
+        # prospect serialization".
+        "origen": prospecto.origen,
         "observations": prospecto.observaciones,
         "createdAt": _datetime_label(prospecto.created_at),
         "convertedAt": _datetime_label(prospecto.fecha_conversion) if prospecto.fecha_conversion else "-",
@@ -4740,6 +4748,15 @@ def admin_crear_prospecto(request):
     telefono = (payload.get("telefono") or "").strip()
     observaciones = (payload.get("observaciones") or "").strip()
     estado = (payload.get("estado") or Prospecto.Estado.PASAJERO).strip()
+    # ``origen`` is collected by the prospect-create page's required
+    # radio (mirrors the ``mode='direct'`` wizard pattern from the
+    # previous change). Validate up front so an unknown value fails
+    # fast with a clear 400 instead of crashing the model
+    # ``full_clean`` later. Missing key falls back to the model
+    # default ``NUEVO`` — matches the spec's "omitting origen in the
+    # payload defaults it to NUEVO" scenario.
+    raw_origen = payload.get("origen")
+    origen = raw_origen if raw_origen not in (None, "") else Prospecto.Origen.NUEVO
 
     errors = {}
     if not primer_nombre:
@@ -4748,6 +4765,8 @@ def admin_crear_prospecto(request):
         errors["apellidoPaterno"] = "El apellido paterno es obligatorio."
     if estado not in {Prospecto.Estado.PASAJERO, Prospecto.Estado.DESCARTADO}:
         errors["estado"] = "Solo puedes crear prospectos en estado pasajero o descartado."
+    if raw_origen is not None and raw_origen not in dict(Prospecto.Origen.choices):
+        errors["origen"] = "El origen del prospecto no es valido."
 
     if errors:
         return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
@@ -4766,6 +4785,7 @@ def admin_crear_prospecto(request):
         apellido_materno=apellido_materno,
         telefono=telefono,
         estado=estado,
+        origen=origen,
         observaciones=observaciones,
         registrado_por=request.user,
         sucursal_registro=branch,

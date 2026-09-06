@@ -16,6 +16,7 @@ const initialForm: CreateAdminProspectPayload = {
   apellidoMaterno: '',
   telefono: '',
   estado: 'PASAJERO',
+  origen: undefined,
   observaciones: '',
 }
 
@@ -78,6 +79,10 @@ export function AdminProspectCreatePage() {
       nextErrors.apellidoPaterno = 'El apellido paterno es obligatorio.'
     }
 
+    if (form.origen === undefined) {
+      nextErrors.origen = 'Indica si es un cliente nuevo o uno antiguo.'
+    }
+
     setFieldErrors(nextErrors)
     return Object.keys(nextErrors).length === 0
   }
@@ -100,6 +105,7 @@ export function AdminProspectCreatePage() {
         apellidoPaterno: form.apellidoPaterno.trim(),
         apellidoMaterno: form.apellidoMaterno.trim(),
         telefono: form.telefono.trim(),
+        origen: form.origen,
         observaciones: form.observaciones.trim(),
       })
 
@@ -141,6 +147,37 @@ export function AdminProspectCreatePage() {
         description="Este registro se usa para seguimiento interno. Mas adelante se podra convertir en cliente formal cuando adquiera un procedimiento."
       >
         <form className="form-grid" onSubmit={handleSubmit}>
+          <fieldset className="field field--full prospect-create-origen-fieldset">
+            <legend>
+              ¿Es un cliente nuevo o uno antiguo? <abbr title="obligatorio" className="required-mark">*</abbr>
+            </legend>
+            <div className="origen-options">
+              <label className="origen-option">
+                <input
+                  type="radio"
+                  name="origen"
+                  value="NUEVO"
+                  checked={form.origen === 'NUEVO'}
+                  onChange={handleChange}
+                  data-testid="prospect-create-origen-nuevo"
+                />
+                <span>Nuevo (primera vez en el sistema)</span>
+              </label>
+              <label className="origen-option">
+                <input
+                  type="radio"
+                  name="origen"
+                  value="RECURRENTE_PRE_SISTEMA"
+                  checked={form.origen === 'RECURRENTE_PRE_SISTEMA'}
+                  onChange={handleChange}
+                  data-testid="prospect-create-origen-recurrente"
+                />
+                <span>Antiguo (ya fue paciente)</span>
+              </label>
+            </div>
+            <FieldError message={fieldErrors.origen} />
+          </fieldset>
+
           <label className="field">
             <span>Primer nombre <abbr title="obligatorio" className="required-mark">*</abbr></span>
             <input
@@ -240,7 +277,11 @@ export function AdminProspectCreatePage() {
             <button className="button button--ghost" onClick={() => navigate('/cms/prospectos')} type="button">
               Cancelar
             </button>
-            <button className="button" disabled={isSubmitting} type="submit">
+            <button
+              className="button"
+              disabled={isSubmitting || form.origen === undefined}
+              type="submit"
+            >
               {isSubmitting ? 'Guardando...' : 'Guardar prospecto'}
             </button>
           </div>
