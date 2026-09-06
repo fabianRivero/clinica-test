@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { DataState } from '../../components/admin/DataState'
 import { AdminRelationshipTabs } from '../../components/admin/AdminRelationshipTabs'
@@ -64,7 +64,16 @@ export function AdminProspectsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('TODOS')
   const [origenFilter, setOrigenFilter] = useState<'TODOS' | 'NUEVO' | 'RECURRENTE_PRE_SISTEMA'>('TODOS')
-  const [editingProspect, setEditingProspect] = useState<ProspectLead | null>(null)
+  const [editingProspectId, setEditingProspectId] = useState<number | null>(null)
+  // Derived from the current `data.prospects` so the modal always
+  // receives the freshest copy after ``reload()`` — eliminates the
+  // duplicated ``setEditingProspect(updatedProspect)`` plumbing that
+  // every action handler used to maintain (and which silently went
+  // stale because ``reload()`` is fire-and-forget).
+  const editingProspect = useMemo(
+    () => (data?.prospects ?? []).find((p) => p.rawId === editingProspectId) ?? null,
+    [data, editingProspectId],
+  )
   const [isUpdating, setIsUpdating] = useState(false)
   const [visibleCount, setVisibleCount] = useState(10)
   const flashMessage =
@@ -144,7 +153,7 @@ export function AdminProspectsPage() {
     try {
       await updateAdminProspect(editingProspect.rawId, data)
       showNotification({ title: 'Actualizado', message: 'Datos del prospecto actualizados.', tone: 'success' })
-      setEditingProspect(null)
+      setEditingProspectId(null)
       reload()
     } catch (err: any) {
       showNotification({ title: 'Error', message: err.message, tone: 'danger' })
@@ -174,13 +183,6 @@ export function AdminProspectsPage() {
       setBookingPrecio('')
       setConcurrencyInfo(null)
       reload()
-      // Actualizar editingProspect con datos frescos si este prospecto está en edición
-      if (editingProspect && data?.prospects) {
-        const updatedProspect = data.prospects.find(p => p.rawId === bookingProspect.rawId)
-        if (updatedProspect) {
-          setEditingProspect(updatedProspect)
-        }
-      }
     } catch (requestError: any) {
       showNotification({
         title: 'No se pudo agendar',
@@ -204,13 +206,6 @@ export function AdminProspectsPage() {
       const response = await cancelAdminProspectMedicalAppointment(appointmentId)
       showNotification({ title: 'Cita cancelada', message: response.detail, tone: 'success' })
       reload()
-      // Actualizar editingProspect con datos frescos si este prospecto está en edición
-      if (editingProspect && prospectId && editingProspect.rawId === prospectId && data?.prospects) {
-        const updatedProspect = data.prospects.find(p => p.rawId === prospectId)
-        if (updatedProspect) {
-          setEditingProspect(updatedProspect)
-        }
-      }
     } catch (requestError) {
       showNotification({
         title: 'No se pudo cancelar',
@@ -232,13 +227,6 @@ export function AdminProspectsPage() {
       await updateAdminProspectAppointmentStatus(appointmentId, 'REALIZADA')
       showNotification({ title: 'Cita marcada como realizada', message: 'La cita ha sido actualizada.', tone: 'success' })
       reload()
-      // Actualizar editingProspect con datos frescos si este prospecto está en edición
-      if (editingProspect && prospectId && editingProspect.rawId === prospectId && data?.prospects) {
-        const updatedProspect = data.prospects.find(p => p.rawId === prospectId)
-        if (updatedProspect) {
-          setEditingProspect(updatedProspect)
-        }
-      }
     } catch (requestError) {
       showNotification({
         title: 'No se pudo actualizar',
@@ -451,7 +439,7 @@ export function AdminProspectsPage() {
                           <td>
                             <button
                               className="table-link-button"
-                              onClick={() => setEditingProspect(lead)}
+                              onClick={() => lead.rawId && setEditingProspectId(lead.rawId)}
                             >
                               <strong>{lead.name}</strong>
                             </button>
@@ -581,7 +569,7 @@ export function AdminProspectsPage() {
           {editingProspect && (
             <EditProspectModal
               prospect={editingProspect}
-              onClose={() => setEditingProspect(null)}
+              onClose={() => setEditingProspectId(null)}
               onSave={handleUpdateProspect}
               isUpdating={isUpdating}
               handleCancelAppointment={(appointmentId) => handleCancelAppointment(appointmentId, editingProspect.rawId)}
@@ -968,6 +956,26 @@ function EditProspectModal({
   )
   const [tempStatuses, setTempStatuses] = useState<Record<number, string>>({})
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null)
+
+  // Re-seed the editable inputs only when the modal is opened with a
+  // DIFFERENT prospect. We deliberately do NOT sync on every prop
+  // change — once the admin has started typing in a field, the parent's
+  // ``reload()`` would otherwise wipe their in-progress edits. Display
+  // data (name, header, appointment list, derived cobro state) reads
+  // directly off ``prospect`` so it always reflects the freshest copy
+  // without any extra plumbing.
+  useEffect(() => {
+    setPrimerNombre(prospect.primerNombre || prospect.firstName || '')
+    setSegundoNombre(prospect.segundoNombre || '')
+    setApellidoPaterno(prospect.apellidoPaterno || prospect.lastName || '')
+    setApellidoMaterno(prospect.apellidoMaterno || '')
+    setPhone(prospect.phone || '')
+    setObservations(prospect.observations || '')
+    setStateValue(prospect.stateValue === 'DESCARTADO' ? 'DESCARTADO' : 'PASAJERO')
+    setTempStatuses({})
+    setEditingStatusId(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prospect.rawId])
 
   const isEditable = prospect.state !== 'Convertido'
 
