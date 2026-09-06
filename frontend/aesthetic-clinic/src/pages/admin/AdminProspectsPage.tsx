@@ -194,7 +194,7 @@ export function AdminProspectsPage() {
     }
   }
 
-  async function handleCancelAppointment(appointmentId: number, prospectId?: number) {
+  async function handleCancelAppointment(appointmentId: number) {
     const confirmed = await confirm({
       title: 'Cancelar cita',
       message: 'Se cancelara la cita medica del prospecto. ¿Deseas continuar?',
@@ -215,7 +215,7 @@ export function AdminProspectsPage() {
     }
   }
 
-  async function handleMarkAppointmentAsCompleted(appointmentId: number, prospectId?: number) {
+  async function handleMarkAppointmentAsCompleted(appointmentId: number) {
     const confirmed = await confirm({
       title: 'Marcar cita como realizada',
       message: '¿Deseas marcar esta cita como realizada?',
@@ -450,7 +450,7 @@ export function AdminProspectsPage() {
                           <td>{lead.registeredBy}</td>
                           <td>
                             <StatusBadge
-                              tone={lead.origen === 'RECURRENTE_PRE_SISTEMA' ? 'warning' : 'info'}
+                              tone={lead.origen === 'RECURRENTE_PRE_SISTEMA' ? 'warning' : 'neutral'}
                             >
                               {lead.origen === 'RECURRENTE_PRE_SISTEMA' ? 'Recurrente pre-sistema' : 'Nuevo'}
                             </StatusBadge>
@@ -572,8 +572,8 @@ export function AdminProspectsPage() {
               onClose={() => setEditingProspectId(null)}
               onSave={handleUpdateProspect}
               isUpdating={isUpdating}
-              handleCancelAppointment={(appointmentId) => handleCancelAppointment(appointmentId, editingProspect.rawId)}
-              handleMarkAppointmentAsCompleted={(appointmentId) => handleMarkAppointmentAsCompleted(appointmentId, editingProspect.rawId)}
+              handleCancelAppointment={(appointmentId) => handleCancelAppointment(appointmentId)}
+              handleMarkAppointmentAsCompleted={(appointmentId) => handleMarkAppointmentAsCompleted(appointmentId)}
               onChargeAppointment={handleChargeAppointmentFromChild}
               onEditAppointmentPrice={handleEditPriceFromChild}
             />
@@ -941,7 +941,7 @@ function EditProspectModal({
   onSave: (data: any) => Promise<void>
   isUpdating: boolean
   handleCancelAppointment: (id: number) => Promise<void>
-  handleMarkAppointmentAsCompleted: (appointmentId: number, prospectId?: number) => Promise<void>
+  handleMarkAppointmentAsCompleted: (appointmentId: number) => Promise<void>
   onChargeAppointment: (cita: ProspectMedicalAppointment) => void
   onEditAppointmentPrice: (cita: ProspectMedicalAppointment) => void
 }) {
