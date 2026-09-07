@@ -219,6 +219,107 @@ class OperationPricePlanUpdateTests(TestCase):
         self.assertEqual(cuotas[1].monto_programado, Decimal("100.00"))
         self.assertEqual(cuotas[2].monto_programado, Decimal("100.00"))
 
+    def test_batch_rechazado_si_suma_con_pagadas_supera_precio_total(self):
+        """Bug reportado: precio 900, primera cuota de 500 PAGADA, segunda
+        y tercera de 200 cada una pendientes. El admin edita la tercera a
+        300 -> suma (500 paid + 200 + 300) = 1000 > 900. El backend
+        debe rechazar con 400.
+
+        Antes del fix, ``total_after_save`` solo sumaba las cuotas
+        pendientes (200 + 300 = 500) sin contar lo ya pagado, as que
+        500 <= 900 pasaba y quedaba sobrecuota.
+        """
+        today = timezone.localdate()
+        self.operation.precio_total = Decimal("900.00")
+        self.operation.save(update_fields=["precio_total", "updated_at"])
+        # Cuota 1 PAGADA con monto 500 (pago hecho en paso 5 del wizard).
+        pagada = self._make_cuota(1, Decimal("500.00"), today)
+        pagada.estado = CuotaPlanPago.Estado.PAGADO
+        pagada.save()
+        PagoRealizado.objects.create(
+            cuota=pagada,
+            monto_pagado=Decimal("500.00"),
+            metodo_pago=PagoRealizado.MetodoPago.FISICO,
+            monto_fisico=Decimal("500.00"),
+            monto_virtual=Decimal("0"),
+            estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
+            verificado_por=self.admin,
+            fecha_verificacion=timezone.now(),
+        )
+        self._make_cuota(2, Decimal("200.00"), today + timedelta(days=30))
+        self._make_cuota(3, Decimal("200.00"), today + timedelta(days=60))
+
+        # Cuota 2 se incluye sin cambios; cuota 3 se edita de 200 a 300.
+        response = post_json(
+            self.client_http, self.url,
+            {
+                "priceTotal": "900.00",
+                "quotaCount": 3,
+                "quotas": [
+                    {"nroCuota": 2, "montoProgramado": "200.00",
+                     "fechaVencimiento": (today + timedelta(days=30)).isoformat()},
+                    {"nroCuota": 3, "montoProgramado": "300.00",
+                     "fechaVencimiento": (today + timedelta(days=60)).isoformat()},
+                ],
+            },
+        )
+        # 500 paid + 200 + 300 = 1000 > 900 => rechazado.
+        self.assertEqual(response.status_code, 400, response.content)
+        body = response.json()
+        self.assertIn("supera", body.get("detail", "").lower())
+
+        # Las cuotas no se persisten.
+        self.operation.refresh_from_db()
+        cuotas = list(self.operation.cuotas_plan_pagos.order_by("nro_cuota"))
+        self.assertEqual(cuotas[1].monto_programado, Decimal("200.00"))
+        self.assertEqual(cuotas[2].monto_programado, Decimal("200.00"))
+
+    def test_batch_con_pagadas_cuando_suma_cubre_precio_exacto_ok(self):
+        """Companion test: cuando la suma (pagado + pendientes editadas +
+        pendientes no tocadas) cierra EXACTO en el precio total, el
+        guardado pasa. Esto confirma que el fix no rechaza el caso
+        feliz que ya cubria el endpoint.
+        """
+        today = timezone.localdate()
+        self.operation.precio_total = Decimal("900.00")
+        self.operation.save(update_fields=["precio_total", "updated_at"])
+        pagada = self._make_cuota(1, Decimal("500.00"), today)
+        pagada.estado = CuotaPlanPago.Estado.PAGADO
+        pagada.save()
+        PagoRealizado.objects.create(
+            cuota=pagada,
+            monto_pagado=Decimal("500.00"),
+            metodo_pago=PagoRealizado.MetodoPago.FISICO,
+            monto_fisico=Decimal("500.00"),
+            monto_virtual=Decimal("0"),
+            estado_verificacion=PagoRealizado.EstadoVerificacion.APROBADO,
+            verificado_por=self.admin,
+            fecha_verificacion=timezone.now(),
+        )
+        # Cuota 2 se baja a 150, cuota 3 se mantiene en 250.
+        # Total: 500 + 150 + 250 = 900.
+        self._make_cuota(2, Decimal("200.00"), today + timedelta(days=30))
+        self._make_cuota(3, Decimal("200.00"), today + timedelta(days=60))
+
+        response = post_json(
+            self.client_http, self.url,
+            {
+                "priceTotal": "900.00",
+                "quotaCount": 3,
+                "quotas": [
+                    {"nroCuota": 2, "montoProgramado": "150.00",
+                     "fechaVencimiento": (today + timedelta(days=30)).isoformat()},
+                    {"nroCuota": 3, "montoProgramado": "250.00",
+                     "fechaVencimiento": (today + timedelta(days=60)).isoformat()},
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.operation.refresh_from_db()
+        cuotas = list(self.operation.cuotas_plan_pagos.order_by("nro_cuota"))
+        self.assertEqual(cuotas[1].monto_programado, Decimal("150.00"))
+        self.assertEqual(cuotas[2].monto_programado, Decimal("250.00"))
+
     def test_caso_una_sola_cuota_cambio_de_monto(self):
         """Reproduce el caso reportado: una sola cuota de Bs 500 sobre un
         precio total de Bs 850. Cambiar el monto a 600 sin ajustar el

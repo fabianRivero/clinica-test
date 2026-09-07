@@ -5327,34 +5327,43 @@ def admin_update_operation_price_plan(request, operacion_id):
             # real: el admin ajusta UNA cuota sin redistribuir todo el
             # plan.
             #
-            # Unico tope del batch: la suma de TODAS las pendientes
-            # (items del batch + cuotas pendientes existentes que el
-            # admin no toco) no puede EXCEDER el precio total. Si la
-            # suma lo supera, hay "sobrecuota" que no tiene sentido
-            # cubrir. Por debajo si se permite (saldo pendiente queda
-            # sin asignar).
+            # Unico tope del batch: la suma de TODAS las cuotas (items
+            # del batch + cuotas pendientes existentes que el admin no
+            # toco + lo ya pagado en cuotas PAGADAS) no puede EXCEDER
+            # el precio total. Si la suma lo supera, hay "sobrecuota"
+            # que no tiene sentido cubrir. Por debajo si se permite
+            # (saldo pendiente queda sin asignar).
             #
             # Esto cubre el caso de single-add: el item nuevo + las
             # pendientes existentes se suman para validar el tope. Si
             # el admin intenta meter una sola cuota de Bs 300 con un
             # tratamiento de Bs 850 que ya tiene una cuota de Bs 600,
             # la suma seria 900 > 850 y se rechaza.
+            #
+            # ``paid_total`` es fundamental: ya esta "comprometido"
+            # fisicamente (pagos APROBADOS), asi que subir las cuotas
+            # pendientes por encima de ``precioTotal - paid_total``
+            # dejaria el plan con un total agregado (pagado + pendiente)
+            # mayor al precio del tratamiento.
             incoming_nros = {item["nroCuota"] for item in items}
             existing_untouched_sum = sum(
                 (cuota.monto_programado or Decimal("0.00"))
                 for cuota in unpaid_quotas
                 if cuota.nro_cuota not in incoming_nros
             )
-            total_after_save = new_pending_sum + existing_untouched_sum
+            total_after_save = (
+                paid_total + new_pending_sum + existing_untouched_sum
+            ).quantize(Decimal("0.01"))
             if total_after_save > new_price:
                 return json_response(
                     {
                         "detail": "La suma de los montos de las cuotas supera al precio total del tratamiento.",
                         "errors": {
                             "quotas": (
-                                f"La suma de las cuotas pendientes seria Bs {total_after_save:.2f} "
-                                f"y no puede ser mayor al precio total del tratamiento "
-                                f"(Bs {new_price:.2f})."
+                                f"La suma de las cuotas (pagadas + pendientes) seria "
+                                f"Bs {total_after_save:.2f} y no puede ser mayor al precio "
+                                f"total del tratamiento (Bs {new_price:.2f}; ya pagado: "
+                                f"Bs {paid_total:.2f})."
                             )
                         },
                     },
