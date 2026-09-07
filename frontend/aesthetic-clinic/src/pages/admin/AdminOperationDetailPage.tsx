@@ -1445,33 +1445,52 @@ const handleSaveSessions = async () => {
                   </div>
                   <small className="field__hint">
                     {(() => {
-                      // Saldo restante = precio total - lo ya pagado -
-                      // el monto que el admin esta tipeando. Refleja
-                      // cuanto queda por distribuir entre esta cuota y
-                      // las siguientes. Los pagos aprobados sobre cuotas
-                      // existentes ya cubrieron parte del precio total y
-                      // liberan cupo. Si el restante es negativo, la suma
-                      // EXCEDE el precio total y el backend rechazara el
-                      // guardado.
+                      // Espeja el calculo de
+                      // ``admin_update_operation_price_plan`` en backend:
+                      //   total_after_save =
+                      //     paid_total + existing_untouched_sum + new_item
+                      // El backend rechaza si supera el precio total del
+                      // tratamiento. Por debajo del precio queda cupo
+                      // libre para mas cuotas (flujo 'Agregar cuota'
+                      // repetido). El frontend muestra el resto despues
+                      // de aplicar esta cuota para que el admin sepa
+                      // cuanto le queda libre; cuando el resto es <= 0,
+                      // el plan ya cubre (o excede) el precio total.
                       const precioTotal = Number(numberFromCurrency(operation.price))
                       if (!Number.isFinite(precioTotal) || precioTotal <= 0) return null
                       const pagadoExistente = operation.quotas.reduce(
                         (acc, q) => acc + (Number(q.paidAmountValue) || 0),
                         0,
                       )
+                      // ``existing_untouched_sum`` = monto programado de
+                      // las cuotas pendientes que el admin NO esta
+                      // tocando en este guardado (en modo single-add son
+                      // TODAS las pendientes existentes). Usamos
+                      // ``amountValue - paidAmountValue`` para no contar
+                      // dos veces lo ya pagado en cuotas con pago
+                      // parcial.
+                      const pendienteExistente = operation.quotas.reduce(
+                        (acc, q) => {
+                          const programado = Number(q.amountValue) || 0
+                          const pagado = Number(q.paidAmountValue) || 0
+                          const saldo = programado - pagado
+                          return acc + (saldo > 0 ? saldo : 0)
+                        },
+                        0,
+                      )
                       const digitado = Number(newQuotaDraft.montoProgramado) || 0
-                      const restante = precioTotal - pagadoExistente - digitado
+                      const restante = precioTotal - pagadoExistente - pendienteExistente - digitado
                       if (restante < 0) {
                         return (
                           <span className="field__error">
-                            La suma (precio total Bs {precioTotal.toFixed(2)} - ya pagado Bs {pagadoExistente.toFixed(2)} + esta cuota Bs {digitado.toFixed(2)}) excederia el precio total en Bs {Math.abs(restante).toFixed(2)}.
+                            La suma (precio total Bs {precioTotal.toFixed(2)} - ya pagado Bs {pagadoExistente.toFixed(2)} + cuotas pendientes Bs {pendienteExistente.toFixed(2)} + esta cuota Bs {digitado.toFixed(2)}) excederia el precio total en Bs {Math.abs(restante).toFixed(2)}.
                           </span>
                         )
                       }
                       return (
                         <>
                           Saldo restante despues de esta cuota:{' '}
-                          <strong>Bs {restante.toFixed(2)}</strong> (de Bs {precioTotal.toFixed(2)}, ya pagado Bs {pagadoExistente.toFixed(2)}).
+                          <strong>Bs {restante.toFixed(2)}</strong> (de Bs {precioTotal.toFixed(2)}, ya pagado Bs {pagadoExistente.toFixed(2)}, cuotas pendientes Bs {pendienteExistente.toFixed(2)}).
                         </>
                       )
                     })()}
