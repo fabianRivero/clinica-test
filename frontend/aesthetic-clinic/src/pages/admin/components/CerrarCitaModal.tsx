@@ -36,7 +36,14 @@ export interface CerrarCitaPayload {
    * with the create-reservation flow which passes plain ids.
    */
   especialistasPlanificados?: Array<number | { especialista_id: number }>
-  maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
+  /**
+   * Planned machinery for the cita. The backend
+   * (``_operation_detail`` / ``_appointment_item``) returns the raw ORM
+   * ``values()`` shape with ``maquinaria_id`` (snake_case) so both
+   * ``maquinariaPlanificada`` and ``maquinariaUtilizada`` share the same
+   * field names within a single payload.
+   */
+  maquinariaPlanificada?: Array<{ maquinaria_id: number; cantidad: number }>
   fotoAntesUrl?: string
   fotoDespuesUrl?: string
 }
@@ -166,7 +173,12 @@ export function CerrarCitaModal({
     setMaquinariaRows(
       (cita.maquinariaPlanificada ?? []).map((item) => ({
         rowId: crypto.randomUUID(),
-        maquinariaId: item.maquinariaId,
+        // The backend returns the ORM snake_case shape uniformly for
+        // both ``maquinariaPlanificada`` and ``maquinariaUtilizada``
+        // (see ``_operation_detail`` / ``_appointment_item``); read
+        // ``maquinaria_id`` instead of the legacy camelCase
+        // ``maquinariaId``.
+        maquinariaId: item.maquinaria_id,
         cantidad: Math.max(1, item.cantidad),
       })),
     )

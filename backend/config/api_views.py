@@ -586,20 +586,22 @@ def _operation_detail(operacion, request=None):
                         "especialista__usuario__username",
                     )
                 ),
-                "maquinariaPlanificada": [
-                    {
-                        # camelCase keys so the reschedule modal can
-                        # consume the list directly. Shape matches what
-                        # the modal expects (``maquinariaId``, ``cantidad``,
-                        # ``nombre``, ``marca``). Kept symmetric with the
-                        # rest of the operation detail payload which is
-                        # camelCase throughout.
-                        "maquinariaId": item["maquinaria_id"],
-                        "cantidad": item["cantidad"],
-                        "nombre": item.get("maquinaria__nombre", ""),
-                        "marca": item.get("maquinaria__marca", ""),
-                    }
-                    for item in cita.maquinaria_items.filter(planificada=True)
+                "maquinariaPlanificada": list(
+                    # Same shape as ``maquinariaUtilizada`` below and the
+                    # client-detail ``_appointment_item`` helper
+                    # (``config.client_api_views``): raw ORM values() so
+                    # both lists inside this payload and across pages
+                    # expose ``maquinaria_id`` / ``maquinaria__nombre`` /
+                    # ``maquinaria__marca``. An earlier reshape to
+                    # camelCase (maquinariaId / nombre / marca) broke
+                    # symmetry: the admin operation-detail "Ver datos"
+                    # modal read ``m.maquinaria__nombre`` and fell back to
+                    # ``id ${m.maquinariaId}`` instead of the name. The
+                    # frontend tolerates either shape on the reschedule
+                    # prefill, but the read-only display only worked
+                    # against the ORM shape, which is also what every
+                    # other call site returns.
+                    cita.maquinaria_items.filter(planificada=True)
                     .select_related("maquinaria")
                     .values(
                         "maquinaria_id",
@@ -607,7 +609,7 @@ def _operation_detail(operacion, request=None):
                         "maquinaria__nombre",
                         "maquinaria__marca",
                     )
-                ],
+                ),
                 # ISO datetime of the cita. The admin reschedule modal
                 # uses this to prefill the date/time inputs (the existing
                 # ``dateTime`` field is a display label like "15/09 14:30"

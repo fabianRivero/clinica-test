@@ -687,12 +687,12 @@ export function AdminClientDetailPage() {
                             ? selectedSession.maquinariaPlanificada
                                 .map(
                                   (m: {
-                                    maquinariaId: number
+                                    maquinaria_id: number
                                     cantidad: number
                                     maquinaria__nombre?: string
                                     maquinaria__marca?: string
                                   }) =>
-                                    `${m.maquinaria__nombre ?? `id ${m.maquinariaId}`}${
+                                    `${m.maquinaria__nombre ?? `id ${m.maquinaria_id}`}${
                                       m.maquinaria__marca ? ` (${m.maquinaria__marca})` : ''
                                     } x${m.cantidad}`,
                                 )

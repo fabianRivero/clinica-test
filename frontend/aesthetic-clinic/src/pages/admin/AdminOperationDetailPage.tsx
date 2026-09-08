@@ -1845,7 +1845,15 @@ const handleSaveSessions = async () => {
                             ? selectedAppointment.maquinariaPlanificada
                                 .map(
                                   (m) =>
-                                    `${m.maquinaria__nombre ?? `id ${m.maquinariaId}`}${
+                                    // Same shape as ``maquinariaUtilizada``
+                                    // (Django ORM ``values()`` keys):
+                                    // ``maquinaria_id``, ``cantidad``,
+                                    // ``maquinaria__nombre``,
+                                    // ``maquinaria__marca``. Mirrors the
+                                    // field names used on the right side
+                                    // so the comparison panel is
+                                    // symmetric.
+                                    `${m.maquinaria__nombre ?? `id ${m.maquinaria_id}`}${
                                       m.maquinaria__marca ? ` (${m.maquinaria__marca})` : ''
                                     } x${m.cantidad}`,
                                 )

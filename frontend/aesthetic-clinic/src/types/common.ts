@@ -98,7 +98,14 @@ export type ClientAppointment = {
    * logic reads the id from either form.
    */
   especialistasPlanificados?: Array<number | { especialista_id: number }>
-  maquinariaPlanificada?: Array<{ maquinariaId: number; cantidad: number }>
+  /**
+   * Planned machinery for the cita. The backend
+   * (``_appointment_item`` / ``_operation_detail``) returns the raw ORM
+   * ``values()`` shape with ``maquinaria_id`` (snake_case) so both
+   * ``maquinariaPlanificada`` and ``maquinariaUtilizada`` share the
+   * same field names within a single payload.
+   */
+  maquinariaPlanificada?: Array<{ maquinaria_id: number; cantidad: number }>
   // Real-time close data (populated via POST /cerrar/ after the client
   // confirms and the admin sets the close fields).
   hasRealTimeData?: boolean

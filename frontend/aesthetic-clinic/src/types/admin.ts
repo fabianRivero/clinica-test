@@ -521,7 +521,11 @@ export type OperationDetailAppointment = {
     especialista__usuario__username?: string
   }>
   maquinariaPlanificada?: Array<{
-    maquinariaId: number
+    // Snake_case id (``maquinaria_id``) mirrors the raw ORM
+    // ``values()`` shape returned by ``_operation_detail`` and
+    // ``_appointment_item`` so it stays symmetric with
+    // ``maquinariaUtilizada`` below.
+    maquinaria_id: number
     cantidad: number
     maquinaria__nombre?: string
     maquinaria__marca?: string
