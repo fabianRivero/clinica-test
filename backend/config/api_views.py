@@ -4140,6 +4140,24 @@ def admin_cancel_appointment(request, appointment_id):
     if not appointment:
         return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
 
+    # Operacion suspendida bloquea toda modificacion de la cita. La
+    # suspension es la senal explicita del admin de que el tratamiento
+    # esta pausado; reagendar/cancelar/marcar-pago quedaria en un limbo
+    # porque ``canEditPricePlan``/``canBookNewAppointment`` ya
+    # bloquean en frontend pero los handlers de cita historicamente no
+    # revalidaban el estado del padre.
+    if appointment.operacion and appointment.operacion.estado == Operacion.Estado.SUSPENDIDA:
+        return json_response(
+            {
+                "detail": (
+                    "La operacion esta suspendida. Reactivala para poder "
+                    "cancelar citas o cambiar la reserva."
+                ),
+                "estado": Operacion.Estado.SUSPENDIDA,
+            },
+            status=409,
+        )
+
     if appointment.estado != CitaMedica.Estado.PROGRAMADA:
         return json_response(
             {
@@ -4210,6 +4228,21 @@ def admin_mark_appointment_pending_biometric(request, appointment_id):
     )
     if not appointment:
         return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
+
+    # Operacion suspendida -> no se puede mover la cita a pendiente de
+    # biometria (seria aceptar que el cliente asistio a un tratamiento
+    # que el admin declaro pausado).
+    if appointment.operacion and appointment.operacion.estado == Operacion.Estado.SUSPENDIDA:
+        return json_response(
+            {
+                "detail": (
+                    "La operacion esta suspendida. Reactivala para poder "
+                    "marcar la cita como pendiente de verificacion."
+                ),
+                "estado": Operacion.Estado.SUSPENDIDA,
+            },
+            status=409,
+        )
 
     if appointment.estado != CitaMedica.Estado.PROGRAMADA:
         return json_response({"detail": "Solo se pueden cerrar citas que aun esten programadas."}, status=400)
@@ -4500,6 +4533,20 @@ def admin_reschedule_appointment(request, appointment_id):
     )
     if not appointment:
         return json_response({"detail": "No encontramos la cita solicitada."}, status=404)
+
+    # Operacion suspendida -> reagendar mantiene al cliente vinculado a
+    # un tratamiento que el admin decidio pausar.
+    if appointment.operacion and appointment.operacion.estado == Operacion.Estado.SUSPENDIDA:
+        return json_response(
+            {
+                "detail": (
+                    "La operacion esta suspendida. Reactivala para poder "
+                    "reprogramar la cita."
+                ),
+                "estado": Operacion.Estado.SUSPENDIDA,
+            },
+            status=409,
+        )
 
     if appointment.estado not in {CitaMedica.Estado.PROGRAMADA, CitaMedica.Estado.NO_ASISTIO}:
         return json_response({"detail": "Solo se pueden reprogramar citas programadas o no asistidas."}, status=400)
@@ -5752,6 +5799,51 @@ def admin_suspend_operation(request, operacion_id):
     operacion = _operation_detail_queryset().get(pk=operacion.pk)
     return json_response({
         "detail": "La operacion fue suspendida correctamente.",
+        "operation": _operation_detail(operacion, request=request),
+    })
+
+
+@require_POST
+@admin_required
+@transaction.atomic
+def admin_reactivate_operation(request, operacion_id):
+    """POST /api/admin/operaciones/<id>/reactivar/.
+
+    Inverse of ``admin_suspend_operation``: transitions ``Operacion``
+    ``SUSPENDIDA -> EN_PROCESO`` so citas / cuotas / pagos go back to
+    being editable. No automatic state recompute — the admin may still
+    want to tweak sesiones/cuotas before continuing.
+
+    409 + ``{"detail": "...", "estado": "..."}`` when the source state
+    is not ``SUSPENDIDA``.
+    """
+    operacion = (
+        Operacion.objects.select_for_update(of=("self",))
+        .filter(pk=operacion_id)
+        .first()
+    )
+    if not operacion:
+        return json_response(
+            {"detail": "No encontramos la operacion solicitada."},
+            status=404,
+        )
+
+    try:
+        operacion.reactivar()
+    except ValidationError as exc:
+        return json_response(
+            {
+                "detail": "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc),
+                "estado": operacion.estado,
+            },
+            status=409,
+        )
+
+    operacion.paciente.actualizar_estado_automaticamente()
+
+    operacion = _operation_detail_queryset().get(pk=operacion.pk)
+    return json_response({
+        "detail": "La operacion fue reactivada correctamente.",
         "operation": _operation_detail(operacion, request=request),
     })
 

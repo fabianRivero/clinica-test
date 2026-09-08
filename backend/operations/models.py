@@ -363,6 +363,49 @@ class Operacion(TimeStampedModel):
             "updated_at",
         ])
 
+    def reactivar(self):
+        """Transition ``self`` ``SUSPENDIDA -> EN_PROCESO``.
+
+        Inverse of ``cerrar_como_suspendida``. The admin explicitly
+        chose to resume the treatment; citas / cuotas / maquinaria that
+        were preserved while suspended go back to being editable, but no
+        automatic state recompute runs here — the admin may still want
+        to adjust sesiones/cuotas before continuing.
+
+        Unlike ``cerrar_como_*`` this method does NOT take ``user``:
+        reactivating clears the closure audit trail (``finalized_by`` /
+        ``finalized_at`` / ``finalization_kind``) so the next
+        ``cerrar_como_*`` call stamps them fresh. If we ever need to
+        track who un-suspended, add a separate column rather than
+        reusing the closure fields.
+
+        Raises ``ValidationError`` when the source state is not
+        ``SUSPENDIDA``. (Same shape as ``cerrar_como_suspendida`` /
+        ``cerrar_como_finalizada``.)
+        """
+        from django.core.exceptions import ValidationError
+
+        if self.estado != self.Estado.SUSPENDIDA:
+            raise ValidationError(
+                f"Solo se pueden reactivar operaciones suspendidas "
+                f"(estado actual: {self.get_estado_display()})."
+            )
+
+        self.estado = self.Estado.EN_PROCESO
+        # Clear the closure audit fields so the next ``cerrar_como_*``
+        # call stamps them fresh. We keep the historical row out: this
+        # is the same row, just being un-closed.
+        self.finalized_by = None
+        self.finalized_at = None
+        self.finalization_kind = None
+        self.save(update_fields=[
+            "estado",
+            "finalized_by",
+            "finalized_at",
+            "finalization_kind",
+            "updated_at",
+        ])
+
     def __str__(self):
         return f"Operacion #{self.pk} - {self.paciente}"
 

@@ -75,6 +75,7 @@ from config.api_views import (
     admin_delete_operation_quota,
     admin_finalize_operation,
     admin_suspend_operation,
+    admin_reactivate_operation,
     admin_update_operation_observaciones,
     admin_upload_operation_photos,
     admin_delete_operation_photo,
@@ -388,6 +389,11 @@ urlpatterns = [
         "operaciones/<int:operacion_id>/suspender/",
         admin_suspend_operation,
         name="admin-operation-suspend-api",
+    ),
+    path(
+        "operaciones/<int:operacion_id>/reactivar/",
+        admin_reactivate_operation,
+        name="admin-operation-reactivate-api",
     ),
     path("citas/<int:appointment_id>/cancelar/", admin_cancel_appointment, name="admin-appointment-cancel-api"),
     path(

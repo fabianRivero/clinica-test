@@ -557,10 +557,17 @@ export function suspendAdminOperation(operationId: number) {
  * ``preconditions`` off the thrown Error. This raw fetch variant
  * returns the parsed body (success or failure) and only throws on
  * network / non-JSON failures.
+ *
+ * ``mode`` covers the three state transitions the operation-detail
+ * page drives: ``finalizar`` (EN_PROCESO -> FINALIZADA),
+ * ``suspender`` (EN_PROCESO -> SUSPENDIDA) and ``reactivar``
+ * (SUSPENDIDA -> EN_PROCESO). Only ``finalizar`` carries a
+ * precondition payload on 409; the other two return a plain
+ * ``{detail, estado}`` envelope.
  */
 export async function fetchAdminOperationClosureResponse(
   operationId: number,
-  mode: 'finalizar' | 'suspender',
+  mode: 'finalizar' | 'suspender' | 'reactivar',
 ): Promise<
   | { ok: true; data: OperationClosureResponse }
   | { ok: false; data: OperationClosurePreconditionFailure }

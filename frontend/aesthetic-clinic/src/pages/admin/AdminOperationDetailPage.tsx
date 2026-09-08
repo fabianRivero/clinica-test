@@ -14,6 +14,7 @@ import { useBranchContext } from '../../providers/BranchProvider'
 import { ReservationModal } from './components/ReservationModal'
 import { CerrarCitaModal, type CerrarCitaPayload } from './components/CerrarCitaModal'
 import { OperationClosureConfirmModal, deriveOperationClosurePreconditions } from './components/OperationClosureConfirmModal'
+import { OperationReactivateConfirmModal } from './components/OperationReactivateConfirmModal'
 import { OperationObservationsSection } from './components/OperationObservationsSection'
 import {
   cancelAdminAppointment,
@@ -43,8 +44,21 @@ function getStatusTone(status: string) {
   const normalized = status.toLowerCase()
   if (normalized.includes('final')) return 'success'
   if (normalized.includes('cancel')) return 'danger'
+  if (normalized.includes('suspend')) return 'warning'
   if (normalized.includes('borrador')) return 'warning'
   return 'primary'
+}
+
+/**
+ * Single source of truth for "is this operacion currently editable?".
+ * Mirrors the backend lock in
+ * ``backend/config/api_views.py::admin_cancel_appointment`` etc. — when
+ * the operacion is SUSPENDIDA, every cita / cuota mutation is
+ * rejected at the API. The frontend hides the buttons proactively so
+ * the admin never has to read a 409.
+ */
+function isOperacionSuspendida(status: string): boolean {
+  return status.toLowerCase().includes('suspend')
 }
 
 function numberFromCurrency(value: string) {
@@ -139,6 +153,13 @@ export function AdminOperationDetailPage() {
   const [closureReport, setClosureReport] = useState<OperationClosurePreconditionsReport | null>(null)
   const [closureSourceError, setClosureSourceError] = useState<string | null>(null)
   const [isClosureSubmitting, setIsClosureSubmitting] = useState(false)
+  // operation-reactivate: inverse of the suspender flow. Only reachable
+  // when ``operation.status === 'Suspendida'``. Uses its own modal
+  // (no precondition report) since SUSPENDIDA -> EN_PROCESO has no
+  // business rules beyond the source-state check the backend enforces.
+  const [reactivateModalOpen, setReactivateModalOpen] = useState(false)
+  const [reactivateSourceError, setReactivateSourceError] = useState<string | null>(null)
+  const [isReactivating, setIsReactivating] = useState(false)
   // El precio y los montos por cuota se editan desde el bloque "Citas y
 // cuotas" (sub-bloque Plan de pagos). El save reutiliza el mismo
 // endpoint `actualizar-precio` con la lista `quotas` opcional.
@@ -632,6 +653,10 @@ const handleSaveSessions = async () => {
     if (precioNumber <= 0) return false
     const status = (appointment.status ?? '').toLowerCase()
     if (status === 'cancelada' || status === 'no asistio') return false
+    // Operacion SUSPENDIDA blocks new cobrars at the API (the lock is
+    // in ``OperacionesViewSet.cobrar_cita``); mirror it here so the
+    // button stays out of sight, not just disabled.
+    if (!canMutateOperation) return false
     return true
   }
 
@@ -765,6 +790,56 @@ const handleSaveSessions = async () => {
     }
   }
 
+  // operation-reactivate handlers. The pattern mirrors
+  // ``handleConfirmClosure`` but skips the precondition report
+  // (SUSPENDIDA -> EN_PROCESO has no business rules beyond the source
+  // state, which the backend already enforces). 409 surfaces as
+  // ``sourceStateError`` inside the modal.
+  const openReactivateModal = () => {
+    setReactivateSourceError(null)
+    setReactivateModalOpen(true)
+  }
+  const closeReactivateModal = () => {
+    setReactivateModalOpen(false)
+    setReactivateSourceError(null)
+  }
+  const handleConfirmReactivate = async () => {
+    if (!data) return
+    setIsReactivating(true)
+    setReactivateSourceError(null)
+    try {
+      const result = await fetchAdminOperationClosureResponse(
+        data.operation.rawId,
+        'reactivar',
+      )
+      if (result.ok) {
+        showNotification({
+          title: 'Operacion reactivada',
+          message:
+            result.data.detail ?? 'La operacion volvio a estar en proceso.',
+          tone: 'success',
+        })
+        closeReactivateModal()
+        reload()
+        return
+      }
+      // 409 path: server is authoritative. Reactivacion only carries
+      // source-state rejections (no precondition report).
+      setReactivateSourceError(
+        result.data.detail ??
+          'La operacion no esta en un estado valido para reactivar.',
+      )
+    } catch (requestError) {
+      setReactivateSourceError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo conectar con el servidor.',
+      )
+    } finally {
+      setIsReactivating(false)
+    }
+  }
+
   // The two closure buttons are visible only while `estado === 'En proceso'`.
   // Mirrors `puede_reservar` and follows the spec: outside EN_PROCESO the
   // manual closure flow is hidden (the operation is already terminal).
@@ -824,14 +899,28 @@ const handleSaveSessions = async () => {
   }
 
   const { operation } = data
-  const canEditPricePlan = operation.status.toLowerCase() === 'en proceso'
-  // Lifecycle gate for the new "Observaciones del procedimiento" section
-  // at the bottom of the page. Per the spec (lines 124-144), editable in
-  // BORRADOR and EN_PROCESO, read-only in FINALIZADA and CANCELADA.
-  // Wider than canEditPricePlan (which only matches "en proceso").
-  const canEditObservations = ['borrador', 'en proceso'].includes(
+  // Centralised lifecycle gates. ``canEditPricePlan`` was the only
+  // pre-existing gate; we add ``isSuspended`` (and the broader
+  // ``canMutateOperation``) to honour the new "no editable changes
+  // while suspended" rule that mirrors
+  // ``backend/config/api_views.py`` / ``api/viewsets/clientes.py`` /
+  // ``api/viewsets/payments.py`` 409s on SUSPENDIDA. FINALIZADA and
+  // CANCELADA stay locked (these were already terminal for the manual
+  // closure flow); the only NEW lock is SUSPENDIDA.
+  const isSuspended = isOperacionSuspendida(operation.status)
+  const isTerminalNonSuspended = ['finalizada', 'cancelada'].includes(
     operation.status.toLowerCase(),
   )
+  const canMutateOperation = !isSuspended && !isTerminalNonSuspended
+  const canEditPricePlan =
+    operation.status.toLowerCase() === 'en proceso' && canMutateOperation
+  // Lifecycle gate for the new "Observaciones del procedimiento" section
+  // at the bottom of the page. Per the spec (lines 124-144), editable in
+  // BORRADOR and EN_PROCESO, read-only in FINALIZADA, CANCELADA and
+  // SUSPENDIDA.
+  const canEditObservations =
+    canMutateOperation &&
+    ['borrador', 'en proceso'].includes(operation.status.toLowerCase())
 
   // Etiqueta que aclara que la reserva corresponde a la siguiente cita
   // (en funcion de las que ya estan registradas) y, si el admin ya
@@ -863,6 +952,7 @@ const handleSaveSessions = async () => {
   const excedeSesionesConfiguradas =
     totalSesionesConfiguradas !== null && siguienteNumeroCita > totalSesionesConfiguradas
   const canBookNewAppointment =
+    canMutateOperation &&
     operation.branchId !== null &&
     operation.patientId !== undefined &&
     availableAppointments !== null &&
@@ -970,6 +1060,34 @@ const handleSaveSessions = async () => {
                               : `Para habilitar "Finalizar tratamiento": tienes ${closureReportLive.sesiones.pending} cita(s) que esperan aprobacion del cliente en /tablet.`
                           : 'Todas las precondiciones se cumplen: puedes cerrar este tratamiento.'
                     : 'Cargando precondiciones...'}
+                </p>
+              </div>
+            ) : isSuspended ? (
+              // The closure actions (Finalizar / Suspender) are gated on
+              // ``canEditPricePlan`` which requires EN_PROCESO. SUSPENDIDA
+              // is its own state with a single exit hatch: the
+              // reactivacion flow below. Mirrors the backend ``Operacion.
+              // reactivar()`` transition.
+              <div
+                className="table-actions _mt-sm"
+                data-testid="operation-reactivate-actions"
+              >
+                <button
+                  type="button"
+                  className="button button--primary button--compact"
+                  onClick={openReactivateModal}
+                  disabled={isReactivating}
+                  data-testid="operation-reactivate-button"
+                >
+                  {isReactivating ? 'Reactivando...' : 'Reactivar tratamiento'}
+                </button>
+                <p
+                  className="_mt-xs"
+                  style={{ fontSize: '0.85rem', color: 'var(--color-text-muted, #666)' }}
+                  data-testid="operation-reactivate-help"
+                >
+                  La operacion esta suspendida: las citas y cuotas no se pueden modificar
+                  hasta que la reactives.
                 </p>
               </div>
             ) : null}
@@ -1190,23 +1308,36 @@ const handleSaveSessions = async () => {
                     <small>Verificación: {appointment.biometricStatus}</small>
                     {(() => {
                     const normalized = appointment.status?.toLowerCase?.() ?? ''
-                    const isCancelable = ['programada', 'no asistio'].includes(
+                    // Per-action gates derived from the cita state. The
+                    // *lifecycle* gates below are also gated on
+                    // ``canMutateOperation`` (set further up — true
+                    // only while the operacion is editable). SUSPENDIDA
+                    // / FINALIZADA / CANCELADA lock the operacion, so
+                    // the buttons disappear from the row without us
+                    // having to repeat ``canMutateOperation && `` five
+                    // times below. The backend mirrors this lock with
+                    // 409s in ``admin_cancel_appointment`` etc. so the
+                    // server is still the source of truth.
+                    const isCancelable = canMutateOperation && ['programada', 'no asistio'].includes(
                       normalized,
                     )
-                    const isCloseable = normalized === 'confirmada'
-                    const isMarkPending = normalized === 'programada'
+                    const isCloseable = canMutateOperation && normalized === 'confirmada'
+                    const isMarkPending = canMutateOperation && normalized === 'programada'
                     // Realizada Pendiente de Verificación: el admin puede
                     // revertir a PROGRAMADA si marcó la cita por error
                     // (mismo flujo que el endpoint POST /citas/<id>/
                     // cancelar-verificacion/ del spec appointment-states).
                     const isRevertible =
+                      canMutateOperation &&
                       normalized === 'realizada pendiente de verificación'
                     // "Cobrar cita" puede aparecer junto a cualquiera de
                     // las acciones de lifecycle de arriba, siempre que
                     // `precio > 0` y el estado no sea terminal. Si la
                     // cita no califica para ninguna accion de lifecycle
                     // pero SI es cobrable (ej. CONFIRMADA sin cierre),
-                    // seguimos mostrando el boton aislado.
+                    // seguimos mostrando el boton aislado. ``canCobrar``
+                    // already folds in ``canMutateOperation`` (see
+                    // ``canCobrarAppointment``).
                     const canCobrar = canCobrarAppointment(appointment)
                     if (
                       !isCancelable &&
@@ -2043,6 +2174,15 @@ const handleSaveSessions = async () => {
         isSubmitting={isClosureSubmitting}
         onClose={closeClosureModal}
         onConfirm={() => void handleConfirmClosure()}
+      />
+
+      <OperationReactivateConfirmModal
+        open={reactivateModalOpen}
+        operationLabel={operation.procedure}
+        isSubmitting={isReactivating}
+        sourceStateError={reactivateSourceError}
+        onClose={closeReactivateModal}
+        onConfirm={() => void handleConfirmReactivate()}
       />
 
       <AdminRegisterAppointmentPaymentModal

@@ -16,6 +16,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from billing.models import CuotaPlanPago, PagoRealizado, ConfiguracionPagoQR
+from operations.models import Operacion
 from billing.validators import assert_cuota_in_user_branch, assert_not_over_payment
 from notifications.models import Notification
 from notifications.services import (
@@ -326,6 +327,20 @@ class PagosViewSet(viewsets.ViewSet):
         # Branch isolation — raises Http404 when the admin's branch does
         # not match the cuota's client branch (see validators.py).
         assert_cuota_in_user_branch(request, cuota)
+
+        # Operacion suspendida: cobrar una cuota significaria aceptar
+        # pagos sobre un tratamiento que el admin declaro pausado.
+        if cuota.operacion.estado == Operacion.Estado.SUSPENDIDA:
+            return Response(
+                {
+                    "detail": (
+                        "La operacion esta suspendida. Reactivala para poder "
+                        "registrar pagos en este plan."
+                    ),
+                    "estado": Operacion.Estado.SUSPENDIDA,
+                },
+                status=409,
+            )
 
         serializer = PagoRealizadoCreateSerializer(data=request.data)
         if not serializer.is_valid():

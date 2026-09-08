@@ -721,6 +721,22 @@ class OperacionesViewSet(viewsets.ViewSet):
         # cross-branch attempts.
         assert_cita_in_user_branch(request, cita)
 
+        # Operacion suspendida: cobrar una cita significaria aceptar
+        # pagos sobre un tratamiento que el admin declaro pausado. La
+        # suspension es la unica salida explicita para abandonar el
+        # cobro en curso.
+        if cita.operacion and cita.operacion.estado == Operacion.Estado.SUSPENDIDA:
+            return Response(
+                {
+                    "detail": (
+                        "La operacion esta suspendida. Reactivala para poder "
+                        "cobrar esta cita."
+                    ),
+                    "estado": Operacion.Estado.SUSPENDIDA,
+                },
+                status=409,
+            )
+
         # precio == 0 → reject (admins must set a price first).
         if not cita.precio or cita.precio <= 0:
             return Response(
