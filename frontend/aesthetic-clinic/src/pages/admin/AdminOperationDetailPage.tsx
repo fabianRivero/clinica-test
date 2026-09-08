@@ -304,8 +304,31 @@ const handleSaveSessions = async () => {
       })
       reload()
       setSessionsDraft('')
+      showNotification({
+        title: 'Sesiones actualizadas',
+        message: `La operacion ahora tiene ${parsed} sesion(es) configuradas.`,
+        tone: 'success',
+      })
     } catch (requestError) {
-      setActionError(requestError instanceof Error ? requestError.message : 'No se pudo actualizar el numero de sesiones.')
+      // The backend rejects lowering ``sessionsTotal`` below the
+      // already-confirmed / reserved / pending-biometric cita count
+      // with a 400 carrying ``errors.sessionsTotal`` — surface that
+      // field-level message (it's specific: "No puedes bajar de N
+      // sesion(es)…") instead of the generic ``detail`` ("Corrige los
+      // datos…") so the admin understands why the save was rejected
+      // without having to scan a hard-coded banner. Toast (top-right,
+      // auto-dismissed) so the rest of the page stays calm.
+      const apiError = requestError as Error & { fieldErrors?: Record<string, string> }
+      const fieldMessage = apiError.fieldErrors?.sessionsTotal
+      const message = fieldMessage
+        ?? (requestError instanceof Error
+          ? requestError.message
+          : 'No se pudo actualizar el numero de sesiones.')
+      showNotification({
+        title: 'No se pudo actualizar las sesiones',
+        message,
+        tone: 'danger',
+      })
     } finally {
       setIsSavingSessions(false)
     }
