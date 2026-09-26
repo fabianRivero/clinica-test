@@ -916,13 +916,13 @@ class DirectClientListingIntegrationTests(TestCase):
         # one the frontend uses for the global client search on the
         # CMS clients page). The actual route is the
         # ``admin_clientes_global_search`` view (not the ViewSet
-        # ``@action``), which accepts a single ``q`` query parameter
-        # that matches across name / username / CI / email / phone.
-        # Pass the new CI as ``q`` so the row surfaces in the
-        # single-token OR path that includes CI.
+        # ``@action``), which now accepts the per-field ``ci`` parameter
+        # the CMS clients page sends alongside ``name`` / ``phone`` /
+        # ``email`` / ``code``. The new per-field branch takes
+        # precedence over the legacy ``?q=`` path.
         list_response = self.http.get(
             "/api/admin/clientes/buscar-global/",
-            {"q": new_cliente.ci},
+            {"ci": new_cliente.ci},
         )
         self.assertEqual(list_response.status_code, 200)
         body = list_response.json()
