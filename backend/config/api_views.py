@@ -3090,31 +3090,111 @@ def admin_prospect_check_duplicates(request):
 def admin_clientes_global_search(request):
     """
     Cross-branch client search used by the import flow from a different
-    branch's list. Match semantics mirror /api/admin/usuarios/buscar/:
+    branch's list.
 
-    - A single token (no spaces) keeps the original OR semantics:
-      match any field that contains the token. ``paciente`` matches a
-      user whose username is "paciente.demo" or primer_nombre contains
-      "Paciente".
-    - Multiple tokens (whitespace-separated) switch to AND semantics
-      over the user's full name only. Each token must appear, in any
-      order, in the concatenation of primer_nombre, segundo_nombre,
-      apellido_paterno, apellido_materno (case-insensitive).
-      ``Maria Garcia`` matches "Maria Garcia Lopez"; ``Garcia Maria``
-      matches the same row.
+    Per-field filtering (mirrors ``/api/admin/usuarios/buscar/`` commit
+    ``cliente-codigo-buscar-equipo-recuperar``): when ANY of the new
+    per-field params (``name``, ``ci``, ``phone``, ``email``, ``code``)
+    is non-empty, the view takes the per-field branch. Each non-empty
+    field's value is split on whitespace into tokens; tokens within one
+    field are OR-combined via ``__icontains``; non-empty fields are
+    AND-combined across fields. New params override ``?q=`` when both
+    are present.
 
-    We don't combine per-field OR with per-token AND: a query with
-    spaces is treated as a name query. CI/username/email/phone are
-    single-token fields; multi-token queries would not find "fabian
-    r" by email reliably, and we don't lose much by being strict.
+    Legacy ``?q=`` path preserved for backward compatibility with the
+    direct-conversion listing integration tests. Same semantics as the
+    user recovery endpoint: single-token OR across searchable fields,
+    multi-token AND over the full name only.
+
+    All-empty payload (``{"clients": []}``) is returned when neither
+    the new params nor ``?q=`` carry anything — the frontend uses it
+    to reset the result panel.
     """
-    query = request.GET.get("q", "").strip()
-    if len(query) < 3:
+    q = (request.GET.get("q") or "").strip()
+    q_name = (request.GET.get("name") or "").strip()
+    q_ci = (request.GET.get("ci") or "").strip()
+    q_phone = (request.GET.get("phone") or "").strip()
+    q_email = (request.GET.get("email") or "").strip()
+    q_code = (request.GET.get("code") or "").strip()
+
+    use_field_search = any([q_name, q_ci, q_phone, q_email, q_code])
+
+    # Per-field branch wins over the legacy `?q=` path. When new params
+    # are all absent AND `?q=` is empty, the frontend gets the empty
+    # payload it uses to reset the result panel.
+    if not use_field_search and not q:
         return json_response({"clients": []})
 
     base = Cliente.objects.select_related("usuario", "sucursal_origen")
 
-    tokens = query.split()
+    if use_field_search:
+        filters = Q()
+
+        # Each field: OR within a token's name/username columns, AND
+        # across tokens inside the same field. AND across fields (`&=`).
+        # This matches the legacy ``?q=`` semantics: a query with
+        # multiple tokens is treated as a name query where every token
+        # must hit at least one name column (in any order). ``Demo
+        # Inactivo`` therefore excludes ``Demo Demo`` because the
+        # token ``Inactivo`` is not in any of Demo Demo's name
+        # columns.
+        if q_name:
+            for token in q_name.split():
+                filters &= (
+                    Q(usuario__primer_nombre__icontains=token)
+                    | Q(usuario__segundo_nombre__icontains=token)
+                    | Q(usuario__apellido_paterno__icontains=token)
+                    | Q(usuario__apellido_materno__icontains=token)
+                    | Q(usuario__username__icontains=token)
+                )
+
+        if q_ci:
+            for token in q_ci.split():
+                filters &= (
+                    Q(ci__icontains=token)
+                    | Q(usuario__cliente__ci__icontains=token)
+                    | Q(usuario__especialista__ci__icontains=token)
+                )
+
+        if q_phone:
+            for token in q_phone.split():
+                filters &= (
+                    Q(telefono__icontains=token)
+                    | Q(usuario__telefono__icontains=token)
+                )
+
+        if q_email:
+            for token in q_email.split():
+                filters &= Q(usuario__email__icontains=token)
+
+        if q_code:
+            for token in q_code.split():
+                filters &= Q(cliente_codigo__icontains=token)
+
+        base = base.filter(filters)
+
+        clients_qs = base.exclude(
+            operaciones__citas_medicas__estado=CitaMedica.Estado.PROGRAMADA,
+            operaciones__citas_medicas__fecha_hora__gte=timezone.now(),
+        ).exclude(
+            citas_medicas_libres__estado=CitaClienteLibre.Estado.PROGRAMADA,
+            citas_medicas_libres__fecha_hora__gte=timezone.now(),
+        ).distinct().order_by("usuario__username")[:10]
+
+        from config.api.serializers.clientes import ClientSearchSerializer
+
+        return json_response({
+            "clients": ClientSearchSerializer(clients_qs, many=True).data,
+        })
+
+    # Legacy `?q=` path — preserved verbatim from the original
+    # implementation. Do not touch the byte-for-byte semantics: every
+    # existing test asserts on the single-token OR / multi-token
+    # AND-on-full-name contract.
+    if len(q) < 3:
+        return json_response({"clients": []})
+
+    tokens = q.split()
     if len(tokens) >= 2:
         # AND across tokens on the full name (case-insensitive). Each
         # token is OR'd across the four name fields so the operator
@@ -3135,15 +3215,15 @@ def admin_clientes_global_search(request):
         # username so the operator can search by the account name
         # directly (e.g. "paciente.demo" matches the paciente.demo
         # Cliente profile).
-        ci_q = Q(ci__icontains=query) | Q(usuario__cliente__ci__icontains=query) | Q(usuario__especialista__ci__icontains=query)
+        ci_q = Q(ci__icontains=q) | Q(usuario__cliente__ci__icontains=q) | Q(usuario__especialista__ci__icontains=q)
         text_match = (
-            Q(usuario__username__icontains=query)
-            | Q(usuario__primer_nombre__icontains=query)
-            | Q(usuario__segundo_nombre__icontains=query)
-            | Q(usuario__apellido_paterno__icontains=query)
-            | Q(usuario__apellido_materno__icontains=query)
-            | Q(usuario__email__icontains=query)
-            | Q(usuario__telefono__icontains=query)
+            Q(usuario__username__icontains=q)
+            | Q(usuario__primer_nombre__icontains=q)
+            | Q(usuario__segundo_nombre__icontains=q)
+            | Q(usuario__apellido_paterno__icontains=q)
+            | Q(usuario__apellido_materno__icontains=q)
+            | Q(usuario__email__icontains=q)
+            | Q(usuario__telefono__icontains=q)
             | ci_q
         )
         base = base.filter(text_match)

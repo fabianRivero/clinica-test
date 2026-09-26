@@ -367,9 +367,13 @@ class ClienteOrigenSerializerExposesOrigenTests(TestCase):
         self.http = Client()
         self.http.force_login(self.g["admin"])
 
-        # The endpoint requires a query of at least 3 characters.
+        # The endpoint accepts the per-field ``name`` parameter that the
+        # CMS clients page sends. Per-field params take precedence over
+        # the legacy ``?q=`` path; the ``name`` branch has no minimum
+        # length requirement (it splits tokens and OR-combines them
+        # across the four name fields plus username).
         response = self.http.get(
-            "/api/admin/clientes/buscar-global/?q=Maria",
+            "/api/admin/clientes/buscar-global/?name=Maria",
         )
         self.assertEqual(response.status_code, 200)
         body = response.json()
