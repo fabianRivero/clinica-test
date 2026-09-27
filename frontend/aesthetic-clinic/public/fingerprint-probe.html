@@ -77,6 +77,16 @@
     <h2>Status</h2>
     <pre id="status">(esperando acción del operador)</pre>
 
+    <h2>Hallazgo del probe</h2>
+    <p style="font-size:0.85rem;color:#666">
+        El SDK cargado es un wrapper sobre <code>WebSdk.WebChannelClient</code>
+        (puerto local 52181). Para capturar en browser hace falta un
+        servidor local (HID Authentication Device Client, o el desktop
+        client de DP4500 estandar, o un relay custom) corriendo en el PC
+        del operador. Esto descarta la <strong>Opción A pura-browser</strong>;
+        la captura real pasa a ser un componente Electron (Opción B).
+    </p>
+
     <script>
         const log = (msg, level = 'info') => {
             const status = document.getElementById('status');
