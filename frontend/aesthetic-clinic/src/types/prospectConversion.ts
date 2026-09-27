@@ -145,6 +145,21 @@ export type ProspectConversionBiometricData = {
   deviceSerial: string
   consentAccepted: boolean
   capturedAt: string
+  /**
+   * DP4500 user_external_id UUID generated client-side at capture
+   * time (crypto.randomUUID). Phase 2A enrolls the workstation's
+   * Ed25519 pubkey + template against this UUID; the UUID is then
+   * the stable handle used by Phase 2B's challenge / sign / verify
+   * round-trip on every cita check-in.
+   *
+   * Finalize handler MUST persist this as `cliente.external_id`
+   * when the prospect is promoted to a cliente row (Phase 2A5+),
+   * otherwise the verify step would have nothing to look up.
+   * Optional on the type because the legacy DigitalPersona flow
+   * never minted one and we want existing wizard drafts to keep
+   * typing cleanly until they're re-captured.
+   */
+  externalId?: string
 }
 
 export type ProspectConversionDraft = {

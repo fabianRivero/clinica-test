@@ -102,11 +102,14 @@ export async function ensureSigningKey(): Promise<SigningKey> {
   }
   // Generate a fresh Ed25519 keypair. The private key is marked
   // non-extractable so JS code on the page cannot read the raw bytes.
-  const keyPair = await crypto.subtle.generateKey(
+  // The Ed25519 algorithm is not yet in lib.dom.d.ts's CryptoKeyPair
+  // typing — TS lib still reports the return as `CryptoKey | CryptoKeyPair`,
+  // so we cast through `unknown` to the actual runtime shape.
+  const keyPair = (await crypto.subtle.generateKey(
     { name: "Ed25519" } as EcKeyGenParams & { name: "Ed25519" } as AlgorithmIdentifier,
     /* extractable= */ false,
     ["sign", "verify"],
-  );
+  )) as unknown as CryptoKeyPair;
   const publicKeyRaw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
   const stored: StoredKey = {
     privateKey: keyPair.privateKey,

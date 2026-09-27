@@ -126,7 +126,6 @@ export async function verifyIdentity(
   captureToken: string,
   userExternalId: string,
   serverNonce: string,
-  signingKey: SigningKey,
 ): Promise<VerifyIdentityResult> {
   const timestamp = new Date().toISOString()
   const signature = await signCanonical(
@@ -168,7 +167,6 @@ export async function captureAndVerify(
     challenge.capture_token,
     userExternalId,
     challenge.server_nonce,
-    signingKey,
   )
   return result.matched
 }
