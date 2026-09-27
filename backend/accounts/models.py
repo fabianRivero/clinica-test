@@ -47,6 +47,21 @@ class Usuario(AbstractUser, TimeStampedModel):
             "flow once the user picks a new password."
         ),
     )
+    # Phase 2 of dp4500-host-app-integration-phase2: stable opaque
+    # identity minted by the pre_save signal on first INSERT; consumed
+    # by DP4500 as the cross-system user identifier. The clinic never
+    # logs this value; the raw ServiceAPIKey token is the only
+    # secret in this surface.
+    biometric_external_id = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
+        db_index=True,
+        help_text=(
+            "Stable opaque identity issued by the pre_save signal. "
+            "Sent to DP4500 on every service API call."
+        ),
+    )
 
     class Meta:
         db_table = "usuarios"

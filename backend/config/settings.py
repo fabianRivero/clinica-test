@@ -71,7 +71,12 @@ INSTALLED_APPS = [
     "biometric.apps.BiometricConfig",
     "backups.apps.BackupsConfig",
     "corsheaders",
-]                      
+    # Phase 2 of dp4500-host-app-integration-phase2. Sibling app to
+    # the legacy biometric/ app; hosts the HTTPClient + cascade signal
+    # + Celery tasks. Deprecated separately (Phase 4 will deprecate
+    # the legacy biometric/ app, not this one).
+    "dp4500_integration.apps.Dp4500IntegrationConfig",
+]
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",

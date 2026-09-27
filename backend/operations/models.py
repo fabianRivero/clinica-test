@@ -472,6 +472,25 @@ class CitaMedica(TimeStampedModel):
         blank=True,
         default="",
     )
+    # --- Phase 2 of dp4500-host-app-integration-phase2 ---
+    # Three nullable fields populated atomically by the cita biometric
+    # verify view. All NULL = no biometric check ran (manual or
+    # pending); all three populated = a successful biometric
+    # verification moved the cita to CONFIRMADA. The old ``metodo_confirmacion``
+    # field above still records which method was used; these new fields
+    # carry the DP4500-specific provenance.
+    biometric_challenge_id = models.CharField(
+        max_length=64, null=True, blank=True,
+        help_text="DP4500 capture_token returned by the challenge endpoint.",
+    )
+    biometric_match_confidence = models.DecimalField(
+        max_digits=5, decimal_places=4, null=True, blank=True,
+        help_text="Match score from DP4500's verify response (0.0000..9.9999).",
+    )
+    biometric_verified_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Local clock at the moment of the verify response.",
+    )
     detalles_cita = models.TextField(blank=True)
 
     # --- Appointment payment (citas-pagos) ---------------------------------

@@ -1,4 +1,4 @@
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models.functions import Lower
 
@@ -13,6 +13,28 @@ class Sucursal(TimeStampedModel):
     activa = models.BooleanField(default=True)
 
     especialistas_pueden_abrir_fichas = models.BooleanField(default=True)
+
+    # Phase 2 of dp4500-host-app-integration-phase2: cross-project
+    # reference id for the ServiceAPIKey in DP4500 estandar. CharField,
+    # NOT ForeignKey (DP4500's models live in a different Django project).
+    # The raw bearer token is stored out-of-band via
+    # ``DP4500_SERVICE_KEY_SUCURSAL_<id>`` env vars (Phase 2) or vault
+    # (Phase 4); this column is for visibility / debugging only.
+    dp4500_service_key_id = models.CharField(
+        max_length=64, null=True, blank=True,
+        validators=[
+            RegexValidator(
+                regex=r"^[A-Za-z0-9_.\-]{1,64}$",
+                message=(
+                    "DP4500 service key id must be 1-64 chars, "
+                    "alphanumeric plus _.- only."
+                ),
+            ),
+        ],
+        help_text=(
+            "id of the ServiceAPIKey in DP4500 (cross-project reference)."
+        ),
+    )
 
     class Meta:
         db_table = "sucursales"
