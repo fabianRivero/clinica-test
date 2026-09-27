@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DP4500 Fingerprint SDK — Phase 1 Probe</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 1rem 2rem;
+            color: #222;
+            background: #fafafa;
+        }
+        h1 { font-size: 1.4rem; border-bottom: 2px solid #333; padding-bottom: 0.5rem; }
+        h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+        pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.85rem;
+        }
+        button {
+            font-size: 1rem;
+            padding: 0.6rem 1.2rem;
+            margin: 0.5rem 0.5rem 0.5rem 0;
+            border: none;
+            border-radius: 4px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .ok { color: #16a34a; font-weight: bold; }
+        .err { color: #dc2626; font-weight: bold; }
+        .pending { color: #f59e0b; font-weight: bold; }
+        .step { padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+        #status { font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>DP4500 Fingerprint SDK — Phase 1 Probe</h1>
+    <p>
+        Esta página valida que el SDK HID WebSdk pueda enumerar y capturar
+        muestras desde el lector DP4500 en este browser. Si los 3 pasos
+        pasan, la <strong>Opción A (Browser Web SDK) es viable</strong>;
+        si fallan, pivoteamos a Opción B (Electron child process).
+    </p>
+
+    <h2>Setup</h2>
+    <ol>
+        <li>Conectá el lector DP4500 al USB.</li>
+        <li>Abrí esta página en <strong>Chrome o Edge</strong> (no Firefox, no Safari).</li>
+        <li>Si el browser pide permiso USB para el lector, aceptalo.</li>
+        <li>Los pasos deben completarse en orden.</li>
+    </ol>
+
+    <h2>Paso 1 — Cargar el SDK</h2>
+    <button id="step1" onclick="step1_loadSdk()">Cargar SDK</button>
+    <div id="step1-out" class="step"></div>
+
+    <h2>Paso 2 — Conectar al lector</h2>
+    <button id="step2" onclick="step2_requestDevice()" disabled>Solicitar lector USB</button>
+    <div id="step2-out" class="step"></div>
+
+    <h2>Paso 3 — Capturar una muestra</h2>
+    <button id="step3" onclick="step3_captureSample()" disabled>Capturar muestra</button>
+    <div id="step3-out" class="step"></div>
+
+    <h2>Status</h2>
+    <pre id="status">(esperando acción del operador)</pre>
+
+    <script>
+        // Logs visible en la página; también quedan en console.
+        const log = (msg, level = 'info') => {
+            const status = document.getElementById('status');
+            const ts = new Date().toISOString();
+            const prefix = level === 'err' ? '[ERR]' : level === 'ok' ? '[OK]' : '[..]';
+            status.textContent = `${ts} ${prefix} ${msg}\n` + status.textContent;
+            if (level === 'err') console.error(msg);
+            else if (level === 'ok') console.log(msg);
+            else console.info(msg);
+        };
+
+        let sdkPromise = null;
+        let sdk = null;
+        let device = null;
+
+        async function step1_loadSdk() {
+            const btn = document.getElementById('step1');
+            btn.disabled = true;
+            document.getElementById('step1-out').innerHTML =
+                '<span class="pending">cargando...</span>';
+            try {
+                // The SDK exports a global `WebSdk` after the script runs.
+                // We poll for it because the IIFE may still be evaluating.
+                if (!sdkPromise) {
+                    sdkPromise = new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = '/websdk/websdk.client.min.js';
+                        script.onload = () => {
+                            const deadline = Date.now() + 3000;
+                            const tick = () => {
+                                if (window.WebSdk) resolve(window.WebSdk);
+                                else if (Date.now() > deadline) {
+                                    reject(new Error('WebSdk global no apareció'));
+                                } else {
+                                    setTimeout(tick, 50);
+                                }
+                            };
+                            tick();
+                        };
+                        script.onerror = () => reject(new Error('script load failed'));
+                        document.head.appendChild(script);
+                    });
+                }
+                sdk = await sdkPromise;
+                log(`SDK cargado. Versión: ${sdk.Version || 'desconocida'}`, 'ok');
+                log(`Capacidades: ${Object.keys(sdk).filter(k => typeof sdk[k] === 'function').join(', ')}`, 'info');
+                document.getElementById('step1-out').innerHTML =
+                    '<span class="ok">SDK cargado</span>';
+                document.getElementById('step2').disabled = false;
+            } catch (err) {
+                log(`Fallo al cargar SDK: ${err.message}`, 'err');
+                document.getElementById('step1-out').innerHTML =
+                    `<span class="err">${err.message}</span>`;
+                btn.disabled = false;
+            }
+        }
+
+        async function step2_requestDevice() {
+            const btn = document.getElementById('step2');
+            btn.disabled = true;
+            document.getElementById('step2-out').innerHTML =
+                '<span class="pending">pidiendo permiso USB...</span>';
+            try {
+                if (!sdk) throw new Error('cargá el SDK primero');
+                // RequestDevice es la API central del SDK para
+                // enumerar lectores disponibles.
+                device = await sdk.requestDevice();
+                log(`Lector detectado: ${JSON.stringify(device)}`, 'ok');
+                document.getElementById('step2-out').innerHTML =
+                    `<span class="ok">Lector: ${device ? 'conectado' : '?'}</span>`;
+                document.getElementById('step3').disabled = false;
+            } catch (err) {
+                log(`Fallo requestDevice: ${err.message}`, 'err');
+                document.getElementById('step2-out').innerHTML =
+                    `<span class="err">${err.message}</span>`;
+                btn.disabled = false;
+            }
+        }
+
+        async function step3_captureSample() {
+            const btn = document.getElementById('step3');
+            btn.disabled = true;
+            document.getElementById('step3-out').innerHTML =
+                '<span class="pending">capturando...</span>';
+            try {
+                if (!sdk || !device) throw new Error('completá los pasos 1 y 2 primero');
+                // Captura una muestra. La API varía por versión; intentamos
+                // las formas comunes.
+                let sample = null;
+                if (typeof sdk.sample === 'function') {
+                    sample = await sdk.sample();
+                } else if (sdk.Fingerprint && sdk.Fingerprint.WebApi) {
+                    // Forma usada por el SDK 1.x
+                    const fa = new sdk.Fingerprint.WebApi();
+                    sample = await fa.sample(device);
+                } else {
+                    throw new Error('SDK no expone sample() ni Fingerprint.WebApi');
+                }
+                log(`Muestra capturada: id=${sample?.id || '?'} ` +
+                    `quality=${sample?.quality ?? '?'}`, 'ok');
+                document.getElementById('step3-out').innerHTML =
+                    `<span class="ok">Muestra OK (quality=${sample?.quality ?? '?'}). </span>` +
+                    `<strong>Browser Web SDK viable.</strong>`;
+            } catch (err) {
+                log(`Fallo capture: ${err.message}`, 'err');
+                document.getElementById('step3-out').innerHTML =
+                    `<span class="err">${err.message}</span>`;
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
