@@ -93,11 +93,57 @@
 - [ ] 1.5.1 Run full clinic test suite (`backend/pytest -q` or whichever target). Zero regressions.
 - [ ] 1.5.2 `manage.py makemigrations --check` exits 0. `manage.py check` clean.
 
-**End of Commit 1.** Commit `feat(biometric): foundation — HTTPClient + User/Cita/Sucursal biometric fields`.
+**End of Commit 1.** Commit `feat(dp4500_integration): foundation — HTTPClient + User/Cita/Sucursal biometric fields`.
 
 ---
 
-## Phase 2: Cascade signal + Celery + reconcile (Commit 2)
+## Phase 2: Celery bootstrap + cascade signal + Celery task + reconcile (Commit 2)
+
+### 2.0 Celery bootstrap (must land in Commit 2 alongside the cascade)
+
+Per apply-blockers decision 2 (option a — adopt Celery):
+
+- [ ] 2.0.1 Add `celery>=5.3` and `kombu>=5.3` to `backend/requirements.txt`
+      (above the `cryptography` line, alphabetical).
+- [ ] 2.0.2 GREEN — `backend/config/celery.py`:
+      ```python
+      import os
+      from celery import Celery
+
+      os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+
+      app = Celery("dp4500_integration")
+      app.config_from_object("django.conf:settings", namespace="CELERY")
+      app.autodiscover_tasks()
+      ```
+      No tests yet (Celery wiring is exercised by the cascade tests).
+- [ ] 2.0.3 GREEN — `backend/config/settings.py` add:
+      ```python
+      CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "filesystem:///tmp/dp4500-celery")
+      CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "cache+memory://")
+      CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", True)
+      CELERY_TASK_EAGER_PROPAGATES = True
+      ```
+- [ ] 2.0.4 GREEN — `backend/manage.py` add:
+      ```python
+      from config.celery import app as celery_app  # noqa: F401
+      ```
+      at module load (after `execute_from_command_line(sys.argv)`).
+      This makes `manage.py shell` and `manage.py runserver` aware of
+      the Celery app; tasks are discoverable via `@shared_task`.
+- [ ] 2.0.5 RED — `backend/tests/integration/dp4500_integration/test_celery_bootstrap.py::test_celery_app_imports`.
+      Import `config.celery.app`; assert `app.main == "dp4500_integration"`
+      and `app.autodiscover_tasks()` runs without raising.
+- [ ] 2.0.6 RED same file `test_celery_task_already_eager_default_is_true`.
+      In test settings, `settings.CELERY_TASK_ALWAYS_EAGER` is True so
+      existing tests don't need a worker. (This is the default; lock it.)
+- [ ] 2.0.7 GREEN — both tests pass.
+- [ ] 2.0.8 Document the worker bootstrap in
+      `backend/dp4500_integration/README.md` (NEW; or add to the change's
+      `archive-report.md`): "Local dev: `celery -A config worker -l info`.
+      Tests run with eager mode, no worker needed."
+
+---
 
 ### 2.1 `PendingCascade` + `BiometricEnrollmentRecord` initial migration
 

@@ -129,44 +129,59 @@ metadata on local rows. No fingerprint bytes — only `challenge_id`,
 
 ## 2. Module layout
 
+**Updated per apply-blockers decision 1 (option b):** Phase 2 lives in a
+**new sibling app** `backend/dp4500_integration/`, separate from the
+legacy `backend/biometric/` (which holds the fprintd-based code and
+is deprecated in Phase 4). The `INSTALLED_APPS` entry and URL routing
+keep the two namespaces distinct.
+
 ```
 backend/
-├── apps/
-│   ├── biometric/                       # NEW
-│   │   ├── __init__.py
-│   │   ├── apps.py
-│   │   ├── client.py                    # HTTPClient
-│   │   ├── exceptions.py                # BiometricSuspended, BiometricMismatch, …
-│   │   ├── models.py                    # PendingCascade, BiometricEnrollmentRecord
-│   │   ├── views.py                     # ConversionStepBiometricView + CitaVerifyView
-│   │   ├── urls.py
-│   │   ├── signals.py                   # post_delete handler
-│   │   ├── tasks.py                     # Celery: cascade_revoke_template
-│   │   ├── migrations/
-│   │   │   └── 0001_*.py
-│   │   ├── management/commands/
-│   │   │   └── reconcile_pending_cascades.py
-│   │   ├── templates/biometric/
-│   │   │   └── capture_pending.html
-│   │   └── tests/
-│   │       ├── test_client.py
-│   │       ├── test_views.py
-│   │       ├── test_cascade.py
-│   │       └── test_models.py
-│   ├── users/                           # MODIFIED
-│   │   ├── models.py                    # ADD biometric_external_id
-│   │   ├── signals.py                   # NEW pre_save handler
-│   │   └── migrations/000X_user_biometric_external_id.py
-│   ├── citas/                           # MODIFIED
-│   │   ├── models.py                    # ADD 3 biometric fields
-│   │   └── migrations/000X_citamedica_biometric_fields.py
-│   ├── catalogs/                        # MODIFIED
-│   │   ├── models.py                    # ADD Sucursal.dp4500_service_key_id
-│   │   └── migrations/000X_sucursal_dp4500_key.py
-│   └── config/settings.py                # MODIFIED (add DP4500_* settings)
+├── dp4500_integration/                 # NEW sibling app
+│   ├── __init__.py
+│   ├── apps.py                         # Dp4500IntegrationConfig
+│   ├── client.py                        # HTTPClient (Phase 2 §3)
+│   ├── views.py                         # ConversionStepBiometricView + CitaVerifyView
+│   ├── urls.py
+│   ├── exceptions.py                    # BiometricSuspended, BiometricMismatch, …
+│   ├── models.py                        # PendingCascade, BiometricEnrollmentRecord
+│   ├── signals.py                       # post_delete → cascade hook
+│   ├── tasks.py                         # Celery: cascade_revoke_template
+│   ├── migrations/
+│   │   └── 0001_initial.py
+│   ├── management/commands/
+│   │   └── reconcile_pending_cascades.py
+│   ├── templates/integration/
+│   │   └── capture_pending.html
+│   └── tests/
+│       ├── test_client.py
+│       ├── test_views.py
+│       ├── test_cascade.py
+│       └── test_models.py
+├── accounts/                           # MODIFIED
+│   ├── models.py                        # (Usuario unchanged; no biometric field here)
+│   ├── signals.py                       # NEW pre_save handler for Usuario
+│   │                                    #   (sets biometric_external_id on first INSERT)
+│   └── migrations/000X_usuario_biometric_external_id.py
+├── operations/                         # MODIFIED
+│   ├── models.py                        # ADD 3 biometric fields on CitaMedica
+│   └── migrations/000X_citamedica_biometric_fields.py
+├── catalogs/                          # MODIFIED
+│   ├── models.py                        # ADD Sucursal.dp4500_service_key_id
+│   └── migrations/000X_sucursal_dp4500_key.py
+├── config/
+│   ├── settings.py                      # MODIFIED (add DP4500_* + CELERY_* settings)
+│   ├── celery.py                        # NEW Celery app instance
+│   └── urls.py                          # MODIFIED (add integration/dp4500/ include)
+├── biometric/                          # UNTOUCHED — legacy fprintd code, deprecated in Phase 4
 └── tests/integration/
-    └── test_biometric_integration.py    # NEW: end-to-end smoke via httpx MockTransport
+    └── test_dp4500_integration_e2e.py    # NEW: end-to-end smoke via httpx MockTransport
 ```
+
+**URL routing**: integration endpoints mount at
+`/api/integration/dp4500/...` to keep them distinct from the legacy
+`/api/biometric/...` paths. Reverse names are namespaced
+(`integration-identity-challenge`, `integration-cita-verify`, etc.).
 
 ---
 
