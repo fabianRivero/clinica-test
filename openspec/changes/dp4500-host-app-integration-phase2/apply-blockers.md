@@ -1,16 +1,16 @@
 # Apply blockers for Phase 2
 
 This change (`dp4500-host-app-integration-phase2`) locked the full SDD
-(proposal + 4 specs + design + tasks) but **did not apply**. The three
+(proposal + 4 specs + design + tasks) but **did not apply**. The two
 apply-blocking items below are the things that stop the implementation
 in `proyecto C` from being a clean TDD cycle.
 
-Resolve these in another session, then continue with the tasks list
-in `tasks.md`.
+Resolve these by reviewing the locked decisions below; they are
+authoritative for the apply phase.
 
 ---
 
-## 1. Backend app structure mismatch
+## 1. Backend app structure mismatch — **LOCKED: option (b)**
 
 The SDD artifacts reference `apps/biometric/{client,models,views,...}.py`.
 This repo (`proyecto C`) uses a flat `backend/<appname>/` layout, not a
@@ -18,63 +18,78 @@ nested `backend/apps/<appname>/` layout. The existing
 `backend/biometric/` app already hosts the legacy fprintd-based biometric
 flow.
 
-**Options to resolve:**
+**Locked decision (review session 2026-09-27, option b):** Create a new
+sibling app `backend/dp4500_integration/`. Phase 2 code lives there.
+The legacy `backend/biometric/` stays untouched and gets deprecated
+cleanly in Phase 4.
 
-- **(a) Extend the existing `biometric/` app.** Add `client.py`,
-  `host_models.py`, `host_signals.py`, `host_tasks.py`, `host_views.py`,
-  `host_urls.py` under `backend/biometric/`. Pro: minimal churn.
-  Con: namespace mixing with the legacy code; reviewers see one
-  confusingly-large app.
-- **(b) New sibling app.** Create `backend/dp4500_integration/` (or
-  similar) to host the Phase 2 code separately from the legacy biometric
-  app. Pro: clean separation; Phase 4 deprecation of `biometric/` is
-  easier. Con: `INSTALLED_APPS` change; URL routing changes.
-- **(c) Defer apply.** Land the SDD in a docs-only commit and pick a
-  structural option once it is decided.
+**Implication for `design.md` §2 (Module layout):**
 
-**Locked decision**: NONE. Reviewer picks.
+Replace `apps/biometric/` paths with `dp4500_integration/`:
+
+```
+backend/
+├── dp4500_integration/                # NEW sibling app
+│   ├── apps.py
+│   ├── client.py                       # HTTPClient (Phase 2 §3)
+│   ├── views.py                        # wizard step 4 + cita verify
+│   ├── urls.py
+│   ├── exceptions.py
+│   ├── models.py                       # PendingCascade + BiometricEnrollmentRecord
+│   ├── signals.py                      # post_delete → cascade hook
+│   ├── tasks.py                        # Celery: cascade_revoke_template
+│   ├── migrations/
+│   └── templates/integration/
+├── users/                              # MODIFIED: + biometric_external_id, pre_save signal
+├── operations/                         # MODIFIED: + 3 biometric fields on CitaMedica
+├── catalogs/                          # MODIFIED: + dp4500_service_key_id on Sucursal
+└── ...
+```
+
+`INSTALLED_APPS` gains `"dp4500_integration.apps.Dp4500IntegrationConfig"`.
+URL include at `/api/integration/dp4500/` (or similar) to keep it
+distinct from the legacy `/api/biometric/`.
 
 ---
 
-## 2. Cascade hook requires a Celery-equivalent for "best-effort with retry"
+## 2. Cascade hook requires a Celery-equivalent — **LOCKED: option (a)**
 
 The design (§6) specifies `@shared_task` for the cascade revoke use
 case. This repo does not have Celery installed; there is no worker
-infrastructure. Three paths forward:
+infrastructure.
 
-- **(a) Adopt Celery.** Add `celery>=5.3` + `kombu>=5.3` to
-  `requirements.txt`. Configure a broker (Redis or filesystem),
-  configure `CELERY_*` settings, document a worker bootstrap.
-  Estimated: half a day of plumbing, including a minimal dev-mode
-  worker that the existing `manage.py runserver` can spawn in a
-  thread for local testing. Pros: design-compliant; the long-term
-  path. Con: ops overhead, more dependencies.
-- **(b) Threading-based fire-and-forget.** In the `post_delete` signal
-  handler, spawn `threading.Thread(target=cascade_revoke_template(...),
-  daemon=True).start()`. The thread does the HTTP call with manual
-  retry; on permanent failure, it updates `PendingCascade` to
-  `status="failed"`. Pros: zero new dependencies; works in this repo
-  as-is. Con: threads die with the request process; not safe for
-  multi-worker WSGI deployments; harder to observe/monitor.
-- **(c) Synchronous cascade.** Drop the PendingCascade row entirely.
-  The signal handler calls `client.delete_template(...)` directly. On
-  BiometricUnavailable, log and continue (orphan at DP4500).
-  Pros: simplest. Con: **violates §1.4 invariant 5** ("signal-side
-  failure does NOT roll back the local delete"). The local delete
-  succeeds even on DP4500 outage, leaving an orphan until a future
-  `reconcile_pending_cascades` run. This is option (b) without retry.
+**Locked decision (review session 2026-09-27, option a):** Adopt
+Celery. Add `celery>=5.3` + `kombu>=5.3` + a broker (filesystem for
+dev, Redis for prod) to `requirements.txt`. Configure `CELERY_*`
+settings in `config/settings.py`. Document a worker bootstrap step.
 
-**Locked decision**: NONE. Design assumes (a) explicitly. Reviewer
-picks (a), (b), or (c) and the design document is updated to match.
+**Implication for `tasks.md` §2.2:**
+
+Tasks 2.2.x as-written are Celery-shaped and require no design
+changes. Add a new task to Commit 1 (or Commit 2):
+
+- **2.2.0 NEW** `backend/config/celery.py` — Celery app instance bound
+  to the Django settings module.
+- **2.2.0.1** `backend/dp4500_integration/tasks.py` imports the
+  Celery app for `@shared_task` discovery.
+- **2.2.0.2** `manage.py` — import the Celery app at module load so
+  `manage.py shell` picks it up.
+- **2.2.0.3** `requirements.txt` — `celery>=5.3`, `kombu>=5.3`.
+- **2.2.0.4** `config/settings.py` — `CELERY_BROKER_URL` (default
+  `filesystem:///tmp/dp4500-celery`), `CELERY_RESULT_BACKEND`,
+  `CELERY_TASK_ALWAYS_EAGER` for tests (so existing tests that exercise
+  the cascade use eager mode without needing a worker).
+- **2.2.0.5** Doc — short runbook section explaining how the operator
+  starts a worker locally: `celery -A config worker -l info`.
 
 ---
 
-## 3. `BiometricExternalId` UUID generation timing
+## 3. `BiometricExternalId` UUID generation timing — verification only
 
 The design (§7.1) places a `pre_save` signal on User that generates the
 UUID on `INSERT`. The existing `User` model in this repo
 (`backend/accounts/models.py`) already has extensive `pre_save` and
-`post_save` signals. We need to verify:
+`post_save` signals. The implementer must verify:
 
 - The signal order: which signal runs first when an `INSERT` with no
   primary key hits `User.objects.create()`? Django evaluates
@@ -83,18 +98,25 @@ UUID on `INSERT`. The existing `User` model in this repo
   assumes `instance.pk is None` is a reliable INSERT signal — it is,
   but worth verifying against the actual clinic's User model.
 
-**Locked decision**: NONE. Worth checking while implementing 2.1.
+**Action item**: open `backend/accounts/apps.py` and `backend/accounts/signals.py`
+during Commit 1 of apply. If the existing `User` model already has a
+pre_save signal chain, ensure `assign_biometric_external_id` runs
+*after* any signal that mutates `pk` (which is unusual but worth
+checking). The implementation order is: import the new signal module
+last in `apps.py.ready()`, so it registers last and runs last.
 
 ---
 
 ## Resolution plan
 
-When the apply phase begins, revisit this document. The locked
-decisions here drive the implementation of `tasks.md`:
+When the apply phase begins, follow these steps:
 
-- §1 structural choice → which folder layout
-- §2 cascade runner → sync / threaded / Celery
-- §3 UUID timing → verified or adjusted pre_save hook
-
-A follow-up commit on this branch may amend `design.md` to match
-the applied decisions before the apply commit(s) land.
+1. **Update `design.md` §2 (Module layout)** to use `dp4500_integration/`
+   instead of `apps/biometric/`. This is a documentation-only change
+   that should land as a follow-up commit on the same branch.
+2. **Add Celery bootstrap tasks** to `tasks.md` (§2.2.0.* above) and
+   update the `Pre-apply checklist` to include `manage.py check` for
+   `djcelery` / Celery autodiscovery.
+3. **Verify the pre_save timing** during Commit 1 of apply.
+4. Proceed with the existing `tasks.md` work units (which assume the
+   locked decisions above).
