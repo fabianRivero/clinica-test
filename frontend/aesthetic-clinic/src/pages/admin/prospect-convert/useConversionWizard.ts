@@ -53,7 +53,12 @@ import {
   isBiometricSuspended,
 } from '../../../services/fingerprint/biometricClient'
 import { ensureSigningKey } from '../../../services/biometric/ed25519-key-manager'
-import { enrollIdentity } from '../../../services/biometric/dp4500-capture-client'
+import {
+  BiometricHardwareError,
+  BiometricQualityTooLow,
+  captureFingerprint,
+  enrollIdentity,
+} from '../../../services/biometric/dp4500-capture-client'
 
 /**
  * Wizard mode discriminator — matches the URL-derived value in
@@ -757,7 +762,39 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
         const fingerprintHex = Array.from(new Uint8Array(digest))
           .map((byte) => byte.toString(16).padStart(2, '0'))
           .join('')
-        await enrollIdentity(externalId, '', signingKey, fingerprintHex, 'DP_PROPRIETARY')
+        // Phase 3: capture a real fingerprint sample via the
+        // vendorized DigitalPersona Web SDK. On success the template
+        // bytes replace the Phase 2A4 empty-string placeholder; on
+        // `BiometricHardwareError` (no reader / WebChannel host
+        // down / SDK init failure) we fall through with `templateB64`
+        // = '' so the legacy enroll endpoint still receives a valid
+        // request — the Phase 2A4 NO_AGENT dev path remains intact.
+        // On `BiometricQualityTooLow` we surface the retry hint to
+        // the operator and abort the enroll.
+        let templateB64 = ''
+        if (!biometricSuspended) {
+          try {
+            const captured = await captureFingerprint()
+            templateB64 = captured.templateB64
+          } catch (captureErr) {
+            if (captureErr instanceof BiometricQualityTooLow) {
+              setBiometricStatus('Calidad insuficiente. Vuelve a intentarlo.')
+              return false
+            }
+            // BiometricHardwareError (or any other capture-time
+            // error) → fall through with templateB64 = ''. The wire
+            // contract for `enrollIdentity` already supports empty
+            // templates (Phase 2A4 placeholder); the NO_AGENT path
+            // below (lines 842-859) is the dev escape hatch when the
+            // legacy endpoint itself reports no reader.
+            if (!(captureErr instanceof BiometricHardwareError)) {
+              // Unknown capture error: log + fall through with empty
+              // template so the wizard step stays unblocked.
+              console.warn('captureFingerprint() fallo:', captureErr)
+            }
+          }
+        }
+        await enrollIdentity(externalId, templateB64, signingKey, fingerprintHex, 'DP_PROPRIETARY')
         return true
       } catch {
         // Best-effort: swallow so the wizard step stays unblocked.

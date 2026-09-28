@@ -13,6 +13,8 @@
     "test:e2e:suspension": "playwright test --config playwright.suspension.config.ts"
   },
   "dependencies": {
+    "@digitalpersona/fingerprint": "^1.0.0",
+    "@digitalpersona/websdk": "^1.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.14.1",
@@ -30,8 +32,10 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
+    "jsdom": "^26.0.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",
-    "vite": "^8.0.4"
+    "vite": "^8.0.4",
+    "vitest": "^3.0.0"
   }
 }

@@ -152,3 +152,55 @@ export DP4500_BASE_URL="http://$(ip route show default | awk '{print $3}'):8000"
 ### "UNIQUE constraint failed: biometric_template.client_pubkey_fingerprint" en enroll
 
 La workstation ya tiene un template activo en DP4500 con ese fingerprint. Cerrá la ventana de incógnito y abrí una nueva (IndexedDB limpio → nueva keypair Ed25519 → nuevo fingerprint).
+
+## Phase 3 setup — captura real de huella (DigitalPersona 4500)
+
+Phase 3 (`openspec/changes/dp4500-host-app-integration-phase3-capture-client/`) reemplaza el placeholder `template_b64 = ''` de Phase 2A4 con un wrapper `captureFingerprint()` que carga el SDK vendoreado y captura una muestra real desde el lector. Esto es **opt-in** — el fallback NO_AGENT sigue activo en workstations sin hardware.
+
+### Requisitos del operador
+
+- **Lector DigitalPersona 4500** conectado vía USB a la workstation.
+- **HID Authentication Device Client** (gratis, Windows) instalado y corriendo — el SDK de browser habla con el lector a través de este cliente vía WebChannel (puerto local 52181). Sin este cliente el wrapper tira `BiometricHardwareError` y el wizard cae al NO_AGENT.
+- **Chrome o Edge** (no Firefox, no Safari). El SDK declara `"browserslist": ["not iOS > 0", "not Android > 0", "edge >= 17"]` — Firefox y Safari quedan fuera.
+- Permiso USB para el lector cuando el browser lo pida la primera vez.
+
+### Variables de entorno del frontend
+
+- `VITE_DP4500_SERVICE_API_KEY` — el Bearer token que `dp4500-capture-client.ts` lee al cargarse. Sin esto, `enrollIdentity()` tira error de configuración antes de cualquier captura (Phase 2A4 contract).
+- `VITE_BIOMETRIC_SUSPENDED` — si está en `true`, el wizard skipea captura entera (Phase 2A4 build flag). Para activar la captura real, dejá en `false` o sin setear.
+
+### Verificar que el SDK cargó
+
+En DevTools del browser, después de abrir el modal de captura y clickear "Activar lector":
+
+```js
+window.Fingerprint        // { WebApi: function, ... } — el global del SDK
+window.Fingerprint.WebApi // class — constructor del facade
+```
+
+Si `window.Fingerprint` es `undefined` después de clickear "Activar lector", el script `/websdk/fingerprint.sdk.min.js` no se inyectó (404, MIME type, CSP). Revisá la pestaña Network.
+
+### Fallback NO_AGENT
+
+Workstations SIN lector o SIN HID Authentication Device Client:
+- El wrapper tira `BiometricHardwareError` tras 30s (timeout) o inmediato si no hay WebChannel host.
+- El wizard cae al NO_AGENT path (`useConversionWizard.ts:842-859` — preservado verbatim desde Phase 2A4).
+- El enroll se completa con `template_b64 = ''` (placeholder contract validado en Phase 2A4).
+- La UI muestra "DP4500 enroll OK; legacy omitido (sin lector)" o "Captura legacy omitida (sin lector); enroll DP4500 diferido." según el enroll sidecar.
+
+### Verificación end-to-end
+
+```bash
+cd "C:\proyectos\proyecto C\frontend\aesthetic-clinic"
+npx tsc -b --pretty false                              # type-check
+npx eslint src/services/biometric/dp4500-capture-client.ts src/pages/admin/prospect-convert/useConversionWizard.ts
+npx vitest run src/services/biometric/__tests__/dp4500-capture-client.test.ts   # unit tests (sin hardware)
+```
+
+Para validación con hardware real, abrí `http://localhost:5173/public/fingerprint-probe.html` y seguí los 3 pasos (cargar SDK, iniciar adquisición, esperar muestra). El probe page carga el mismo `/websdk/fingerprint.sdk.min.js` vendoreado.
+
+### Out of scope (Phase 4)
+
+- `fingerprint-agent` local (Python + `cloudflared` tunnel) si la verificación con hardware falla.
+- KMS-backed key store, mTLS, per-sucursal routing, DPIA §9.
+- `Cliente.external_id` UUIDField + finalize handler persistence.
