@@ -1318,7 +1318,6 @@ def _validate_biometric_step(payload):
     device_serial = (payload.get("deviceSerial") or "").strip()
     consent_accepted = _parse_bool(payload.get("consentAccepted"))
     captured_at = (payload.get("capturedAt") or "").strip()
-    quality = _parse_positive_int(payload.get("quality"), "quality", errors, required=True, min_value=1)
 
     # Phase 2A5: ``externalId`` is the wizard-minted UUID that the
     # frontend persists at capture time (``biometricForm.externalId``).
@@ -1330,13 +1329,43 @@ def _validate_biometric_step(payload):
     # field (legacy paths, MOCK_LEGACY templates) keep flowing untouched
     # and the pre_save signal remains the defensive fallback.
     external_id_raw = (payload.get("externalId") or "").strip()
+    # Phase 2A4 NO_AGENT placeholder path: when no physical reader is
+    # configured for the sucursal, the frontend mints a UUID via
+    # ``crypto.randomUUID()`` and calls ``enrollIdentity()`` on the
+    # DP4500 host app with ``template_b64=""``. The enroll OK is the
+    # canonical capture event for this workstation+session, so a
+    # payload that carries an ``externalId`` is allowed to ship
+    # ``template=""`` and ``quality=0`` without being rejected. The
+    # legacy path (no externalId) still requires a real template with
+    # quality >= 60, which is what the MOCK_LEGACY drafts rely on.
+    has_external_id = bool(external_id_raw)
+
+    # Quality: legacy path demands a positive integer (>=1); Phase 2A4
+    # placeholder path accepts quality=0 because no real capture
+    # happened and the DP4500 enroll already validated the event.
+    # The minimum floor differs by path, so we compute it from
+    # ``has_external_id`` instead of branching the whole parse.
+    quality = _parse_positive_int(
+        payload.get("quality"),
+        "quality",
+        errors,
+        required=not has_external_id,
+        min_value=0 if has_external_id else 1,
+    )
 
     if provider not in {choice[0] for choice in HuellaBiometricaCliente.Proveedor.choices}:
         errors["provider"] = "El proveedor biometrico no es valido."
-    if not template:
-        errors["template"] = "Debes capturar una huella antes de continuar."
-    if quality is not None and quality < 60:
-        errors["quality"] = "La calidad simulada debe ser de al menos 60."
+
+    # Template + quality floor: only enforced on the legacy path.
+    # Phase 2A4 NO_AGENT drafts deliberately carry an empty template
+    # and zero quality because the DP4500 enroll is the canonical
+    # capture event; downstream code (finalize handler at lines
+    # 2205-2237) keys off ``externalId`` for those drafts.
+    if not has_external_id:
+        if not template:
+            errors["template"] = "Debes capturar una huella antes de continuar."
+        if quality is not None and quality < 60:
+            errors["quality"] = "La calidad simulada debe ser de al menos 60."
 
     if errors:
         return None, errors

@@ -880,7 +880,7 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
     // While the build flag is on we deliberately skip capture; an
     // empty template is the explicit contract for the suspended
     // finalize path. We still write the step so the wizard advances.
-    if (!biometricForm.template && !biometricSuspended) {
+    if (!biometricForm.template && !biometricSuspended && !biometricForm.externalId) {
       setFieldErrors({ template: 'Debes capturar la huella biometrica antes de continuar.' })
       return
     }
