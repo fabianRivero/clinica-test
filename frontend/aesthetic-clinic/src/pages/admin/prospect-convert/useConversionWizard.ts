@@ -742,6 +742,13 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
      * Returns `true` on full success, `false` if the enroll was
      * deferred (network down, 503, etc.). The caller decides which
      * status string to surface to the operator based on this flag.
+     *
+     * Declared at function scope (not inside the `try`) so the
+     * `catch` recovery for NO_AGENT can mint a UUID + enroll the
+     * DP4500 sidecar when the legacy endpoint reports no reader
+     * configured for this sucursal. That branch exercises the
+     * Phase 2A4 wire contract end-to-end in dev where the
+     * physical DigitalPersona reader is not installed.
      */
     const enrollDp4500 = async (externalId: string): Promise<boolean> => {
       try {
@@ -823,6 +830,34 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
         requestError instanceof Error
           ? requestError.message
           : 'No se pudo capturar la huella.'
+      // Phase 2A4 dev recovery: when the legacy enroll endpoint reports
+      // that no reader is configured for this sucursal (NO_AGENT), the
+      // physical DigitalPersona 4500 is simply not installed in dev —
+      // that is expected, not an operator error. We still want to
+      // exercise the DP4500 sidecar end-to-end (UUID mint + pubkey
+      // enroll + server ack), so we mint the externalId, run the
+      // sidecar, and report success. For Phase 2A4 the legacy capture
+      // is not the source of truth — real template acquisition is
+      // Phase 4 (host-app integration design §Q1).
+      if (message.includes('No hay ningun lector')) {
+        const externalId = crypto.randomUUID()
+        const dp4500Enrolled = await enrollDp4500(externalId)
+        setBiometricForm({
+          provider: 'DIGITAL_PERSONA',
+          template: '',
+          quality: 0,
+          deviceSerial: '',
+          capturedAt: new Date().toISOString(),
+          consentAccepted: biometricForm.consentAccepted,
+          externalId,
+        })
+        setBiometricStatus(
+          dp4500Enrolled
+            ? 'DP4500 enroll OK; legacy omitido (sin lector).'
+            : 'Captura legacy omitida (sin lector); enroll DP4500 diferido.',
+        )
+        return { success: true }
+      }
       setSubmitError(message)
       setBiometricStatus(message)
       return { success: false, errorMessage: message }

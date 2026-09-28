@@ -30,13 +30,85 @@
  * rest of the flow is exercised.
  */
 
-import { postJson, API_BASE_URL } from '../api/apiClient'
+import { API_BASE_URL } from '../api/apiClient'
 import {
   ensureSigningKey,
   publicKeyToBase64Url,
   signCanonical,
   type SigningKey,
 } from './ed25519-key-manager'
+
+/**
+ * DP4500 service-API credentials.
+ *
+ * The DP4500 host-app endpoints under `/api/biometric/service/*` require
+ * a Bearer token issued by `manage.py create_service_api_key`. They do
+ * NOT fall back to the Django session, so every request from this
+ * client must carry `Authorization: Bearer <key>`.
+ *
+ * The key is read from `VITE_DP4500_SERVICE_API_KEY` at module load
+ * (Vite inlines `import.meta.env.VITE_*` at build time). We trim and
+ * fall back to an empty string so a misconfigured build can still be
+ * imported; the first call into a service endpoint will throw a clear
+ * configuration error instead of silently 401'ing.
+ */
+const DP4500_SERVICE_API_KEY = (import.meta.env.VITE_DP4500_SERVICE_API_KEY || '').trim()
+
+/**
+ * Build the Bearer header for a DP4500 service-API request. Throws a
+ * configuration error (rather than crashing at module load) when the
+ * key is missing, so a misconfigured dev env surfaces at the point of
+ * first use with a clear remediation hint.
+ */
+function dp4500Headers(): Record<string, string> {
+  if (!DP4500_SERVICE_API_KEY) {
+    throw new Error(
+      'DP4500 ServiceAPIKey is not configured. Set VITE_DP4500_SERVICE_API_KEY in the frontend .env file (see .env.example).',
+    )
+  }
+  return { Authorization: `Bearer ${DP4500_SERVICE_API_KEY}` }
+}
+
+/**
+ * Minimal POST-with-JSON helper for the DP4500 service endpoints.
+ *
+ * Mirrors `postJson` from `../api/apiClient` but:
+ *   - uses Bearer auth via `dp4500Headers()` instead of CSRF (the
+ *     service endpoints do not accept Django sessions), and
+ *   - does not include `X-Selected-Branch-Id` (the service endpoints
+ *     are workstation-scoped, not branch-scoped).
+ *
+ * Kept private to this module: if a future caller needs both CSRF and
+ * a Bearer header, extend `apiClient.ts` with a new variant instead of
+ * widening this helper.
+ */
+async function postJsonWithBearer<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    // Service endpoints authenticate via Bearer, not cookies.
+    credentials: 'omit',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      ...dp4500Headers(),
+    },
+    body: JSON.stringify(body),
+  })
+
+  const data = (await response.json().catch(() => null)) as
+    | T
+    | { detail?: string }
+    | null
+
+  if (!response.ok) {
+    const detail = (data && typeof data === 'object' && 'detail' in data && typeof (data as { detail?: unknown }).detail === 'string')
+      ? (data as { detail: string }).detail
+      : null
+    throw new Error(detail || `Error ${response.status}`)
+  }
+
+  return data as T
+}
 
 /**
  * Result of a successful enrollIdentity call.
@@ -103,7 +175,7 @@ export async function enrollIdentity(
     quality_score: 0, // Phase 4 captures the real quality score
     format,
   }
-  const response = await postJson<EnrollIdentityResult>(path, body)
+  const response = await postJsonWithBearer<EnrollIdentityResult>(path, body)
   return response
 }
 
@@ -114,7 +186,7 @@ export async function challengeIdentity(
   userExternalId: string,
 ): Promise<ChallengeIdentityResult> {
   const path = `${API_BASE_URL}/api/biometric/service/challenge/identity/${encodeURIComponent(userExternalId)}/`
-  return postJson<ChallengeIdentityResult>(path, {})
+  return postJsonWithBearer<ChallengeIdentityResult>(path, {})
 }
 
 /**
@@ -135,7 +207,7 @@ export async function verifyIdentity(
     timestamp,
   )
   const path = `${API_BASE_URL}/api/biometric/service/verify/identity/`
-  return postJson<VerifyIdentityResult>(path, {
+  return postJsonWithBearer<VerifyIdentityResult>(path, {
     challenge_id: captureToken,
     signature,
     timestamp,
