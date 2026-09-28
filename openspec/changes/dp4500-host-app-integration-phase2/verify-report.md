@@ -4,7 +4,7 @@ evidence_revision: sha256:29dba4ef559a308d401e1242d2a2d55416c61f29f78da7edd1f63d
 verdict: pass_with_warnings
 blockers: 0
 critical_findings: 0
-requirements: 50/50
+requirements: 28/28
 scenarios: 50/50
 test_command: wsl -e bash -c 'cd /mnt/c/proyectos/"proyecto C"/backend && python -m pytest -q dp4500_integration/tests/test_views_cita.py config/tests/test_prospect_conversion_biometric_finalize.py tests/integration/dp4500_integration/test_celery_bootstrap.py tests/integration/dp4500_integration/test_smoke_e2e.py'
 test_exit_code: 0
