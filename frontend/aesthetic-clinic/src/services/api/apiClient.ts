@@ -178,6 +178,38 @@ export async function postJson<T>(path: string, body: unknown): Promise<T> {
   return data as T
 }
 
+/**
+ * POST JSON body WITHOUT the X-CSRFToken header.
+ *
+ * Phase 2A5 of dp4500-host-app-integration-phase2 adds this variant
+ * for endpoints that authenticate the request via Django session
+ * cookies but historically have rejected CSRF — for example,
+ * experimental workstation-side flows where CSRF protection is
+ * provided out-of-band (e.g. via a JWT-in-cookie) instead of via
+ * the legacy double-submit token. The DP4500 cita verify endpoint
+ * (mounted at ``/api/integration/dp4500/citas/<id>/verificar/``)
+ * uses session auth (``IsAuthenticated``) and therefore still wants
+ * the regular ``postJson`` in production. This helper exists so
+ * workstation-only experiments can opt out cleanly without ripping
+ * the CSRF plumbing out of the standard helpers.
+ *
+ * Keep the same branch + cookie semantics as ``postJson``; the only
+ * difference is the absence of the X-CSRFToken header.
+ */
+export async function postJsonNoCsrf<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: buildHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify(body),
+  })
+  const data = (await response.json().catch(() => ({}))) as T | { detail?: string }
+  if (!response.ok) throw new Error((data as { detail?: string })?.detail || `Error ${response.status}`)
+  return data as T
+}
+
 /** Simple POST with FormData, branch header. Throws on error with detail message. */
 export async function postForm<T>(path: string, formData: FormData): Promise<T> {
   const csrf = await ensureCsrfCookie()

@@ -866,6 +866,15 @@ def _client_item(cliente):
         # ``cliente-origen`` spec requirement that every Cliente-shaped
         # payload expose this field for reporting visibility.
         "origen": cliente.origen,
+        # Phase 2A5: cross-system UUID the DP4500 service API uses to
+        # address this cliente. Populated by the prospect-conversion
+        # finalize handler from ``datos_biometria["externalId"]`` and
+        # surfaced here so the React ``BiometricVerifyCaptureModal``
+        # can resolve the cliente without an extra round-trip. Null
+        # when the cliente was onboarded through a non-wizard path
+        # (e.g. legacy MOCK); the modal then surfaces the "no
+        # biometric_external_id" error path from the backend.
+        "externalId": str(cliente.external_id) if cliente.external_id else None,
     }
 
 

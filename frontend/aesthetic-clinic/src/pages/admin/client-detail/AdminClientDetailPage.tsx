@@ -111,6 +111,8 @@ export function AdminClientDetailPage() {
     verifyModalCitaId,
     openVerifyBiometric,
     closeVerifyBiometric,
+    // Phase 2A5: wizard-minted UUID from ``Cliente.external_id``.
+    clienteExternalId,
 
     // Operations pagination
     visibleOperations,
@@ -819,6 +821,7 @@ export function AdminClientDetailPage() {
       <BiometricVerifyCaptureModal
         open={!biometricSuspended && verifyModalCitaId !== null}
         citaId={verifyModalCitaId ?? 0}
+        userExternalId={clienteExternalId}
         onClose={closeVerifyBiometric}
         onConfirmResult={({ matched, message, citaId: confirmedCitaId }) => {
           if (matched) {

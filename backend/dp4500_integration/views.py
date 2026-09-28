@@ -66,12 +66,20 @@ class ConversionStepBiometricView(View):
     template_name = "integration/capture_pending.html"
 
     def get(self, request: Request, prospect_id: int) -> Any:
-        # Phase 2 stub: render with a placeholder. Phase 4 will look
-        # up the User associated with the prospect and pass
-        # ``biometric_external_id`` as the user-visible identifier.
+        # Phase 2A5: the real conversion wizard lives on the React
+        # frontend; this Django view is a stub that exists for the URL
+        # smoke test and the Phase 4 swap. We DO surface the admin's
+        # own ``biometric_external_id`` (from the pre_save signal) so
+        # the template can render a stable operator-side identifier
+        # instead of ``None``. The wizard-minted UUID that the React
+        # frontend persists lives on ``Cliente.external_id`` and is
+        # captured by ``CitaBiometricVerifyView`` directly, so this
+        # surface is informational only.
         context = {
             "prospect_id": prospect_id,
-            "biometric_external_id": None,
+            "biometric_external_id": getattr(
+                request.user, "biometric_external_id", None,
+            ),
             "biometric_available": True,
             "wizard_step": 4,
         }
@@ -164,15 +172,19 @@ class CitaBiometricVerifyView(APIView):
                         status=status.HTTP_409_CONFLICT,
                     )
 
-                # Resolve the host-app user's biometric_external_id. The
-                # ``operacion.paciente.usuario`` path mirrors the clinic's
-                # existing user-relationship chain.
+                # Resolve the cross-system handle from
+                # ``Cliente.external_id`` — Phase 2A5 surfaces the
+                # wizard-minted UUID directly on the cliente so the
+                # verify path does not depend on the
+                # ``Usuario.biometric_external_id`` signal mint.
                 user_external_id = ""
-                if cita.operacion_id:
-                    cliente = getattr(cita.operacion, "paciente", None)
-                    usuario = getattr(cliente, "usuario", None) if cliente else None
+                cliente = (
+                    getattr(cita.operacion, "paciente", None)
+                    if cita.operacion_id else None
+                )
+                if cliente is not None:
                     user_external_id = str(
-                        getattr(usuario, "biometric_external_id", "") or ""
+                        getattr(cliente, "external_id", "") or "",
                     )
                 if not user_external_id:
                     return Response(
@@ -183,23 +195,37 @@ class CitaBiometricVerifyView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-                # Step 1: challenge.
-                try:
-                    challenge = client.identity_challenge(
-                        user_external_id=user_external_id,
-                        sucursal_id=cita.sucursal_id,
+                # Phase 2A5: the browser signs the canonical via
+                # ``dp4500-capture-client.verifyIdentity`` and POSTs the
+                # signed payload here. We forward the bytes verbatim —
+                # no more ``signature_b64="phase2-stub"`` synthesis on
+                # the server side. Payload shape is intentionally tight
+                # (the spec only documents these three fields).
+                payload = request.data if isinstance(request.data, dict) else {}
+                challenge_id = (payload.get("challenge_id") or "").strip()
+                signature_b64 = (payload.get("signature") or "").strip()
+                timestamp = (payload.get("timestamp") or "").strip()
+                if not challenge_id or not signature_b64 or not timestamp:
+                    return Response(
+                        {
+                            "detail": (
+                                "El cuerpo debe incluir challenge_id, signature "
+                                "y timestamp firmados por el navegador."
+                            ),
+                            "code": "missing_signed_payload",
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
                     )
-                except BiometricUnavailable as exc:
-                    return self._dp4500_unavailable(exc)
 
-                # Step 2: verify. Phase 2 passes "phase2-stub" as the
-                # signature; Phase 4 wires real Ed25519 sign.
+                # Step 2 only (skip the server-side challenge request —
+                # the browser already holds the capture token from
+                # ``dp4500-capture-client.challengeIdentity``).
                 try:
                     result = client.identity_verify(
                         user_external_id=user_external_id,
-                        challenge_id=challenge.capture_token,
-                        signature_b64="phase2-stub",
-                        timestamp=timezone.now().isoformat(),
+                        challenge_id=challenge_id,
+                        signature_b64=signature_b64,
+                        timestamp=timestamp,
                         sucursal_id=cita.sucursal_id,
                     )
                 except (BiometricMismatch, BiometricVerifyFailed) as exc:
@@ -222,12 +248,19 @@ class CitaBiometricVerifyView(APIView):
                 # Match: write all three biometric fields atomically.
                 cita.estado = CitaMedica.Estado.CONFIRMADA
                 cita.metodo_confirmacion = CitaMedica.MetodoConfirmacion.BIOMETRICO
-                cita.biometric_challenge_id = challenge.capture_token
-                # ``match.confidence`` is the match score; Phase 1's
-                # response does not include it in the verify response,
-                # so we leave None here. Phase 4 reads it from the
-                # response payload.
+                cita.biometric_challenge_id = challenge_id
+                # The ``confidence`` field would surface from DP4500's
+                # verify response in a future revision; today the wire
+                # returns ``matched`` + ``audit_hash`` only, so we
+                # fall back to 0 (placeholder) so the column is
+                # populated in lockstep with the other two. Phase 4
+                # can plumb the real score through once DP4500 starts
+                # emitting it.
+                cita.biometric_match_confidence = _decimal4(
+                    getattr(result, "confidence", 0) or 0,
+                )
                 cita.biometric_verified_at = timezone.now()
+                cita.verif_biometria = True
                 cita.save()
                 return Response(
                     {"ok": True, "audit_hash": result.audit_hash},

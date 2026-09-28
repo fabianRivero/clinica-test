@@ -1320,6 +1320,17 @@ def _validate_biometric_step(payload):
     captured_at = (payload.get("capturedAt") or "").strip()
     quality = _parse_positive_int(payload.get("quality"), "quality", errors, required=True, min_value=1)
 
+    # Phase 2A5: ``externalId`` is the wizard-minted UUID that the
+    # frontend persists at capture time (``biometricForm.externalId``).
+    # The finalize handler reads it back from
+    # ``draft.datos_biometria["externalId"]`` and promotes it to BOTH
+    # ``Usuario.biometric_external_id`` AND ``Cliente.external_id`` so the
+    # cita verify endpoint can address the cliente by a stable
+    # cross-system handle. Optional on the contract: drafts without the
+    # field (legacy paths, MOCK_LEGACY templates) keep flowing untouched
+    # and the pre_save signal remains the defensive fallback.
+    external_id_raw = (payload.get("externalId") or "").strip()
+
     if provider not in {choice[0] for choice in HuellaBiometricaCliente.Proveedor.choices}:
         errors["provider"] = "El proveedor biometrico no es valido."
     if not template:
@@ -1330,14 +1341,20 @@ def _validate_biometric_step(payload):
     if errors:
         return None, errors
 
-    return {
+    result = {
         "provider": provider,
         "template": template,
         "quality": quality,
         "deviceSerial": device_serial,
         "consentAccepted": consent_accepted,
         "capturedAt": captured_at,
-    }, None
+    }
+    # Round-trip the UUID only when the wizard actually supplied one —
+    # legacy MOCK drafts that never set ``externalId`` keep the field
+    # absent on the persisted draft, matching the pre-Phase 2A5 shape.
+    if external_id_raw:
+        result["externalId"] = external_id_raw
+    return result, None
 
 
 def _normalize_biometric_draft_data(draft):
@@ -2183,6 +2200,41 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
                     "registrado_por": request.user,
                 }
             )
+
+    # Phase 2A5: propagate the wizard-minted UUID from
+    # ``datos_biometria["externalId"]`` onto BOTH ``Usuario.biometric_external_id``
+    # AND ``Cliente.external_id``. The pre_save signal normally auto-mints a
+    # UUID on Usuario INSERT, but the frontend mints an independent UUID
+    # at capture time and persists it through the wizard; finalize MUST
+    # prefer that wizard-minted value so DP4500's enroll and the cita
+    # verify endpoints agree on the cross-system handle. The whole block
+    # runs inside the @transaction.atomic decorator on this view, so a
+    # failure in either save rolls back the user + cliente + huella
+    # writes above.
+    external_id_raw = (biometric_data.get("externalId") or "").strip()
+    if external_id_raw:
+        from uuid import UUID as _UUID
+        try:
+            wizard_external_id = _UUID(external_id_raw)
+        except (ValueError, AttributeError):
+            # Malformed UUID — leave the signal's value untouched; the
+            # upstream capture flow is responsible for producing a
+            # well-formed v4 UUID.
+            wizard_external_id = None
+        if wizard_external_id is not None:
+            # Override the Usuario row's UUID so it matches the wizard's
+            # mint. ``save(update_fields=...)`` is intentional: the
+            # wizard's value is the cross-system source of truth and we
+            # do not want to disturb any other column on Usuario during
+            # finalize.
+            user.biometric_external_id = wizard_external_id
+            user.save(update_fields=["biometric_external_id", "updated_at"])
+            # Mirror on Cliente so ``CitaBiometricVerifyView`` can resolve
+            # the user from the cita path directly (operacion.paciente).
+            # The field was added in customers migration 0018; using
+            # ``update_fields`` keeps the save focused.
+            cliente.external_id = wizard_external_id
+            cliente.save(update_fields=["external_id", "updated_at"])
 
     analisis = AnalisisEstetico.objects.create(
         paciente=cliente,

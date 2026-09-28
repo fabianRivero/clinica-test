@@ -9,7 +9,9 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 
-import { biometricClient } from '../../../services/fingerprint/biometricClient'
+import { challengeIdentity } from '../../../services/biometric/dp4500-capture-client'
+import { signCanonical } from '../../../services/biometric/ed25519-key-manager'
+import { postJson } from '../../../services/api/apiClient'
 
 /**
  * Minimum time (ms) the loading state stays on screen before the modal
@@ -28,23 +30,31 @@ const MIN_LOADING_DISPLAY_MS = 3000
  * Modal that drives the biometric verify flow on the appointment
  * confirmation path.
  *
+ * Phase 2A5 of dp4500-host-app-integration-phase2. The browser-side
+ * flow is now: ``challengeIdentity(userExternalId)`` → reader
+ * capture (Phase 4 SDK; today the call produces an opaque
+ * ``capture_token`` from DP4500) → ``verifyIdentity(captureToken,
+ * userExternalId, serverNonce)`` (the browser signs the canonical
+ * with its Ed25519 workstation key) → POST ``{challenge_id,
+ * signature, timestamp}`` to the clinic backend's
+ * ``/api/integration/dp4500/citas/<id>/verificar/`` endpoint, which
+ * records ``CitaMedica.biometric_*`` and transitions the cita to
+ * CONFIRMADA inside a ``select_for_update`` transaction.
+ *
+ * The modal owns that whole round-trip so the parent never needs to
+ * know how the verify backend works. On success it fires
+ * ``onConfirmResult({matched, message, citaId})`` and the parent
+ * decides whether to refetch.
+ *
  * State machine:
  *
  *   idle    → user pressed "Activar lector" → loading
- *   loading → verify-init succeeded         → success or error
- *           → verify-init failed             → error
- *   success → user dismissed                 → parent closes the modal
- *   error   → "Reintentar"                   → idle (next "Activar lector"
- *                                                runs another round-trip)
- *           → "Cancelar"                     → parent closes the modal
- *
- * The modal owns the `/verify-init` + `/verify-confirm` round-trip so
- * the parent no longer needs to know how the biometric backend works.
- * On success it fires `onConfirmResult({matched, message, citaId})`
- * and the parent decides whether to refetch.
- *
- * The shell follows the same `booking-modal-*` style as the rest of
- * the admin app so the visual language stays consistent.
+ *   loading → challenge+verify succeeded   → success or error
+ *           → challenge/verify failed       → error
+ *   success → user dismissed               → parent closes the modal
+ *   error   → "Reintentar"                 → idle (next "Activar lector"
+ *                                              runs another round-trip)
+ *           → "Cancelar"                   → parent closes the modal
  */
 
 type IdleState = { kind: 'idle' }
@@ -63,6 +73,13 @@ type Props = {
   open: boolean
   onClose: () => void
   citaId: number
+  /**
+   * Cross-system UUID (``Cliente.external_id``) the DP4500 challenge
+   * endpoint expects as the path parameter. Required for the new flow —
+   * the modal surfaces a clear "no external_id" error state when the
+   * parent omits it so the operator can use manual confirmation.
+   */
+  userExternalId: string | null
   onConfirmResult: (result: BiometricVerifyResult) => void
   onAfterAttempt?: () => void
 }
@@ -73,6 +90,7 @@ export function BiometricVerifyCaptureModal({
   open,
   onClose,
   citaId,
+  userExternalId,
   onConfirmResult,
   onAfterAttempt,
 }: Props) {
@@ -174,52 +192,110 @@ export function BiometricVerifyCaptureModal({
     const startedAt = Date.now()
     setState({ kind: 'loading' })
 
-    try {
-      const init = await biometricClient.verifyInit(citaId)
+    // The wizard-minted UUID is the cross-system handle DP4500 uses
+    // to address the cliente. If the parent did not pass one (legacy
+    // records that predate the ``externalId`` migration, or a non-
+    // wizard cliente) the backend's verify view would return
+    // ``no_biometric_external_id`` — surface that here as an
+    // actionable error so the operator knows to fall back to the
+    // manual confirmation path.
+    if (!userExternalId) {
+      await ensureMinLoading(startedAt)
+      setState({
+        kind: 'error',
+        message:
+          'El cliente no tiene UUID biométrico asignado. Usa la confirmación manual.',
+      })
+      onConfirmResult({
+        matched: false,
+        message: 'El cliente no tiene UUID biométrico asignado. Usa la confirmación manual.',
+        citaId,
+      })
+      inFlightRef.current = false
+      return
+    }
 
-      // If the cliente has no fingerprint on file, the backend asks
-      // us to fall back to manual confirmation. We surface that as an
-      // error state so the operator clicks "Cancelar" and uses the
-      // existing manual confirmation path.
-      if (init.manual_only || init.has_fingerprint === false || !init.capture_token) {
+    try {
+      // Step 1: one-shot challenge from DP4500 via the workstation's
+      // bearer key (configured at ``VITE_DP4500_SERVICE_API_KEY``).
+      const challenge = await challengeIdentity(userExternalId)
+      if (!challenge.capture_token || !challenge.server_nonce) {
         await ensureMinLoading(startedAt)
         setState({
           kind: 'error',
-          message: 'Este cliente no tiene huella registrada. Usa la confirmacion manual.',
+          message: 'DP4500 no devolvió un challenge válido. Intenta nuevamente.',
         })
         return
       }
 
-      const confirm = await biometricClient.verifyConfirm(citaId, {
-        capture_token: init.capture_token,
-        score: init.score ?? 0,
-      })
+      // Step 2: sign the canonical in the browser. The signed payload
+      // (``{challenge_id, signature, timestamp}``) is forwarded to the
+      // clinic backend via the cita verify endpoint below; the
+      // backend re-issues it against DP4500's ``verify/identity/``
+      // (with its own per-sucursal bearer) so the audit chain stays
+      // server-side. This is the Opción A path: the workstation
+      // proves possession of the Ed25519 keypair by signing; the
+      // server then proves possession of the per-sucursal
+      // service-api-key by forwarding.
+      const timestamp = new Date().toISOString()
+      const signature = await signCanonical(
+        challenge.capture_token,
+        userExternalId,
+        challenge.server_nonce,
+        timestamp,
+      )
+
+      // Step 3: post the signed payload to the clinic backend so the
+      // ``CitaBiometricVerifyView`` can re-verify with DP4500, persist
+      // the three ``CitaMedica.biometric_*`` fields and transition
+      // the cita to CONFIRMADA in the same atomic block. The
+      // backend endpoint is session-authenticated (DRF
+      // ``IsAuthenticated``), so the standard ``postJson`` (with
+      // CSRF) is the right helper — ``postJsonNoCsrf`` exists for
+      // workstation-only opt-out flows and is NOT used here.
+      const backendResponse = await postJson<{
+        ok: boolean
+        audit_hash?: string
+      }>(
+        `/api/integration/dp4500/citas/${citaId}/verificar/`,
+        {
+          challenge_id: challenge.capture_token,
+          signature,
+          timestamp,
+        },
+      )
 
       // Hold the loading screen for the minimum display time so the
       // operator always sees "Esperando huella..." long enough to put
-      // a finger on the reader — even when fprintd returned
-      // ``verify-no-match`` in <3000ms.
+      // a finger on the reader — even when DP4500 returned no-match
+      // in <3000ms.
       await ensureMinLoading(startedAt)
 
-      if (confirm.matched) {
+      if (backendResponse.ok) {
+        const successMessage = `Cita confirmada (auditoría ${backendResponse.audit_hash ?? ''}).`
         setState({
           kind: 'success',
           matched: true,
-          message: confirm.message,
+          message: successMessage,
         })
         onConfirmResult({
           matched: true,
-          message: confirm.message,
+          message: successMessage,
           citaId,
         })
         return
       }
 
-      // 200 OK with matched=false is a normal outcome (mock templates,
+      // 200 OK with ``matched=false`` is a normal outcome (mock templates,
       // wrong finger, etc.). The operator needs to be able to retry.
       setState({
         kind: 'error',
-        message: confirm.message || FALLBACK_ERROR_MESSAGE,
+        message: 'La huella no coincide. Vuelve a intentarlo.',
+      })
+      onConfirmResult({
+        matched: false,
+        message: 'La huella no coincide. Vuelve a intentarlo.',
+        citaId,
       })
     } catch (caughtError) {
       // Surface the backend's `detail` (already extracted by postJson)
@@ -236,7 +312,7 @@ export function BiometricVerifyCaptureModal({
     } finally {
       inFlightRef.current = false
     }
-  }, [citaId, ensureMinLoading, onConfirmResult])
+  }, [citaId, ensureMinLoading, onConfirmResult, userExternalId])
 
   const handleRetry = useCallback(() => {
     // Reset to idle and re-focus the dialog so the operator can

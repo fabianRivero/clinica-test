@@ -406,6 +406,13 @@ export type ClientSnapshot = {
   // expose this field. The frontend renders it as a badge on the
   // ``/cms/clientes`` listing.
   origen?: 'NUEVO' | 'RECURRENTE_PRE_SISTEMA'
+  // Cross-system UUID (Phase 2A5 of dp4500-host-app-integration-phase2).
+  // Surfaced as `Cliente.external_id` on the backend; consumed by the
+  // ``BiometricVerifyCaptureModal`` as the ``userExternalId`` the
+  // DP4500 ``challengeIdentity`` endpoint expects. Null for non-wizard
+  // clients (legacy MOCK templates, admin-created accounts without
+  // finalize).
+  externalId?: string | null
 }
 
 export type ClientScheduledAppointment = {

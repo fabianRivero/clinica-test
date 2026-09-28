@@ -857,5 +857,15 @@ export function useClientDetail(clientId: string) {
 
     // Biometric enrollment status (true when the client has an active huella)
     hasBiometricEnrollment: Boolean(data?.client?.hasBiometricEnrollment),
+
+    // Phase 2A5 of dp4500-host-app-integration-phase2 — the wizard-
+    // minted UUID (``Cliente.external_id``) the DP4500 challenge
+    // endpoint expects as the path parameter. Surfaced here so the
+    // ``BiometricVerifyCaptureModal`` can receive it without
+    // triggering a second fetch from inside the modal. Nullable
+    // because legacy clientes (created before the migration) do not
+    // have it; the modal surfaces the "no biometric_external_id"
+    // error path in that case.
+    clienteExternalId: data?.client?.externalId ?? null,
   }
 }
