@@ -269,15 +269,22 @@ class SmokeE2ETests(TestCase):
         self.assertEqual(cita.estado, CitaMedica.Estado.CONFIRMADA)
         self.assertEqual(cita.biometric_challenge_id, "tok-smoke")
 
-        # ---- 5. Cascade path is OUT OF SCOPE for Phase 2A5.
-        # Phase 2A5 validates the verify flow (steps 1-4 above).
-        # The cascade revoke path is fully tested in
+        # ---- 5. Cascade path: deferred to Phase 2A7 (smoke e2e coverage).
+        # The cascade revoke pipeline (signal → PendingCascade →
+        # cascade_revoke_template → HTTPClient.delete_template →
+        # on_failure hook) is fully exercised in
         # ``backend/dp4500_integration/tests/test_cascade.py``
-        # and would require seeding extra CitaMedica/Operacion rows
-        # with FKs that allow the cascade. Skip for now.
+        # (WU-2A6.1, WU-2A6.2, WU-2A6.3). The smoke e2e chain is
+        # orthogonal to those tests — running it would require a parallel
+        # cascade_revoke_template.patch chain (separate from
+        # ``_patch_dp4500_handler``) and a separate reverse-FK
+        # ordering fixture. Phase 2A5 verify-report §7.5 already
+        # documented this as an optional integration path; the
+        # cascade tests are the canonical coverage.
         self.skipTest(
-            "Phase 2A5: cascade revoke path is out of scope; "
-            "covered by test_cascade.py.",
+            "Phase 2A6: smoke e2e cascade path deferred. "
+            "Cascade coverage lives in test_cascade.py "
+            "(WU-2A6.1, WU-2A6.2, WU-2A6.3 — all pass).",
         )
 
 

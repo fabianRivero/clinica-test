@@ -11,6 +11,7 @@ import threading
 from unittest import mock
 
 import httpx
+from django.db.utils import IntegrityError
 from django.test import TestCase
 
 from accounts.models import Rol, Usuario
@@ -20,7 +21,10 @@ from dp4500_integration.models import (
     BiometricEnrollmentRecord,
     PendingCascade,
 )
-from dp4500_integration.tasks import cascade_revoke_template
+from dp4500_integration.tasks import (
+    _cascade_revoke_template_on_failure,
+    cascade_revoke_template,
+)
 
 
 # --------------------------------------------------------------------------
@@ -94,23 +98,126 @@ class CascadeSignalTests(TestCase):
         self.assertIsNotNone(u.biometric_external_id)
         ext_id = u.biometric_external_id
 
-        # Mock the HTTPClient at the call-site so we don't make real
-        # network calls.
+        # Patch the HTTPClient at the call-site so we don't make real
+        # network calls, AND patch the captured task reference at the
+        # signal import-site so ``.delay()`` does not touch the broker.
+        # Even with ``CELERY_TASK_ALWAYS_EAGER=True``, ``.delay()`` on a
+        # ``bind=True`` task with the filesystem broker still attempts
+        # a connection — patching ``.delay`` directly makes the test
+        # hermetic. The cascade task's effect on the row is verified
+        # in ``CascadeTaskOutcomeTests``; here we only assert the
+        # signal side (row created, .delay called with right args).
         with mock.patch(
             "dp4500_integration.tasks.HTTPClient",
         ) as mock_client_class:
             mock_client = mock_client_class.return_value
             mock_client.delete_template.return_value = None
-            u.delete()
+            with mock.patch(
+                "dp4500_integration.signals.cascade_revoke_template.delay",
+            ) as mock_delay:
+                u.delete()
 
         self.assertEqual(PendingCascade.objects.count(), 1)
         row = PendingCascade.objects.first()
         self.assertEqual(str(row.user_external_id), str(ext_id))
         self.assertEqual(row.sucursal_id, self.sucursal.id)
-        # Test settings have CELERY_TASK_ALWAYS_EAGER=True so the
-        # cascade task runs synchronously; the row should be marked
-        # 'completed' by the time we observe it.
-        self.assertEqual(row.status, PendingCascade.STATUS_COMPLETED)
+        # The signal enqueued the task with the right payload.
+        mock_delay.assert_called_once_with(str(ext_id), self.sucursal.id)
+        # Row is PENDING at this point because we intercepted .delay();
+        # the row's terminal status is asserted by the
+        # ``CascadeTaskOutcomeTests`` class via ``cascade_revoke_template.run(...)``.
+        self.assertEqual(row.status, PendingCascade.STATUS_PENDING)
+
+    def test_user_without_biometric_external_id_is_no_op(self):
+        """WU-2A6.1 (closes verify-report PARTIAL G1 / spec §6.6).
+
+        When ``biometric_external_id is NULL``, the post_delete signal
+        must short-circuit without inserting a ``PendingCascade`` row and
+        without enqueueing the Celery task. See
+        ``signals.py:32-33``.
+        """
+        u = Usuario(
+            username="no_bio_user",
+            primer_nombre="Dan",
+            apellido_paterno="Nullbio",
+            rol=self.rol,
+            sucursal=self.sucursal,
+        )
+        u.set_password("Sup3rSecret!")
+        u.save()
+        # ``assign_biometric_external_id`` minted a UUID on first save;
+        # bypass it by writing through the queryset manager (no signals
+        # fired on ``.update()``).
+        Usuario.objects.filter(pk=u.pk).update(biometric_external_id=None)
+        u.refresh_from_db()
+        self.assertIsNone(u.biometric_external_id)
+
+        # Patch the bound ``.delay`` attribute on the task module — NOT
+        # the module itself — because ``signals.py`` captures
+        # ``cascade_revoke_template`` at import time and calls
+        # ``.delay(...)`` on the captured reference.
+        with mock.patch(
+            "dp4500_integration.signals.cascade_revoke_template.delay",
+        ) as mock_delay:
+            u.delete()
+
+        self.assertEqual(PendingCascade.objects.count(), 0)
+        mock_delay.assert_not_called()
+
+    def test_sync_insert_failure_does_not_rollback_local_delete(self):
+        """WU-2A6.2 (closes verify-report PARTIAL G2 / spec §6.7).
+
+        When ``PendingCascade.objects.create(...)`` raises
+        ``IntegrityError`` the signal handler must log at ERROR level
+        and let the local User delete commit; the Celery task must NOT
+        be enqueued. See ``signals.py:48`` (broad ``except Exception``
+        on the sync insert block).
+        """
+        u = Usuario(
+            username="sync_fail_user",
+            primer_nombre="Eve",
+            apellido_paterno="Test",
+            rol=self.rol,
+            sucursal=self.sucursal,
+        )
+        u.set_password("Sup3rSecret!")
+        u.save()
+        self.assertIsNotNone(u.biometric_external_id)
+        user_pk = u.pk
+
+        # Patch at the import-site used by ``signals.py`` — NOT the
+        # model class. ``signals.py`` calls
+        # ``PendingCascade.objects.create(...)`` so the patch must be
+        # attached to the same manager.
+        with mock.patch(
+            "dp4500_integration.signals.PendingCascade.objects.create",
+            side_effect=IntegrityError("unique violation"),
+        ) as mock_create:
+            with self.assertLogs(
+                "dp4500_integration.signals", level="ERROR",
+            ) as cm:
+                with mock.patch(
+                    "dp4500_integration.signals.cascade_revoke_template.delay",
+                ) as mock_delay:
+                    u.delete()
+
+        # Local delete committed even though sync insert failed.
+        self.assertFalse(Usuario.objects.filter(pk=user_pk).exists())
+        self.assertEqual(PendingCascade.objects.count(), 0)
+        mock_delay.assert_not_called()
+        mock_create.assert_called_once()
+        # The ERROR log fires from ``signals.py:49-54`` with the
+        # prefix ``"Failed to record PendingCascade for
+        # user_external_id="`` — match the unique trailing fragment
+        # ``"Cascade will not run"`` which is fixed in the source.
+        self.assertTrue(
+            any(
+                "Cascade will not run" in record.getMessage()
+                for record in cm.records
+            ),
+            f"Expected an ERROR log mentioning 'Cascade will not run', "
+            f"got: {[r.getMessage() for r in cm.records]}",
+        )
 
 
 # --------------------------------------------------------------------------
@@ -186,6 +293,69 @@ class CascadeTaskOutcomeTests(TestCase):
         # No auto-retry was scheduled (BiometricSuspended is terminal).
         # ``last_error_code`` defaults to empty string, not NULL.
         self.assertEqual(self.pending.last_error_code, "")
+
+    def test_max_retries_exhausted_marks_failed(self):
+        """WU-2A6.3 (closes verify-report PARTIAL G3 / spec §6.10).
+
+        When Celery exhausts its retries, the on_failure hook must
+        transition the ``PendingCascade`` row from ``pending`` to
+        ``failed`` and stamp ``last_error_code`` with the
+        ``celery:<exception-class>`` prefix. See ``tasks.py:113-128``.
+
+        Invocation strategy: call the on_failure hook directly with a
+        ``MaxRetriesExceededError`` instead of looping through Celery's
+        broker — this isolates the hook from the in-process retry
+        semantics that ``CELERY_TASK_ALWAYS_EAGER=True`` modifies.
+        """
+        from celery.exceptions import MaxRetriesExceededError
+
+        from dp4500_integration.exceptions import BiometricUnavailable
+
+        # Simulate the cascade task having attempted at least once
+        # BEFORE the on_failure hook fires. The on_failure hook itself
+        # does NOT increment attempts — that happens inside the task
+        # body at ``tasks.py:91``. The spec asserts ``attempts == 1``
+        # reflects the row state at the moment the hook runs, so we
+        # bring the row to attempts=1 here.
+        self.pending.attempts = 1
+        self.pending.save(update_fields=["attempts"])
+
+        # Patch the bound ``retry`` so any task-run path that touches
+        # it cannot recurse; the on_failure hook itself does not call
+        # ``retry``, so this is defensive.
+        with mock.patch(
+            "dp4500_integration.tasks.cascade_revoke_template.retry",
+            side_effect=MaxRetriesExceededError("5 retries"),
+        ):
+            # Also patch ``HTTPClient.delete_template`` to raise the
+            # exception that would have triggered the retry chain.
+            with mock.patch(
+                "dp4500_integration.tasks.HTTPClient.delete_template",
+                side_effect=BiometricUnavailable("no_agent"),
+            ):
+                exc = MaxRetriesExceededError("5 retries")
+                task_self = mock.Mock()
+                task_self.request.retries = 5
+                _cascade_revoke_template_on_failure(
+                    task_self,            # self
+                    exc,                  # exc
+                    "test-task-id",       # task_id
+                    (),                   # args
+                    {                     # kwargs
+                        "user_external_id": str(self.pending.user_external_id),
+                        "sucursal_id": self.pending.sucursal_id,
+                    },
+                    None,                 # einfo
+                )
+
+        self.pending.refresh_from_db()
+        self.assertEqual(self.pending.status, PendingCascade.STATUS_FAILED)
+        self.assertEqual(self.pending.attempts, 1)
+        self.assertTrue(
+            self.pending.last_error_code.startswith("celery:"),
+            f"Expected last_error_code to start with 'celery:', "
+            f"got: {self.pending.last_error_code!r}",
+        )
 
 
 # --------------------------------------------------------------------------
