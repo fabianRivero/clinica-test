@@ -289,7 +289,7 @@ CELERY_TASK_EAGER_PROPAGATES = True
 
 # DP4500 service API connection settings (consumed by
 # dp4500_integration.client.HTTPClient).
-DP4500_BASE_URL = os.getenv("DP4500_BASE_URL", "http://localhost:8001")
+DP4500_BASE_URL = os.getenv("DP4500_BASE_URL", "http://localhost:8000")
 DP4500_TIMEOUT_SECONDS = int(os.getenv("DP4500_TIMEOUT_SECONDS", "5"))
 # Phase 2 supports only "env" (per-branch env var lookup). Phase 4 adds
 # "vault".
