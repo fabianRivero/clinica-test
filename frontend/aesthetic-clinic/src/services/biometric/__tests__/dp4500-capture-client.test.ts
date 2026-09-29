@@ -1,20 +1,27 @@
 /**
  * Unit tests for `captureFingerprint()`.
  *
- * The wrapper lazy-loads the `@digitalpersona/fingerprint` UMD IIFE
- * by injecting a `<script>` tag and reading `window.Fingerprint`
- * (per the package's `"unpkg": "./dist/fingerprint.sdk.min.js"`
- * export). The tests stub `window.Fingerprint` directly with a
- * minimal structural shape — they do NOT exercise the real SDK.
+ * Phase 4 PR C: the browser-direct Web SDK path is now a permanent
+ * stub (`captureFingerprintViaSdk()` throws `BiometricHardwareError`
+ * on every call). The `fingerprint-agent` HTTP service is the
+ * default capture path on real workstations; the Phase 2A4
+ * NO_AGENT placeholder flow at `useConversionWizard.ts:842-859` is
+ * the terminal fallback when the agent is also unreachable.
  *
- * Phase 3 + 3.1 design intent: the unit tests prove the wrapper's
- *   1. happy path (sample + Good quality → CaptureResult),
- *   2. error path (SDK init failure → BiometricHardwareError),
- *   3. rejection path (sample acquired but empty → BiometricHardwareError),
- *   4. quality-too-low path (sample + non-Good quality → BiometricQualityTooLow),
- * without needing a DigitalPersona 4500 reader. Operator-workstation
- * validation (real hardware, real WebChannel host) is gated on the
- * Phase 3 verify-report per design.md §8 success criterion #5.
+ * These tests cover:
+ *   1. The SDK-direct stub throws the documented
+ *      `BiometricHardwareError` (8 tests — 7 SDK-direct variants +
+ *      the BiometricQualityTooLow class shape).
+ *   2. The Phase 2A4 NO_AGENT contract still holds when the agent
+ *      feature flag is OFF (1 test).
+ *   3. The agent fall-through when the flag is ON (2 tests:
+ *      successful capture, agent 503 → propagate SDK error).
+ *
+ * `fetch` is mocked with `vi.fn()` so the agent tests run without
+ * a real agent service. The SDK-direct tests do not need any
+ * window/global stubbing because the stub does not read the SDK
+ * global — it throws synchronously before any browser SDK would
+ * have been consulted.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -25,230 +32,89 @@ import {
   captureFingerprint,
 } from '../dp4500-capture-client'
 
-interface FakeWebApiHandle {
-  webApi: {
-    startAcquisition: ReturnType<typeof vi.fn>
-    stopAcquisition: ReturnType<typeof vi.fn>
-    onErrorOccurred?: (event: { error: number }) => void
-    onSamplesAcquired?: (event: {
-      deviceUid: string
-      samples: string
-    }) => void
-    onQualityReported?: (event: {
-      deviceUid: string
-      quality: number
-    }) => void
-  }
-}
+// Canonical message the SDK-direct stub throws. Every SDK-direct
+// test below asserts on this exact string (or the looser substring
+// "SDK path disabled") so a future re-enable of the SDK-direct
+// path is forced to update tests in lockstep.
+const SDK_STUB_MESSAGE =
+  'SDK path disabled (Phase 4 PR C — fingerprint-agent is the default).'
 
-function installFakeSdk({
-  startAcquisitionImpl,
-}: {
-  startAcquisitionImpl?: () => Promise<void> | void
-} = {}): FakeWebApiHandle {
-  const handle: FakeWebApiHandle = {
-    webApi: {
-      startAcquisition: vi.fn(
-        startAcquisitionImpl ?? (() => Promise.resolve()),
-      ),
-      stopAcquisition: vi.fn(() => Promise.resolve()),
-    },
-  }
-  // The wrapper reads `window.Fingerprint` synchronously via a
-  // cached Promise — bypass the script-injection path by setting
-  // the global BEFORE any captureFingerprint() call.
-  Object.defineProperty(window, 'Fingerprint', {
-    configurable: true,
-    writable: true,
-    value: {
-      WebApi: vi.fn(() => handle.webApi),
-    },
-  })
-  return handle
-}
-
-function removeFakeSdk(): void {
-  // Reset the cached `sdkLoadPromise` so the next captureFingerprint
-  // call re-injects the (now-missing) script. We do that by clearing
-  // the global AND letting the wrapper's internal cache be reset on
-  // load failure. For these tests we simply re-install the fake
-  // BEFORE each test (see beforeEach below).
-  delete (window as unknown as { Fingerprint?: unknown }).Fingerprint
-}
-
-describe('captureFingerprint', () => {
-  beforeEach(() => {
-    removeFakeSdk()
-    // jsdom does not implement HTMLScriptElement onload consistently;
-    // we mock document.createElement to short-circuit script injection.
-    vi.spyOn(document.head, 'appendChild').mockImplementation(
-      (node: Node) => node,
-    )
-  })
-
+describe('captureFingerprint (Phase 4 PR C — SDK-direct stub)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('returns template + device metadata on first onSamplesAcquired + Good quality', async () => {
-    const { webApi } = installFakeSdk()
-
-    // Kick off capture, then simulate the SDK firing the sample
-    // event after startAcquisition resolves.
-    const promise = captureFingerprint()
-
-    // Wait a microtask so the wrapper's `new WebApi()` + handler
-    // wiring happens before we dispatch the event.
-    await Promise.resolve()
-    await Promise.resolve()
-    webApi.onSamplesAcquired?.({
-      deviceUid: 'reader-001',
-      samples: 'ZmFrZS10ZW1wbGF0ZS1ieXRlcw==',
-    })
-    // Phase 3.1: the wrapper now waits for the SDK's QualityReported
-    // event before resolving. A Good verdict (0) accepts the stashed
-    // sample and resolves the Promise.
-    webApi.onQualityReported?.({
-      deviceUid: 'reader-001',
-      quality: 0,
-    })
-
-    await expect(promise).resolves.toEqual({
-      templateB64: 'ZmFrZS10ZW1wbGF0ZS1ieXRlcw==',
-      // The SDK's QualityCode is an enum, not a 0-100 score. Good (0)
-      // is the only code that resolves the Promise; non-Good codes
-      // are rejected with BiometricQualityTooLow.
-      qualityScore: 0,
-      deviceSerial: 'reader-001',
-      width: 0,
-      height: 0,
-    })
-  })
-
-  it('rejects with BiometricHardwareError when onErrorOccurred fires', async () => {
-    const { webApi } = installFakeSdk()
-
-    const promise = captureFingerprint()
-    await Promise.resolve()
-    await Promise.resolve()
-    webApi.onErrorOccurred?.({ error: 42 })
-
-    await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
-    await expect(promise).rejects.toThrow(/SDK error code 42/)
-  })
-
-  it('rejects with BiometricHardwareError when startAcquisition rejects', async () => {
-    installFakeSdk({
-      startAcquisitionImpl: () =>
-        Promise.reject(new Error('WebChannel host unreachable')),
-    })
-
+  it('rejects with BiometricHardwareError("SDK path disabled ...") on the happy-path call site', async () => {
+    // The Phase 3 happy-path test exercised the SDK's
+    // onSamplesAcquired + onQualityReported handshake. With the
+    // SDK-direct path stubbed, the call rejects before any SDK
+    // surface is touched.
     const promise = captureFingerprint()
     await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
-    await expect(promise).rejects.toThrow(/WebChannel host unreachable/)
+    await expect(promise).rejects.toThrow(SDK_STUB_MESSAGE)
   })
 
-  it('rejects with BiometricHardwareError when sample payload is empty', async () => {
-    const { webApi } = installFakeSdk()
-
+  it('rejects with BiometricHardwareError("SDK path disabled ...") on the SDK error path', async () => {
+    // Mirrors the Phase 3 "onErrorOccurred fires" test — the
+    // stub now short-circuits that event before any handler wiring.
     const promise = captureFingerprint()
-    await Promise.resolve()
-    await Promise.resolve()
-    webApi.onSamplesAcquired?.({
-      deviceUid: 'reader-001',
-      samples: '',
-    })
-
     await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
-    await expect(promise).rejects.toThrow(/muestra vacia/)
+    await expect(promise).rejects.toThrow(SDK_STUB_MESSAGE)
   })
 
-  it('rejects with BiometricQualityTooLow when 30s timeout elapses without a quality report', async () => {
-    const { webApi } = installFakeSdk()
-
-    // Use Vitest fake timers so we don't have to wait the real 30s.
-    vi.useFakeTimers()
-    try {
-      const promise = captureFingerprint()
-      // Let the wrapper settle its `new WebApi()` + handler wiring.
-      await Promise.resolve()
-      // Fast-forward past the 30s timeout.
-      vi.advanceTimersByTime(31_000)
-      // Phase 3.1 nuance: a missing-quality-report timeout is a
-      // retryable UX problem (operator pulled the finger too fast),
-      // NOT a hardware fault. The wrapper now surfaces
-      // BiometricQualityTooLow instead of BiometricHardwareError.
-      await expect(promise).rejects.toBeInstanceOf(BiometricQualityTooLow)
-      await expect(promise).rejects.toThrow(/30s/)
-      // The wrapper calls stopAcquisition as part of the timeout
-      // cleanup; assert it was invoked.
-      expect(webApi.stopAcquisition).toHaveBeenCalled()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('rejects with BiometricQualityTooLow when onQualityReported fires with non-Good quality', async () => {
-    const { webApi } = installFakeSdk()
-
+  it('rejects with BiometricHardwareError("SDK path disabled ...") when startAcquisition would have rejected', async () => {
+    // Mirrors the Phase 3 "startAcquisition rejects" test.
     const promise = captureFingerprint()
-    await Promise.resolve()
-    await Promise.resolve()
-    webApi.onSamplesAcquired?.({
-      deviceUid: 'reader-001',
-      samples: 'ZmFrZS10ZW1wbGF0ZS1ieXRlcw==',
-    })
-    // TooNoisy (4) is one of the most common quality problems in
-    // the field — operator fingers are often too dry/wet.
-    webApi.onQualityReported?.({
-      deviceUid: 'reader-001',
-      quality: 4,
-    })
-
-    await expect(promise).rejects.toBeInstanceOf(BiometricQualityTooLow)
-    // The wrapper embeds the SDK's enum name in the rejection message
-    // so the operator gets a hint about WHY the capture failed.
-    await expect(promise).rejects.toThrow(/TooNoisy/)
+    await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
+    await expect(promise).rejects.toThrow(SDK_STUB_MESSAGE)
   })
 
-  it('accepts the stashed sample when onQualityReported fires with Good quality', async () => {
-    const { webApi } = installFakeSdk()
-
+  it('rejects with BiometricHardwareError("SDK path disabled ...") when the sample payload would have been empty', async () => {
+    // Mirrors the Phase 3 "empty samples" test.
     const promise = captureFingerprint()
-    await Promise.resolve()
-    await Promise.resolve()
-    webApi.onSamplesAcquired?.({
-      deviceUid: 'reader-002',
-      samples: 'Z29vZC1xdWFsaXR5LXNhbXBsZQ==',
-    })
-    // Good (0) — the wrapper resolves the Promise.
-    webApi.onQualityReported?.({
-      deviceUid: 'reader-002',
-      quality: 0,
-    })
+    await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
+    await expect(promise).rejects.toThrow(SDK_STUB_MESSAGE)
+  })
 
-    await expect(promise).resolves.toEqual({
-      templateB64: 'Z29vZC1xdWFsaXR5LXNhbXBsZQ==',
-      qualityScore: 0,
-      deviceSerial: 'reader-002',
-      width: 0,
-      height: 0,
-    })
+  it('rejects with BiometricHardwareError("SDK path disabled ...") instead of timing out after 30s', async () => {
+    // Mirrors the Phase 3 30s timeout test. With the stub there
+    // is no timeout — the rejection is synchronous on the next
+    // microtask. We deliberately do NOT use fake timers here so
+    // any regression that re-enables a 30s wait would surface as
+    // a slow test rather than a silent timeout-resolved pass.
+    const start = Date.now()
+    await expect(captureFingerprint()).rejects.toBeInstanceOf(
+      BiometricHardwareError,
+    )
+    await expect(captureFingerprint()).rejects.toThrow(SDK_STUB_MESSAGE)
+    expect(Date.now() - start).toBeLessThan(1_000)
+  })
+
+  it('rejects with BiometricHardwareError("SDK path disabled ...") when onQualityReported would have fired with non-Good quality', async () => {
+    // Mirrors the Phase 3 "non-Good quality" test. The stub
+    // rejects before the SDK handshake would have run.
+    const promise = captureFingerprint()
+    await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
+    await expect(promise).rejects.toThrow(SDK_STUB_MESSAGE)
+  })
+
+  it('rejects with BiometricHardwareError("SDK path disabled ...") instead of accepting the stashed sample', async () => {
+    // Mirrors the Phase 3 "stashed sample + Good quality" test.
+    // The stub rejects before the SDK sample/quality handshake
+    // would have completed.
+    const promise = captureFingerprint()
+    await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
+    await expect(promise).rejects.toThrow(SDK_STUB_MESSAGE)
   })
 })
 
 describe('BiometricQualityTooLow', () => {
-  beforeEach(() => {
-    // The current wrapper does not yet map the SDK's QualityReported
-    // event into a `BiometricQualityTooLow` rejection (the PngImage
-    // sample format does not embed a numeric score in the event).
-    // The class itself must still be constructible + subclass of
-    // BiometricSuspendError so the wizard's `instanceof` branch
-    // (useConversionWizard.ts:780) compiles + behaves correctly.
-    removeFakeSdk()
-  })
-
   it('extends BiometricSuspendError and exposes the QUALITY_TOO_LOW code', () => {
+    // The SDK-direct path is stubbed, but the BiometricQualityTooLow
+    // class remains in the contract surface for the agent and for
+    // any future SDK-direct re-enablement. The wizard's
+    // `instanceof` branch (useConversionWizard.ts:780) compiles +
+    // behaves correctly as long as the class shape is preserved.
     const err = new BiometricQualityTooLow()
     expect(err).toBeInstanceOf(BiometricQualityTooLow)
     expect((err as unknown as { code: string }).code).toBe(
@@ -260,10 +126,6 @@ describe('BiometricQualityTooLow', () => {
 })
 
 describe('BiometricHardwareError', () => {
-  beforeEach(() => {
-    removeFakeSdk()
-  })
-
   it('extends BiometricSuspendError and exposes the HARDWARE code', () => {
     const err = new BiometricHardwareError('SDK timeout')
     expect(err).toBeInstanceOf(BiometricHardwareError)
@@ -282,36 +144,39 @@ describe('BiometricHardwareError', () => {
  * Phase 4 PR C — fingerprint-agent fall-through tests.
  *
  * The agent is the third capture path that sits BETWEEN the
- * Phase 3 SDK-direct default and the Phase 2A4 NO_AGENT terminal
+ * (stubbed) SDK-direct path and the Phase 2A4 NO_AGENT terminal
  * fallback at `useConversionWizard.ts:842-859`. The wrapper
- * (`captureFingerprint()`) tries the SDK first; on a recoverable
- * SDK error (`BiometricHardwareError` or `BiometricQualityTooLow`)
- * it consults the agent feature flag (`VITE_USE_FINGERPRINT_AGENT`
- * or `window.DP4500_USE_FINGERPRINT_AGENT`). If the flag is OFF,
- * the SDK error propagates and the wizard takes the NO_AGENT
+ * (`captureFingerprint()`) calls `captureFingerprintViaSdk()`
+ * first; the stub throws `BiometricHardwareError('SDK path
+ * disabled ...')` on every call. The wrapper then consults the
+ * agent feature flag (`VITE_USE_FINGERPRINT_AGENT` or
+ * `window.DP4500_USE_FINGERPRINT_AGENT`). If the flag is OFF,
+ * the stub's error propagates and the wizard takes the NO_AGENT
  * branch. If the flag is ON, the wrapper calls the local
- * `fingerprint-agent` HTTP service (`http://127.0.0.1:8765/capture`)
- * and maps its response into `CaptureFingerprintResult`.
+ * `fingerprint-agent` HTTP service
+ * (`http://127.0.0.1:8765/capture`) and maps its response into
+ * `CaptureFingerprintResult`.
  *
  * `fetch` is mocked with `vi.fn()` so these tests run without a
- * real agent service. The SDK is stubbed via the same
- * `installFakeSdk` helper used by the SDK-direct tests.
+ * real agent service.
  */
 describe('captureFingerprint (Phase 4 PR C — fingerprint-agent fall-through)', () => {
   let fetchSpy: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    removeFakeSdk()
-    vi.spyOn(document.head, 'appendChild').mockImplementation(
-      (node: Node) => node,
-    )
-    fetchSpy = vi.fn()
-    vi.stubGlobal('fetch', fetchSpy)
     // The agent feature flag must be explicitly unset between
-    // tests so a previous test's stubEnv does not leak.
-    vi.unstubAllEnvs()
+    // tests so a previous test's stubEnv does not leak. We force
+    // the env var to empty string (not just unstubAllEnvs) so the
+    // local `.env` setting `VITE_USE_FINGERPRINT_AGENT=true` does
+    // not bleed into the OFF-flag tests. `import.meta.env.X` is
+    // statically inlined from `process.env.X` + the Vite `.env`
+    // files at transform time, so vi.unstubAllEnvs alone is not
+    // enough to override a value baked into the source.
+    vi.stubEnv('VITE_USE_FINGERPRINT_AGENT', '')
     delete (window as unknown as { DP4500_USE_FINGERPRINT_AGENT?: boolean })
       .DP4500_USE_FINGERPRINT_AGENT
+    fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
   })
 
   afterEach(() => {
@@ -322,19 +187,14 @@ describe('captureFingerprint (Phase 4 PR C — fingerprint-agent fall-through)',
       .DP4500_USE_FINGERPRINT_AGENT
   })
 
-  it('falls through to fingerprint-agent on SDK hardware error when the flag is on', async () => {
-    // SDK rejects with a hardware-level error (the WebChannel host
-    // is unreachable on the operator workstation — the canonical
-    // Phase 4 PR C trigger for agent fall-through).
-    installFakeSdk({
-      startAcquisitionImpl: () =>
-        Promise.reject(new Error('WebChannel host unreachable')),
-    })
+  it('falls through to fingerprint-agent on the SDK stub error when the flag is on', async () => {
+    // The SDK-direct stub throws "SDK path disabled ..." on every
+    // call — that's the canonical Phase 4 PR C trigger for agent
+    // fall-through. The agent responds with a valid capture and
+    // the wrapper must map its shape ({templateB64, qualityScore,
+    // deviceSerial, width, height}) into CaptureFingerprintResult.
     vi.stubEnv('VITE_USE_FINGERPRINT_AGENT', 'true')
 
-    // The agent responds with a valid capture. The wrapper must
-    // map agent shape ({templateB64, qualityScore, deviceSerial,
-    // width, height}) into CaptureFingerprintResult.
     fetchSpy.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -365,34 +225,26 @@ describe('captureFingerprint (Phase 4 PR C — fingerprint-agent fall-through)',
   })
 
   it('does NOT fall through to the agent when the feature flag is off', async () => {
-    // SDK rejects — the wrapper must surface the error directly so
-    // the wizard's NO_AGENT terminal fallback at
-    // useConversionWizard.ts:842-859 activates. The agent must
-    // NOT be called (Phase 3 SDK-only behavior).
-    installFakeSdk({
-      startAcquisitionImpl: () =>
-        Promise.reject(new Error('WebChannel host unreachable')),
-    })
-    // Feature flag is OFF — env var absent, window flag absent.
+    // Feature flag OFF — env var absent, window flag absent.
     // vi.unstubAllEnvs() in beforeEach already cleared the env.
-
+    // The SDK-direct stub's BiometricHardwareError surfaces
+    // directly so the wizard's NO_AGENT terminal fallback at
+    // useConversionWizard.ts:842-859 activates. The agent must
+    // NOT be called.
     const promise = captureFingerprint()
     await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
-    await expect(promise).rejects.toThrow(/WebChannel host unreachable/)
+    await expect(promise).rejects.toThrow(SDK_STUB_MESSAGE)
 
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('propagates the SDK hardware error when the agent returns 503 (NO_AGENT terminal fallback)', async () => {
-    // Both paths fail: SDK rejects with a hardware error AND the
-    // agent responds with 503 (no reader). The wrapper must surface
-    // the ORIGINAL SDK error so the wizard's NO_AGENT path at
-    // useConversionWizard.ts:842-859 activates with a recognizable
-    // BiometricHardwareError rather than a fetch TypeError.
-    installFakeSdk({
-      startAcquisitionImpl: () =>
-        Promise.reject(new Error('WebChannel host unreachable')),
-    })
+  it('propagates the SDK stub error when the agent returns 503 (NO_AGENT terminal fallback)', async () => {
+    // Both paths fail: SDK-direct stub throws AND the agent
+    // responds with 503 (no reader). The wrapper must surface
+    // the ORIGINAL SDK stub error so the wizard's NO_AGENT path
+    // at useConversionWizard.ts:842-859 activates with a
+    // recognizable BiometricHardwareError rather than a fetch
+    // TypeError.
     vi.stubEnv('VITE_USE_FINGERPRINT_AGENT', 'true')
 
     fetchSpy.mockResolvedValueOnce(
@@ -403,7 +255,7 @@ describe('captureFingerprint (Phase 4 PR C — fingerprint-agent fall-through)',
 
     const promise = captureFingerprint()
     await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
-    await expect(promise).rejects.toThrow(/WebChannel host unreachable/)
+    await expect(promise).rejects.toThrow(SDK_STUB_MESSAGE)
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     expect(fetchSpy).toHaveBeenCalledWith(

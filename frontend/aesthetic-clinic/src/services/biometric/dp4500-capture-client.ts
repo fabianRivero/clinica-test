@@ -1,7 +1,8 @@
 /**
- * DP4500 capture client — Phase 3 of dp4500-host-app-integration-phase2.
+ * DP4500 capture client — Phase 3 of dp4500-host-app-integration-phase2,
+ * refactored in Phase 4 PR C.
  *
- * Opción A: real capture via WebCrypto + HID WebSdk.
+ * Opción A: real capture via the local `fingerprint-agent` HTTP service.
  *
  * Wraps the workstation-side flow:
  *   1. ensureSigningKey()      — generate or load the workstation's
@@ -21,16 +22,20 @@
  * Steps 1 + 2 are "enroll" (one-time per workstation); steps 3-5 are
  * "verify" (each cita check-in).
  *
- * Phase 3 wiring: real fingerprint bytes now come from
- * `captureFingerprint()` (Pattern A — dynamic import of
- * `@digitalpersona/fingerprint` to keep the initial bundle small).
- * The vendored SDK talks to the HID Authentication Device Client on
- * the operator PC via WebChannel; on workstations without that
- * client the wrapper throws `BiometricHardwareError` and the wizard
- * falls back to the Phase 2A4 NO_AGENT placeholder flow (carved
- * out at `useConversionWizard.ts:842-859`). The `fingerprint-agent`
- * pattern from the original 2026-07-29 design is the Phase 4
- * fallback if this SDK-direct path proves unworkable in production.
+ * Phase 4 PR C wiring: the browser-direct Web SDK path that Phase 3
+ * relied on has been eliminated. The DigitalPersona Lite Client
+ * monopolizes the reader on the operator workstation and blocks the
+ * legacy SDK's WebChannel traffic, so the vendored legacy SDK bundle
+ * is non-functional on real hardware. The `fingerprint-agent`
+ * Node.js service (commit 6507628, bound to `127.0.0.1:8765`) is now
+ * the DEFAULT capture path: it wraps the modern SDK via `node:vm`
+ * and serves captures over loopback HTTP.
+ *
+ * `captureFingerprintViaSdk()` is preserved as a stub for the
+ * contract surface — see its docstring for the re-enable recipe.
+ * The Phase 2A4 NO_AGENT placeholder flow at
+ * `useConversionWizard.ts:842-859` is the terminal fallback when the
+ * agent also fails.
  */
 
 import { API_BASE_URL } from '../api/apiClient'
@@ -307,13 +312,12 @@ export class BiometricQualityTooLow extends BiometricSuspendError {
  * Feature flag for the Phase 4 PR C fingerprint-agent fall-through.
  *
  * When `true`, `captureFingerprint()` falls through to the local
- * Python/Node `fingerprint-agent` HTTP service (bound to
- * `127.0.0.1:8765`) whenever the direct browser Web SDK path
- * raises `BiometricHardwareError` after the 30s timeout OR fails to
- * inject the SDK script at all. When `false` (the default), the
- * SDK-direct path is the only capture route and the wizard falls
- * straight through to the Phase 2A4 NO_AGENT placeholder on
- * hardware failure.
+ * `fingerprint-agent` Node.js service (bound to `127.0.0.1:8765`)
+ * whenever the SDK-direct path raises `BiometricHardwareError`
+ * (which, post Phase 4 PR C, is every call — the SDK path is a
+ * stub). When `false` (the default), the SDK-direct stub's
+ * `BiometricHardwareError` surfaces directly and the wizard falls
+ * straight through to the Phase 2A4 NO_AGENT placeholder flow.
  *
  * The flag is read from TWO surfaces (in order):
  *   1. `import.meta.env.VITE_USE_FINGERPRINT_AGENT` — Vite inlines
@@ -321,9 +325,12 @@ export class BiometricQualityTooLow extends BiometricSuspendError {
  *   2. `window.DP4500_USE_FINGERPRINT_AGENT` — runtime override for
  *     staged rollouts / dev work without a rebuild.
  *
- * Per design.md §3.6 and spec §ADDED Spec (Phase 4), the flag
- * defaults OFF: the SDK-direct path is the default and the agent
- * is the explicit opt-in.
+ * Phase 4 PR C design note: the original intent of the flag was to
+ * make the SDK-direct path the default and the agent the opt-in.
+ * After the Lite Client blocked the SDK, the agent became the
+ * default capture path on real workstations; the flag now controls
+ * whether the agent is consulted at all. Production deployments
+ * should set `VITE_USE_FINGERPRINT_AGENT=true` in `.env`.
  */
 function shouldUseFingerprintAgent(): boolean {
   const envFlag = import.meta.env?.VITE_USE_FINGERPRINT_AGENT === 'true'
@@ -400,272 +407,62 @@ async function captureFingerprintViaAgent(): Promise<CaptureFingerprintResult> {
 
 /**
  * Capture a fingerprint from the DigitalPersona 4500 reader via the
- * vendorized Web SDK. The SDK ships as a UMD IIFE that registers the
- * `Fingerprint` global (per `@digitalpersona/fingerprint/package.json`
- * `"unpkg": "./dist/fingerprint.sdk.min.js"`), so we lazy-load the
- * minified bundle by injecting a `<script>` tag at runtime. This
- * preserves Pattern A's R2 mitigation — the SDK chunk is only
- * fetched when the operator opens the capture modal, not at module
- * load.
+ * vendored Web SDK.
  *
- * The wrapper:
- *   1. Lazily injects the SDK `<script>` (if not already loaded)
- *      and waits for `window.Fingerprint.WebApi` to be available.
- *   2. Constructs a `Fingerprint.WebApi` (the SDK's high-level
- *      facade that wraps `WebSdk.WebChannelClient` underneath).
- *   3. Wires `onSamplesAcquired` + `onErrorOccurred` + a 30s
- *      timeout, then calls `startAcquisition(SampleFormat.PngImage)`.
- *   4. Resolves with a `CaptureFingerprintResult` on the first
- *      successful sample event, or throws `BiometricHardwareError`
- *      on transport / WebChannel / timeout failure.
+ * Phase 4 PR C: STUB. The browser-direct Web SDK path is permanently
+ * disabled because the DigitalPersona Lite Client monopolizes the
+ * reader on the operator workstation and blocks the legacy SDK's
+ * WebChannel traffic — the vendored legacy SDK bundle cannot reach
+ * the hardware on a workstation with the Lite Client installed. The
+ * default capture path is the local `fingerprint-agent` Node.js
+ * service (see `captureFingerprintViaAgent`).
  *
- * The wrapper treats the runtime value as the structural shape
- * declared locally (see `FingerprintSdk` / `FingerprintWebApi`
- * interfaces below) to avoid pulling the package's ambient `.d.ts`
- * (a global namespace declaration that conflicts with the project's
- * `verbatimModuleSyntax: true` + bundler resolution settings).
+ * This stub is preserved (not deleted) to keep the function name and
+ * signature in the contract surface: `captureFingerprint()` still
+ * calls it as the FIRST step in its fall-through chain, so the
+ * `BiometricHardwareError` it throws routes to the agent when the
+ * feature flag is on, and to the Phase 2A4 NO_AGENT placeholder when
+ * the flag is off. Re-enabling the SDK-direct path in the future
+ * (e.g. on a workstation without the Lite Client) means replacing
+ * this body with the original Phase 3 implementation, restoring the
+ * `loadFingerprintSdk` helper, and re-vendoring the SDK bundle under
+ * `public/websdk/`.
  */
 async function captureFingerprintViaSdk(): Promise<CaptureFingerprintResult> {
-  // Pattern A: lazy-load the SDK IIFE the first time capture is
-  // requested. Subsequent calls reuse the cached `window.Fingerprint`
-  // without re-injecting the script (the loader module caches the
-  // pending load promise).
-  const sdkNamespace = await loadFingerprintSdk()
-
-  // SampleFormat.PngImage (value 5) is what the Phase 1 probe page
-  // used at line 53; we keep the same format so the operator's
-  // existing HID Authentication Device Client configuration
-  // matches. The enum is declared as a `const enum` in the
-  // ambient .d.ts, so we use the numeric value directly to avoid
-  // a runtime import (the enum does not exist at runtime — only
-  // the `Fingerprint.WebApi` class does).
-  const SAMPLE_FORMAT_PNG_IMAGE = 5
-
-  return new Promise<CaptureFingerprintResult>((resolve, reject) => {
-    const webApi = new sdkNamespace.WebApi()
-
-    let settled = false
-    const settleReject = (err: Error): void => {
-      if (settled) return
-      settled = true
-      // Detach handlers so a late SDK event does not call into a
-      // settled Promise (the WebChannel may emit one more sample
-      // after a stopAcquisition round-trip).
-      webApi.onSamplesAcquired = undefined
-      webApi.onQualityReported = undefined
-      webApi.onErrorOccurred = undefined
-      reject(err)
-    }
-
-    // Phase 3.1: the SDK delivers the sample payload and the quality
-    // verdict as TWO separate events. The wrapper must wait for BOTH
-    // before resolving, otherwise it cannot distinguish a real
-    // capture from a noisy/skewed one (the verify-report.md flagged
-    // this as PARTIAL in the Phase 3 archive).
-    //
-    // The handshake is:
-    //   1. onSamplesAcquired fires first with the base64 PNG bytes.
-    //   2. onQualityReported fires next with a QualityCode. `Good` (0)
-    //      means accept the stashed sample; anything else triggers a
-    //      `BiometricQualityTooLow` rejection carrying the code name.
-    //   3. The SDK may deliver them in the opposite order (rare);
-    //      the handler stashes whichever side arrives first and
-    //      waits for the other.
-    let stashedSample: { samples: string; deviceUid: string } | null = null
-    let stashedQuality: { deviceUid: string; quality: FingerprintQualityCode } | null =
-      null
-
-    /**
-     * Resolve the Promise with a successful capture. Lifted out of
-     * the handlers because the Good-quality verdict can fire from
-     * EITHER the onSamplesAcquired handler (when quality arrived
-     * first) or the onQualityReported handler (when sample arrived
-     * first).
-     */
-    const settleAccept = (
-      sample: { samples: string; deviceUid: string },
-      quality: FingerprintQualityCode,
-    ): void => {
-      if (settled) return
-      settled = true
-      webApi.onSamplesAcquired = undefined
-      webApi.onQualityReported = undefined
-      webApi.onErrorOccurred = undefined
-      resolve({
-        templateB64: sample.samples,
-        // The SDK's QualityCode is an enum, not a 0-100 score. The
-        // wizard's threshold branch treats `qualityScore < 60` as
-        // retryable; Good (0) trivially satisfies that gate. The
-        // non-Good path never reaches this function (settleReject
-        // fires instead).
-        qualityScore: quality,
-        deviceSerial: sample.deviceUid,
-        // The PngImage sample format returns dimensions alongside
-        // the base64 string in the production SDK; the wrapper
-        // reports 0 when the SDK omits them so downstream callers
-        // can detect the missing-metadata case explicitly.
-        width: 0,
-        height: 0,
-      })
-    }
-
-    /**
-     * Resolve the Promise with a quality-too-low rejection, embedding
-     * the SDK's quality code name in the message so the operator
-     * gets a hint about WHY the capture was rejected (TooNoisy vs
-     * TooSkewed vs FakeFinger all behave differently in the field).
-     */
-    const rejectQuality = (quality: FingerprintQualityCode): void => {
-      const codeName =
-        Object.entries(FingerprintQualityCode).find(
-          ([, v]) => v === quality,
-        )?.[0] ?? `code_${quality}`
-      settleReject(
-        new BiometricQualityTooLow(
-          `Calidad insuficiente (${codeName}). Vuelve a intentarlo.`,
-        ),
-      )
-    }
-
-    // Hard timeout — the SDK only resolves the startAcquisition
-    // promise on the FIRST `onAcquisitionStarted` event but does
-    // not surface "no finger detected" by itself. After 30s without
-    // a sample we treat the run as a hardware timeout so the wizard
-    // can fall through to the NO_AGENT path instead of hanging the UI.
-    //
-    // Phase 3.1 nuance: if we received a sample but never got a
-    // quality report, surface `BiometricQualityTooLow` instead of
-    // `BiometricHardwareError`. The operator pulled the finger too
-    // fast — the SDK's WebChannel host did not have time to score
-    // the sample. This is a retryable UX message, not a hardware
-    // fault.
-    const timeoutHandle = setTimeout(() => {
-      settleReject(
-        new BiometricQualityTooLow(
-          'No se recibio un reporte de calidad dentro de 30s. Vuelve a intentarlo.',
-        ),
-      )
-      // Best-effort stop; the call is a no-op if no acquisition is
-      // in flight. Errors here are intentionally swallowed because
-      // the wrapper is already settling to a rejection.
-      webApi.stopAcquisition().catch(() => undefined)
-    }, 30_000)
-
-    webApi.onErrorOccurred = (event) => {
-      clearTimeout(timeoutHandle)
-      settleReject(
-        new BiometricHardwareError(`SDK error code ${event.error}`),
-      )
-    }
-
-    webApi.onSamplesAcquired = (event) => {
-      try {
-        const samples = event.samples
-        const deviceUid = event.deviceUid
-
-        if (!samples || samples.length === 0) {
-          clearTimeout(timeoutHandle)
-          settleReject(
-            new BiometricHardwareError(
-              'El SDK reporto una muestra vacia.',
-            ),
-          )
-          return
-        }
-
-        stashedSample = { samples, deviceUid }
-
-        // If the quality verdict arrived first (rare, but the SDK
-        // can deliver them in either order), close the handshake now.
-        if (stashedQuality && stashedQuality.deviceUid === deviceUid) {
-          clearTimeout(timeoutHandle)
-          if (stashedQuality.quality === FingerprintQualityCode.Good) {
-            settleAccept(stashedSample, stashedQuality.quality)
-          } else {
-            rejectQuality(stashedQuality.quality)
-          }
-        }
-      } catch (err) {
-        clearTimeout(timeoutHandle)
-        settleReject(
-          err instanceof Error
-            ? err
-            : new BiometricHardwareError(String(err)),
-        )
-      }
-    }
-
-    webApi.onQualityReported = (event) => {
-      // Quality arrived before the sample — stash and wait.
-      if (!stashedSample) {
-        stashedQuality = {
-          deviceUid: event.deviceUid,
-          quality: event.quality,
-        }
-        return
-      }
-
-      // Quality arrived after the sample but for a DIFFERENT device —
-      // defensive guard, should not happen in practice (the wrapper
-      // starts a single acquisition). Reject to surface the anomaly.
-      if (stashedSample.deviceUid !== event.deviceUid) {
-        clearTimeout(timeoutHandle)
-        settleReject(
-          new BiometricHardwareError(
-            'El reporte de calidad no corresponde al lector activo.',
-          ),
-        )
-        return
-      }
-
-      clearTimeout(timeoutHandle)
-      if (event.quality === FingerprintQualityCode.Good) {
-        settleAccept(stashedSample, event.quality)
-        return
-      }
-      rejectQuality(event.quality)
-    }
-
-    // Kick off the acquisition lifecycle. We intentionally do NOT
-    // await `enumerateDevices()` -> the SDK delivers the device UID
-    // in the `onSamplesAcquired.deviceUid` field, so an empty
-    // `startAcquisition` (no deviceUid argument) is the documented
-    // "use any connected reader" path.
-    webApi
-      .startAcquisition(SAMPLE_FORMAT_PNG_IMAGE)
-      .catch((err: unknown) => {
-        clearTimeout(timeoutHandle)
-        settleReject(
-          err instanceof Error
-            ? new BiometricHardwareError(err.message)
-            : new BiometricHardwareError(String(err)),
-        )
-      })
-  })
+  throw new BiometricHardwareError(
+    'SDK path disabled (Phase 4 PR C — fingerprint-agent is the default).',
+  )
 }
 
 /**
- * Top-level capture entry point used by the wizard. Tries the
- * direct browser Web SDK path first; when that fails with a
- * hardware-level error AND the agent feature flag is on, falls
- * through to the local `fingerprint-agent` HTTP service
- * (`http://127.0.0.1:8765/capture`). When the agent also fails
- * (503 / network error), the original error propagates so the
- * wizard's NO_AGENT terminal fallback at
+ * Top-level capture entry point used by the wizard.
+ *
+ * Phase 4 PR C: tries the SDK-direct path first (stub — always
+ * throws `BiometricHardwareError`); when that fails AND the agent
+ * feature flag is on, falls through to the local `fingerprint-agent`
+ * HTTP service (`http://127.0.0.1:8765/capture`). When the agent
+ * also fails (503 / network error), the original SDK error
+ * propagates so the wizard's NO_AGENT terminal fallback at
  * `useConversionWizard.ts:842-859` activates.
  *
  * Order of operations (Phase 4 PR C):
- *   1. `captureFingerprintViaSdk()` — Phase 3 default path.
+ *   1. `captureFingerprintViaSdk()` — Phase 3 path, now a stub that
+ *      throws `BiometricHardwareError` on every call.
  *   2. On `BiometricHardwareError` or `BiometricQualityTooLow`:
  *        a. If the agent feature flag is OFF, re-throw the SDK
- *           error (preserves Phase 3 behavior verbatim).
+ *           error (the wizard's NO_AGENT path at
+ *           `useConversionWizard.ts:842-859` activates).
  *        b. If the flag is ON, call `captureFingerprintViaAgent()`
  *           and return its result. If the agent ALSO throws, the
  *           original SDK error wins (so the wizard's NO_AGENT path
  *           sees a `BiometricHardwareError`, not a fetch error).
- *   3. Any other error type propagates unchanged — the SDK's
- *      contract is that only `BiometricHardwareError` /
- *      `BiometricQualityTooLow` are recoverable via fall-through.
+ *   3. Any other error type propagates unchanged.
+ *
+ * Note: because the SDK-direct path is a stub, in practice every
+ * call with the feature flag ON routes to the agent, and every
+ * call with the flag OFF throws the stub's
+ * `BiometricHardwareError` immediately. The stub is preserved for
+ * the contract surface (see `captureFingerprintViaSdk`'s docstring).
  */
 export async function captureFingerprint(): Promise<CaptureFingerprintResult> {
   try {
@@ -678,9 +475,9 @@ export async function captureFingerprint(): Promise<CaptureFingerprintResult> {
       throw sdkErr
     }
     if (!shouldUseFingerprintAgent()) {
-      // Feature flag off — preserve Phase 3 SDK-only behavior. The
-      // wizard's NO_AGENT path at useConversionWizard.ts:842-859
-      // activates on this error.
+      // Feature flag off — the SDK stub's BiometricHardwareError
+      // surfaces directly. The wizard's NO_AGENT path at
+      // useConversionWizard.ts:842-859 activates on this error.
       throw sdkErr
     }
     // Agent feature flag on — fall through to the local agent.
@@ -693,178 +490,4 @@ export async function captureFingerprint(): Promise<CaptureFingerprintResult> {
       throw sdkErr
     }
   }
-}
-
-/**
- * Lazy-loader for the `@digitalpersona/fingerprint` UMD IIFE bundle.
- * The package's `package.json` declares `unpkg:
- * "./dist/fingerprint.sdk.min.js"` and `browser: "./dist/fingerprint.sdk.js"`,
- * but the `.d.ts` ships an ambient namespace (no ESM `export`s), so
- * a Vite `import('@digitalpersona/fingerprint')` returns `{}`. The
- * exports map is also locked to the root, so deep imports like
- * `import('.../dist/fingerprint.sdk.min.js?url')` are rejected by
- * Vite's strict export resolution.
- *
- * The Phase 1 probe page (`public/fingerprint-probe.html:115`) solved
- * this by copying the minified IIFE to `public/websdk/fingerprint.sdk.min.js`
- * and serving it as a static asset. We follow the same pattern: the
- * vendored copy is committed at `public/websdk/fingerprint.sdk.min.js`
- * (Regenerated by `npm install` -> `node_modules/@digitalpersona/fingerprint/dist/fingerprint.sdk.min.js`).
- * We inject a `<script>` tag lazily and wait for
- * `window.Fingerprint.WebApi` to be defined.
- *
- * The Promise is cached so concurrent calls share a single script
- * injection — the browser hits the HTTP cache on subsequent calls
- * anyway, but the Promise-level cache avoids racing the `onload`
- * event.
- */
-const SDK_SCRIPT_SRC = '/websdk/fingerprint.sdk.min.js'
-
-let sdkLoadPromise: Promise<FingerprintSdk> | null = null
-
-function loadFingerprintSdk(): Promise<FingerprintSdk> {
-  if (typeof window !== 'undefined') {
-    const cached = (window as unknown as { Fingerprint?: FingerprintSdk }).Fingerprint
-    if (cached) return Promise.resolve(cached)
-  }
-  if (sdkLoadPromise) return sdkLoadPromise
-
-  sdkLoadPromise = (async () => {
-    if (typeof window === 'undefined' || typeof document === 'undefined') {
-      throw new BiometricHardwareError(
-        'captureFingerprint() requiere un entorno browser.',
-      )
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      const existing = document.querySelector(
-        `script[data-dp4500-sdk="true"]`,
-      )
-      if (existing) {
-        existing.addEventListener('load', () => resolve())
-        existing.addEventListener(
-          'error',
-          () =>
-            reject(
-              new BiometricHardwareError(
-                'Falló la carga del script del SDK.',
-              ),
-            ),
-        )
-        return
-      }
-      const script = document.createElement('script')
-      script.src = SDK_SCRIPT_SRC
-      script.async = true
-      script.dataset.dp4500Sdk = 'true'
-      script.onload = () => resolve()
-      script.onerror = () =>
-        reject(
-          new BiometricHardwareError(
-            'Falló la carga del script del SDK.',
-          ),
-        )
-      document.head.appendChild(script)
-    })
-
-    // The IIFE registers `window.Fingerprint` synchronously during
-    // script execution, but on slow hardware the load event may
-    // fire a tick before the assignment is observable. Poll up to
-    // 2 seconds before giving up.
-    const win = window as unknown as { Fingerprint?: FingerprintSdk }
-    const deadline = Date.now() + 2_000
-    while (typeof win.Fingerprint === 'undefined') {
-      if (Date.now() > deadline) {
-        throw new BiometricHardwareError(
-          'El SDK no registró window.Fingerprint tras 2s.',
-        )
-      }
-      await new Promise((r) => setTimeout(r, 50))
-    }
-
-    return win.Fingerprint
-  })().catch((err: unknown) => {
-    // Reset the cached promise so a future call retries the load.
-    sdkLoadPromise = null
-    throw err instanceof Error
-      ? err
-      : new BiometricHardwareError(String(err))
-  })
-
-  return sdkLoadPromise
-}
-
-/**
- * Minimal structural typing for the SDK's WebApi surface. We avoid
- * pulling the package's ambient `.d.ts` (which declares a global
- * `Fingerprint` namespace and breaks under the project's
- * `verbatimModuleSyntax: true` + bundler resolution combo) and
- * instead describe just the methods + event signatures the wrapper
- * touches. The runtime IIFE registers a richer object on
- * `window.Fingerprint`; the wrapper treats the value as this
- * shape and lets unknown fields pass through.
- */
-interface FingerprintSdk {
-  WebApi: new () => FingerprintWebApi
-}
-
-interface FingerprintWebApi {
-  startAcquisition(sampleFormat: number, deviceUid?: string): Promise<void>
-  stopAcquisition(deviceUid?: string): Promise<void>
-  onErrorOccurred?: ((event: FingerprintErrorEvent) => void) | undefined
-  onSamplesAcquired?: ((event: FingerprintSamplesAcquiredEvent) => void) | undefined
-  onQualityReported?: ((event: FingerprintQualityReportedEvent) => void) | undefined
-}
-
-interface FingerprintErrorEvent {
-  error: number
-}
-
-interface FingerprintSamplesAcquiredEvent {
-  deviceUid: string
-  samples: string
-}
-
-/**
- * Mirror of the SDK's `QualityCode` enum from `fingerprint.sdk.d.ts`
- * (the ambient .d.ts is not pullable due to `verbatimModuleSyntax: true`
- * + bundler resolution, so this declaration stays in sync manually).
- *
- * The `QualityReported` event the SDK emits after every sample carries a
- * numeric code from this enum; the wrapper maps it onto the
- * `BiometricQualityTooLow` rejection when the code != `Good` (0).
- */
-export const FingerprintQualityCode = {
-  Good: 0,
-  NoImage: 1,
-  TooLight: 2,
-  TooDark: 3,
-  TooNoisy: 4,
-  LowContrast: 5,
-  NotEnoughFeatures: 6,
-  NotCentered: 7,
-  NotAFinger: 8,
-  TooHigh: 9,
-  TooLow: 10,
-  TooLeft: 11,
-  TooRight: 12,
-  TooStrange: 13,
-  TooFast: 14,
-  TooSkewed: 15,
-  TooShort: 16,
-  TooSlow: 17,
-  ReverseMotion: 18,
-  PressureTooHard: 19,
-  PressureTooLight: 20,
-  WetFinger: 21,
-  FakeFinger: 22,
-  TooSmall: 23,
-  RotatedTooMuch: 24,
-} as const
-export type FingerprintQualityCode =
-  (typeof FingerprintQualityCode)[keyof typeof FingerprintQualityCode]
-
-interface FingerprintQualityReportedEvent {
-  deviceUid: string
-  quality: FingerprintQualityCode
 }
