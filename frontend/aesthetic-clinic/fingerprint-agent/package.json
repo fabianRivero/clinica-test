@@ -1,0 +1,15 @@
+{
+  "name": "fingerprint-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local HTTP bridge from clinic browser to DigitalPersona 4500 via the Lite Client WebChannel host.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "@digitalpersona/fingerprint": "^1.0.0"
+  }
+}
