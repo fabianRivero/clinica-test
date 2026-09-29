@@ -96,3 +96,6 @@ frontend/aesthetic-clinic/test-results/
 # ATL skill registry and cache (project-local, not for version control)
 .atl/
 .codegraph/
+
+# SDD runtime artifacts
+.gentle-ai-instance
