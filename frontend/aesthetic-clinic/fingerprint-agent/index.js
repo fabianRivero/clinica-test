@@ -128,11 +128,20 @@ async function ensureSdk() {
       sandbox.crypto = globalThis.crypto
     }
 
-    // NOTE on XMLHttpRequest: the websdk bundle DEFINES and USES XHR inside
-    // its WebChannelClient, but at *module-evaluation* time it is only
-    // referenced from inside function bodies — not from the top level.
-    // So the bundle loads without XHR. The shim is only needed at
-    // connect() / sendDataTxt() time. That is the next iteration's problem.
+    // XMLHttpRequest polyfill (Phase 4 PR C). The websdk bundle's
+    // WebChannelClient reaches for `XMLHttpRequest` from inside
+    // `connect()` / `sendDataTxt()` (NOT at module-evaluation time,
+    // so the bundle loads without it). We inject the `xhr2` shim
+    // into the sandbox BEFORE running the bundles so the prototype
+    // chain is consistent — both the IIFE and the post-IIFE
+    // WebChannelClient see the same constructor.
+    //
+    // `xhr2` is CommonJS; the dynamic import returns
+    // `{ default: <XMLHttpRequestCtor> }` under ESM (`"type": "module"`).
+    const xhr2Module = await import('xhr2')
+    const Xhr2 = xhr2Module.default || xhr2Module
+    sandbox.XMLHttpRequest = Xhr2
+
     vm.createContext(sandbox)
 
     const websdkSrc = readFileSync(websdkPath, 'utf8')
@@ -158,6 +167,214 @@ async function ensureSdk() {
     initError = e
     throw e
   }
+}
+
+// --- Capture flow ---------------------------------------------------------
+//
+// Phase 4 PR C: real capture wired against `Fingerprint.WebApi`. The
+// SDK's high-level facade (`WebApi`) wraps the underlying
+// `WebSdk.WebChannelClient` and exposes:
+//     onSamplesAcquired(event)   — event.samples is the base64 PNG
+//                                 payload, event.deviceUid is the
+//                                 SDK-reported reader identifier.
+//     onQualityReported(event)   — event.quality is a `QualityCode`
+//                                 enum; Good (0) means accept.
+//     onErrorOccurred(event)     — event.error is a numeric SDK code.
+//     onAcquisitionStarted(event)— fired when WebChannel connected
+//                                 and the reader began sampling.
+//     onAcquisitionStopped(event)— fired after stopAcquisition().
+//
+// The handshake Phase 3.1 wired in the browser also applies here:
+// we wait for BOTH `onSamplesAcquired` and `onQualityReported`
+// before resolving. The Promise resolves on the first Good-quality
+// verdict that pairs with a stashed sample; any non-Good quality
+// triggers a quality-too-low rejection so the wizard surfaces a
+// retryable UX message instead of a hardware fault.
+
+const SAMPLE_FORMAT_PNG_IMAGE = 5 // Fingerprint.SampleFormat.PngImage
+const CAPTURE_TIMEOUT_MS = 30_000
+
+/**
+ * Run a single fingerprint capture against the SDK's `WebApi`
+ * facade. The function is exported so unit tests can wire a mock
+ * `globalThis.Fingerprint` and verify the event-handler wiring
+ * without booting the real SDK or DpHost.
+ *
+ * Resolves with `{ templateB64, qualityScore, deviceSerial, width,
+ * height }` on a Good-quality sample. Rejects with an Error whose
+ * `.code` property is one of:
+ *   - `'sdk_not_initialized'`  — `globalThis.Fingerprint.WebApi` is missing
+ *   - `'no_reader'`            — `enumerateDevices()` returned []
+ *   - `'quality_too_low'`      — SDK reported a non-Good quality code
+ *   - `'sdk_error'`            — SDK fired onErrorOccurred
+ *   - `'capture_timeout'`      — no sample + no quality within 30s
+ */
+export async function captureFingerprint() {
+  if (!globalThis.Fingerprint || !globalThis.Fingerprint.WebApi) {
+    const err = new Error('SDK not initialized')
+    err.code = 'sdk_not_initialized'
+    throw err
+  }
+
+  // `debug: false` keeps the SDK from spamming the console with
+  // WebChannel frames during normal operator captures.
+  const webApi = new globalThis.Fingerprint.WebApi({ debug: false })
+
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let stashedSample = null
+    let stashedDeviceUid = null
+
+    const settleReject = (err) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      // Best-effort stop; swallows errors because the Promise is
+      // already settling to a rejection.
+      webApi.stopAcquisition().catch(() => undefined)
+      reject(err)
+    }
+
+    const settleResolve = (payload) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(payload)
+    }
+
+    const cleanup = () => {
+      clearTimeout(timeoutHandle)
+      webApi.onSamplesAcquired = undefined
+      webApi.onQualityReported = undefined
+      webApi.onErrorOccurred = undefined
+      webApi.onAcquisitionStarted = undefined
+      webApi.onAcquisitionStopped = undefined
+    }
+
+    // 30s hard timeout. Mirrors the browser wrapper's behavior —
+    // if the SDK never delivers a sample + quality within 30s, the
+    // operator is staring at a hung modal. Reject so the wizard
+    // can fall through to NO_AGENT.
+    const timeoutHandle = setTimeout(() => {
+      const err = new Error('capture timeout after 30s')
+      err.code = 'capture_timeout'
+      settleReject(err)
+    }, CAPTURE_TIMEOUT_MS)
+
+    webApi.onErrorOccurred = (event) => {
+      const err = new Error(`SDK error code ${event.error}`)
+      err.code = 'sdk_error'
+      err.sdkErrorCode = event.error
+      settleReject(err)
+    }
+
+    webApi.onSamplesAcquired = (event) => {
+      // The SDK may deliver samples for multiple fingers when the
+      // operator touches + removes + touches again. We stash the
+      // first sample and let the quality verdict decide; if a
+      // second sample arrives we overwrite (the operator is
+      // re-trying — the more recent frame is the better one).
+      stashedSample = event.samples
+      stashedDeviceUid = event.deviceUid
+
+      // If the quality verdict arrived first (rare, but the SDK
+      // does not guarantee event order), close the handshake now.
+      if (stashedQuality !== null && stashedQuality.deviceUid === event.deviceUid) {
+        if (stashedQuality.code === 0 /* Good */) {
+          settleResolve({
+            templateB64: stashedSample,
+            qualityScore: 0,
+            deviceSerial: stashedDeviceUid,
+            width: 0,
+            height: 0,
+          })
+        } else {
+          const err = new Error(`quality too low: ${stashedQuality.code}`)
+          err.code = 'quality_too_low'
+          err.qualityCode = stashedQuality.code
+          settleReject(err)
+        }
+      }
+    }
+
+    let stashedQuality = null
+
+    webApi.onQualityReported = (event) => {
+      // Quality arrived before the sample — stash and wait.
+      if (stashedSample === null) {
+        stashedQuality = { deviceUid: event.deviceUid, code: event.quality }
+        return
+      }
+
+      // Quality arrived for a DIFFERENT device than the stashed
+      // sample — defensive guard. Reject so the anomaly surfaces
+      // instead of silently corrupting the capture result.
+      if (stashedDeviceUid !== event.deviceUid) {
+        const err = new Error('quality report does not match the active reader')
+        err.code = 'sdk_error'
+        settleReject(err)
+        return
+      }
+
+      if (event.quality === 0 /* Good */) {
+        settleResolve({
+          templateB64: stashedSample,
+          qualityScore: 0,
+          deviceSerial: stashedDeviceUid,
+          width: 0,
+          height: 0,
+        })
+        return
+      }
+
+      const err = new Error(`quality too low: ${event.quality}`)
+      err.code = 'quality_too_low'
+      err.qualityCode = event.quality
+      settleReject(err)
+    }
+
+    webApi.onAcquisitionStarted = () => {
+      // No-op for now — the SDK signals readiness but the actual
+      // capture result is delivered via onSamplesAcquired +
+      // onQualityReported. Reserved for future "show spinner" UX.
+    }
+
+    webApi.onAcquisitionStopped = () => {
+      // No-op for now — fires after stopAcquisition() completes.
+      // Reserved for future cleanup hooks.
+    }
+
+    // enumerateDevices() returns an array of device UIDs (strings).
+    // An empty array means DpHost has no reader enumerated — return
+    // a typed error so the HTTP layer maps it to 503.
+    webApi
+      .enumerateDevices()
+      .then((devices) => {
+        if (!devices || devices.length === 0) {
+          const err = new Error('no reader enumerated by DpHost')
+          err.code = 'no_reader'
+          settleReject(err)
+          return
+        }
+        // startAcquisition's promise resolves on the FIRST
+        // onAcquisitionStarted event. We don't await it here —
+        // the catch only needs to handle SDK init failures; the
+        // per-sample lifecycle is event-driven via the handlers
+        // above.
+        return webApi.startAcquisition(SAMPLE_FORMAT_PNG_IMAGE)
+      })
+      .catch((err) => {
+        if (err && err.code) {
+          // Already a typed error from the handlers above — just
+          // forward so the Promise settles once.
+          settleReject(err)
+          return
+        }
+        const wrapped = new Error(err && err.message ? err.message : String(err))
+        wrapped.code = 'sdk_error'
+        settleReject(wrapped)
+      })
+  })
 }
 
 // --- HTTP server ----------------------------------------------------------
@@ -198,14 +415,30 @@ const server = createServer(async (req, res) => {
             detail: String(initError?.message || initError),
           })
         }
-        // TODO(next iteration): instantiate Fingerprint.WebApi, wire up
-        // onSamplesAcquired, call startAcquisition(SampleFormat.PngImage),
-        // and stream the base64 sample back. The hard part is whether the
-        // WebChannelClient inside the SDK can actually reach DpHost from
-        // Node — that requires a working XHR transport.
-        return jsonResponse(res, 501, { error: 'capture not yet implemented' })
+        const capture = await captureFingerprint()
+        return jsonResponse(res, 200, {
+          templateB64: capture.templateB64,
+          qualityScore: capture.qualityScore,
+          deviceSerial: capture.deviceSerial,
+          width: capture.width,
+          height: capture.height,
+        })
       } catch (e) {
-        return jsonResponse(res, 500, { error: String(e.message || e) })
+        const code = e && e.code ? e.code : 'sdk_error'
+        // Map typed capture errors to HTTP statuses the frontend
+        // already understands (503 = no reader; everything else
+        // is an SDK fault that the wizard treats as a hardware
+        // failure).
+        if (code === 'no_reader') {
+          return jsonResponse(res, 503, {
+            error: 'no reader enumerated',
+            detail: e.message,
+          })
+        }
+        return jsonResponse(res, 500, {
+          error: code,
+          detail: e && e.message ? e.message : String(e),
+        })
       }
     })
     return

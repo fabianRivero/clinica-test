@@ -304,6 +304,101 @@ export class BiometricQualityTooLow extends BiometricSuspendError {
 }
 
 /**
+ * Feature flag for the Phase 4 PR C fingerprint-agent fall-through.
+ *
+ * When `true`, `captureFingerprint()` falls through to the local
+ * Python/Node `fingerprint-agent` HTTP service (bound to
+ * `127.0.0.1:8765`) whenever the direct browser Web SDK path
+ * raises `BiometricHardwareError` after the 30s timeout OR fails to
+ * inject the SDK script at all. When `false` (the default), the
+ * SDK-direct path is the only capture route and the wizard falls
+ * straight through to the Phase 2A4 NO_AGENT placeholder on
+ * hardware failure.
+ *
+ * The flag is read from TWO surfaces (in order):
+ *   1. `import.meta.env.VITE_USE_FINGERPRINT_AGENT` — Vite inlines
+ *     build-time flags; this is the production-style switch.
+ *   2. `window.DP4500_USE_FINGERPRINT_AGENT` — runtime override for
+ *     staged rollouts / dev work without a rebuild.
+ *
+ * Per design.md §3.6 and spec §ADDED Spec (Phase 4), the flag
+ * defaults OFF: the SDK-direct path is the default and the agent
+ * is the explicit opt-in.
+ */
+function shouldUseFingerprintAgent(): boolean {
+  const envFlag = import.meta.env?.VITE_USE_FINGERPRINT_AGENT === 'true'
+  if (envFlag) return true
+  if (typeof window !== 'undefined') {
+    return (
+      (window as unknown as { DP4500_USE_FINGERPRINT_AGENT?: boolean })
+        .DP4500_USE_FINGERPRINT_AGENT === true
+    )
+  }
+  return false
+}
+
+/**
+ * Capture a fingerprint from the local `fingerprint-agent` HTTP
+ * service (`http://127.0.0.1:8765/capture`). Used as the Phase 4
+ * PR C fall-through path when the direct browser Web SDK raises
+ * `BiometricHardwareError` and the agent feature flag is on.
+ *
+ * Maps the agent's response shape (`{templateB64, qualityScore,
+ * deviceSerial, width, height}`) into the wizard's
+ * `CaptureFingerprintResult`. Translates HTTP failures back into
+ * `BiometricHardwareError` so the existing wizard catch site at
+ * `useConversionWizard.ts:842-859` can route to the NO_AGENT
+ * terminal fallback:
+ *   - HTTP 503 (no reader)        → `BiometricHardwareError`
+ *   - HTTP 501 (SDK not loaded)   → `BiometricHardwareError`
+ *   - HTTP 5xx / network error    → `BiometricHardwareError`
+ */
+async function captureFingerprintViaAgent(): Promise<CaptureFingerprintResult> {
+  const AGENT_URL = 'http://127.0.0.1:8765/capture'
+  let response: Response
+  try {
+    response = await fetch(AGENT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+  } catch (err) {
+    // Network failure — the agent service is not running. Re-throw
+    // as BiometricHardwareError so the wizard's NO_AGENT path at
+    // useConversionWizard.ts:842-859 activates.
+    throw new BiometricHardwareError(
+      `fingerprint-agent unreachable: ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+  if (!response.ok) {
+    // Both 501 (SDK not initialized) and 503 (no reader) are
+    // terminal conditions on the agent side — they mean the agent
+    // cannot produce a capture right now. Surface them as
+    // BiometricHardwareError so the wizard preserves its NO_AGENT
+    // terminal fallback contract (Phase 2A4).
+    throw new BiometricHardwareError(
+      `fingerprint-agent returned HTTP ${response.status}`,
+    )
+  }
+  const data = (await response.json().catch(() => null)) as
+    | Partial<CaptureFingerprintResult>
+    | null
+  if (!data || typeof data.templateB64 !== 'string') {
+    throw new BiometricHardwareError(
+      'fingerprint-agent response missing templateB64',
+    )
+  }
+  return {
+    templateB64: data.templateB64,
+    qualityScore: typeof data.qualityScore === 'number' ? data.qualityScore : 0,
+    deviceSerial:
+      typeof data.deviceSerial === 'string' ? data.deviceSerial : '',
+    width: typeof data.width === 'number' ? data.width : 0,
+    height: typeof data.height === 'number' ? data.height : 0,
+  }
+}
+
+/**
  * Capture a fingerprint from the DigitalPersona 4500 reader via the
  * vendorized Web SDK. The SDK ships as a UMD IIFE that registers the
  * `Fingerprint` global (per `@digitalpersona/fingerprint/package.json`
@@ -330,7 +425,7 @@ export class BiometricQualityTooLow extends BiometricSuspendError {
  * (a global namespace declaration that conflicts with the project's
  * `verbatimModuleSyntax: true` + bundler resolution settings).
  */
-export async function captureFingerprint(): Promise<CaptureFingerprintResult> {
+async function captureFingerprintViaSdk(): Promise<CaptureFingerprintResult> {
   // Pattern A: lazy-load the SDK IIFE the first time capture is
   // requested. Subsequent calls reuse the cached `window.Fingerprint`
   // without re-injecting the script (the loader module caches the
@@ -547,6 +642,57 @@ export async function captureFingerprint(): Promise<CaptureFingerprintResult> {
         )
       })
   })
+}
+
+/**
+ * Top-level capture entry point used by the wizard. Tries the
+ * direct browser Web SDK path first; when that fails with a
+ * hardware-level error AND the agent feature flag is on, falls
+ * through to the local `fingerprint-agent` HTTP service
+ * (`http://127.0.0.1:8765/capture`). When the agent also fails
+ * (503 / network error), the original error propagates so the
+ * wizard's NO_AGENT terminal fallback at
+ * `useConversionWizard.ts:842-859` activates.
+ *
+ * Order of operations (Phase 4 PR C):
+ *   1. `captureFingerprintViaSdk()` — Phase 3 default path.
+ *   2. On `BiometricHardwareError` or `BiometricQualityTooLow`:
+ *        a. If the agent feature flag is OFF, re-throw the SDK
+ *           error (preserves Phase 3 behavior verbatim).
+ *        b. If the flag is ON, call `captureFingerprintViaAgent()`
+ *           and return its result. If the agent ALSO throws, the
+ *           original SDK error wins (so the wizard's NO_AGENT path
+ *           sees a `BiometricHardwareError`, not a fetch error).
+ *   3. Any other error type propagates unchanged — the SDK's
+ *      contract is that only `BiometricHardwareError` /
+ *      `BiometricQualityTooLow` are recoverable via fall-through.
+ */
+export async function captureFingerprint(): Promise<CaptureFingerprintResult> {
+  try {
+    return await captureFingerprintViaSdk()
+  } catch (sdkErr) {
+    const isRecoverable =
+      sdkErr instanceof BiometricHardwareError ||
+      sdkErr instanceof BiometricQualityTooLow
+    if (!isRecoverable) {
+      throw sdkErr
+    }
+    if (!shouldUseFingerprintAgent()) {
+      // Feature flag off — preserve Phase 3 SDK-only behavior. The
+      // wizard's NO_AGENT path at useConversionWizard.ts:842-859
+      // activates on this error.
+      throw sdkErr
+    }
+    // Agent feature flag on — fall through to the local agent.
+    // If the agent also fails, prefer the ORIGINAL SDK error so
+    // the wizard's NO_AGENT branch sees a `BiometricHardwareError`
+    // and not a fetch TypeError.
+    try {
+      return await captureFingerprintViaAgent()
+    } catch {
+      throw sdkErr
+    }
+  }
 }
 
 /**

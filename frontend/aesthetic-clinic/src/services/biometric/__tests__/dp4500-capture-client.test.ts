@@ -277,3 +277,138 @@ describe('BiometricHardwareError', () => {
     expect(err.message).toBe('Hardware no disponible o SDK no inicializo.')
   })
 })
+
+/**
+ * Phase 4 PR C — fingerprint-agent fall-through tests.
+ *
+ * The agent is the third capture path that sits BETWEEN the
+ * Phase 3 SDK-direct default and the Phase 2A4 NO_AGENT terminal
+ * fallback at `useConversionWizard.ts:842-859`. The wrapper
+ * (`captureFingerprint()`) tries the SDK first; on a recoverable
+ * SDK error (`BiometricHardwareError` or `BiometricQualityTooLow`)
+ * it consults the agent feature flag (`VITE_USE_FINGERPRINT_AGENT`
+ * or `window.DP4500_USE_FINGERPRINT_AGENT`). If the flag is OFF,
+ * the SDK error propagates and the wizard takes the NO_AGENT
+ * branch. If the flag is ON, the wrapper calls the local
+ * `fingerprint-agent` HTTP service (`http://127.0.0.1:8765/capture`)
+ * and maps its response into `CaptureFingerprintResult`.
+ *
+ * `fetch` is mocked with `vi.fn()` so these tests run without a
+ * real agent service. The SDK is stubbed via the same
+ * `installFakeSdk` helper used by the SDK-direct tests.
+ */
+describe('captureFingerprint (Phase 4 PR C — fingerprint-agent fall-through)', () => {
+  let fetchSpy: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    removeFakeSdk()
+    vi.spyOn(document.head, 'appendChild').mockImplementation(
+      (node: Node) => node,
+    )
+    fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    // The agent feature flag must be explicitly unset between
+    // tests so a previous test's stubEnv does not leak.
+    vi.unstubAllEnvs()
+    delete (window as unknown as { DP4500_USE_FINGERPRINT_AGENT?: boolean })
+      .DP4500_USE_FINGERPRINT_AGENT
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+    delete (window as unknown as { DP4500_USE_FINGERPRINT_AGENT?: boolean })
+      .DP4500_USE_FINGERPRINT_AGENT
+  })
+
+  it('falls through to fingerprint-agent on SDK hardware error when the flag is on', async () => {
+    // SDK rejects with a hardware-level error (the WebChannel host
+    // is unreachable on the operator workstation — the canonical
+    // Phase 4 PR C trigger for agent fall-through).
+    installFakeSdk({
+      startAcquisitionImpl: () =>
+        Promise.reject(new Error('WebChannel host unreachable')),
+    })
+    vi.stubEnv('VITE_USE_FINGERPRINT_AGENT', 'true')
+
+    // The agent responds with a valid capture. The wrapper must
+    // map agent shape ({templateB64, qualityScore, deviceSerial,
+    // width, height}) into CaptureFingerprintResult.
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          templateB64: 'YWdlbnQtdGVtcGxhdGU=',
+          qualityScore: 0,
+          deviceSerial: '05ba-000a',
+          width: 0,
+          height: 0,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const result = await captureFingerprint()
+
+    expect(result).toEqual({
+      templateB64: 'YWdlbnQtdGVtcGxhdGU=',
+      qualityScore: 0,
+      deviceSerial: '05ba-000a',
+      width: 0,
+      height: 0,
+    })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'http://127.0.0.1:8765/capture',
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('does NOT fall through to the agent when the feature flag is off', async () => {
+    // SDK rejects — the wrapper must surface the error directly so
+    // the wizard's NO_AGENT terminal fallback at
+    // useConversionWizard.ts:842-859 activates. The agent must
+    // NOT be called (Phase 3 SDK-only behavior).
+    installFakeSdk({
+      startAcquisitionImpl: () =>
+        Promise.reject(new Error('WebChannel host unreachable')),
+    })
+    // Feature flag is OFF — env var absent, window flag absent.
+    // vi.unstubAllEnvs() in beforeEach already cleared the env.
+
+    const promise = captureFingerprint()
+    await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
+    await expect(promise).rejects.toThrow(/WebChannel host unreachable/)
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('propagates the SDK hardware error when the agent returns 503 (NO_AGENT terminal fallback)', async () => {
+    // Both paths fail: SDK rejects with a hardware error AND the
+    // agent responds with 503 (no reader). The wrapper must surface
+    // the ORIGINAL SDK error so the wizard's NO_AGENT path at
+    // useConversionWizard.ts:842-859 activates with a recognizable
+    // BiometricHardwareError rather than a fetch TypeError.
+    installFakeSdk({
+      startAcquisitionImpl: () =>
+        Promise.reject(new Error('WebChannel host unreachable')),
+    })
+    vi.stubEnv('VITE_USE_FINGERPRINT_AGENT', 'true')
+
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'no reader enumerated' }), {
+        status: 503,
+      }),
+    )
+
+    const promise = captureFingerprint()
+    await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
+    await expect(promise).rejects.toThrow(/WebChannel host unreachable/)
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'http://127.0.0.1:8765/capture',
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+})

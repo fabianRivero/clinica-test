@@ -9,7 +9,8 @@
     "start": "node index.js",
     "test": "node --test test/"
   },
-  "dependencies": {
-    "@digitalpersona/fingerprint": "^1.0.0"
+"dependencies": {
+    "@digitalpersona/fingerprint": "^1.0.0",
+    "xhr2": "^0.2.1"
   }
 }
