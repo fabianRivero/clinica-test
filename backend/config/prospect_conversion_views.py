@@ -1318,26 +1318,72 @@ def _validate_biometric_step(payload):
     device_serial = (payload.get("deviceSerial") or "").strip()
     consent_accepted = _parse_bool(payload.get("consentAccepted"))
     captured_at = (payload.get("capturedAt") or "").strip()
-    quality = _parse_positive_int(payload.get("quality"), "quality", errors, required=True, min_value=1)
+
+    # Phase 2A5: ``externalId`` is the wizard-minted UUID that the
+    # frontend persists at capture time (``biometricForm.externalId``).
+    # The finalize handler reads it back from
+    # ``draft.datos_biometria["externalId"]`` and promotes it to BOTH
+    # ``Usuario.biometric_external_id`` AND ``Cliente.external_id`` so the
+    # cita verify endpoint can address the cliente by a stable
+    # cross-system handle. Optional on the contract: drafts without the
+    # field (legacy paths, MOCK_LEGACY templates) keep flowing untouched
+    # and the pre_save signal remains the defensive fallback.
+    external_id_raw = (payload.get("externalId") or "").strip()
+    # Phase 2A4 NO_AGENT placeholder path: when no physical reader is
+    # configured for the sucursal, the frontend mints a UUID via
+    # ``crypto.randomUUID()`` and calls ``enrollIdentity()`` on the
+    # DP4500 host app with ``template_b64=""``. The enroll OK is the
+    # canonical capture event for this workstation+session, so a
+    # payload that carries an ``externalId`` is allowed to ship
+    # ``template=""`` and ``quality=0`` without being rejected. The
+    # legacy path (no externalId) still requires a real template with
+    # quality >= 60, which is what the MOCK_LEGACY drafts rely on.
+    has_external_id = bool(external_id_raw)
+
+    # Quality: legacy path demands a positive integer (>=1); Phase 2A4
+    # placeholder path accepts quality=0 because no real capture
+    # happened and the DP4500 enroll already validated the event.
+    # The minimum floor differs by path, so we compute it from
+    # ``has_external_id`` instead of branching the whole parse.
+    quality = _parse_positive_int(
+        payload.get("quality"),
+        "quality",
+        errors,
+        required=not has_external_id,
+        min_value=0 if has_external_id else 1,
+    )
 
     if provider not in {choice[0] for choice in HuellaBiometricaCliente.Proveedor.choices}:
         errors["provider"] = "El proveedor biometrico no es valido."
-    if not template:
-        errors["template"] = "Debes capturar una huella antes de continuar."
-    if quality is not None and quality < 60:
-        errors["quality"] = "La calidad simulada debe ser de al menos 60."
+
+    # Template + quality floor: only enforced on the legacy path.
+    # Phase 2A4 NO_AGENT drafts deliberately carry an empty template
+    # and zero quality because the DP4500 enroll is the canonical
+    # capture event; downstream code (finalize handler at lines
+    # 2205-2237) keys off ``externalId`` for those drafts.
+    if not has_external_id:
+        if not template:
+            errors["template"] = "Debes capturar una huella antes de continuar."
+        if quality is not None and quality < 60:
+            errors["quality"] = "La calidad simulada debe ser de al menos 60."
 
     if errors:
         return None, errors
 
-    return {
+    result = {
         "provider": provider,
         "template": template,
         "quality": quality,
         "deviceSerial": device_serial,
         "consentAccepted": consent_accepted,
         "capturedAt": captured_at,
-    }, None
+    }
+    # Round-trip the UUID only when the wizard actually supplied one —
+    # legacy MOCK drafts that never set ``externalId`` keep the field
+    # absent on the persisted draft, matching the pre-Phase 2A5 shape.
+    if external_id_raw:
+        result["externalId"] = external_id_raw
+    return result, None
 
 
 def _normalize_biometric_draft_data(draft):
@@ -2183,6 +2229,41 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
                     "registrado_por": request.user,
                 }
             )
+
+    # Phase 2A5: propagate the wizard-minted UUID from
+    # ``datos_biometria["externalId"]`` onto BOTH ``Usuario.biometric_external_id``
+    # AND ``Cliente.external_id``. The pre_save signal normally auto-mints a
+    # UUID on Usuario INSERT, but the frontend mints an independent UUID
+    # at capture time and persists it through the wizard; finalize MUST
+    # prefer that wizard-minted value so DP4500's enroll and the cita
+    # verify endpoints agree on the cross-system handle. The whole block
+    # runs inside the @transaction.atomic decorator on this view, so a
+    # failure in either save rolls back the user + cliente + huella
+    # writes above.
+    external_id_raw = (biometric_data.get("externalId") or "").strip()
+    if external_id_raw:
+        from uuid import UUID as _UUID
+        try:
+            wizard_external_id = _UUID(external_id_raw)
+        except (ValueError, AttributeError):
+            # Malformed UUID — leave the signal's value untouched; the
+            # upstream capture flow is responsible for producing a
+            # well-formed v4 UUID.
+            wizard_external_id = None
+        if wizard_external_id is not None:
+            # Override the Usuario row's UUID so it matches the wizard's
+            # mint. ``save(update_fields=...)`` is intentional: the
+            # wizard's value is the cross-system source of truth and we
+            # do not want to disturb any other column on Usuario during
+            # finalize.
+            user.biometric_external_id = wizard_external_id
+            user.save(update_fields=["biometric_external_id", "updated_at"])
+            # Mirror on Cliente so ``CitaBiometricVerifyView`` can resolve
+            # the user from the cita path directly (operacion.paciente).
+            # The field was added in customers migration 0018; using
+            # ``update_fields`` keeps the save focused.
+            cliente.external_id = wizard_external_id
+            cliente.save(update_fields=["external_id", "updated_at"])
 
     analisis = AnalisisEstetico.objects.create(
         paciente=cliente,

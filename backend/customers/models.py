@@ -210,6 +210,29 @@ class Cliente(TimeStampedModel):
         default=Origen.NUEVO,
     )
 
+    # --- Phase 2A5 of dp4500-host-app-integration-phase2 ---
+    # Cross-system handle the DP4500 challenge/verify endpoints accept in
+    # place of ``Usuario.biometric_external_id``. The frontend mints a fresh
+    # UUID via ``crypto.randomUUID()`` at capture time and persists it as
+    # ``biometricForm.externalId``; the prospect-conversion finalize
+    # handler (see ``admin_prospect_conversion_finalize`` in
+    # ``config/prospect_conversion_views.py``) propagates that UUID here
+    # AND to the underlying ``Usuario.biometric_external_id`` field so
+    # ``CitaBiometricVerifyView`` can resolve the user by the wizard's
+    # UUID on every cita check-in.
+    external_id = models.UUIDField(
+        null=True,
+        blank=True,
+        unique=True,
+        db_index=True,
+        help_text=(
+            "Cross-system UUID the DP4500 service API uses to address this "
+            "cliente. Mirrors Usuario.biometric_external_id once the "
+            "prospect-conversion finalize handler has wired the "
+            "wizard-minted UUID."
+        ),
+    )
+
     fecha_nacimiento = models.DateField()
     nro_hijos = models.PositiveIntegerField(default=0)
     direccion_domicilio = models.CharField(max_length=255, blank=True)

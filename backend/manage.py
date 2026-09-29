@@ -25,6 +25,10 @@ def main():
             "available on your PYTHONPATH environment variable? Did you "
             "forget to activate a virtual environment?"
         ) from exc
+    # Phase 2 of dp4500-host-app-integration-phase2. Importing the
+    # celery app at manage.py load time lets ``manage.py shell``
+    # discover the task registry.
+    from config.celery import app as celery_app  # noqa: F401
     execute_from_command_line(sys.argv)
 
 

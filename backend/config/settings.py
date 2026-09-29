@@ -71,7 +71,12 @@ INSTALLED_APPS = [
     "biometric.apps.BiometricConfig",
     "backups.apps.BackupsConfig",
     "corsheaders",
-]                      
+    # Phase 2 of dp4500-host-app-integration-phase2. Sibling app to
+    # the legacy biometric/ app; hosts the HTTPClient + cascade signal
+    # + Celery tasks. Deprecated separately (Phase 4 will deprecate
+    # the legacy biometric/ app, not this one).
+    "dp4500_integration.apps.Dp4500IntegrationConfig",
+]
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -266,8 +271,29 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", not DEBUG)
 CSRF_COOKIE_HTTPONLY = env_bool("DJANGO_CSRF_COOKIE_HTTPONLY", False)
-CSRF_COOKIE_SAMESITE = os.getenv("DJANGO_CSRF_COOKIE_SAMESITE", "None" if not DEBUG else "Lax")
 SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", not DEBUG)
+
+# ---------------------------------------------------------------------------
+# Phase 2 of dp4500-host-app-integration-phase2: Celery + DP4500 settings.
+# ---------------------------------------------------------------------------
+
+# Filesystem broker by default (no broker service required for local dev).
+# Set CELERY_BROKER_URL=redis://... in production.
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "filesystem:///tmp/dp4500-celery")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "cache+memory://")
+# When True (default in tests), \`.delay()\` runs the task synchronously
+# in-process. Set to False in production so the worker handles the
+# cascade-revoke background task.
+CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", True)
+CELERY_TASK_EAGER_PROPAGATES = True
+
+# DP4500 service API connection settings (consumed by
+# dp4500_integration.client.HTTPClient).
+DP4500_BASE_URL = os.getenv("DP4500_BASE_URL", "http://localhost:8000")
+DP4500_TIMEOUT_SECONDS = int(os.getenv("DP4500_TIMEOUT_SECONDS", "5"))
+# Phase 2 supports only "env" (per-branch env var lookup). Phase 4 adds
+# "vault".
+DP4500_KEY_STORE_BACKEND = os.getenv("DP4500_KEY_STORE_BACKEND", "env")
 SESSION_COOKIE_SAMESITE = os.getenv("DJANGO_SESSION_COOKIE_SAMESITE", "None" if not DEBUG else "Lax")
 
 # ---------------------------------------------------------------------------

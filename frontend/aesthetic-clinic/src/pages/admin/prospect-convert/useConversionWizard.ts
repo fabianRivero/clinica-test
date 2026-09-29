@@ -52,6 +52,13 @@ import {
   prospectoEnrollInit as biometricProspectoEnrollInit,
   isBiometricSuspended,
 } from '../../../services/fingerprint/biometricClient'
+import { ensureSigningKey } from '../../../services/biometric/ed25519-key-manager'
+import {
+  BiometricHardwareError,
+  BiometricQualityTooLow,
+  captureFingerprint,
+  enrollIdentity,
+} from '../../../services/biometric/dp4500-capture-client'
 
 /**
  * Wizard mode discriminator — matches the URL-derived value in
@@ -721,6 +728,81 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
       return { success: true }
     }
     setBiometricStatus('Capturando huella en el lector DigitalPersona 4500...')
+    /**
+     * Phase 2A DP4500 enroll — best-effort sidecar to the legacy
+     * DigitalPersona capture. Mints the user_external_id UUID the
+     * workstation will sign against for every subsequent cita
+     * check-in (Phase 2B). The legacy capture stays the source of
+     * truth for step 4 today; any failure here MUST NOT block the
+     * operator — the UUID is persisted in `biometricForm.externalId`
+     * regardless so the backend finalize handler can retry the
+     * enrollment on its own time.
+     *
+     * Template bytes are intentionally empty for now: real DP4500
+     * template acquisition is Phase 4 (the host-app integration
+     * design §Q1 decision). We are exercising the wire contract
+     * (pubkey enroll + UUID mint + server ack), not the fingerprint
+     * image transport.
+     *
+     * Returns `true` on full success, `false` if the enroll was
+     * deferred (network down, 503, etc.). The caller decides which
+     * status string to surface to the operator based on this flag.
+     *
+     * Declared at function scope (not inside the `try`) so the
+     * `catch` recovery for NO_AGENT can mint a UUID + enroll the
+     * DP4500 sidecar when the legacy endpoint reports no reader
+     * configured for this sucursal. That branch exercises the
+     * Phase 2A4 wire contract end-to-end in dev where the
+     * physical DigitalPersona reader is not installed.
+     */
+    const enrollDp4500 = async (externalId: string): Promise<boolean> => {
+      try {
+        const signingKey = await ensureSigningKey()
+        const digest = await crypto.subtle.digest('SHA-256', signingKey.publicKeyRaw)
+        const fingerprintHex = Array.from(new Uint8Array(digest))
+          .map((byte) => byte.toString(16).padStart(2, '0'))
+          .join('')
+        // Phase 3: capture a real fingerprint sample via the
+        // vendorized DigitalPersona Web SDK. On success the template
+        // bytes replace the Phase 2A4 empty-string placeholder; on
+        // `BiometricHardwareError` (no reader / WebChannel host
+        // down / SDK init failure) we fall through with `templateB64`
+        // = '' so the legacy enroll endpoint still receives a valid
+        // request — the Phase 2A4 NO_AGENT dev path remains intact.
+        // On `BiometricQualityTooLow` we surface the retry hint to
+        // the operator and abort the enroll.
+        let templateB64 = ''
+        if (!biometricSuspended) {
+          try {
+            const captured = await captureFingerprint()
+            templateB64 = captured.templateB64
+          } catch (captureErr) {
+            if (captureErr instanceof BiometricQualityTooLow) {
+              setBiometricStatus('Calidad insuficiente. Vuelve a intentarlo.')
+              return false
+            }
+            // BiometricHardwareError (or any other capture-time
+            // error) → fall through with templateB64 = ''. The wire
+            // contract for `enrollIdentity` already supports empty
+            // templates (Phase 2A4 placeholder); the NO_AGENT path
+            // below (lines 842-859) is the dev escape hatch when the
+            // legacy endpoint itself reports no reader.
+            if (!(captureErr instanceof BiometricHardwareError)) {
+              // Unknown capture error: log + fall through with empty
+              // template so the wizard step stays unblocked.
+              console.warn('captureFingerprint() fallo:', captureErr)
+            }
+          }
+        }
+        await enrollIdentity(externalId, templateB64, signingKey, fingerprintHex, 'DP_PROPRIETARY')
+        return true
+      } catch {
+        // Best-effort: swallow so the wizard step stays unblocked.
+        // `externalId` is already preserved in `biometricForm` for
+        // finalize to retry the enroll later.
+        return false
+      }
+    }
     try {
       if (isReactivation) {
         const existingClientId = Number(clientId)
@@ -732,6 +814,8 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
         const result = await biometricEnrollInit(existingClientId, {
           consentimiento_aceptado: biometricForm.consentAccepted,
         })
+        const externalId = crypto.randomUUID()
+        const dp4500Enrolled = await enrollDp4500(externalId)
         setBiometricForm({
           provider: 'DIGITAL_PERSONA',
           template: `digital-persona-${result.huella_id}`,
@@ -739,8 +823,13 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
           deviceSerial: result.device_serial,
           capturedAt: new Date().toISOString(),
           consentAccepted: biometricForm.consentAccepted,
+          externalId,
         })
-        setBiometricStatus(`Huella capturada con calidad ${result.calidad_captura}.`)
+        setBiometricStatus(
+          dp4500Enrolled
+            ? `Huella capturada con calidad ${result.calidad_captura}.`
+            : 'Captura legacy OK; enroll DP4500 diferido.',
+        )
         return { success: true, calidadCaptura: result.calidad_captura }
       }
 
@@ -756,6 +845,8 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
       const result = await biometricProspectoEnrollInit(prospectIdValue, {
         consentimiento_aceptado: biometricForm.consentAccepted,
       })
+      const externalId = crypto.randomUUID()
+      const dp4500Enrolled = await enrollDp4500(externalId)
       setBiometricForm({
         provider: 'DIGITAL_PERSONA',
         template: `digital-persona-${result.huella_id}`,
@@ -763,14 +854,47 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
         deviceSerial: result.device_serial,
         capturedAt: new Date().toISOString(),
         consentAccepted: biometricForm.consentAccepted,
+        externalId,
       })
-      setBiometricStatus(`Huella capturada con calidad ${result.calidad_captura}.`)
+      setBiometricStatus(
+        dp4500Enrolled
+          ? `Huella capturada con calidad ${result.calidad_captura}.`
+          : 'Captura legacy OK; enroll DP4500 diferido.',
+      )
       return { success: true, calidadCaptura: result.calidad_captura }
     } catch (requestError) {
       const message =
         requestError instanceof Error
           ? requestError.message
           : 'No se pudo capturar la huella.'
+      // Phase 2A4 dev recovery: when the legacy enroll endpoint reports
+      // that no reader is configured for this sucursal (NO_AGENT), the
+      // physical DigitalPersona 4500 is simply not installed in dev —
+      // that is expected, not an operator error. We still want to
+      // exercise the DP4500 sidecar end-to-end (UUID mint + pubkey
+      // enroll + server ack), so we mint the externalId, run the
+      // sidecar, and report success. For Phase 2A4 the legacy capture
+      // is not the source of truth — real template acquisition is
+      // Phase 4 (host-app integration design §Q1).
+      if (message.includes('No hay ningun lector')) {
+        const externalId = crypto.randomUUID()
+        const dp4500Enrolled = await enrollDp4500(externalId)
+        setBiometricForm({
+          provider: 'DIGITAL_PERSONA',
+          template: '',
+          quality: 0,
+          deviceSerial: '',
+          capturedAt: new Date().toISOString(),
+          consentAccepted: biometricForm.consentAccepted,
+          externalId,
+        })
+        setBiometricStatus(
+          dp4500Enrolled
+            ? 'DP4500 enroll OK; legacy omitido (sin lector).'
+            : 'Captura legacy omitida (sin lector); enroll DP4500 diferido.',
+        )
+        return { success: true }
+      }
       setSubmitError(message)
       setBiometricStatus(message)
       return { success: false, errorMessage: message }
@@ -793,7 +917,7 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
     // While the build flag is on we deliberately skip capture; an
     // empty template is the explicit contract for the suspended
     // finalize path. We still write the step so the wizard advances.
-    if (!biometricForm.template && !biometricSuspended) {
+    if (!biometricForm.template && !biometricSuspended && !biometricForm.externalId) {
       setFieldErrors({ template: 'Debes capturar la huella biometrica antes de continuar.' })
       return
     }

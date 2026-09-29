@@ -4,10 +4,11 @@
 schema: spec-driven
 
 context: |
-  Tech stack: Django 5.2 + DRF (Python 3.12) backend, React 19 + Vite (TypeScript) frontend
+  Tech stack: Django 5.2 + DRF (Python 3.14) backend, React 19 + Vite 8 (TypeScript strict) frontend
   Architecture: Monorepo with backend/ and frontend/ directories, PostgreSQL database
-  Testing: Django unittest (backend), Playwright E2E (frontend); pytest not installed
+  Testing: pytest 9 + pytest-django (backend, strict TDD); Playwright e2e (frontend, no unit runner)
   Style: ESLint + TypeScript strict mode on frontend
+  Venv: backend/env/ is a WSL residual — use system Python at C:\Python314\python.exe
 
 rules:
   proposal:
@@ -23,24 +24,25 @@ rules:
     - Keep tasks completable in one session
   apply:
     - Follow existing Django/DRF patterns
-    tdd: false
-    test_command: ""
+    tdd: true
+    test_command: "python -m pytest"
   verify:
-    test_command: "python manage.py test"
-    build_command: "npm run build"
+    test_command: "python -m pytest && cd ../frontend/aesthetic-clinic && npm run build"
+    build_command: "cd ../frontend/aesthetic-clinic && npm run build"
     coverage_threshold: 0
   archive:
     - Warn before merging destructive deltas
 
 testing:
-  strict_tdd: false
+  strict_tdd: true
   backend:
-    runner: django.test
-    command: python manage.py test
+    runner: pytest
+    command: python -m pytest
     unit_available: true
-    integration_available: false
+    integration_available: true
     e2e_available: false
-    coverage_available: false
+    coverage_available: true
+    coverage_command: python -m pytest --cov
   frontend:
     runner: playwright
     command: npx playwright test
@@ -50,11 +52,10 @@ testing:
     coverage_available: false
   quality:
     linter_available: true
-    linter_command: "npm run lint"
+    linter_command: "cd ../frontend/aesthetic-clinic && npm run lint"
     type_checker_available: true
-    type_checker_command: "npx tsc --noEmit"
-    formatter_available: true
-    formatter_command: "prettier --write"
+    type_checker_command: "cd ../frontend/aesthetic-clinic && npx tsc -b --pretty false"
+    formatter_available: false
 
 persistence:
   mode: openspec
@@ -63,6 +64,13 @@ persistence:
   review_budget_lines: 400
   chain_strategy: stacked-to-main
 
-strict_tdd: false
-# Note: pytest not installed; using Django's built-in unittest framework
-# For strict TDD, install pytest and configure accordingly
+strict_tdd: true
+# Backend has strict TDD (pytest); frontend uses Playwright e2e (no unit runner available).
+# Phase 4 may add Vitest for unit-level TDD on the frontend.
+#
+# Backend execution platform: WSL ONLY.
+#   The `backups` app imports POSIX-only `fcntl`; it fails on native Windows.
+#   All backend test_command / check invocations MUST run from WSL bash against
+#   the system Python at /mnt/c/Python314/python.exe (or via the venv at
+#   /mnt/c/proyectos/proyecto\ C/backend/env/bin/python if present). PowerShell
+#   native invocations will fail with ModuleNotFoundError: 'fcntl'.

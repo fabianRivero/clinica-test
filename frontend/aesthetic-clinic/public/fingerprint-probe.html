@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DP4500 Fingerprint SDK — Phase 1 Probe</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 1rem 2rem;
+            color: #222;
+            background: #fafafa;
+        }
+        h1 { font-size: 1.4rem; border-bottom: 2px solid #333; padding-bottom: 0.5rem; }
+        h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+        pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.85rem;
+        }
+        button {
+            font-size: 1rem;
+            padding: 0.6rem 1.2rem;
+            margin: 0.5rem 0.5rem 0.5rem 0;
+            border: none;
+            border-radius: 4px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .ok { color: #16a34a; font-weight: bold; }
+        .err { color: #dc2626; font-weight: bold; }
+        .pending { color: #f59e0b; font-weight: bold; }
+        .step { padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <h1>DP4500 Fingerprint SDK — Phase 1 Probe</h1>
+    <p>
+        Esta página valida que el SDK HID DigitalPersona pueda enumerar y
+        capturar muestras desde el lector DP4500 en este browser. Si los
+        3 pasos pasan, la <strong>Opción A (Browser Web SDK) es
+        viable</strong>; si fallan, pivoteamos a Opción B.
+    </p>
+    <p style="font-size:0.85rem;color:#666">
+        SDK: <code>@digitalpersona/fingerprint 1.0.0</code> (vendored from
+        DP4500 estandar's node_modules). Global: <code>Fingerprint.WebApi</code>.
+    </p>
+
+    <h2>Setup</h2>
+    <ol>
+        <li>Conectá el lector DP4500 al USB.</li>
+        <li>Abrí esta página en <strong>Chrome o Edge</strong> (no Firefox, no Safari).</li>
+        <li>Si el browser pide permiso USB para el lector, aceptalo.</li>
+        <li>Los pasos deben completarse en orden.</li>
+    </ol>
+
+    <h2>Paso 1 — Cargar el SDK</h2>
+    <button id="step1" onclick="step1_loadSdk()">Cargar SDK</button>
+    <div id="step1-out" class="step"></div>
+
+    <h2>Paso 2 — Iniciar adquisición</h2>
+    <button id="step2" onclick="step2_startAcquisition()" disabled>Iniciar adquisición</button>
+    <div id="step2-out" class="step"></div>
+
+    <h2>Paso 3 — Esperar muestra</h2>
+    <button id="step3" onclick="step3_armCapture()" disabled>Armar captura</button>
+    <div id="step3-out" class="step"></div>
+
+    <h2>Status</h2>
+    <pre id="status">(esperando acción del operador)</pre>
+
+    <h2>Hallazgo del probe</h2>
+    <p style="font-size:0.85rem;color:#666">
+        El SDK cargado es un wrapper sobre <code>WebSdk.WebChannelClient</code>
+        (puerto local 52181). Para capturar en browser hace falta un
+        servidor local (HID Authentication Device Client, o el desktop
+        client de DP4500 estandar, o un relay custom) corriendo en el PC
+        del operador. Esto descarta la <strong>Opción A pura-browser</strong>;
+        la captura real pasa a ser un componente Electron (Opción B).
+    </p>
+
+    <script>
+        const log = (msg, level = 'info') => {
+            const status = document.getElementById('status');
+            const ts = new Date().toISOString();
+            const prefix = level === 'err' ? '[ERR]' : level === 'ok' ? '[OK]' : '[..]';
+            status.textContent = `${ts} ${prefix} ${msg}\n` + status.textContent;
+            if (level === 'err') console.error(msg);
+            else if (level === 'ok') console.log(msg);
+            else console.info(msg);
+        };
+
+        let sdk = null;        // window.Fingerprint
+        let webApi = null;     // Fingerprint.WebApi instance
+
+        async function step1_loadSdk() {
+            const btn = document.getElementById('step1');
+            btn.disabled = true;
+            document.getElementById('step1-out').innerHTML =
+                '<span class="pending">cargando...</span>';
+            try {
+                if (!sdk) {
+                    await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        // The actual capture SDK — @digitalpersona/fingerprint.
+                        // Not the WebChannel client (that's websdk.client.*).
+                        script.src = '/websdk/fingerprint.sdk.min.js';
+                        script.onload = () => {
+                            const deadline = Date.now() + 3000;
+                            const tick = () => {
+                                if (window.Fingerprint) resolve();
+                                else if (Date.now() > deadline) {
+                                    reject(new Error('Fingerprint global no apareció'));
+                                } else {
+                                    setTimeout(tick, 50);
+                                }
+                            };
+                            tick();
+                        };
+                        script.onerror = () =>
+                            reject(new Error('script load failed'));
+                        document.head.appendChild(script);
+                    });
+                    sdk = window.Fingerprint;
+                }
+                if (!sdk || !sdk.WebApi) {
+                    throw new Error(
+                        'window.Fingerprint.WebApi no disponible. ' +
+                        'SDK expone: ' + Object.keys(sdk || {}).join(', '),
+                    );
+                }
+                log(`SDK cargado. WebApi constructor: ${typeof sdk.WebApi}`, 'ok');
+                document.getElementById('step1-out').innerHTML =
+                    '<span class="ok">SDK cargado</span>';
+                document.getElementById('step2').disabled = false;
+            } catch (err) {
+                log(`Fallo step 1: ${err.message}`, 'err');
+                document.getElementById('step1-out').innerHTML =
+                    `<span class="err">${err.message}</span>`;
+                btn.disabled = false;
+            }
+        }
+
+        async function step2_startAcquisition() {
+            const btn = document.getElementById('step2');
+            btn.disabled = true;
+            document.getElementById('step2-out').innerHTML =
+                '<span class="pending">instanciando WebApi...</span>';
+            try {
+                if (!sdk) throw new Error('completá step 1 primero');
+                webApi = new sdk.WebApi();
+
+                // Event handlers fire as the browser walks through the
+                // capture flow:
+                //   onDeviceConnected → user picked a reader in the popup
+                //   onSamplesAcquired → finger placed + sample returned
+                //   onErrorOccurred   → user cancelled / device error
+                webApi.onDeviceConnected = (dev) => {
+                    log(`Lector conectado: ${dev?.id || dev?.deviceId || '?'}`,
+                        'ok');
+                    document.getElementById('step2-out').innerHTML =
+                        '<span class="ok">Lector listo. Esperando muestra.</span>';
+                    document.getElementById('step3').disabled = false;
+                };
+                webApi.onErrorOccurred = (err) => {
+                    const msg = err?.message
+                        || (typeof err === 'string' ? err : JSON.stringify(err));
+                    log(`Error del SDK: ${msg}`, 'err');
+                    document.getElementById('step2-out').innerHTML =
+                        `<span class="err">${msg}</span>`;
+                    btn.disabled = false;
+                };
+                webApi.onSamplesAcquired = (samples) => {
+                    // Will be hooked up in step 3 explicitly.
+                    const sample = Array.isArray(samples) ? samples[0] : samples;
+                    log(`Muestra capturada (en onSamplesAcquired): quality=${sample?.quality ?? '?'}`, 'ok');
+                };
+
+                // startAcquisition(format, deviceId). Empty deviceId →
+                // browser shows the native WebUSB picker.
+                const fmt = (sdk.SampleFormat && sdk.SampleFormat.PngImage)
+                    || 'PngImage';
+                webApi.startAcquisition(fmt, '');
+                log('startAcquisition() llamado — esperá el popup del browser', 'ok');
+                document.getElementById('step2-out').innerHTML =
+                    '<span class="pending">Esperando selección de lector ' +
+                    '(popup del browser)...</span>';
+            } catch (err) {
+                log(`Fallo step 2: ${err.message}`, 'err');
+                document.getElementById('step2-out').innerHTML =
+                    `<span class="err">${err.message}</span>`;
+                btn.disabled = false;
+            }
+        }
+
+        async function step3_armCapture() {
+            const btn = document.getElementById('step3');
+            btn.disabled = true;
+            document.getElementById('step3-out').innerHTML =
+                '<span class="pending">poné el dedo en el lector...</span>';
+            try {
+                if (!webApi) throw new Error('completá step 2 primero');
+
+                // Re-arm the sample callback for this round and re-call
+                // startAcquisition to trigger the capture cycle.
+                webApi.onSamplesAcquired = (samples) => {
+                    const sample = Array.isArray(samples) ? samples[0] : samples;
+                    const quality = sample?.quality
+                        ?? sample?.Quality
+                        ?? '?';
+                    log(`Muestra capturada: id=${sample?.id || '?'} ` +
+                        `quality=${quality}`, 'ok');
+                    document.getElementById('step3-out').innerHTML =
+                        `<span class="ok">Muestra OK (quality=${quality}). </span>` +
+                        `<strong>Browser Web SDK viable.</strong>`;
+                    btn.disabled = false;
+                };
+                const fmt = (sdk.SampleFormat && sdk.SampleFormat.PngImage)
+                    || 'PngImage';
+                webApi.startAcquisition(fmt, '');
+            } catch (err) {
+                log(`Fallo step 3: ${err.message}`, 'err');
+                document.getElementById('step3-out').innerHTML =
+                    `<span class="err">${err.message}</span>`;
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
