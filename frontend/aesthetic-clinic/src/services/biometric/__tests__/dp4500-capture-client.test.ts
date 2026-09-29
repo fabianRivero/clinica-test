@@ -7,10 +7,11 @@
  * export). The tests stub `window.Fingerprint` directly with a
  * minimal structural shape — they do NOT exercise the real SDK.
  *
- * Phase 3 design intent: the unit tests prove the wrapper's
- *   1. happy path (sample acquired → CaptureResult),
+ * Phase 3 + 3.1 design intent: the unit tests prove the wrapper's
+ *   1. happy path (sample + Good quality → CaptureResult),
  *   2. error path (SDK init failure → BiometricHardwareError),
  *   3. rejection path (sample acquired but empty → BiometricHardwareError),
+ *   4. quality-too-low path (sample + non-Good quality → BiometricQualityTooLow),
  * without needing a DigitalPersona 4500 reader. Operator-workstation
  * validation (real hardware, real WebChannel host) is gated on the
  * Phase 3 verify-report per design.md §8 success criterion #5.
@@ -32,6 +33,10 @@ interface FakeWebApiHandle {
     onSamplesAcquired?: (event: {
       deviceUid: string
       samples: string
+    }) => void
+    onQualityReported?: (event: {
+      deviceUid: string
+      quality: number
     }) => void
   }
 }
@@ -85,7 +90,7 @@ describe('captureFingerprint', () => {
     vi.restoreAllMocks()
   })
 
-  it('returns template + device metadata on first onSamplesAcquired event', async () => {
+  it('returns template + device metadata on first onSamplesAcquired + Good quality', async () => {
     const { webApi } = installFakeSdk()
 
     // Kick off capture, then simulate the SDK firing the sample
@@ -100,10 +105,20 @@ describe('captureFingerprint', () => {
       deviceUid: 'reader-001',
       samples: 'ZmFrZS10ZW1wbGF0ZS1ieXRlcw==',
     })
+    // Phase 3.1: the wrapper now waits for the SDK's QualityReported
+    // event before resolving. A Good verdict (0) accepts the stashed
+    // sample and resolves the Promise.
+    webApi.onQualityReported?.({
+      deviceUid: 'reader-001',
+      quality: 0,
+    })
 
     await expect(promise).resolves.toEqual({
       templateB64: 'ZmFrZS10ZW1wbGF0ZS1ieXRlcw==',
-      qualityScore: 100,
+      // The SDK's QualityCode is an enum, not a 0-100 score. Good (0)
+      // is the only code that resolves the Promise; non-Good codes
+      // are rejected with BiometricQualityTooLow.
+      qualityScore: 0,
       deviceSerial: 'reader-001',
       width: 0,
       height: 0,
@@ -148,7 +163,7 @@ describe('captureFingerprint', () => {
     await expect(promise).rejects.toThrow(/muestra vacia/)
   })
 
-  it('rejects with BiometricHardwareError when 30s timeout elapses', async () => {
+  it('rejects with BiometricQualityTooLow when 30s timeout elapses without a quality report', async () => {
     const { webApi } = installFakeSdk()
 
     // Use Vitest fake timers so we don't have to wait the real 30s.
@@ -159,7 +174,11 @@ describe('captureFingerprint', () => {
       await Promise.resolve()
       // Fast-forward past the 30s timeout.
       vi.advanceTimersByTime(31_000)
-      await expect(promise).rejects.toBeInstanceOf(BiometricHardwareError)
+      // Phase 3.1 nuance: a missing-quality-report timeout is a
+      // retryable UX problem (operator pulled the finger too fast),
+      // NOT a hardware fault. The wrapper now surfaces
+      // BiometricQualityTooLow instead of BiometricHardwareError.
+      await expect(promise).rejects.toBeInstanceOf(BiometricQualityTooLow)
       await expect(promise).rejects.toThrow(/30s/)
       // The wrapper calls stopAcquisition as part of the timeout
       // cleanup; assert it was invoked.
@@ -167,6 +186,54 @@ describe('captureFingerprint', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('rejects with BiometricQualityTooLow when onQualityReported fires with non-Good quality', async () => {
+    const { webApi } = installFakeSdk()
+
+    const promise = captureFingerprint()
+    await Promise.resolve()
+    await Promise.resolve()
+    webApi.onSamplesAcquired?.({
+      deviceUid: 'reader-001',
+      samples: 'ZmFrZS10ZW1wbGF0ZS1ieXRlcw==',
+    })
+    // TooNoisy (4) is one of the most common quality problems in
+    // the field — operator fingers are often too dry/wet.
+    webApi.onQualityReported?.({
+      deviceUid: 'reader-001',
+      quality: 4,
+    })
+
+    await expect(promise).rejects.toBeInstanceOf(BiometricQualityTooLow)
+    // The wrapper embeds the SDK's enum name in the rejection message
+    // so the operator gets a hint about WHY the capture failed.
+    await expect(promise).rejects.toThrow(/TooNoisy/)
+  })
+
+  it('accepts the stashed sample when onQualityReported fires with Good quality', async () => {
+    const { webApi } = installFakeSdk()
+
+    const promise = captureFingerprint()
+    await Promise.resolve()
+    await Promise.resolve()
+    webApi.onSamplesAcquired?.({
+      deviceUid: 'reader-002',
+      samples: 'Z29vZC1xdWFsaXR5LXNhbXBsZQ==',
+    })
+    // Good (0) — the wrapper resolves the Promise.
+    webApi.onQualityReported?.({
+      deviceUid: 'reader-002',
+      quality: 0,
+    })
+
+    await expect(promise).resolves.toEqual({
+      templateB64: 'Z29vZC1xdWFsaXR5LXNhbXBsZQ==',
+      qualityScore: 0,
+      deviceSerial: 'reader-002',
+      width: 0,
+      height: 0,
+    })
   })
 })
 

@@ -204,3 +204,53 @@ Para validación con hardware real, abrí `http://localhost:5173/public/fingerpr
 - `fingerprint-agent` local (Python + `cloudflared` tunnel) si la verificación con hardware falla.
 - KMS-backed key store, mTLS, per-sucursal routing, DPIA §9.
 - `Cliente.external_id` UUIDField + finalize handler persistence.
+
+## Phase 3.1 operator workstation validation guide
+
+Phase 3.1 wires el SDK `onQualityReported` event en `captureFingerprint()` (Deviation 3 del verify-report Phase 3). El wrapper ahora rechaza capturas con `BiometricQualityTooLow` cuando la calidad reportada != `Good` (0). Este es un **manual validation gate** — Phase 3.1 no se puede ejercitar desde el test suite (no hay DigitalPersona 4500 conectado en CI). Un operador debe validar en una workstation con el hardware real antes de cerrar Phase 3.
+
+### Pre-requisitos (operator workstation)
+
+- **Windows 10/11** con **HID Authentication Device Client** corriendo — verificá en `services.msc` que el servicio `DPS` (DigitalPersona Service) está `Running`. Sin este servicio, el WebChannel del SDK no encuentra el lector y la captura tira `BiometricHardwareError`.
+- **Lector DigitalPersona 4500** conectado vía USB. Verificá en Device Manager que aparece bajo "Biometric devices".
+- **Entorno de dev clinic corriendo**: DP4500 backend en 8000 + clinic backend en 8001 + Vite dev server en 5173 (los tres corriendo en terminales separadas).
+- **Un prospecto enrolado** como cliente de prueba (cualquier nombre — sirve para llegar a step 4 sin re-enrolar).
+
+### Step-by-step validation
+
+1. **Abrí el clinic admin** en Chrome/Edge en `http://localhost:5173` → login como admin.
+2. **Navegá al prospecto de prueba** → iniciá conversión → avanzá hasta **step 4** (captura biomilística).
+3. **Verificá que el modal de captura Phase 3 renderiza** (NO el fallback NO_AGENT). Buscá una referencia a "DigitalPersona" en el modal — si ves "Captura legacy omitida (sin lector)" o "DP4500 enroll OK; legacy omitido (sin lector)", estás en el fallback NO_AGENT y el SDK no cargó.
+4. **Poné tu dedo en el lector** cuando el modal lo pida.
+5. **Resultados esperados**:
+   - **Happy path**: el modal muestra "Huella capturada" → step 4 avanza a step 5. La enrollment record se persiste con `template_b64` no vacío.
+   - **Calidad baja**: el modal muestra "Calidad insuficiente (TooNoisy). Vuelve a intentarlo." (o el nombre del código que aplique: `TooSkewed`, `TooFast`, `FakeFinger`, etc.). El operador puede reintentar — NO se persiste template.
+   - **Timeout sin calidad**: el modal muestra "No se recibio un reporte de calidad dentro de 30s. Vuelve a intentarlo." — típicamente el operador sacó el dedo antes de que el WebChannel alcance a scorear la muestra.
+   - **Hardware error**: el modal muestra "Hardware no disponible o SDK no inicializo." o "SDK error code N" — revisá el servicio DPS (`services.msc` → "DigitalPersona Service") y que el lector esté bien conectado.
+
+### Verificación del lado enroll DP4500
+
+Después de que el wizard avanza, confirmá que el `template_b64` se envió a DP4500 (no el placeholder vacío de Phase 2A4):
+
+```bash
+# En WSL bash, sobre el terminal del backend DP4500:
+cd "C:\proyectos\DP4500 estandar\backend"
+.\.venv\Scripts\Activate.ps1
+$env:DJANGO_SETTINGS_MODULE = "config.settings.dev"
+python manage.py shell --command "
+from apps.biometric.infrastructure.persistence.models import BiometricTemplate
+rows = list(BiometricTemplate.objects.filter(client_pubkey_fingerprint__isnull=False).order_by('-id')[:3])
+for t in rows:
+    print(f'id={t.id} user_ext={t.user_external_id} template_len={len(t.encrypted_fmd or chr(0))} pubkey_fpr={t.client_pubkey_fingerprint[:16]}')
+"
+```
+
+La fila más reciente debe tener `template_len > 0` (template real, NO los bytes vacíos del placeholder Phase 2A4).
+
+### Troubleshooting
+
+- **"QualityCode TooNoisy" repetido** → el operador tiene el dedo muy seco/húmedo. Pasale un pañuelo o pedile que se limpie el dedo.
+- **"QualityCode TooSkewed" / "NotCentered"** → el operador no apoyó el dedo centrado en el sensor. Re-entrená la posición.
+- **"QualityCode FakeFinger"** → el sensor detectó un material que no es piel viva (silicona, látex). Es comportamiento esperado del liveness check del SDK; no es un bug.
+- **El modal muestra "Hardware no disponible"** → verificá `services.msc` → "DigitalPersona Service" (debe estar Running). Si está stopped, iniciá manualmente. Si está Running y aún falla, revisá la consola del browser por WebChannel errors.
+- **El modal no renderiza (queda en blanco)** → el script `/websdk/fingerprint.sdk.min.js` no se inyectó. Revisá la pestaña Network del DevTools y la consola por errores 404 / MIME type / CSP.

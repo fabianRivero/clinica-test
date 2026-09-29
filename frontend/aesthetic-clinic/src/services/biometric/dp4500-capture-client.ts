@@ -357,8 +357,79 @@ export async function captureFingerprint(): Promise<CaptureFingerprintResult> {
       // settled Promise (the WebChannel may emit one more sample
       // after a stopAcquisition round-trip).
       webApi.onSamplesAcquired = undefined
+      webApi.onQualityReported = undefined
       webApi.onErrorOccurred = undefined
       reject(err)
+    }
+
+    // Phase 3.1: the SDK delivers the sample payload and the quality
+    // verdict as TWO separate events. The wrapper must wait for BOTH
+    // before resolving, otherwise it cannot distinguish a real
+    // capture from a noisy/skewed one (the verify-report.md flagged
+    // this as PARTIAL in the Phase 3 archive).
+    //
+    // The handshake is:
+    //   1. onSamplesAcquired fires first with the base64 PNG bytes.
+    //   2. onQualityReported fires next with a QualityCode. `Good` (0)
+    //      means accept the stashed sample; anything else triggers a
+    //      `BiometricQualityTooLow` rejection carrying the code name.
+    //   3. The SDK may deliver them in the opposite order (rare);
+    //      the handler stashes whichever side arrives first and
+    //      waits for the other.
+    let stashedSample: { samples: string; deviceUid: string } | null = null
+    let stashedQuality: { deviceUid: string; quality: FingerprintQualityCode } | null =
+      null
+
+    /**
+     * Resolve the Promise with a successful capture. Lifted out of
+     * the handlers because the Good-quality verdict can fire from
+     * EITHER the onSamplesAcquired handler (when quality arrived
+     * first) or the onQualityReported handler (when sample arrived
+     * first).
+     */
+    const settleAccept = (
+      sample: { samples: string; deviceUid: string },
+      quality: FingerprintQualityCode,
+    ): void => {
+      if (settled) return
+      settled = true
+      webApi.onSamplesAcquired = undefined
+      webApi.onQualityReported = undefined
+      webApi.onErrorOccurred = undefined
+      resolve({
+        templateB64: sample.samples,
+        // The SDK's QualityCode is an enum, not a 0-100 score. The
+        // wizard's threshold branch treats `qualityScore < 60` as
+        // retryable; Good (0) trivially satisfies that gate. The
+        // non-Good path never reaches this function (settleReject
+        // fires instead).
+        qualityScore: quality,
+        deviceSerial: sample.deviceUid,
+        // The PngImage sample format returns dimensions alongside
+        // the base64 string in the production SDK; the wrapper
+        // reports 0 when the SDK omits them so downstream callers
+        // can detect the missing-metadata case explicitly.
+        width: 0,
+        height: 0,
+      })
+    }
+
+    /**
+     * Resolve the Promise with a quality-too-low rejection, embedding
+     * the SDK's quality code name in the message so the operator
+     * gets a hint about WHY the capture was rejected (TooNoisy vs
+     * TooSkewed vs FakeFinger all behave differently in the field).
+     */
+    const rejectQuality = (quality: FingerprintQualityCode): void => {
+      const codeName =
+        Object.entries(FingerprintQualityCode).find(
+          ([, v]) => v === quality,
+        )?.[0] ?? `code_${quality}`
+      settleReject(
+        new BiometricQualityTooLow(
+          `Calidad insuficiente (${codeName}). Vuelve a intentarlo.`,
+        ),
+      )
     }
 
     // Hard timeout — the SDK only resolves the startAcquisition
@@ -366,10 +437,17 @@ export async function captureFingerprint(): Promise<CaptureFingerprintResult> {
     // not surface "no finger detected" by itself. After 30s without
     // a sample we treat the run as a hardware timeout so the wizard
     // can fall through to the NO_AGENT path instead of hanging the UI.
+    //
+    // Phase 3.1 nuance: if we received a sample but never got a
+    // quality report, surface `BiometricQualityTooLow` instead of
+    // `BiometricHardwareError`. The operator pulled the finger too
+    // fast — the SDK's WebChannel host did not have time to score
+    // the sample. This is a retryable UX message, not a hardware
+    // fault.
     const timeoutHandle = setTimeout(() => {
       settleReject(
-        new BiometricHardwareError(
-          'No se recibio una muestra del lector dentro de 30s.',
+        new BiometricQualityTooLow(
+          'No se recibio un reporte de calidad dentro de 30s. Vuelve a intentarlo.',
         ),
       )
       // Best-effort stop; the call is a no-op if no acquisition is
@@ -400,29 +478,18 @@ export async function captureFingerprint(): Promise<CaptureFingerprintResult> {
           return
         }
 
-        // The SDK's PngImage format does not embed a numeric quality
-        // score in the sample event; quality is reported separately
-        // via `onQualityReported`. Without a score we accept the
-        // sample (the wizard's threshold branch is wired for any
-        // future `QualityReported`-driven rejection; today's wire
-        // contract tolerates score 0 per Phase 2A4).
-        const score = 100
+        stashedSample = { samples, deviceUid }
 
-        clearTimeout(timeoutHandle)
-        settled = true
-        webApi.onSamplesAcquired = undefined
-        webApi.onErrorOccurred = undefined
-        resolve({
-          templateB64: samples,
-          qualityScore: score,
-          deviceSerial: deviceUid,
-          // The PngImage sample format returns dimensions alongside
-          // the base64 string in the production SDK; the wrapper
-          // reports 0 when the SDK omits them so downstream callers
-          // can detect the missing-metadata case explicitly.
-          width: 0,
-          height: 0,
-        })
+        // If the quality verdict arrived first (rare, but the SDK
+        // can deliver them in either order), close the handshake now.
+        if (stashedQuality && stashedQuality.deviceUid === deviceUid) {
+          clearTimeout(timeoutHandle)
+          if (stashedQuality.quality === FingerprintQualityCode.Good) {
+            settleAccept(stashedSample, stashedQuality.quality)
+          } else {
+            rejectQuality(stashedQuality.quality)
+          }
+        }
       } catch (err) {
         clearTimeout(timeoutHandle)
         settleReject(
@@ -431,6 +498,37 @@ export async function captureFingerprint(): Promise<CaptureFingerprintResult> {
             : new BiometricHardwareError(String(err)),
         )
       }
+    }
+
+    webApi.onQualityReported = (event) => {
+      // Quality arrived before the sample — stash and wait.
+      if (!stashedSample) {
+        stashedQuality = {
+          deviceUid: event.deviceUid,
+          quality: event.quality,
+        }
+        return
+      }
+
+      // Quality arrived after the sample but for a DIFFERENT device —
+      // defensive guard, should not happen in practice (the wrapper
+      // starts a single acquisition). Reject to surface the anomaly.
+      if (stashedSample.deviceUid !== event.deviceUid) {
+        clearTimeout(timeoutHandle)
+        settleReject(
+          new BiometricHardwareError(
+            'El reporte de calidad no corresponde al lector activo.',
+          ),
+        )
+        return
+      }
+
+      clearTimeout(timeoutHandle)
+      if (event.quality === FingerprintQualityCode.Good) {
+        settleAccept(stashedSample, event.quality)
+        return
+      }
+      rejectQuality(event.quality)
     }
 
     // Kick off the acquisition lifecycle. We intentionally do NOT
@@ -569,6 +667,7 @@ interface FingerprintWebApi {
   stopAcquisition(deviceUid?: string): Promise<void>
   onErrorOccurred?: ((event: FingerprintErrorEvent) => void) | undefined
   onSamplesAcquired?: ((event: FingerprintSamplesAcquiredEvent) => void) | undefined
+  onQualityReported?: ((event: FingerprintQualityReportedEvent) => void) | undefined
 }
 
 interface FingerprintErrorEvent {
@@ -578,4 +677,48 @@ interface FingerprintErrorEvent {
 interface FingerprintSamplesAcquiredEvent {
   deviceUid: string
   samples: string
+}
+
+/**
+ * Mirror of the SDK's `QualityCode` enum from `fingerprint.sdk.d.ts`
+ * (the ambient .d.ts is not pullable due to `verbatimModuleSyntax: true`
+ * + bundler resolution, so this declaration stays in sync manually).
+ *
+ * The `QualityReported` event the SDK emits after every sample carries a
+ * numeric code from this enum; the wrapper maps it onto the
+ * `BiometricQualityTooLow` rejection when the code != `Good` (0).
+ */
+export const FingerprintQualityCode = {
+  Good: 0,
+  NoImage: 1,
+  TooLight: 2,
+  TooDark: 3,
+  TooNoisy: 4,
+  LowContrast: 5,
+  NotEnoughFeatures: 6,
+  NotCentered: 7,
+  NotAFinger: 8,
+  TooHigh: 9,
+  TooLow: 10,
+  TooLeft: 11,
+  TooRight: 12,
+  TooStrange: 13,
+  TooFast: 14,
+  TooSkewed: 15,
+  TooShort: 16,
+  TooSlow: 17,
+  ReverseMotion: 18,
+  PressureTooHard: 19,
+  PressureTooLight: 20,
+  WetFinger: 21,
+  FakeFinger: 22,
+  TooSmall: 23,
+  RotatedTooMuch: 24,
+} as const
+export type FingerprintQualityCode =
+  (typeof FingerprintQualityCode)[keyof typeof FingerprintQualityCode]
+
+interface FingerprintQualityReportedEvent {
+  deviceUid: string
+  quality: FingerprintQualityCode
 }
