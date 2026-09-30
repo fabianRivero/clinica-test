@@ -12,8 +12,8 @@ export default defineConfig(({ mode }) => {
   //
   // Vite matches the most specific proxy entry first, so the service
   // entry must come BEFORE the generic /api entry.
-  const clinicBackendTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8001'
-  const dp4500Target = env.VITE_DP4500_PROXY_TARGET || 'http://127.0.0.1:8000'
+  const clinicBackendTarget = env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8000'
+  const dp4500Target = env.VITE_DP4500_PROXY_TARGET || 'http://127.0.0.1:8001'
 
   return {
     plugins: [react()],

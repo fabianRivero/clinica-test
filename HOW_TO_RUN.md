@@ -19,7 +19,7 @@ Guía paso a paso para correr el frontend + backend del clinic con la integraci�
 └── openspec/                 # Artefactos de Spec-Driven Development
 ```
 
-## 1. Backend del clinic (puerto 8001, WSL)
+## 1. Backend del clinic (puerto 8000, WSL)
 
 Desde la terminal WSL bash:
 
@@ -31,14 +31,14 @@ export DJANGO_SETTINGS_MODULE=config.settings
 # Phase 2A setup: el backend llama a DP4500 (puerto 8000) para
 # /api/biometric/service/*. Si probás enroll o verify con huella,
 # seteá estas env vars antes de arrancar el runserver:
-export DP4500_BASE_URL="http://localhost:8000"
+export DP4500_BASE_URL="http://localhost:8001"
 export DP4500_SERVICE_KEY_SUCURSAL_1="83mdy6xRsBOHSRGiKxfKVue-aZZpIYnuUWUKufv0i7U"
 # (Si corrés WSL, reemplazá localhost por la IP del gateway, ej http://172.20.176.1:8000)
 
-python manage.py runserver 0.0.0.0:8001
+python manage.py runserver 0.0.0.0:8000
 ```
 
-Esperado: `Starting development server at http://0.0.0.0:8001/`.
+Esperado: `Starting development server at http://0.0.0.0:8000/`.
 
 ## 2. DP4500 estandar (puerto 8000, Windows nativo)
 
@@ -51,7 +51,7 @@ $env:DJANGO_SETTINGS_MODULE = "config.settings.dev"
 python manage.py runserver 0.0.0.0:8000
 ```
 
-Esperado: `Starting development server at http://0.0.0.0:8000/`.
+Esperado: `Starting development server at http://0.0.0.0:8001/`.
 
 ## 3. Frontend del clinic (puerto 5173, Windows nativo)
 
@@ -73,7 +73,7 @@ Tres smoke checks (uno por terminal, o desde PowerShell nativo):
 curl.exe -s http://localhost:8000/api/biometric/service/identity/enroll/ -X POST -H "Content-Type: application/json" -H "Authorization: Bearer 83mdy6xRsBOHSRGiKxfKVue-aZZpIYnuUWUKufv0i7U" -d "{}"
 
 # Clinic — espera 200 con CSRF cookie
-curl.exe -s http://localhost:8001/api/auth/csrf/
+curl.exe -s http://localhost:8000/api/auth/csrf/
 
 # Vite — espera 200 con HTML del index
 curl.exe -s http://localhost:5173/
@@ -146,7 +146,7 @@ El backend del clinic no encuentra el ServiceAPIKey de la sucursal. Verificá qu
 El backend del clinic no puede conectar a DP4500. Si corrés WSL, `localhost` no resuelve al host Windows. Usá la IP del gateway:
 ```bash
 ip route show default | awk '{print $3}'  # típicamente 172.x.x.1
-export DP4500_BASE_URL="http://$(ip route show default | awk '{print $3}'):8000"
+export DP4500_BASE_URL="http://$(ip route show default | awk '{print $3}'):8001"
 ```
 
 ### "UNIQUE constraint failed: biometric_template.client_pubkey_fingerprint" en enroll

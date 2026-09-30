@@ -161,8 +161,8 @@ Net test-side line target: ~80-120 lines (1 file, 1 test, helpers, docstring). W
 Two environmental changes happened during Phase 2A6 end-to-end testing that **the new test does NOT need** (because it uses `httpx.MockTransport`), but that **future integration tests against a real DP4500 host** must respect:
 
 1. **`DP4500_BASE_URL` default fix** (`config/settings.py:292`, committed at `6c5d29d` on the working branch):
-   - **Before fix**: `os.getenv("DP4500_BASE_URL", "http://localhost:8001")` — the clinic itself (the Django backend binds to `:8001` in dev).
-   - **After fix**: `os.getenv("DP4500_BASE_URL", "http://localhost:8000")` — the DP4500 dev server.
+   - **Before fix**: `os.getenv("DP4500_BASE_URL", "http://localhost:8000")` — the clinic itself (the Django backend binds to `:8001` in dev).
+   - **After fix**: `os.getenv("DP4500_BASE_URL", "http://localhost:8001")` — the DP4500 dev server.
    - **Impact** before fix: `CitaBiometricVerifyView` calling `HTTPClient(base_url=...)` with `base_url="http://localhost:8001"` would call the clinic itself, getting `transport:ConnectError` (wrong port for any real DP4500 listener) or `404` (no route at that path on the clinic). Operators who did not override the env var saw a working backend that silently could not reach DP4500.
    - **Phase 2A7 status**: not relevant because `test_smoke_cascade.py` uses `MockTransport` and does not resolve `DP4500_BASE_URL`. The fix at `settings.py:292` benefits future live integration tests only.
 

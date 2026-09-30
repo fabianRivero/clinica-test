@@ -36,7 +36,7 @@ Both repos shipped end-to-end wire contracts for the Phase 2A2 / 2A3 / 2A4 miles
 - **`frontend/aesthetic-clinic/src/services/biometric/dp4500-capture-client.ts`** — `enrollIdentity(...)`, `challengeIdentity(...)`, `verifyIdentity(...)`, `captureAndVerify(...)`. Reads `VITE_DP4500_SERVICE_API_KEY` at module load. `BiometricSuspendError` class.
 - **`frontend/aesthetic-clinic/src/pages/admin/prospect-convert/useConversionWizard.ts`** — `handleConfirmCapture` mints `crypto.randomUUID()` as `user_external_id`, calls `enrollIdentity(externalId, '', signingKey, fingerprintHex, 'DP_PROPRIETARY')` best-effort. Also has a `NO_AGENT` fallback path that mints UUID + enrolls anyway when the physical reader is absent (Phase 2A4 dev escape hatch). UUID is persisted in `biometricForm.externalId`.
 - **`frontend/aesthetic-clinic/src/types/prospectConversion.ts`** — `ProspectConversionBiometricData.externalId?: string` added; comment notes the finalize handler MUST persist this as `cliente.external_id` (Phase 2A5+).
-- **`frontend/aesthetic-clinic/vite.config.ts`** — dual-backend proxy: `/api/biometric/service/* → VITE_DP4500_PROXY_TARGET (default 127.0.0.1:8000)` first (most-specific), everything else `/api/* + /media/* → VITE_API_PROXY_TARGET (default 127.0.0.1:8001)`.
+- **`frontend/aesthetic-clinic/vite.config.ts`** — dual-backend proxy: `/api/biometric/service/* → VITE_DP4500_PROXY_TARGET (default 127.0.0.1:8000)` first (most-specific), everything else `/api/* + /media/* → VITE_API_PROXY_TARGET (default 127.0.0.1:8000)`.
 - **`.env.example`** — documents `VITE_DP4500_SERVICE_API_KEY` + remediation hint.
 
 ### DP4500 estandar (companion repo, `feat/dp4500-host-app-integration-phase1-apply` at `7f89a35`)
