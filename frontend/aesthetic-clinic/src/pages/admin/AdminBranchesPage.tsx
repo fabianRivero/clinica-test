@@ -5,7 +5,7 @@ import { AdminBranchTabs } from '../../components/admin/AdminBranchTabs'
 import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { WizardSubTabs } from '../../components/admin/WizardSubTabs'
-import { changeAdminBranchManager, finalizeAdminBranchWizard, getAdminBranchAdmins, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, initializeAdminBranchWizard, saveAdminBranchWizardStep1, saveAdminBranchWizardStep2CreateNew, saveAdminBranchWizardStep2ExistingInactive, toggleAdminBranch, updateAdminBranch } from '../../services/api/admin'
+import { changeAdminBranchManager, finalizeAdminBranchWizard, getAdminBranchAdmins, getAdminBranchAuditLogs, getAdminBranchDeactivationImpact, getAdminBranchesManagement, initializeAdminBranchWizard, saveAdminBranchWizardStep1, saveAdminBranchWizardStep2CreateNew, saveAdminBranchWizardStep2ExistingInactive, toggleAdminBranch, updateAdminBranch, type AdminBranchAdminItem } from '../../services/api/admin'
 import { useAuth } from '../../providers/AuthProvider'
 import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
@@ -44,7 +44,7 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
   const [wizardTablet, setWizardTablet] = useState({ nombre: '', clave: '' })
   const [showWizardConfirmModal, setShowWizardConfirmModal] = useState(false)
   const [createdBranchInfo, setCreatedBranchInfo] = useState<{ branchName: string; tabletCode: string; tabletClave: string } | null>(null)
-  const [branchAdmins, setBranchAdmins] = useState<Array<{ id: number; username: string; email: string; fullName: string; isActive: boolean; branchId: number | null; branchName: string }>>([])
+  const [branchAdmins, setBranchAdmins] = useState<AdminBranchAdminItem[]>([])
   const [editingBranch, setEditingBranch] = useState<BranchRow | null>(null)
   const [editForm, setEditForm] = useState({ nombre: '', ciudad: '', direccion: '' })
   const [changingAdminBranch, setChangingAdminBranch] = useState<BranchRow | null>(null)
@@ -610,17 +610,26 @@ export function AdminBranchesPage({ view = 'edit' }: { view?: 'edit' | 'create' 
               <option value="">Seleccionar admin</option>
               {branchAdmins
                 .filter((a) => {
-                  // Si la sucursal está bajo admin principal (no hay admin de sucursal activo en la fila),
-                  // el backend solo permite intercambio con admin de sucursal activo y con sucursal.
-                  if (!changingAdminBranch?.admin) return a.isActive && a.branchId !== null
+                  // Si la sucursal está bajo admin principal, el backend acepta:
+                  //   - admins activos con sucursal (modo swap).
+                  //   - admins activos sin sucursal (modo assign_release_main_admin,
+                  //     el admin principal queda libre).
+                  // No se listan admins inactivos aqui porque no harian nada util.
+                  if (!changingAdminBranch?.admin) return a.isActive
                   // Si ya existe admin de sucursal, se excluye al actual para que no aparezca como opción.
                   return a.id !== changingAdminBranch.admin!.id
                 })
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.fullName} ({a.username}) - {a.isActive ? 'Activo' : 'Inactivo'} - {a.branchName}
-                  </option>
-                ))}
+                .map((a) => {
+                  const isUnassigned = a.branchId === null
+                  const assignmentHint = isUnassigned
+                    ? 'asignar aqui (sin sucursal)'
+                    : `intercambio desde ${a.branchName}`
+                  return (
+                    <option key={a.id} value={a.id}>
+                      {a.fullName} ({a.username}) - {assignmentHint}
+                    </option>
+                  )
+                })}
             </select>
             <p className="_mt-sm _text-muted">
               Aviso: si el admin elegido está activo en otra sucursal, se hará intercambio; si está inactivo y sin sucursal, se activará y el admin actual quedará inactivo.

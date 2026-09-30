@@ -1260,8 +1260,20 @@ export function changeAdminBranchManager(branchId: number, newAdminUserId: numbe
   )
 }
 
+export type AdminBranchAdminItem = {
+  id: number
+  username: string
+  fullName: string
+  email: string
+  telefono?: string
+  fechaNacimiento?: string
+  isActive: boolean
+  branchId: number | null
+  branchName: string
+}
+
 export function getAdminBranchAdmins() {
-  return requestJson<{ admins: Array<{ id: number; username: string; fullName: string; email: string; telefono?: string; fechaNacimiento?: string; isActive: boolean; branchId: number | null; branchName: string }> }>('/api/admin/equipo/admins-sucursal/')
+  return requestJson<{ admins: AdminBranchAdminItem[] }>('/api/admin/equipo/admins-sucursal/')
 }
 
 export function createAdminBranchAdmin(payload: {
@@ -1287,7 +1299,10 @@ export function updateAdminBranchAdmin(userId: number, payload: Partial<{ email:
 }
 
 export function toggleAdminBranchAdmin(userId: number, active: boolean) {
-  return requestJsonWithBody<{ detail: string }>(`/api/admin/equipo/admins-sucursal/${userId}/estado/`, { active })
+  return requestJsonWithBody<{ detail: string; admin: AdminBranchAdminItem }>(
+    `/api/admin/equipo/admins-sucursal/${userId}/estado/`,
+    { active },
+  )
 }
 
 export function getAdminBranchAuditLogs(branchId?: number | null) {

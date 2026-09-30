@@ -7,17 +7,14 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useNotifications } from '../../providers/NotificationProvider'
 
-import { createAdminBranchAdmin, getAdminBranchAdmins } from '../../services/api/admin'
+import {
+  createAdminBranchAdmin,
+  getAdminBranchAdmins,
+  toggleAdminBranchAdmin,
+  type AdminBranchAdminItem,
+} from '../../services/api/admin'
 
-type AdminItem = {
-  id: number
-  username: string
-  fullName: string
-  email: string
-  isActive: boolean
-  branchId: number | null
-  branchName: string
-}
+type AdminItem = AdminBranchAdminItem
 
 export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
   const { showNotification } = useNotifications()
@@ -26,6 +23,7 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
   const [error, setError] = useState<string | null>(null)
   const [userEdited, setUserEdited] = useState({ username: false, password: false })
   const [saving, setSaving] = useState(false)
+  const [togglingId, setTogglingId] = useState<number | null>(null)
   const [form, setForm] = useState({
     ci: '',
     username: '',
@@ -71,6 +69,30 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
       })
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleToggleActive(row: AdminItem) {
+    const nextActive = !row.isActive
+    setTogglingId(row.id)
+    try {
+      const response = await toggleAdminBranchAdmin(row.id, nextActive)
+      // Reemplazamos la fila con la version devuelta por el backend para
+      // reflejar cambios colaterales (sucursal limpiada al inactivar, etc.).
+      setRows((current) => current.map((r) => (r.id === row.id ? response.admin : r)))
+      showNotification({
+        title: nextActive ? 'Administrador activado' : 'Administrador desactivado',
+        message: `${row.fullName} ahora esta ${nextActive ? 'activo' : 'inactivo'}.`,
+        tone: 'success',
+      })
+    } catch (err) {
+      showNotification({
+        title: nextActive ? 'No se pudo activar' : 'No se pudo desactivar',
+        message: err instanceof Error ? err.message : 'Intenta nuevamente en unos segundos.',
+        tone: 'danger',
+      })
+    } finally {
+      setTogglingId(null)
     }
   }
 
@@ -180,6 +202,21 @@ export function AdminBranchAdminsPage({ view }: { view: 'create' | 'manage' }) {
 
                     <div className="catalog-admin-card__actions">
                       <button className="button button--ghost button--compact" type="button" onClick={() => navigate(`/cms/equipo/admin-sucursal/${row.id}`)}>Detalles</button>
+                      <button
+                        aria-label={row.isActive ? `Desactivar ${row.fullName}` : `Activar ${row.fullName}`}
+                        className={`button button--compact ${row.isActive ? 'button--warning' : 'button--success'}`}
+                        disabled={togglingId === row.id}
+                        type="button"
+                        onClick={() => void handleToggleActive(row)}
+                      >
+                        {togglingId === row.id
+                          ? row.isActive
+                            ? 'Desactivando...'
+                            : 'Activando...'
+                          : row.isActive
+                            ? 'Desactivar'
+                            : 'Activar'}
+                      </button>
                     </div>
 
                   </div>

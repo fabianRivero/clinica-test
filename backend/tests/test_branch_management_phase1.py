@@ -37,20 +37,41 @@ class BranchManagementPhase1Test(TestCase):
         self.client.force_login(self.admin_sucursal)
         response = self.client.post(
             "/api/admin/sucursales/crear/",
-            data=json.dumps({"nombre": "Sur", "ciudad": "Santa Cruz", "direccion": "Av. 3"}),
+            data=json.dumps(
+                {
+                    "nombre": "Sur",
+                    "ciudad": "Santa Cruz",
+                    "direccion": "Av. 3",
+                    "adminUserId": self.admin_sucursal.id,
+                }
+            ),
             content_type="application/json",
             HTTP_IDEMPOTENCY_KEY="phase1-create-non-main",
         )
         self.assertEqual(response.status_code, 403)
 
+        # Move the candidate admin off the inactive branch so the
+        # endpoint does not reject the assignment for orphaning it.
+        self.admin_sucursal_nuevo.sucursal = None
+        self.admin_sucursal_nuevo.save(update_fields=["sucursal", "updated_at"])
+
         self.client.force_login(self.admin_general)
         ok = self.client.post(
             "/api/admin/sucursales/crear/",
-            data=json.dumps({"nombre": "Sur", "ciudad": "Santa Cruz", "direccion": "Av. 3"}),
+            data=json.dumps(
+                {
+                    "nombre": "Sur",
+                    "ciudad": "Santa Cruz",
+                    "direccion": "Av. 3",
+                    "adminUserId": self.admin_sucursal_nuevo.id,
+                }
+            ),
             content_type="application/json",
             HTTP_IDEMPOTENCY_KEY="phase1-create-main",
         )
         self.assertEqual(ok.status_code, 201)
+        self.admin_sucursal_nuevo.refresh_from_db()
+        self.assertEqual(self.admin_sucursal_nuevo.sucursal.nombre, "Sur")
 
     def test_soft_disable_toggle(self):
         self.client.force_login(self.admin_general)
@@ -126,11 +147,54 @@ class BranchManagementPhase1Test(TestCase):
         self.assertEqual(requester.get("/api/auth/me/").status_code, 401)
         self.assertEqual(new_admin_client.get("/api/auth/me/").status_code, 401)
 
-    def test_cannot_assign_branch_admin_when_main_admin_is_assigned_to_branch(self):
+    def test_assign_unassigned_branch_admin_releases_main_admin(self):
+        """Cuando la sucursal esta bajo admin principal y se le asigna un
+        admin de sucursal activo pero sin sucursal, el admin principal sale
+        sin sucursal y el nuevo admin toma la sucursal destino. Esto cubre
+        el flujo ``assign_release_main_admin``.
+        """
         self.admin_general.sucursal = self.sucursal_activa
         self.admin_general.is_active = True
         self.admin_general.save(update_fields=["sucursal", "is_active", "updated_at"])
         self.admin_sucursal_nuevo.is_active = True
+        self.admin_sucursal_nuevo.sucursal = None
+        self.admin_sucursal_nuevo.save(update_fields=["is_active", "sucursal", "updated_at"])
+
+        requester = Client()
+        requester.force_login(self.admin_general)
+        new_admin_client = Client()
+        new_admin_client.force_login(self.admin_sucursal_nuevo)
+
+        response = requester.post(
+            f"/api/admin/sucursales/{self.sucursal_activa.id}/cambiar-admin/",
+            data=json.dumps({"newAdminUserId": self.admin_sucursal_nuevo.id}),
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="phase1-change-main-admin-release",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("mode"), "assign_release_main_admin")
+
+        self.admin_general.refresh_from_db()
+        self.admin_sucursal_nuevo.refresh_from_db()
+        # El admin principal queda sin sucursal pero sigue activo.
+        self.assertTrue(self.admin_general.is_active)
+        self.assertIsNone(self.admin_general.sucursal_id)
+        # El nuevo admin toma la sucursal destino.
+        self.assertTrue(self.admin_sucursal_nuevo.is_active)
+        self.assertEqual(self.admin_sucursal_nuevo.sucursal_id, self.sucursal_activa.id)
+        # Las sesiones invalidadas sacan al admin principal y al nuevo admin.
+        self.assertEqual(requester.get("/api/auth/me/").status_code, 401)
+        self.assertEqual(new_admin_client.get("/api/auth/me/").status_code, 401)
+
+    def test_cannot_assign_inactive_branch_admin_when_main_admin_assigned(self):
+        """Si el admin seleccionado esta INACTIVO (no solo sin sucursal),
+        el endpoint sigue rechazando la operacion: solo se acepta un admin
+        activo (con o sin sucursal).
+        """
+        self.admin_general.sucursal = self.sucursal_activa
+        self.admin_general.is_active = True
+        self.admin_general.save(update_fields=["sucursal", "is_active", "updated_at"])
+        self.admin_sucursal_nuevo.is_active = False
         self.admin_sucursal_nuevo.sucursal = None
         self.admin_sucursal_nuevo.save(update_fields=["is_active", "sucursal", "updated_at"])
 
@@ -142,6 +206,9 @@ class BranchManagementPhase1Test(TestCase):
             HTTP_IDEMPOTENCY_KEY="phase1-change-main-admin-conflict",
         )
         self.assertEqual(response.status_code, 409)
+        # El admin principal sigue asignado a la sucursal.
+        self.admin_general.refresh_from_db()
+        self.assertEqual(self.admin_general.sucursal_id, self.sucursal_activa.id)
 
     def test_inactive_branch_admin_is_blocked(self):
         self.admin_sucursal.sucursal = self.sucursal_inactiva

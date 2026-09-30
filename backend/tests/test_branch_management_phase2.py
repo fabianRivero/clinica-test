@@ -10,10 +10,18 @@ from catalogs.models import Sucursal
 class BranchManagementPhase2Test(TestCase):
     def setUp(self):
         self.rol_admin_principal = Rol.objects.create(rol="ADMIN_PRINCIPAL")
+        self.rol_admin_sucursal = Rol.objects.create(rol="ADMIN_SUCURSAL")
         self.sucursal = Sucursal.objects.create(nombre="Centro", ciudad="La Paz", direccion="Av", activa=True)
         self.admin_general = Usuario.objects.create_user(
             username="admin.general", password="password123", primer_nombre="Admin", apellido_paterno="General",
             rol=self.rol_admin_principal, sucursal=self.sucursal
+        )
+        # Admin de sucursal asignado a la sucursal del admin general para
+        # que el endpoint pueda hacer el swap cuando se cree una nueva
+        # sucursal usando al admin general como adminUserId.
+        self.admin_sucursal_swap = Usuario.objects.create_user(
+            username="admin.swap", password="password123", primer_nombre="Swap", apellido_paterno="Admin",
+            rol=self.rol_admin_sucursal, sucursal=self.sucursal
         )
 
     def test_create_branch_requires_idempotency_key(self):
@@ -28,7 +36,12 @@ class BranchManagementPhase2Test(TestCase):
     def test_create_branch_is_idempotent(self):
         self.client.force_login(self.admin_general)
         headers = {"HTTP_IDEMPOTENCY_KEY": "abc-1"}
-        payload = {"nombre": "Sur", "ciudad": "Santa Cruz", "direccion": "A"}
+        payload = {
+            "nombre": "Sur",
+            "ciudad": "Santa Cruz",
+            "direccion": "A",
+            "adminUserId": self.admin_general.id,
+        }
 
         first = self.client.post("/api/admin/sucursales/crear/", data=json.dumps(payload), content_type="application/json", **headers)
         second = self.client.post("/api/admin/sucursales/crear/", data=json.dumps(payload), content_type="application/json", **headers)

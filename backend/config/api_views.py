@@ -66,6 +66,7 @@ from operations.models import (
 from clinical.models import FichaCampo, FichaSeccion
 from operations.scheduling import mark_expired_programmed_appointments_as_no_show
 from config.api_helpers import (
+    admin_principal_required,
     admin_required,
     appointment_specialists,
     capitalize_first_letter,
@@ -152,19 +153,6 @@ def _client_has_pending_reservations(cliente):
             fecha_hora__gte=now,
         ).exists()
     )
-
-
-def _admin_principal_required(view_func):
-    @wraps(view_func)
-    def wrapped(request, *args, **kwargs):
-        user = request.user
-        if not user.is_authenticated:
-            return json_response({"detail": "Autenticacion requerida."}, status=401)
-        if not (user.is_superuser or user.es_admin_principal):
-            return json_response({"detail": "Esta accion requiere permisos de administrador principal."}, status=403)
-        return view_func(request, *args, **kwargs)
-
-    return wrapped
 
 
 def _capitalize_first_letter(value):
@@ -6390,7 +6378,7 @@ def admin_catalogo_detalle(request, catalog_key):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 def admin_catalogo_crear(request, catalog_key):
     try:
         payload = json.loads(request.body.decode("utf-8"))
@@ -6418,7 +6406,7 @@ def admin_catalogo_crear(request, catalog_key):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 def admin_catalogo_actualizar(request, catalog_key, item_id):
     instance = _catalog_get_instance(catalog_key, item_id)
     if not instance:
@@ -6449,7 +6437,7 @@ def admin_catalogo_actualizar(request, catalog_key, item_id):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 def admin_catalogo_estado(request, catalog_key, item_id):
     instance = _catalog_get_instance(catalog_key, item_id)
     if not instance:
@@ -6478,7 +6466,7 @@ def admin_catalogo_estado(request, catalog_key, item_id):
 # -----------------------------------------------------------------------------
 # Maquinaria dedicated endpoints
 #
-# The generic catalog create/update endpoints above use @_admin_principal_required.
+# The generic catalog create/update endpoints above use @admin_principal_required.
 # Maquinaria is intentionally branch-scoped (admin_sucursal can CRUD resources of
 # their own branch), so we expose dedicated endpoints with @admin_required and a
 # scope check on the sucursal payload. See appointment-reservation-redesign spec.
@@ -6723,14 +6711,14 @@ def admin_equipo(request):
 
 
 @require_GET
-@_admin_principal_required
+@admin_principal_required
 def admin_branch_admins_list(request):
     admins = Usuario.objects.select_related("sucursal").filter(rol__rol="ADMIN_SUCURSAL").order_by("-is_active", "username")
     return json_response({"admins": [_branch_admin_item(admin) for admin in admins]})
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 @transaction.atomic
 def admin_branch_admins_create(request):
     payload = load_payload(request)
@@ -6770,14 +6758,14 @@ def admin_branch_admins_create(request):
 
 
 @require_GET
-@_admin_principal_required
+@admin_principal_required
 def admin_branch_admins_detail(request, user_id):
     user = get_object_or_404(Usuario.objects.select_related("sucursal"), pk=user_id, rol__rol="ADMIN_SUCURSAL")
     return json_response({"admin": _branch_admin_item(user)})
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 @transaction.atomic
 def admin_branch_admins_update(request, user_id):
     user = get_object_or_404(Usuario.objects.select_related("sucursal"), pk=user_id, rol__rol="ADMIN_SUCURSAL")
@@ -6812,7 +6800,7 @@ def admin_branch_admins_update(request, user_id):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 @transaction.atomic
 def admin_branch_admins_toggle(request, user_id):
     user = get_object_or_404(Usuario.objects.select_related("sucursal"), pk=user_id, rol__rol="ADMIN_SUCURSAL")
@@ -7004,7 +6992,7 @@ def admin_estado_especialista(request, specialist_id):
     )
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 @transaction.atomic
 def admin_prospecto_migrar(request, prospecto_id):
     from customers.models import Prospecto
@@ -7027,7 +7015,7 @@ def admin_prospecto_migrar(request, prospecto_id):
     })
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 @transaction.atomic
 def admin_cliente_migrar(request, client_id):
     from customers.models import Cliente
@@ -7061,7 +7049,7 @@ def admin_cliente_migrar(request, client_id):
     })
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 @transaction.atomic
 def admin_equipo_cambiar_sucursal(request, user_id):
     from catalogs.models import Sucursal
@@ -7107,7 +7095,7 @@ def admin_equipo_cambiar_sucursal(request, user_id):
 
 
 @require_GET
-@_admin_principal_required
+@admin_principal_required
 def admin_branch_management_list(request):
     status = (request.GET.get("status") or "all").lower()
     city = (request.GET.get("city") or "").strip()
@@ -7161,7 +7149,7 @@ def admin_branch_management_list(request):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 def admin_branch_wizard_initialize(request):
     request.session[BRANCH_CREATE_WIZARD_SESSION_KEY] = {}
     request.session.modified = True
@@ -7169,7 +7157,7 @@ def admin_branch_wizard_initialize(request):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 def admin_branch_wizard_step1(request):
     payload = load_payload(request)
     if payload is None:
@@ -7185,7 +7173,7 @@ def admin_branch_wizard_step1(request):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 def admin_branch_wizard_step2(request):
     payload = load_payload(request)
     if payload is None:
@@ -7248,7 +7236,7 @@ def admin_branch_wizard_step2(request):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 @transaction.atomic
 def admin_branch_wizard_finalize(request):
     payload = load_payload(request)
@@ -7321,9 +7309,23 @@ def admin_branch_wizard_finalize(request):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 @transaction.atomic
 def admin_branch_management_create(request):
+    """Create a new ``Sucursal`` and assign an admin to it atomically.
+
+    Mirrors the contract enforced by ``admin_branch_wizard_finalize`` so a
+    branch can never end up active without an admin assigned. The admin
+    must be an existing ``ADMIN_SUCURSAL`` or ``ADMIN_PRINCIPAL`` user; the
+    payload must include ``adminUserId``.
+
+    - ``ADMIN_SUCURSAL``: assigned to the new branch. If the user already
+      has a branch, that branch must continue to have an admin (main or
+      branch) afterwards — otherwise we refuse to move them.
+    - ``ADMIN_PRINCIPAL``: only allowed when the principal already has a
+      branch AND that branch has an active branch admin to swap with.
+      We refuse otherwise to avoid leaving the previous branch orphaned.
+    """
     cache_key, error_response = _idempotency_cache_key(request, "branch-create")
     if error_response:
         return error_response
@@ -7335,13 +7337,137 @@ def admin_branch_management_create(request):
         data, errors = _branch_payload(payload, partial=False)
         if errors:
             return json_response({"detail": "Hay errores en el formulario.", "errors": errors}, status=400)
+
+        admin_user_id = payload.get("adminUserId")
+        if not admin_user_id:
+            return json_response(
+                {"detail": "Debes indicar el administrador que se asignara a esta sucursal."},
+                status=400,
+            )
+
+        admin_user = (
+            Usuario.objects.select_related("rol", "sucursal")
+            .filter(pk=admin_user_id)
+            .first()
+        )
+        if not admin_user:
+            return json_response({"detail": "Administrador no encontrado."}, status=404)
+        if not (admin_user.rol and admin_user.rol.rol in ("ADMIN_SUCURSAL", "ADMIN_PRINCIPAL")):
+            return json_response(
+                {"detail": "El usuario seleccionado no es administrador de sucursal ni administrador principal."},
+                status=400,
+            )
+        if not admin_user.is_active:
+            return json_response(
+                {"detail": "El administrador seleccionado debe estar activo."},
+                status=400,
+            )
+
         branch = Sucursal.objects.create(**data, activa=True)
-        return json_response({"detail": "Sucursal creada correctamente.", "branchId": branch.id}, status=201)
+
+        mode = None
+        previous_branch_id = None
+        if admin_user.rol.rol == "ADMIN_PRINCIPAL":
+            previous_branch = admin_user.sucursal
+            if not previous_branch:
+                transaction.set_rollback(True)
+                return json_response(
+                    {
+                        "detail": (
+                            "El administrador principal debe tener una sucursal asignada "
+                            "para intercambiarla con la nueva."
+                        )
+                    },
+                    status=409,
+                )
+            replacement = (
+                Usuario.objects.filter(
+                    rol__rol="ADMIN_SUCURSAL",
+                    is_active=True,
+                    sucursal=previous_branch,
+                )
+                .exclude(pk=admin_user.pk)
+                .first()
+            )
+            if not replacement:
+                transaction.set_rollback(True)
+                return json_response(
+                    {
+                        "detail": (
+                            "La sucursal actual del administrador principal no tiene un "
+                            "administrador de sucursal con quien intercambiar. Asigna uno "
+                            "primero para no dejar esa sucursal sin admin."
+                        )
+                    },
+                    status=409,
+                )
+            previous_branch_id = previous_branch.id
+            admin_user.sucursal = branch
+            admin_user.save(update_fields=["sucursal", "updated_at"])
+            replacement.sucursal = previous_branch
+            replacement.save(update_fields=["sucursal", "updated_at"])
+            transaction.on_commit(
+                lambda user_ids=[admin_user.id, replacement.id]: _invalidate_user_sessions(user_ids)
+            )
+            mode = "swap_with_main_admin"
+        else:
+            previous_branch = admin_user.sucursal
+            if previous_branch:
+                other_admin_present = Usuario.objects.filter(
+                    rol__rol="ADMIN_SUCURSAL",
+                    is_active=True,
+                    sucursal=previous_branch,
+                ).exclude(pk=admin_user.pk).exists() or Usuario.objects.filter(
+                    rol__rol="ADMIN_PRINCIPAL",
+                    is_active=True,
+                    sucursal=previous_branch,
+                ).exists()
+                if not other_admin_present:
+                    transaction.set_rollback(True)
+                    return json_response(
+                        {
+                            "detail": (
+                                "El administrador de sucursal no puede moverse porque su "
+                                "sucursal actual quedaria sin administrador. Asigna primero "
+                                "otro admin a esa sucursal."
+                            )
+                        },
+                        status=409,
+                    )
+                previous_branch_id = previous_branch.id
+            admin_user.sucursal = branch
+            admin_user.save(update_fields=["sucursal", "updated_at"])
+            transaction.on_commit(
+                lambda user_ids=[admin_user.id]: _invalidate_user_sessions(user_ids)
+            )
+            mode = "assign_branch_admin"
+
+        _log_branch_admin_audit(
+            request=request,
+            branch=branch,
+            action=BranchAdminAuditLog.Action.CREATE_BRANCH_WIZARD,
+            detail="Sucursal creada via endpoint directo con admin asignado.",
+            metadata={
+                "adminUserId": admin_user.id,
+                "mode": mode,
+                "previousBranchId": previous_branch_id,
+            },
+        )
+
+        return json_response(
+            {
+                "detail": "Sucursal creada correctamente con administrador asignado.",
+                "branchId": branch.id,
+                "adminUserId": admin_user.id,
+                "mode": mode,
+            },
+            status=201,
+        )
     return _idempotency_replay_or_store(cache_key, _create)
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 @transaction.atomic
 def admin_branch_management_update(request, branch_id):
     branch = get_object_or_404(Sucursal, pk=branch_id)
@@ -7360,7 +7486,7 @@ def admin_branch_management_update(request, branch_id):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 @transaction.atomic
 def admin_branch_management_toggle(request, branch_id):
     cache_key, error_response = _idempotency_cache_key(request, f"branch-toggle:{branch_id}")
@@ -7412,7 +7538,7 @@ def admin_branch_management_toggle(request, branch_id):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 @transaction.atomic
 def admin_branch_management_change_admin(request, branch_id):
     cache_key, error_response = _idempotency_cache_key(request, f"branch-change-admin:{branch_id}")
@@ -7444,6 +7570,40 @@ def admin_branch_management_change_admin(request, branch_id):
         selected_is_inactive = (not new_admin.is_active) or (new_admin.sucursal_id is None)
 
         if current_main_admin:
+            # Admin principal activo en la sucursal destino. Hay dos modos:
+            #   - swap: el nuevo admin esta activo y tiene sucursal -> intercambian.
+            #   - assign_release_main_admin: el nuevo admin esta activo pero sin
+            #     sucursal -> el admin principal sale sin sucursal y el nuevo
+            #     admin toma la sucursal destino. El admin general sigue siendo
+            #     admin principal (is_active=True), solo queda sin sucursal
+            #     asignada para que pueda reasignarse a otra cuando quiera.
+            selected_is_unassigned = new_admin.is_active and (new_admin.sucursal_id is None)
+            if selected_is_inactive and selected_is_unassigned:
+                new_admin.sucursal = branch
+                new_admin.save(update_fields=["sucursal", "updated_at"])
+                current_main_admin.sucursal = None
+                current_main_admin.is_active = True
+                current_main_admin.save(update_fields=["sucursal", "is_active", "updated_at"])
+                _log_branch_admin_audit(
+                    request=request,
+                    branch=branch,
+                    action=BranchAdminAuditLog.Action.CHANGE_ADMIN,
+                    detail="Asignacion de admin de sucursal liberando al admin principal.",
+                    metadata={
+                        "mainAdminUserId": current_main_admin.id,
+                        "newAdminUserId": new_admin.id,
+                        "mode": "assign_release_main_admin",
+                    },
+                )
+                transaction.on_commit(
+                    lambda user_ids=[current_main_admin.id, new_admin.id]: _invalidate_user_sessions(user_ids)
+                )
+                return json_response(
+                    {
+                        "detail": "Administrador asignado correctamente. El administrador principal quedo sin sucursal.",
+                        "mode": "assign_release_main_admin",
+                    }
+                )
             if selected_is_inactive:
                 return json_response(
                     {"detail": "El administrador principal solo puede intercambiar con un admin de sucursal activo y con sucursal."},
@@ -7525,14 +7685,14 @@ def admin_branch_management_change_admin(request, branch_id):
 
 
 @require_GET
-@_admin_principal_required
+@admin_principal_required
 def admin_branch_management_deactivation_impact(request, branch_id):
     branch = get_object_or_404(Sucursal, pk=branch_id)
     return json_response({"branchId": branch.id, "impact": _branch_deactivation_impact(branch)})
 
 
 @require_GET
-@_admin_principal_required
+@admin_principal_required
 def admin_branch_admin_audit_logs(request):
     branch_id = request.GET.get("branchId")
     logs = BranchAdminAuditLog.objects.select_related("branch", "actor")
@@ -7662,7 +7822,7 @@ def _validate_opcion_payload(payload, *, grupo_id, instance=None, allow_codigo=T
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 def admin_grupo_opciones_opciones_crear(request, grupo_id):
     """Create a single `OpcionCatalogo` under a group."""
     grupo = GrupoOpciones.objects.filter(pk=grupo_id).first()
@@ -7730,7 +7890,7 @@ def admin_grupo_opciones_opciones_crear(request, grupo_id):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 def admin_grupo_opciones_opciones_crear_multiples(request, grupo_id):
     """Bulk-create `OpcionCatalogo` entries under a group.
 
@@ -7852,7 +8012,7 @@ def admin_grupo_opciones_opciones_crear_multiples(request, grupo_id):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 def admin_grupo_opciones_opciones_actualizar(request, grupo_id, opcion_id):
     """Partial update of an existing `OpcionCatalogo`.
 
@@ -7934,7 +8094,7 @@ def admin_grupo_opciones_opciones_actualizar(request, grupo_id, opcion_id):
 
 
 @require_POST
-@_admin_principal_required
+@admin_principal_required
 def admin_grupo_opciones_opciones_estado(request, grupo_id, opcion_id):
     """Toggle the `activo` flag (soft-delete) of an `OpcionCatalogo`."""
     grupo = GrupoOpciones.objects.filter(pk=grupo_id).first()

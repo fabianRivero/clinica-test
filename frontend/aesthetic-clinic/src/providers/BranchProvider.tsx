@@ -36,6 +36,22 @@ export function BranchProvider({ children }: { children: ReactNode }) {
   const fetchBranches = useCallback(async () => {
     setIsLoading(true)
     setError(null)
+
+    // Admin de sucursal: no consulta el endpoint (restringido a admin
+    // principal). Construimos la lista local con su propia sucursal para
+    // mantener compat con consumidores que esperan un array no vacio.
+    if (user && !user.isMainAdmin) {
+      const ownBranch: AdminBranch | null =
+        user.branchId && user.branchName
+          ? { id: user.branchId, nombre: user.branchName, es_principal: false }
+          : null
+      const branches = ownBranch ? [ownBranch] : []
+      setBranches(branches)
+      applyActiveBranch(ownBranch)
+      setIsLoading(false)
+      return
+    }
+
     try {
       const response = await getAdminBranches()
       setBranches(response.branches)
@@ -71,7 +87,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [activeBranch, applyActiveBranch, lockedBranchId, user?.branchId])
+  }, [activeBranch, applyActiveBranch, lockedBranchId, user?.branchId, user?.isMainAdmin, user?.branchName])
 
   useEffect(() => {
     void fetchBranches()

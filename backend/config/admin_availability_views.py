@@ -4,6 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from config.api_helpers import (
+    admin_principal_required,
     admin_required,
     get_user_branch,
     json_response,
@@ -497,7 +498,7 @@ def admin_check_maquinaria(request):
         "disponibilidad": disponibilidad,
     })
 
-@admin_required
+@admin_principal_required
 def admin_get_branches(request):
     sucursales = list(Sucursal.objects.values('id', 'nombre', 'es_principal'))
     return json_response({'branches': sucursales})

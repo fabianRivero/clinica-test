@@ -65,6 +65,33 @@ def admin_required(view_func):
                     status=403,
                 )
         return view_func(request, *args, **kwargs)
+
+    return wrapped
+
+
+def admin_principal_required(view_func):
+    """Decorator: require an authenticated admin principal.
+
+    Stricter than :func:`admin_required` — only superusers or users whose
+    ``es_admin_principal`` flag is set may pass. Used for cross-branch
+    management endpoints (sucursal CRUD, branch admin assignment, global
+    catalogs, etc.) that must not be reachable by ``ADMIN_SUCURSAL``.
+
+    - 401 if not authenticated.
+    - 403 if not an admin principal.
+    """
+    @wraps(view_func)
+    def wrapped(request, *args, **kwargs):
+        user = request.user
+        if not user.is_authenticated:
+            return json_response({"detail": "Autenticacion requerida."}, status=401)
+        if not (user.is_superuser or user.es_admin_principal):
+            return json_response(
+                {"detail": "Esta accion requiere permisos de administrador principal."},
+                status=403,
+            )
+        return view_func(request, *args, **kwargs)
+
     return wrapped
 
 
