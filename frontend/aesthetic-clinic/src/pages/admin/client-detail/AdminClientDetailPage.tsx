@@ -537,15 +537,23 @@ export function AdminClientDetailPage() {
           setSelectedSession(null)
         }}
         reservableOperations={
-          data?.operations?.length
-            ? [
-                {
-                  id: data.operations[0].rawId,
-                  rawId: data.operations[0].rawId,
-                  selectLabel: data.operations[0].procedure,
-                },
-              ]
-            : []
+          // Reschedule targets the operation that owns the cita being
+          // rescheduled (session.operationRawId comes from the backend
+          // payload as `operationRawId` on _client_appointment_item).
+          // Without this filter the modal always offers the FIRST
+          // operation, which silently corrupts the reschedule when
+          // the client has multiple active treatments.
+          (() => {
+            const ownerId = (selectedSession as { operationRawId?: number } | null)?.operationRawId
+            if (!ownerId) return []
+            return (data?.operations ?? [])
+              .filter((op: { rawId: number }) => op.rawId === ownerId)
+              .map((op: { rawId: number; procedure: string }) => ({
+                id: op.rawId,
+                rawId: op.rawId,
+                selectLabel: op.procedure,
+              }))
+          })()
         }
         branchId={activeBranch?.id ?? 0}
         prefillCita={

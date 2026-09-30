@@ -1269,6 +1269,12 @@ export type EspecialistaDisponibilidadResponse = {
 export type AdminReservationExtendedPayload = {
   branchId: number
   dateTime: string
+  // Optional: populated by the ReservationModal when the admin picks
+  // a procedure from its local dropdown. ``handleReserve`` in
+  // useClientDetail prefers this over the (often stale) hook-level
+  // ``selectedOperationId`` state so the value the admin actually
+  // sees in the UI is the one used in the POST.
+  operationId?: number
   duracionEstimadaMinutos?: number | null
   descripcionGeneral?: string
   notasPrevias?: string

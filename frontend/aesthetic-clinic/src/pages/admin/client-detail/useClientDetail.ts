@@ -487,9 +487,13 @@ export function useClientDetail(clientId: string) {
   }
 
   async function handleReserve(payload?: AdminReservationExtendedPayload) {
-    // El modal ya arma el payload completo; cuando se invoca sin argumentos
-    // (legacy) caemos a los inputs locales del componente inline.
-    const operationId = selectedOperationId
+    // Prefer the operationId the admin actually picked in the modal
+    // (passed via payload). Fall back to the legacy hook-level state
+    // for callers that don't go through the modal (kept for the inline
+    // inputs that may still exist elsewhere on this page).
+    const payloadOperationId =
+      payload && typeof payload.operationId === 'number' ? payload.operationId : null
+    const operationId = payloadOperationId ?? selectedOperationId
     if (!data || !operationId || !activeBranch) {
       showNotification({ title: 'Atencion', message: 'Selecciona un procedimiento.', tone: 'warning' })
       return

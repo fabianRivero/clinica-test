@@ -586,6 +586,7 @@ export function ReservationModal({
     const payload: AdminReservationExtendedPayload = {
       branchId,
       dateTime: `${date}T${time}:00`,
+      operationId: typeof operationId === 'number' ? operationId : undefined,
       duracionEstimadaMinutos: duracionMinutos,
       descripcionGeneral: descripcionGeneral || undefined,
       notasPrevias: notasPrevias || undefined,
