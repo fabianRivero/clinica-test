@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -346,6 +347,21 @@ class LazyLocalFallbackStorage(Boto3Storage):
                 "(bucket miss; fallback enabled)",
                 name,
             )
+            # Slice 3: enqueue a background upload so the next read hits
+            # the bucket. Thread is daemon + fire-and-forget; any failure
+            # is logged and swallowed inside ``_upload_local_to_bucket``.
+            thread = threading.Thread(
+                target=_upload_local_to_bucket,
+                args=(name, local_path),
+                name=f"backfill-upload-{name}",
+                daemon=True,
+            )
+            logger.info(
+                "async_upload_enqueued: key=%s thread=%s",
+                name,
+                thread.name,
+            )
+            thread.start()
             with open(local_path, "rb") as handle:
                 return ContentFile(handle.read(), name=name)
         # Both bucket and local miss — surface the standard Django
@@ -361,3 +377,38 @@ class LazyLocalFallbackStorage(Boto3Storage):
         if super().exists(name):
             return True
         return self._serve_from_local(name)
+
+
+# ---------------------------------------------------------------------------
+# Background upload helper (slice 3)
+# ---------------------------------------------------------------------------
+
+
+def _upload_local_to_bucket(name: str, local_path) -> None:
+    """Read ``local_path`` and ``put_object`` it under ``name``.
+
+    Runs in a daemon thread spawned by :class:`LazyLocalFallbackStorage`.
+    Any exception is logged but never re-raised — the thread is the only
+    owner of the failure and the caller has already returned the
+    ContentFile to the Django view.
+
+    Tests patch this symbol directly to simulate ``put_object`` failures
+    without racing real boto3 errors.
+    """
+    try:
+        client = _get_s3_client()
+        bucket = _bucket_name()
+        with open(local_path, "rb") as handle:
+            client.put_object(Bucket=bucket, Key=name, Body=handle.read())
+        logger.info(
+            "async_upload_complete: key=%s source=%s",
+            name,
+            local_path,
+        )
+    except Exception as exc:  # noqa: BLE001 — swallow, log only
+        logger.error(
+            "async_upload_failed: key=%s source=%s err=%s",
+            name,
+            local_path,
+            exc,
+        )

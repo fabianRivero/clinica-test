@@ -80,6 +80,10 @@ INSTALLED_APPS = [
     # + Celery tasks. Deprecated separately (Phase 4 will deprecate
     # the legacy biometric/ app, not this one).
     "dp4500_integration.apps.Dp4500IntegrationConfig",
+    # Cloud-storage-migration (slice 3 of 4): registers the project
+    # package as an app so ``config/management/commands/`` (e.g.
+    # ``backfill_media``) is auto-discovered.
+    "config",
 ]
 
 MIDDLEWARE = [
