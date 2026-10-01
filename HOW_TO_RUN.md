@@ -64,6 +64,19 @@ npm run dev
 
 Esperado: `Local: http://localhost:5173/`.
 
+## Storage
+
+Cloud storage migration (`openspec/changes/cloud-storage-migration`):
+`STORAGE_PROVIDER=local` (default) uses `FileSystemStorage` under
+`backend/media/`. Set `STORAGE_PROVIDER=s3` plus the `AWS_*` +
+`MEDIA_*` vars from `backend/.env.example` to flip to boto3-backed
+S3/R2/MinIO. During cutover, `MEDIA_LOCAL_FALLBACK_ENABLED=true` makes
+reads fall back to local files if a bucket miss occurs. The signed-URL
+endpoint at `GET /api/media/signed-url/?path=<rel>` is the only way
+the frontend fetches media when `STORAGE_PROVIDER=s3`; the
+`useSignedUrl` helper handles caching (see
+`frontend/aesthetic-clinic/src/services/media.tsx`).
+
 ## Verificación rápida
 
 Tres smoke checks (uno por terminal, o desde PowerShell nativo):

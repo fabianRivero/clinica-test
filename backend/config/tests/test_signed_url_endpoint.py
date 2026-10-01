@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import io
 import os
+import tempfile
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from unittest import mock
 
 # Boot Django before any Django imports below — matches the slice 1
@@ -38,7 +40,8 @@ import django  # noqa: E402
 django.setup()
 
 from django.db import DatabaseError  # noqa: E402
-from django.test import TestCase  # noqa: E402
+from django.core.management import call_command  # noqa: E402
+from django.test import SimpleTestCase, TestCase, override_settings  # noqa: E402
 
 from accounts.models import Rol, Usuario  # noqa: E402
 from customers.models import Cliente  # noqa: E402
@@ -606,3 +609,44 @@ class Boto3StoragePresignedUrlTests(TestCase):
         self.assertEqual(call["operation"], "get_object")
         self.assertEqual(call["Params"], {"Bucket": "test-bucket", "Key": "uploads/foo.pdf"})
         self.assertEqual(call["ExpiresIn"], 900)
+
+
+# Slice 4 additive: backfill_media --verify flag accepted.
+
+
+class _VerifyFakeS3Client:
+    def __init__(self) -> None:
+        self.objects: dict[tuple[str, str], bytes] = {}
+
+    def put_object(self, *, Bucket, Key, Body, **_kwargs):
+        self.objects[(Bucket, Key)] = Body
+
+    def head_object(self, *, Bucket, Key, **_kwargs):
+        if (Bucket, Key) not in self.objects:
+            raise _client_error(404)
+        return {"ContentLength": len(self.objects[(Bucket, Key)])}
+
+
+class BackfillMediaVerifyFlagTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="backfill-verify-test-"))
+        self.fake = _VerifyFakeS3Client()
+        bucket_patch = mock.patch.dict(
+            os.environ, {"AWS_STORAGE_BUCKET_NAME": "test-bucket"}
+        )
+        bucket_patch.start()
+        self.addCleanup(bucket_patch.stop)
+        client_patch = mock.patch(
+            "config.storage_backends.boto3.client", return_value=self.fake
+        )
+        client_patch.start()
+        self.addCleanup(client_patch.stop)
+
+    def test_verify_flag_runs_uploads(self):
+        (self.tmp / "a.pdf").write_bytes(b"a")
+        (self.tmp / "b.pdf").write_bytes(b"b")
+        with override_settings(MEDIA_ROOT=self.tmp):
+            call_command("backfill_media", "--verify", "--batch-size=10")
+        keys = {k for (_, k) in self.fake.objects.keys()}
+        self.assertIn("a.pdf", keys)
+        self.assertIn("b.pdf", keys)
