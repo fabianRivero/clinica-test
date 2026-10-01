@@ -71,6 +71,10 @@ INSTALLED_APPS = [
     "biometric.apps.BiometricConfig",
     "backups.apps.BackupsConfig",
     "corsheaders",
+    # Cloud-storage-migration (slice 2 of 4): audit trail backing the
+    # ``/api/media/signed-url/`` endpoint. Append-only model +
+    # fail-closed writer; see ``audit.services.write_audit_log``.
+    "audit.apps.AuditConfig",
     # Phase 2 of dp4500-host-app-integration-phase2. Sibling app to
     # the legacy biometric/ app; hosts the HTTPClient + cascade signal
     # + Celery tasks. Deprecated separately (Phase 4 will deprecate

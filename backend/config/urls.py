@@ -4,6 +4,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 from config.views import healthcheck
+from config.api_views_media import media_signed_url
 
 
 urlpatterns = [
@@ -22,6 +23,14 @@ urlpatterns = [
     path(
         "api/integration/dp4500/",
         include("dp4500_integration.urls"),
+    ),
+    # Cloud-storage-migration (slice 2 of 4). Authenticated
+    # presigned-URL minting with fail-closed audit log; see
+    # ``config.api_views_media.media_signed_url``.
+    path(
+        "api/media/signed-url/",
+        media_signed_url,
+        name="media-signed-url",
     ),
     path("health/", healthcheck, name="healthcheck"),
 ]

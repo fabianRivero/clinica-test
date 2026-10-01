@@ -1,4 +1,4 @@
-"""Storage backends for cloud-storage-migration (slice 1 of 4).
+"""Storage backends for cloud-storage-migration (slice 1 + slice 2 of 4).
 
 Slice 1 ships the foundation:
 
@@ -14,6 +14,12 @@ Slice 1 ships the foundation:
   The async upload enqueueing that pushes legacy files back to the bucket
   is deferred to slice 3 (``backfill_media`` management command plus
   Celery task); slice 1 only logs the fallback for observability.
+
+Slice 2 adds :meth:`Boto3Storage.generate_presigned_url` so the
+``/api/media/signed-url/`` endpoint can mint SigV4 presigned GET URLs
+without bypassing the storage abstraction. The helper is intentionally
+minimal: the endpoint is responsible for path sanitization, per-prefix
+authorization, TTL clamping, and the fail-closed audit write.
 
 The legacy ``SupabaseStorage`` and ``LocalStorage`` classes were removed:
 
@@ -213,6 +219,40 @@ class Boto3Storage(Storage):
         raise NotImplementedError(
             "Boto3Storage.url() is disabled; mint signed URLs through "
             "/api/media/signed-url/ (slice 2)."
+        )
+
+    def generate_presigned_url(self, name: str, ttl_seconds: int) -> str:
+        """Return a SigV4 presigned S3 GET URL for ``name``.
+
+        Added in slice 2 so the ``/api/media/signed-url/`` endpoint can
+        mint short-lived URLs through the storage abstraction without
+        reaching into boto3 directly. The endpoint still owns path
+        sanitization, TTL clamping, authorization, and the fail-closed
+        audit row — this helper is a thin pass-through to
+        ``boto3.client.generate_presigned_url`` so the audit code path
+        can rely on the storage backend being the single place that
+        knows the bucket name and region.
+
+        Caller is responsible for:
+
+        * validating that ``name`` is an allowed relative path
+          (path allowlist + ``..``/leading ``/``/``\\`` rejection).
+        * logging the access (audit) BEFORE calling this method — the
+          fail-closed contract is that no URL is minted without a
+          persisted audit row.
+        * clamping ``ttl_seconds`` to a safe upper bound (SigV4 max is
+          7 days / 604800 seconds; the endpoint clamps to that value
+          before calling here).
+
+        ``ttl_seconds`` is passed through unchanged so the endpoint can
+        decide what "safe" means for its caller (e.g. the request's
+        ``ttl`` query param bounded by ``MEDIA_SIGNED_URL_TTL_SECONDS``).
+        """
+        client = _get_s3_client()
+        return client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self._bucket, "Key": name},
+            ExpiresIn=ttl_seconds,
         )
 
     def size(self, name: str) -> int:
