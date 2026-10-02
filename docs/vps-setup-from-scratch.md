@@ -1207,13 +1207,15 @@ sudo dpkg-reconfigure -plow unattended-upgrades
 
 ### 11.6. Datos sensibles: consideraciones legales
 
-La clínica maneja datos de salud de pacientes. En Argentina (Ley 25.326) y muchas otras jurisdicciones, esto es **dato sensible**. Antes de poner el sistema en producción para un cliente:
+La clínica maneja datos de salud de pacientes. En Bolivia, la **Ley 164 (Ley General de Telecomunicaciones, Tecnologías de Información y Comunicación — arts. 73 a 78 sobre protección de datos personales)** y su decreto reglamentario regulan el tratamiento de datos personales. Los datos de salud son **dato sensible** bajo esa norma, y bajo HIPAA (si la clínica exporta datos a Estados Unidos o trabaja con un covered entity bajo Business Associate Agreement). Antes de poner el sistema en producción para un cliente:
 
-- [ ] Confirmar que el cliente firmó consentimiento sobre el proveedor de hosting.
+- [ ] Confirmar que el cliente firmó consentimiento sobre el proveedor de hosting y sobre el cambio de almacenamiento local → cloud (migración `MEDIA_ROOT` → S3).
 - [ ] Verificar que la DB está encriptada (la mayoría de proveedores cloud lo ofrece).
+- [ ] Si `STORAGE_PROVIDER=s3`: firmar el BAA con AWS antes de subir el primer PDF clínico al bucket. Sin BAA, el storage NO es HIPAA-eligible.
 - [ ] Política de acceso al VPS: quién tiene la clave SSH, quién rota.
-- [ ] Política de backups: dónde se guardan, quién tiene acceso, retención.
-- [ ] Política de logs: accesos a datos clínicos deben quedar auditados.
+- [ ] Política de backups: dónde se guardan, quién tiene acceso, retención, **cifrado en tránsito y reposo**.
+- [ ] Política de logs: accesos a datos clínicos deben quedar auditados (el módulo `audit/AuditLog` cubre el endpoint `/api/media/signed-url/` — ver §11.7).
+- [ ] Política de revocación de presigned URLs: aunque el TTL es de 15 minutos, dejar documentado el procedimiento de soporte si un cliente reporta un link comprometido.
 
 ### 11.7. Cutover a AWS S3 en producción (`STORAGE_PROVIDER=s3`)
 
