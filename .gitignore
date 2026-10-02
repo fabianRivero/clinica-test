@@ -89,6 +89,10 @@ deploy.sh
 *.bak
 write_test.txt
 
+# Local-only documentation (tracked previously, intentionally not versioned now)
+# Re-create locally and edit freely without worrying about commits.
+docs/vps-setup-from-scratch.md
+
 # Playwright output (regenerated on every test run)
 frontend/aesthetic-clinic/playwright-report/
 frontend/aesthetic-clinic/test-results/
