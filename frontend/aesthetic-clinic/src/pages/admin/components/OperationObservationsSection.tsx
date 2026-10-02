@@ -7,6 +7,7 @@ import {
   updateAdminOperationObservaciones,
   uploadAdminOperationPhotos,
 } from '../../../services/api/admin'
+import { SignedImage } from '../../../services/media'
 import type {
   ApiError,
 } from '../../../services/api/apiClient'
@@ -81,7 +82,7 @@ function PhotoRow({
       </div>
       {expanded ? (
         <div className="observations-section__row-preview">
-          <img src={photo.url} alt={photo.fileName} />
+          <SignedImage src={photo.url} alt={photo.fileName} />
         </div>
       ) : null}
     </li>

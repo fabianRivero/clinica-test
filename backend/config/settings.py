@@ -71,11 +71,19 @@ INSTALLED_APPS = [
     "biometric.apps.BiometricConfig",
     "backups.apps.BackupsConfig",
     "corsheaders",
+    # Cloud-storage-migration (slice 2 of 4): audit trail backing the
+    # ``/api/media/signed-url/`` endpoint. Append-only model +
+    # fail-closed writer; see ``audit.services.write_audit_log``.
+    "audit.apps.AuditConfig",
     # Phase 2 of dp4500-host-app-integration-phase2. Sibling app to
     # the legacy biometric/ app; hosts the HTTPClient + cascade signal
     # + Celery tasks. Deprecated separately (Phase 4 will deprecate
     # the legacy biometric/ app, not this one).
     "dp4500_integration.apps.Dp4500IntegrationConfig",
+    # Cloud-storage-migration (slice 3 of 4): registers the project
+    # package as an app so ``config/management/commands/`` (e.g.
+    # ``backfill_media``) is auto-discovered.
+    "config",
 ]
 
 MIDDLEWARE = [
@@ -189,21 +197,51 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "local")  # default to local dev
+
+# ---------------------------------------------------------------------------
+# Storage provider switching (cloud-storage-migration, slice 1 of 4).
+#
+# ``STORAGE_PROVIDER`` drives ``STORAGES["default"]["BACKEND"]``:
+#   * "local" (default) — Django's FileSystemStorage (no S3 client).
+#   * "s3" with ``MEDIA_LOCAL_FALLBACK_ENABLED`` true (default) — the
+#     LazyLocalFallbackStorage wrapper that reads from MEDIA_ROOT on a
+#     bucket miss during the 30-day cutover window.
+#   * "s3" with ``MEDIA_LOCAL_FALLBACK_ENABLED`` false — the raw
+#     Boto3Storage; used after the bucket is fully populated.
+#
+# The env vars below (AWS_*, MEDIA_LOCAL_FALLBACK_ENABLED) are read by
+# ``config.storage_backends`` when the corresponding backend is wired.
+# Other call sites in this codebase (``api.viewsets.payments`` et al.)
+# also read ``STORAGE_PROVIDER`` directly — that behavior is preserved
+# by leaving the variable as a plain ``os.getenv`` value here.
+# ---------------------------------------------------------------------------
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME", "")
+AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "sa-east-1")
+AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL", "") or None
+MEDIA_LOCAL_FALLBACK_ENABLED = (
+    os.getenv("MEDIA_LOCAL_FALLBACK_ENABLED", "true").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
+
+if STORAGE_PROVIDER == "s3":
+    if MEDIA_LOCAL_FALLBACK_ENABLED:
+        _default_storage_backend = "config.storage_backends.LazyLocalFallbackStorage"
+    else:
+        _default_storage_backend = "config.storage_backends.Boto3Storage"
+else:
+    _default_storage_backend = "django.core.files.storage.FileSystemStorage"
+
 STORAGES = {
     "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "BACKEND": _default_storage_backend,
     },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
-
-# ---------------------------------------------------------------------------
-# Storage configuration — choose provider via STORAGE_PROVIDER env var
-# Values: "local" | "supabase" | "s3"
-# Cloud uploads are handled directly in the view (boto3), not via STORAGES.
-# ---------------------------------------------------------------------------
-STORAGE_PROVIDER = os.getenv("STORAGE_PROVIDER", "local")  # default to local dev
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"

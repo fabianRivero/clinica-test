@@ -1207,13 +1207,266 @@ sudo dpkg-reconfigure -plow unattended-upgrades
 
 ### 11.6. Datos sensibles: consideraciones legales
 
-La clínica maneja datos de salud de pacientes. En Argentina (Ley 25.326) y muchas otras jurisdicciones, esto es **dato sensible**. Antes de poner el sistema en producción para un cliente:
+La clínica maneja datos de salud de pacientes. En Bolivia, la **Ley 164 (Ley General de Telecomunicaciones, Tecnologías de Información y Comunicación — arts. 73 a 78 sobre protección de datos personales)** y su decreto reglamentario regulan el tratamiento de datos personales. Los datos de salud son **dato sensible** bajo esa norma, y bajo HIPAA (si la clínica exporta datos a Estados Unidos o trabaja con un covered entity bajo Business Associate Agreement). Antes de poner el sistema en producción para un cliente:
 
-- [ ] Confirmar que el cliente firmó consentimiento sobre el proveedor de hosting.
+- [ ] Confirmar que el cliente firmó consentimiento sobre el proveedor de hosting y sobre el cambio de almacenamiento local → cloud (migración `MEDIA_ROOT` → S3).
 - [ ] Verificar que la DB está encriptada (la mayoría de proveedores cloud lo ofrece).
+- [ ] Si `STORAGE_PROVIDER=s3`: firmar el BAA con AWS antes de subir el primer PDF clínico al bucket. Sin BAA, el storage NO es HIPAA-eligible.
 - [ ] Política de acceso al VPS: quién tiene la clave SSH, quién rota.
-- [ ] Política de backups: dónde se guardan, quién tiene acceso, retención.
-- [ ] Política de logs: accesos a datos clínicos deben quedar auditados.
+- [ ] Política de backups: dónde se guardan, quién tiene acceso, retención, **cifrado en tránsito y reposo**.
+- [ ] Política de logs: accesos a datos clínicos deben quedar auditados (el módulo `audit/AuditLog` cubre el endpoint `/api/media/signed-url/` — ver §11.7).
+- [ ] Política de revocación de presigned URLs: aunque el TTL es de 15 minutos, dejar documentado el procedimiento de soporte si un cliente reporta un link comprometido.
+
+### 11.7. Cutover a AWS S3 en producción (`STORAGE_PROVIDER=s3`)
+
+> **Pre-requisito:** el runbook `docs/runbooks/aws-cloud-storage-setup.md` ya corrió completo: bucket creado en `sa-east-1`, BAA firmado (si aplica), IAM user con inline policy, credenciales en 1Password. Sin ese paso previo, este procedimiento aborta con `AccessDenied`.
+
+Esta sección es el **paso 2 del cutover** — el runbook de AWS es el paso 1 (provisioning). Acá asumimos que el bucket existe y está vacío, y vamos a:
+
+1. Subir los archivos de `MEDIA_ROOT` al bucket (`backfill_media`).
+2. Cambiar `STORAGE_PROVIDER` de `local` a `s3` en el `.env` de producción.
+3. Verificar que el endpoint `/api/media/signed-url/` emite URLs válidas.
+4. Verificar que el frontend pide presigned URLs (no sirve `/media/` directo).
+5. Esperar a que `backfill_media` escriba el sentinel `_BACKFILL_COMPLETE`.
+6. Desactivar el fallback local.
+
+> ⚠️ **Timing:** todo el procedimiento tarda entre 1 y 6 horas dependiendo del volumen de `backend/media/`. Planificá una ventana de mantenimiento. No hay downtime técnico (el fallback local cubre el gap), pero la decisión de cuándo decir "cutover completo" sí requiere ventana.
+
+#### Paso 1 — Snapshot del estado pre-cutover
+
+Antes de tocar nada, dejá evidencia de dónde estás:
+
+```bash
+ssh deploy@<VPS_IP>
+
+# ¿Cuántos archivos hay en el disco?
+sudo find /var/www/clinica/backend/media -type f | wc -l
+# Anotá el número. Ejemplo: 1842
+
+# ¿Cuánto pesan?
+sudo du -sh /var/www/clinica/backend/media
+# Anotá el peso. Ejemplo: 3.4G
+
+# ¿STORAGE_PROVIDER actual?
+grep STORAGE_PROVIDER /var/www/clinica/backend/.env
+# Esperado: STORAGE_PROVIDER=local
+```
+
+Anotá los tres números (`archivos`, `peso`, `STORAGE_PROVIDER`) en el runbook de la deploy. Si algo sale mal, los necesitás para diagnosticar.
+
+#### Paso 2 — Configurar las env vars de S3 (sin cambiar `STORAGE_PROVIDER` todavía)
+
+Editá `backend/.env` y agregá **al final** (no toques las vars existentes):
+
+```bash
+sudo nano /var/www/clinica/backend/.env
+
+# Agregar al final:
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...
+AWS_STORAGE_BUCKET_NAME=proyecto-c-clinical-prod
+AWS_S3_REGION_NAME=sa-east-1
+AWS_S3_ENDPOINT_URL=
+MEDIA_LOCAL_FALLBACK_ENABLED=true
+MEDIA_SIGNED_URL_TTL_SECONDS=900
+```
+
+> ⚠️ **No cambies `STORAGE_PROVIDER` todavía.** En este punto seguimos con `STORAGE_PROVIDER=local` pero Django ya tiene las credenciales de S3. Esto te permite testear la conexión sin afectar el tráfico.
+
+Verificá la conectividad sin reiniciar nada (Django no las lee hasta el restart):
+
+```bash
+sudo -u www-data env/bin/python /var/www/clinica/backend/manage.py shell -c "
+import boto3, os
+s3 = boto3.client(
+    's3',
+    region_name=os.getenv('AWS_S3_REGION_NAME'),
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+)
+r = s3.list_objects_v2(Bucket=os.getenv('AWS_STORAGE_BUCKET_NAME'), MaxKeys=5)
+print(f'OK bucket accesible. KeyCount={r.get(\"KeyCount\", 0)}')
+"
+```
+
+**Esperado:** `OK bucket accesible. KeyCount=0` (o el número de archivos que ya estén en el bucket).
+
+**Si da `AccessDenied`:** el ARN en la IAM policy no coincide con el bucket name. Volvé al paso 7-8 de `docs/runbooks/aws-cloud-storage-setup.md`.
+
+#### Paso 3 — Correr `backfill_media` en modo dry-run
+
+```bash
+sudo -u www-data /var/www/clinica/backend/env/bin/python \
+    /var/www/clinica/backend/manage.py backfill_media --dry-run
+```
+
+El comando lista **qué** archivos subiría y **cuántos** ya están en el bucket (skip). Compará el número contra el snapshot del paso 1. Si hay diferencias grandes (por ejemplo, dry-run dice 1500 pero el snapshot decía 1842), investigá antes de seguir — probablemente hay archivos en subcarpetas que el script no está mirando.
+
+#### Paso 4 — Correr `backfill_media` real, en background
+
+No hagas el upload interactivo (te puede tirar la sesión SSH a mitad de camino). Usá `nohup` o `screen`/`tmux`:
+
+```bash
+# Opción A: nohup + log
+cd /var/www/clinica/backend
+sudo -u www-data nohup env/bin/python manage.py backfill_media \
+    --batch-size=100 >> /var/log/clinica-backfill.log 2>&1 &
+
+# Opción B: tmux (recomendado — podés reconectarte)
+sudo -u www-data tmux new -s backfill -d \
+    "env/bin/python manage.py backfill_media --batch-size=100 2>&1 | tee /var/log/clinica-backfill.log"
+```
+
+Monitoreá el progreso (en otra terminal SSH):
+
+```bash
+# Última línea del log
+tail -f /var/log/clinica-backfill.log
+
+# ¿Cuántos archivos ya subió?
+grep -c "Uploaded:" /var/log/clinica-backfill.log
+
+# ¿Cuántos errores tuvo?
+grep -c "ERROR" /var/log/clinica-backfill.log
+```
+
+**Criterio de éxito:** el log termina con un mensaje tipo `Backfill complete: X uploaded, Y skipped, Z errors`. Si `errors > 0`, mirá las líneas `ERROR` específicas — suelen ser archivos con nombres de caracteres rotos o paths que rompen la API de S3.
+
+#### Paso 5 — Verificar el sentinel `_BACKFILL_COMPLETE`
+
+`backfill_media` escribe un archivo cero-byte en la raíz del bucket cuando termina. Si el sentinel existe, el backfill está completo:
+
+```bash
+aws s3 ls s3://proyecto-c-clinical-prod/_BACKFILL_COMPLETE --region sa-east-1
+```
+
+**Esperado:** una línea con la fecha de hoy y el tamaño `0`.
+
+**Si no aparece:** el backfill no terminó (revisá el log) o abortó por un error. **No sigas con el paso 6 hasta que el sentinel exista**.
+
+#### Paso 6 — Cambiar `STORAGE_PROVIDER` a `s3` y reiniciar
+
+Ahora sí, el cutover. El cambio es **un solo valor en una sola línea**:
+
+```bash
+sudo sed -i 's/^STORAGE_PROVIDER=local$/STORAGE_PROVIDER=s3/' /var/www/clinica/backend/.env
+
+# Verificá
+grep STORAGE_PROVIDER /var/www/clinica/backend/.env
+# Esperado: STORAGE_PROVIDER=s3
+
+# Reiniciar Gunicorn
+sudo systemctl restart gunicorn
+sleep 2
+sudo systemctl status gunicorn
+```
+
+**No hay downtime.** Mientras `MEDIA_LOCAL_FALLBACK_ENABLED=true`, las requests a archivos que ya están en el bucket van por S3, las que no van al disco local. El usuario no nota nada.
+
+#### Paso 7 — Verificar que el endpoint `/api/media/signed-url/` emite URLs válidas
+
+Necesitás un admin logueado. Generá el cookie jar y probá:
+
+```bash
+# En tu laptop, contra el dominio real:
+ssh deploy@<VPS_IP> -- '
+  curl -sS -c /tmp/clinica-test-cookie \
+    -H "Origin: https://tu-dominio.com" \
+    -H "Referer: https://tu-dominio.com/" \
+    -X POST "https://tu-dominio.com/api/auth/login/" \
+    -d "username=admin.x&password=..." \
+    -o /dev/null
+  ls -la /tmp/clinica-test-cookie
+'
+
+# Probá el endpoint con un archivo que sepamos que existe (subido en el backfill):
+ssh deploy@<VPS_IP> -- '
+  curl -sS -b /tmp/clinica-test-cookie \
+    "https://tu-dominio.com/api/media/signed-url/?path=fichas_clinicas/2026/10/algo.pdf"
+'
+```
+
+**Esperado:** un JSON con `{"url": "https://...s3.sa-east-1.amazonaws.com/...?...", "expires_at": "...", "ttl_seconds": 900}`.
+
+**Si da 404:** el archivo no está en el bucket. Revisá con `aws s3 ls s3://proyecto-c-clinical-prod/fichas_clinicas/2026/10/` si el path está.
+
+**Si da 403:** el admin no tiene permiso para acceder al prefijo (ver Anexo C de `openspec/changes/cloud-storage-migration/specs/media-signed-url-endpoint/spec.md` para las reglas de autorización).
+
+**Si da 503:** falló el audit log write. Mirá `journalctl -u gunicorn -n 50` — el endpoint devuelve 503 fail-closed si no puede escribir en `AuditLog`.
+
+#### Paso 8 — Verificar que el frontend pide presigned URLs
+
+Esto requiere DevTools en el browser del operador:
+
+1. Abrí `https://tu-dominio.com` en Chrome.
+2. Login como admin.
+3. Navegá a una pantalla que muestre archivos: `Detalle de cliente` o `Detalle de operación`.
+4. Abrí DevTools → Network → filtrá por `signed-url` o por `amazonaws.com`.
+5. Hacé click en una imagen o PDF.
+
+**Esperado:** ves **una** request a `/api/media/signed-url/?path=...` y después **una** request al bucket de S3 (`*.s3.sa-east-1.amazonaws.com`). La URL del bucket expira después de 15 min.
+
+**Anti-patrón (lo que NO deberías ver):** requests directos a `https://tu-dominio.com/media/...`. Si las ves, el frontend no está usando `useSignedUrl` y tenés que debuggear el componente (ver `frontend/aesthetic-clinic/src/services/media.tsx`).
+
+#### Paso 9 — Desactivar el fallback local
+
+Solo cuando el backfill esté completo, el endpoint emita URLs correctas, y el frontend las use:
+
+```bash
+# Confirmá que el sentinel existe
+aws s3 ls s3://proyecto-c-clinical-prod/_BACKFILL_COMPLETE --region sa-east-1
+
+# Cambiar la env var
+sudo sed -i 's/^MEDIA_LOCAL_FALLBACK_ENABLED=true$/MEDIA_LOCAL_FALLBACK_ENABLED=false/' \
+    /var/www/clinica/backend/.env
+
+grep MEDIA_LOCAL_FALLBACK_ENABLED /var/www/clinica/backend/.env
+# Esperado: MEDIA_LOCAL_FALLBACK_ENABLED=false
+
+# Reiniciar
+sudo systemctl restart gunicorn
+```
+
+**A partir de acá, todas las requests a archivos que NO estén en el bucket devuelven 404** (no más fallback al disco). Esto es desired — significa que el sistema está 100% en S3.
+
+> ⚠️ **Cleanup del disco local** (opcional, no urgente): después de 30 días de cutover estable, podés vaciar `/var/www/clinica/backend/media/` para liberar espacio en el VPS. **No lo hagas antes** — te queda el rollback más difícil.
+
+#### Paso 10 — Rollback (si algo sale mal)
+
+Si en cualquier paso del cutover algo se rompe:
+
+```bash
+# Volver a local
+sudo sed -i 's/^STORAGE_PROVIDER=s3$/STORAGE_PROVIDER=local/' /var/www/clinica/backend/.env
+sudo sed -i 's/^MEDIA_LOCAL_FALLBACK_ENABLED=true$/MEDIA_LOCAL_FALLBACK_ENABLED=false/' \
+    /var/www/clinica/backend/.env
+sudo systemctl restart gunicorn
+```
+
+**Resultado:** el sistema vuelve a servir archivos desde disco local. El bucket sigue existiendo con los archivos que ya se subieron (no se borra nada). El frontend sigue pidiendo presigned URLs (no cambia el código), pero el endpoint devuelve 404 (archivo no en bucket) y el fallback está desactivado, así que en este modo degradado la app **no muestra imágenes**.
+
+**Si el rollback tiene que ser rápido y no querés perder funcionalidad**, mejor revertir el cambio a `STORAGE_PROVIDER=local` y poner `MEDIA_LOCAL_FALLBACK_ENABLED=true` — eso restaura el modo original pre-cutover.
+
+#### Criterios de "cutover completo"
+
+| Criterio | Cómo verificarlo |
+|---|---|
+| Backfill terminó sin errores | `grep "ERROR" /var/log/clinica-backfill.log` devuelve 0 |
+| Sentinel `_BACKFILL_COMPLETE` existe | `aws s3 ls s3://.../_BACKFILL_COMPLETE` muestra el archivo |
+| Endpoint emite presigned URLs | `curl /api/media/signed-url/` devuelve JSON con `url` apuntando a S3 |
+| Frontend pide presigned URLs | DevTools muestra requests a `/api/media/signed-url/` y a `*.s3.sa-east-1.amazonaws.com` |
+| `MEDIA_LOCAL_FALLBACK_ENABLED=false` aplicado | `grep MEDIA_LOCAL_FALLBACK_ENABLED .env` |
+| Sin requests a `/media/...` desde el frontend | DevTools Network filtrado por `/media/` muestra 0 requests en una sesión normal |
+
+Si los 6 criterios pasan, **el cutover está completo y podés borrar el runbook de cutover de la lista de pendientes.**
+
+#### Monitoreo post-cutover (primeras 2 semanas)
+
+Después del cutover, prestá atención a:
+
+- **Métricas de 404 en `/api/media/signed-url/`** — si suben, hay archivos que el frontend pide pero el bucket no tiene. Investigá caso por caso (suelen ser archivos subidos después del backfill inicial).
+- **Costos de AWS** — la métrica `EstimatedCharges` en CloudWatch. Si pasa de $30/mes en el primer mes, algo está mal (muchas requests o mucho egress). Configurá el billing alarm del runbook de AWS.
+- **Errores en `AuditLog`** — el endpoint registra cada emisión. Si ves `action=SIGNED_URL_DENIED` en masa, alguien está intentando acceder a archivos sin permiso. Es expected, pero un pico inusual amerita investigación.
 
 ---
 

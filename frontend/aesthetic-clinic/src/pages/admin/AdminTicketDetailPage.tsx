@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/admin/PageHeader'
 import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { closeTicket, getTicketDetail, replyTicket, reopenTicket, type Ticket, type TicketMessage } from '../../services/api/tickets'
+import { SignedImage, SignedLink } from '../../services/media'
 import { useConfirmDialog } from '../../hooks/useConfirmDialog'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { useBranchContext } from '../../providers/BranchProvider'
@@ -140,7 +141,7 @@ export function AdminTicketDetailPage() {
                           onClick={() => setPreviewImage(attachment)}
                           style={{ border: '1px solid var(--border)', padding: 0, borderRadius: '8px', cursor: 'pointer', background: 'transparent' }}
                         >
-                          <img src={attachment.url} alt={attachment.name} style={{ width: '56px', height: '56px', objectFit: 'cover', display: 'block', borderRadius: '8px' }} />
+                          <SignedImage src={attachment.url} alt={attachment.name} style={{ width: '56px', height: '56px', objectFit: 'cover', display: 'block', borderRadius: '8px' }} />
                         </button>
                       ) : (
                         <span style={{ fontSize: '1.3rem' }}>{getFileTypeIcon(attachment.name, attachment.isImage)}</span>
@@ -151,9 +152,9 @@ export function AdminTicketDetailPage() {
                         </div>
                       </div>
                     </div>
-                    <a className="button button--ghost button--compact" href={attachment.url} target="_blank" rel="noreferrer" download>
+                    <SignedLink href={attachment.url} className="button button--ghost button--compact" target="_blank" rel="noreferrer" download>
                       Descargar
-                    </a>
+                    </SignedLink>
                   </div>
                 ))}
               </div>
@@ -239,11 +240,11 @@ export function AdminTicketDetailPage() {
             <button className="booking-modal-close" type="button" onClick={() => setPreviewImage(null)}>×</button>
           </header>
           <div className="booking-modal-body _p-6 _text-center">
-            <img src={previewImage.url} alt={previewImage.name} className='_max-w-full _max-h-screen _rounded-lg' />
+            <SignedImage src={previewImage.url} alt={previewImage.name} className='_max-w-full _max-h-screen _rounded-lg' />
             <div className="_mt-md">
-              <a className="button button--ghost" href={previewImage.url} target="_blank" rel="noreferrer" download>
+              <SignedLink href={previewImage.url} className="button button--ghost" target="_blank" rel="noreferrer" download>
                 Descargar imagen
-              </a>
+              </SignedLink>
             </div>
           </div>
         </div>
