@@ -68,7 +68,7 @@ ALLOWED_PATH_PREFIXES = (
     "fichas_clinicas/",
     "tickets_adjuntos/",
     "citas/",
-    "fotos_operacion/",
+    "operaciones/",
     "comprobantes_pagos/",
     "comprobantes_citas/",
 )
@@ -503,7 +503,7 @@ def _resolve_authorization_rule(
             return True, "admin_sucursal", "operations.CitaMedica.foto_antes"
         return False, "", "operations.CitaMedica.foto_antes"
 
-    if prefix == "fotos_operacion/":
+    if prefix == "operaciones/":
         branch_id = _resolve_foto_operacion_branch(path)
         especialista_id = _resolve_foto_operacion_especialista_id(path)
         if (
@@ -587,7 +587,7 @@ def _resource_type_for(path: str) -> str:
         return "clinical.FichaClinica.documento_escaneado_pdf"
     if prefix == "citas/":
         return "operations.CitaMedica.foto_antes"
-    if prefix == "fotos_operacion/":
+    if prefix == "operaciones/":
         return "operations.OperacionFoto.imagen"
     if prefix == "comprobantes_pagos/":
         return "billing.PagoRealizado.comprobante_url"

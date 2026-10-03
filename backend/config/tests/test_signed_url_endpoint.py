@@ -650,3 +650,85 @@ class BackfillMediaVerifyFlagTests(SimpleTestCase):
         keys = {k for (_, k) in self.fake.objects.keys()}
         self.assertIn("a.pdf", keys)
         self.assertIn("b.pdf", keys)
+
+
+# ---------------------------------------------------------------------------
+# Bug 2 — operaciones/ prefix in the allowlist
+# ---------------------------------------------------------------------------
+
+
+class OperacionFotoAuthorizationTests(_SignedUrlEndpointTests):
+    """Regression coverage for Bug 2 (cloud-storage-migration-fixes).
+
+    The runtime upload callable
+    :func:`operations.models._operacion_foto_upload_to` generates
+    ``operaciones/<YYYY>/<MM>/<DD>/<kind>/<12hex>-<file>`` paths for
+    ``OperacionFoto.imagen`` rows. The signed-URL endpoint's
+    :data:`ALLOWED_PATH_PREFIXES` must accept ``operaciones/`` so that
+    authorized admins can mint a presigned URL for a freshly-uploaded
+    operation photo.
+
+    Before the fix the endpoint returned 400 (path outside the
+    allowlist). After the fix the endpoint returns 200 + an
+    :class:`AuditLog` row with ``action='SIGNED_URL_ISSUED'``.
+    """
+
+    OPERACIONES_PATH = "operaciones/2026/10/03/antes/abcd1234abcd-foo.webp"
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Create an OperacionFoto whose ``imagen`` matches the runtime
+        # generator shape so the path-lookup helpers
+        # (``_resolve_foto_operacion_branch`` /
+        # ``_resolve_foto_operacion_especialista_id``) resolve to the
+        # seeded operacion_a / especialista_a.
+        self.operacion_foto = OperacionFoto.objects.create(
+            operacion=self.operacion_a,
+            kind=OperacionFoto.Kind.ANTES,
+            imagen=self.OPERACIONES_PATH,
+        )
+        # Pre-seed the fake S3 client so ``head_object`` returns 200 for
+        # the operaciones/ key — otherwise the endpoint short-circuits
+        # to 404 BEFORE the prefix check we want to assert.
+        self.fake_client.objects[
+            ("test-bucket", self.OPERACIONES_PATH)
+        ] = b"fake-image-bytes"
+
+    def test_signed_url_operaciones_antes_path_authorizes(self):
+        """Admin principal can mint a signed URL for an
+        ``operaciones/.../antes/`` path that the runtime
+        ``_operacion_foto_upload_to`` callable produced.
+        """
+        client = self.client
+        client.force_login(self.admin_principal_user)
+        response = client.get(
+            "/api/media/signed-url/",
+            {"path": self.OPERACIONES_PATH},
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertIn("url", body)
+        # The presigned URL must point at the S3 endpoint (the fake
+        # client returns ``*.s3.sa-east-1.amazonaws.com``).
+        self.assertIn(
+            "https://test-bucket.s3.sa-east-1.amazonaws.com/",
+            body["url"],
+        )
+        self.assertIn(self.OPERACIONES_PATH, body["url"])
+        # TTL clamp uses the default 900 unless caller overrides.
+        self.assertEqual(body["ttl_seconds"], 900)
+        # Audit row recorded (admin_principal wildcard → role label
+        # matches the wildcard-skipping branch).
+        self.assertEqual(len(self._audit_create_calls), 1)
+        audit = self._audit_create_calls[0]
+        self.assertEqual(audit["action"], "SIGNED_URL_ISSUED")
+        self.assertEqual(audit["resource_path"], self.OPERACIONES_PATH)
+        self.assertEqual(
+            audit["resource_type"], "operations.OperacionFoto.imagen"
+        )
+        # boto3 presign called with the right Key.
+        self.assertEqual(len(self.fake_client.presign_calls), 1)
+        self.assertEqual(
+            self.fake_client.presign_calls[0]["Params"]["Key"],
+            self.OPERACIONES_PATH,
+        )
