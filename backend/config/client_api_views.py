@@ -415,7 +415,7 @@ def _payment_item(payment):
         "status": payment.get_estado_verificacion_display(),
         "statusTone": _payment_tone(payment),
         "dueDate": date_label(payment.cuota.fecha_vencimiento),
-        "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
+        "receiptUrl": payment.comprobante_url.name if payment.comprobante_url else "",
         "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Pendiente de revisión",
         "note": payment.observacion_verificacion or payment.detalles_pago or "Sin observaciones.",
         "paymentMethod": payment.metodo_pago,

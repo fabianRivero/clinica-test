@@ -440,11 +440,7 @@ def _operation_detail(operacion, request=None):
     document_name = PurePosixPath(document_field.name).name if document_field else ""
 
     def _photo_to_payload(foto):
-        url = (
-            request.build_absolute_uri(foto.imagen.url)
-            if request is not None
-            else foto.imagen.url
-        )
+        url = foto.imagen.name
         # ``_operacion_foto_upload_to`` writes ``<prefix>-`` on
         # disk. Strip the 13-char prefix (12 hex + "-") so the response
         # carries the original filename the admin picked.
@@ -1008,7 +1004,7 @@ def _payment_item(payment):
         "quota": f"Cuota {payment.cuota.nro_cuota}",
         "dueDate": date_label(payment.cuota.fecha_vencimiento),
         "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Sin revisar",
-        "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
+        "receiptUrl": payment.comprobante_url.name if payment.comprobante_url else "",
         "note": payment.observacion_verificacion or payment.detalles_pago or "",
     }
 
@@ -5159,7 +5155,7 @@ def admin_upload_operation_photos(request, operacion_id, kind):
         file_name = basename[13:] if len(basename) > 13 else basename
         saved_payload.append({
             "id": foto.pk,
-            "url": request.build_absolute_uri(foto.imagen.url),
+            "url": foto.imagen.name,
             "uploadedAt": foto.uploaded_at.isoformat(),
             "fileName": file_name,
         })

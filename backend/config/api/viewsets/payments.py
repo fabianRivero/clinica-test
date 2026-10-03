@@ -628,7 +628,7 @@ class PagosViewSet(viewsets.ViewSet):
             "quota": f"Cuota {payment.cuota.nro_cuota}",
             "dueDate": date_label(payment.cuota.fecha_vencimiento),
             "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Sin revisar",
-            "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
+            "receiptUrl": payment.comprobante_url.name if payment.comprobante_url else "",
             "note": payment.observacion_verificacion or payment.detalles_pago or "",
             "paymentMethod": payment.metodo_pago,
             "physicalAmount": currency(payment.monto_fisico),

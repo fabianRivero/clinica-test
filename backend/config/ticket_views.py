@@ -168,7 +168,7 @@ def _message_item(message):
         "body": message.contenido,
         "status": message.estado,
         "createdAt": timezone.localtime(message.created_at).isoformat(),
-        "attachmentUrl": message.adjunto.url if message.adjunto else None,
+        "attachmentUrl": message.adjunto.name if message.adjunto else None,
         "attachmentName": message.adjunto.name.split("/")[-1] if message.adjunto else None,
     }
 

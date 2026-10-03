@@ -49,6 +49,8 @@ from catalogs.models import ServicioConfig, Sucursal, TipoServicio  # noqa: E402
 from operations.models import Operacion, OperacionFoto  # noqa: E402
 from staff.models import Especialista  # noqa: E402
 from clinical.models import FichaClinica  # noqa: E402
+from notifications.models import Ticket, TicketMessage  # noqa: E402
+from billing.models import CuotaPlanPago, PagoRealizado  # noqa: E402
 from audit.models import AuditLog  # noqa: E402
 from audit.services import write_audit_log, AuditWriteFailure  # noqa: E402
 
@@ -731,4 +733,189 @@ class OperacionFotoAuthorizationTests(_SignedUrlEndpointTests):
         self.assertEqual(
             self.fake_client.presign_calls[0]["Params"]["Key"],
             self.OPERACIONES_PATH,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug 1 — Read APIs return relative paths (not absolute URLs)
+# ---------------------------------------------------------------------------
+
+
+class PathBasedReadTests(_SignedUrlEndpointTests):
+    """Bug 1 (cloud-storage-migration-fixes) regression coverage.
+
+    The 9 production callsites in design.md §2 used ``FieldFile.url``
+    on a ``FileField``/``ImageField`` — returning ``/media/<path>``
+    under local and HTTP 500 under s3 (Boto3Storage raises
+    NotImplementedError). The fix swaps ``.url`` → ``.name`` so the
+    response carries the bucket-relative path the ``useSignedUrl(path)``
+    frontend hook consumes. Each test below asserts the field is a
+    non-empty path starting with the upload prefix, NOT containing
+    ``/media/`` and NOT starting with ``http://``/``https://``.
+    """
+
+    RECEIPT_PATH = "comprobantes_pagos/2026/10/recibo-prueba.pdf"
+    FOTO_PATH = "operaciones/2026/10/03/antes/abcd1234abcd-foto.webp"
+    ADJUNTO_PATH = "tickets_adjuntos/2026/10/adjunto-prueba.pdf"
+
+    def _assert_path(self, value, prefix):
+        """value MUST be a non-empty relative path starting with prefix."""
+        self.assertIsInstance(value, str)
+        self.assertTrue(value, f"expected non-empty path, got {value!r}")
+        self.assertTrue(
+            value.startswith(prefix),
+            f"expected path to start with {prefix!r}, got {value!r}",
+        )
+        self.assertNotIn("/media/", value)
+        self.assertFalse(
+            value.startswith("http://") or value.startswith("https://"),
+        )
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Migration 0008_data_migrate_sucursales seeds a
+        # ``Sede Principal`` (es_principal=True). For admin_principal
+        # ``get_user_branch`` returns that branch and the payments
+        # viewset filters by ``paciente__usuario__sucursal_id``. The
+        # cliente_a user seeded in ``_seed_graph`` has
+        # ``sucursal=None`` — re-point it so the filter passes.
+        principal_branch = Sucursal.objects.filter(es_principal=True).first()
+        if principal_branch is not None:
+            self.cliente_a.usuario.sucursal = principal_branch
+            self.cliente_a.usuario.save(update_fields=["sucursal"])
+        # Build a CuotaPlanPago + PagoRealizado for operacion_a. Django
+        # accepts a bare string for ``FileField`` when no upload_to
+        # round-trip is needed (matches the slice 1 fixture pattern).
+        self.cuota_a = CuotaPlanPago.objects.create(
+            operacion=self.operacion_a,
+            nro_cuota=1,
+            fecha_vencimiento=date(2026, 10, 15),
+            monto_programado=Decimal("50"),
+        )
+        self.pago_a = PagoRealizado.objects.create(
+            cuota=self.cuota_a,
+            monto_pagado=Decimal("50"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("50"),
+            comprobante_url=self.RECEIPT_PATH,
+        )
+        # Ticket + message with attachment path string.
+        self.ticket_a = Ticket.objects.create(
+            sucursal=self.sucursal_a,
+            creado_por=self.admin_principal_user,
+            asunto="Prueba Bug 1",
+        )
+        self.ticket_message = TicketMessage.objects.create(
+            ticket=self.ticket_a,
+            autor=self.admin_principal_user,
+            contenido="Mensaje con adjunto de prueba",
+            adjunto=self.ADJUNTO_PATH,
+        )
+        # The shared ``_seed_graph`` seeds an ``OperacionFoto`` with
+        # the legacy ``fotos_operacion/`` prefix (predates slice 2's
+        # rename). Mutate to the new prefix so the relative-path
+        # assertion holds.
+        OperacionFoto.objects.filter(
+            operacion=self.operacion_a,
+            imagen="fotos_operacion/2026/10/x.jpg",
+        ).update(imagen=self.FOTO_PATH)
+
+    # ---- Test 1: GET /api/admin/pagos/ (callsite 1) ----
+
+    def test_admin_pagos_returns_relative_receipt_path(self):
+        """``GET /api/admin/pagos/`` (DRF ViewSet) — ``receiptUrl`` is a
+        relative path. Callsite: ``api/viewsets/payments.py:631``."""
+        self.client.force_login(self.admin_principal_user)
+        response = self.client.get("/api/admin/pagos/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        matching = [
+            p for p in body["payments"] if p["rawId"] == self.pago_a.pk
+        ]
+        self.assertEqual(len(matching), 1, body)
+        self._assert_path(matching[0]["receiptUrl"], "comprobantes_pagos/")
+
+    # ---- Test 2: POST /api/client/pagos/cuotas/<id>/comprobante/ (callsite 7) ----
+
+    def test_client_pago_comprobante_returns_relative_receipt_path(self):
+        """``POST /api/client/pagos/cuotas/<id>/comprobante/`` — the
+        embedded ``payment.receiptUrl`` is a relative path. Callsite:
+        ``client_api_views.py:418``. The client serializer requires a
+        ``receiptFile`` upload."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.force_login(self.cliente_a.usuario)
+        receipt = SimpleUploadedFile(
+            "comprobante.pdf", b"%PDF-1.4\n%%EOF",
+            content_type="application/pdf",
+        )
+        response = self.client.post(
+            f"/api/client/pagos/cuotas/{self.cuota_a.pk}/comprobante/",
+            data={"monto_pagado": "50", "receiptFile": receipt},
+        )
+        self.assertIn(response.status_code, (200, 201), response.content)
+        body = response.json()
+        self.assertIn("payment", body)
+        self._assert_path(
+            body["payment"]["receiptUrl"], "comprobantes_pagos/"
+        )
+
+    # ---- Test 3: GET /api/admin/operaciones/<id>/ (callsites 4-5) ----
+
+    def test_admin_operacion_detail_returns_relative_photo_url(self):
+        """``GET /api/admin/operaciones/<id>/`` — each photo's ``url`` is
+        a relative path. Callsites: ``api_views.py:444,446``. Response
+        splits fotos by kind under ``fotosAntes`` / ``fotosDespues``."""
+        self.client.force_login(self.admin_principal_user)
+        response = self.client.get(
+            f"/api/admin/operaciones/{self.operacion_a.pk}/"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        op = response.json()["operation"]
+        all_fotos = list(op.get("fotosAntes", [])) + list(
+            op.get("fotosDespues", [])
+        )
+        self.assertTrue(all_fotos, "expected at least one seeded foto")
+        for foto in all_fotos:
+            self._assert_path(foto["url"], "operaciones/")
+
+    # ---- Test 4: POST /api/admin/operaciones/<id>/fotos/<kind>/ (callsite 6) ----
+
+    def test_admin_upload_operation_photos_response_carries_relative_path(self):
+        """``POST /api/admin/operaciones/<id>/fotos/<kind>/`` — each
+        saved item's ``url`` is a relative path. Callsite:
+        ``api_views.py:5162``. Response uses the ``saved`` key."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.force_login(self.admin_principal_user)
+        upload = SimpleUploadedFile(
+            "foto.webp", b"fake-image-bytes", content_type="image/webp",
+        )
+        response = self.client.post(
+            f"/api/admin/operaciones/{self.operacion_a.pk}/fotos/antes/",
+            data={"archivos": [upload]},
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        body = response.json()
+        self.assertIn("saved", body)
+        self.assertTrue(body["saved"], "expected at least one saved photo")
+        for photo in body["saved"]:
+            self._assert_path(photo["url"], "operaciones/")
+
+    # ---- Test 5: GET /api/tickets/<id>/ (callsite 8) ----
+
+    def test_ticket_message_attachment_returns_relative_path(self):
+        """``GET /api/tickets/<id>/`` — each message's ``attachmentUrl``
+        is a relative path. Callsite: ``ticket_views.py:171``."""
+        self.client.force_login(self.admin_principal_user)
+        response = self.client.get(f"/api/tickets/{self.ticket_a.pk}/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        matching = [
+            m for m in body["messages"]
+            if m["id"] == self.ticket_message.id
+        ]
+        self.assertEqual(len(matching), 1, body)
+        self._assert_path(
+            matching[0]["attachmentUrl"], "tickets_adjuntos/"
         )

@@ -282,7 +282,4 @@ class PagoCitaSerializer(serializers.ModelSerializer):
     def get_comprobante_url(self, obj):
         if not obj.comprobante_url:
             return ""
-        request = self.context.get("request")
-        if request:
-            return request.build_absolute_uri(obj.comprobante_url.url)
-        return obj.comprobante_url.url
+        return obj.comprobante_url.name
