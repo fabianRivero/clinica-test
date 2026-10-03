@@ -57,7 +57,7 @@ from typing import Any
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from django.core.files.base import ContentFile
 from django.core.files.storage import Storage
 
@@ -179,7 +179,35 @@ class Boto3Storage(Storage):
             data = content.file.read()
         else:
             data = content.read()
-        client.put_object(Bucket=self._bucket, Key=name, Body=data)
+        try:
+            client.put_object(Bucket=self._bucket, Key=name, Body=data)
+        except ClientError as exc:
+            # ``ClientError`` carries the S3 HTTP status (403
+            # AccessDenied, 404 NoSuchBucket, etc.) — surface it in the
+            # log so operators can distinguish IAM failures from bucket
+            # misconfiguration without re-running the failing upload.
+            status = exc.response.get("ResponseMetadata", {}).get(
+                "HTTPStatusCode"
+            )
+            logger.exception(
+                "boto3_save_failed: key=%s bucket=%s http_status=%s",
+                name,
+                self._bucket,
+                status,
+            )
+            raise
+        except (BotoCoreError, OSError):
+            # ``BotoCoreError`` covers botocore-side issues (signature
+            # validation, request serialization) and ``OSError`` covers
+            # the underlying socket / EOF / DNS failures from
+            # ``EndpointConnectionError`` and friends. Neither carries an
+            # HTTP status, so we tag the log line as a network error.
+            logger.exception(
+                "boto3_save_failed: key=%s bucket=%s network_error",
+                name,
+                self._bucket,
+            )
+            raise
         return name
 
     def delete(self, name: str) -> None:
