@@ -6,16 +6,52 @@
 > **Compatible con:** cualquier VPS Linux con `sudo` — DigitalOcean, Hetzner, AWS Lightsail, Vultr, Linode, OVH, Contabo, GCP Compute Engine, Azure VM, etc.
 > **OS:** Ubuntu 22.04 LTS o 24.04 LTS (`Debian 12` también funciona con mínimos cambios). El setup asume Ubuntu.
 > **Tiempo estimado:** 20–40 minutos sobre un VPS recién creado.
+> **Audiencia:** operador que despliega el sistema por primera vez o resetea un VPS existente. Asume familiaridad básica con Linux + SSH.
+
+> **¿Buscás solo una sección específica?** Usá el índice al final. ¿Venís de la versión vieja? Mirá el [Anexo A — Tabla comparativa de cambios](#anexo-a--tabla-comparativa-de-cambios-desde-la-versión-anterior) primero.
+
+---
+
+## Índice
+
+- [0. Prerrequisitos en tu máquina local](#0-prerrequisitos-en-tu-máquina-local)
+- [1. Crear el VPS](#1-crear-el-vps)
+- [2. Acceso inicial y hardening básico](#2-acceso-inicial-y-hardening-básico)
+- [3. PostgreSQL](#3-postgresql)
+- [4. Clonar el repositorio](#4-clonar-el-repositorio)
+- [5. Backend (Django)](#5-backend-django)
+- [6. Frontend](#6-frontend)
+- [7. Nginx](#7-nginx)
+- [8. SSL con Let's Encrypt](#8-ssl-con-lets-encrypt)
+- [9. Gunicorn como servicio systemd](#9-gunicorn-como-servicio-systemd)
+- [10. Actualizar el sistema en producción (deploy de cambios)](#10-actualizar-el-sistema-en-producción-deploy-de-cambios)
+- [11. Post-instalación obligatorio](#11-post-instalación-obligatorio)
+  - [11.1. Cambiar credenciales del seed](#111-cambiar-todas-las-credenciales-del-seed)
+  - [11.2. Backups de la base de datos](#112-backups-de-la-base-de-datos)
+  - [11.3. Sync externa de backups](#113-subir-backups-a-un-lugar-fuera-del-vps)
+  - [11.4. Alertas mínimas](#114-configurar-alertas-mínimas)
+  - [11.5. Actualizaciones de seguridad automáticas](#115-configurar-actualizaciones-de-seguridad-automáticas)
+  - [11.6. Compliance legal](#116-datos-sensibles-consideraciones-legales)
+  - [11.7. Cutover a AWS S3](#117-cutover-a-aws-s3-en-producción-storage_providers3)
+  - [11.8. Almacenamiento en digital bucket (AWS S3)](#118-almacenamiento-en-digital-bucket-aws-s3)
+- [12. Comandos útiles del día a día](#12-comandos-útiles-del-día-a-día)
+- [13. Troubleshooting](#13-troubleshooting)
+- [14. Resumen de archivos configurados](#14-resumen-de-archivos-configurados)
+- [15. Estructura final en el VPS](#15-estructura-final-en-el-vps)
+- [Anexo A — Tabla comparativa de cambios](#anexo-a--tabla-comparativa-de-cambios-desde-la-versión-anterior)
+- [Anexo B — Variables de entorno del backend](#anexo-b--variables-de-entorno-del-backend)
+- [Anexo C — Management commands del proyecto](#anexo-c--management-commands-del-proyecto)
+- [Historial de cambios](#historial-de-cambios)
 
 ---
 
 ## 0. Prerrequisitos en tu máquina local
 
-Antes de tocar el VPS, necesitas:
+Antes de tocar el VPS, necesitás:
 
-- **SSH key** generada: `ssh-keygen -t ed25519 -C "tu-email@ejemplo.com"` (si no se tiene).
+- **SSH key** generada: `ssh-keygen -t ed25519 -C "tu-email@ejemplo.com"` (si no tenés).
 - Acceso al repo Git del proyecto (HTTPS o SSH).
-- Dominio apuntando a la IP del VPS (registro A en DNS). Si todavía no tienes dominio, peudes usar la IP pública para probar, pero HTTPS no funcionará.
+- Dominio apuntando a la IP del VPS (registro A en DNS). Si todavía no tenés dominio, podés usar la IP pública para probar, pero HTTPS no funcionará.
 
 ---
 
@@ -122,7 +158,7 @@ sudo -u postgres psql
 
 Dentro de `psql` (cada línea es un comando separado, esperaba el `;` o el prompt antes de la siguiente):
 
-> ⚠️ **`CAMBIAR_ESTA_PASSWORD` es un placeholder, no una contraseña real.** Reemplazá ambas apariciones (línea 107 y línea 142) por una contraseña **alfanumérica** (solo letras y números, sin `@`, `#`, `!`, `$`, `%`, `&`). Postgres 16 interpreta mal los caracteres especiales en algunos clientes. **Las dos apariciones deben ser idénticas** — es la misma contraseña que va en `DJANGO_DB_PASSWORD` del `.env` del backend.
+> ⚠️ **`CAMBIAR_ESTA_PASSWORD` es un placeholder, no una contraseña real.** Reemplazá ambas apariciones (línea de `CREATE USER` y línea de `ALTER USER`) por una contraseña **alfanumérica** (solo letras y números, sin `@`, `#`, `!`, `$`, `%`, `&`). Postgres 16 interpreta mal los caracteres especiales en algunos clientes. **Las dos apariciones deben ser idénticas** — es la misma contraseña que va en `DJANGO_DB_PASSWORD` del `.env` del backend.
 
 ```sql
 CREATE DATABASE clinica;
@@ -249,6 +285,8 @@ pip install -r requirements.txt
 deactivate
 ```
 
+> ⚠️ **Backend debe correr en WSL, no en PowerShell nativo.** El módulo `backups.services` (transitivo vía `INSTALLED_APPS`) importa `fcntl`, que es POSIX-only. En PowerShell nativo, `manage.py` falla con `ModuleNotFoundError: No module named 'fcntl'`. Si necesitás correr el backend en Windows, usá WSL bash. Esto es solo para desarrollo local — el deploy de producción está cubierto en [sección 9](#9-gunicorn-como-servicio-systemd) y no se ve afectado.
+
 ### 5.1. Crear `.env`
 
 Copiá la plantilla `backend/.env.example` y editá los valores:
@@ -258,7 +296,7 @@ cp .env.example .env
 nano .env
 ```
 
-Variables **obligatorias** que tenés que setear:
+Variables **obligatorias** que tenés que setear (referencia rápida — la lista completa está en el [Anexo B](#anexo-b--variables-de-entorno-del-backend)):
 
 ```bash
 # Seguridad Django
@@ -282,6 +320,18 @@ DJANGO_CSRF_TRUSTED_ORIGINS=https://<tu-dominio.com>
 DJANGO_CSRF_COOKIE_SECURE=1
 DJANGO_SESSION_COOKIE_SECURE=1
 
+# Storage (cloud-storage-migration — slice 1+2)
+STORAGE_PROVIDER=local                    # local | s3
+AWS_S3_REGION_NAME=sa-east-1              # o us-east-2 según tu bucket
+MEDIA_LOCAL_FALLBACK_ENABLED=true         # false post-cutover
+MEDIA_SIGNED_URL_TTL_SECONDS=900
+
+# Backups (ver docs/backups.md para detalles)
+BACKUPS_DIR=/var/lib/clinica/backups
+BACKUP_DAILY_KEEP=7
+BACKUP_WEEKLY_KEEP=4
+```
+
 > ⚠️ **Estas variables tienen dependencias cruzadas que no son obvias:** `DJANGO_CSRF_COOKIE_SECURE` y `DJANGO_SESSION_COOKIE_SECURE` dependen de tener HTTPS. Si entrás por HTTP (sin dominio o sin certbot), los browsers **rechazan los cookies con `Secure=1`** y no podés loguear (login devuelve `403 CSRF verification failed` aunque el endpoint funcione con `curl`).
 >
 > **Regla práctica:**
@@ -297,11 +347,7 @@ DJANGO_SESSION_COOKIE_SECURE=1
 > - El mismo login anda perfecto si lo probás con `curl` (curl no aplica la política de `Secure`).
 > - En DevTools → Network, el request POST se manda **sin** cookie `csrftoken` aunque el backend lo setee.
 
-# Seeds (opcional): URL del footer de los comandos de seed y guard de entorno.
-# DJANGO_BASE_URL=https://<tu-dominio.com>          # default http://localhost:8000
-# DJANGO_SEED_ADMIN_URL=https://admin.<tu-dominio.com/admin>   # toma precedencia sobre BASE_URL
-# DJANGO_ENVIRONMENT=development                    # production bloquea seed_pdf_baseline
-```
+> ⚠️ **`STORAGE_PROVIDER` solo acepta `local` o `s3`.** El valor `supabase` que aparecía en versiones viejas del `.env.example` ya no se acepta (eliminado en el slice 1 de cloud-storage-migration). Si ves código que menciona supabase storage, es de antes de Q4 2026.
 
 **Generar `DJANGO_SECRET_KEY`:**
 
@@ -330,9 +376,9 @@ cd /var/www/clinica/backend
 sudo -u www-data env/bin/python manage.py migrate --noinput
 ```
 
-El sistema trae **4 comandos de seed** para 4 contextos distintos. Elegí el que se ajusta a tu situación.
+> ⚠️ **Hay 13 management commands en el proyecto.** La tabla abajo cubre los 9 más usados en operaciones. La lista completa con ayuda corta está en el [Anexo C](#anexo-c--management-commands-del-proyecto).
 
-#### Tabla comparativa
+#### Tabla comparativa de seeds (los 4 principales)
 
 | # | Comando | Datos que crea | ¿Wipea datos existentes? | Cuándo usarlo |
 |---|---|---|---|---|
@@ -340,9 +386,18 @@ El sistema trae **4 comandos de seed** para 4 contextos distintos. Elegí el que
 | 2 | `seed_production_baseline` | 4 roles + 1 Sucursal fija (`Sede Principal`, La Paz) + admin fijo (`admin.general` / `admin123456`) + 1 kiosk fijo (`KIOSKO-PRINCIPAL` / `tablet-verify-123`). **Sin catálogos.** | No | Legado. Útil solo si querés arrancar con lo mínimo y cargar catálogos a mano. Reemplazado por `seed_client_baseline`. |
 | 3 | `seed_pdf_baseline` | Catálogo base + 3 sucursales + 3 admins + 4 especialistas + 5 especialidades + form config + 2 prospectos + 2 pacientes demo (`INACTIVO`) + 3 kiosks. | **No** — no destructivo; solo `update_or_create` sobre natural keys. | Demo, staging, capacitación. **Rechaza correr con `DJANGO_ENVIRONMENT=production`** (ver "Guard de entorno" abajo). |
 | 4 | `seed_branch_test_scenarios` | 5 pacientes + 2 especialistas móviles + 12 gastos + 3 tickets | No, pero **requiere** `seed_pdf_baseline` previo | Test manual de flujos multi-sucursal. |
-| 5 | `reset_pdf_baseline` | Lo mismo que `seed_pdf_baseline` (opción 3), pero **destructivo**: primero purga datos de negocio preservando admins y luego re-seeda la demo PDF, todo dentro de **una sola transacción**. | **Sí** — wipe + reseed atómico. `TRUNCATE` en Postgres, `DELETE` por tabla en SQLite. | Reset rápido de demo/staging cuando querés volver al estado PDF inicial sin pasos manuales. Idempotente. **Rechaza correr con `DJANGO_ENVIRONMENT=production`**. |
+| 5 | `reset_pdf_baseline` | Lo mismo que `seed_pdf_baseline`, pero **destructivo**: primero purga datos de negocio preservando admins y luego re-seeda la demo PDF, todo dentro de **una sola transacción**. | **Sí** — wipe + reseed atómico. `TRUNCATE` en Postgres, `DELETE` por tabla en SQLite. | Reset rápido de demo/staging cuando querés volver al estado PDF inicial sin pasos manuales. Idempotente. **Rechaza correr con `DJANGO_ENVIRONMENT=production`**. |
 
----
+> **Otros 5 commands que el operador puede necesitar** (lista corta — el Anexo C tiene la descripción completa):
+>
+> | Comando | Para qué sirve |
+> |---|---|
+> | `ensure_main_branch` | Crea o normaliza `Sede Principal` sin tocar datos clínicos. Útil cuando la sucursal principal se borró por error. |
+> | `purge_data_keep_admin` | Vacía datos de negocio preservando usuarios administradores. Hace el wipe de `reset_pdf_baseline` sin el reseed. |
+> | `reset_extended_demo` | Variante extendida de `reset_pdf_baseline` que agrega un 5° especialista (`valentina.derma`), redistribuye agendas y agrega procedimiento `Depilacion 2 x 1`. Solo demo. |
+> | `backfill_media` | Sube archivos de `MEDIA_ROOT` al bucket S3. Parte del change cloud-storage-migration. **Ver sección 11.7.** |
+> | `audit_log_retention` | Borra filas de `AuditLog` con más de `--days` (default 90). Programa via cron. |
+> | `create_backup` | Genera un dump de la DB y aplica retención. **Ver sección 11.2 → `docs/backups.md`.** |
 
 #### Opción 1 — `seed_client_baseline` (recomendada para producción) ⭐
 
@@ -553,7 +608,7 @@ Después de esto:
 sudo -u www-data env/bin/python manage.py collectstatic --noinput
 ```
 
-### 5.4. Verificación rápida
+### 5.3. Verificación rápida
 
 ```bash
 # ¿Gunicorn puede arrancar?
@@ -632,6 +687,13 @@ server {
         expires 30d;
     }
 
+    # Media: depende de STORAGE_PROVIDER (ver 5.1).
+    #   - STORAGE_PROVIDER=local: Nginx sirve directamente desde disco.
+    #   - STORAGE_PROVIDER=s3: este location NO se usa; el frontend pide
+    #     /api/media/signed-url/?path=... y el browser descarga directo
+    #     del bucket con la presigned URL. Mantener el location no rompe
+    #     nada (sigue siendo útil para /media/ residual durante el
+    #     cutover), pero el flujo normal NO pasa por acá.
     location /media/ {
         alias /var/www/clinica/backend/media/;
         access_log off;
@@ -676,6 +738,8 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 }
 ```
+
+> ⚠️ **El bloque `/media/` queda intencionalmente.** Aunque con `STORAGE_PROVIDER=s3` el flujo normal no pasa por ahí, mantenerlo configurado permite que `MEDIA_LOCAL_FALLBACK_ENABLED=true` siga sirviendo archivos viejos durante el cutover. Una vez completado el backfill (`backfill_media` escribiendo `_BACKFILL_COMPLETE` en el bucket) y confirmado que todas las URLs vienen vía presigned, podés comentar este bloque — pero no es obligatorio.
 
 Activar el sitio:
 
@@ -781,6 +845,8 @@ Una vez que el VPS está corriendo, mantener el sistema actualizado es automáti
 ### 10.1. Deploy normal (pull + restart)
 
 **El estado por defecto de este proyecto es producción estable**: biometría activa, sin flags de suspensión inyectados. Antes de fixear esto el script activaba el flag `BIOMETRIC_SUSPENDED=1` por defecto; ahora **el default es `0`** (producción normal) y `BIOMETRIC_SUSPENDED=1` es una elección **explícita** del operador (ver 10.2). Si tu deploy no toca biometría, podés correr el script tal como está.
+
+> ⚠️ **El archivo en el repo es `deploy.sh.example`, no `deploy.sh`.** La primera vez tenés que copiarlo y darle permisos de ejecución. Esto está documentado al inicio del propio archivo, pero mucha gente se lo salta y obtiene `command not found`.
 
 **La primera vez**, copiá la plantilla y dale permisos. El script te va a preguntar los datos del VPS y los guarda en `scripts/.deploy-config` (gitignored) para no volver a preguntarlos:
 
@@ -1131,56 +1197,43 @@ Por eso **siempre se cambian ambos en el mismo deploy**. `scripts/deploy.sh` se 
 | Admin Django | `admin.general` / `admin123456` | Cambiar en el primer login o via Django shell. |
 | Tablet kiosks (si usaste `seed_pdf_baseline`) | `KIOSKO-PRINCIPAL` / `tablet-principal-123`, etc. | Desde `/admin/` o Django shell. |
 | PostgreSQL | la que pusiste en el `.env` | Guardala en un gestor de secretos. |
+| AWS S3 (si usás `STORAGE_PROVIDER=s3`) | access key + secret key | Guardala en 1Password / Vault, **nunca** en el repo. |
 
-### 11.2. Configurar backups automáticos de la base de datos
+### 11.2. Backups de la base de datos
 
-Sin backups, un disco que se muere te deja sin sistema y sin datos. Para una clínica esto es inaceptable.
+**Fuente canónica: `docs/backups.md`.** Esa guía es la única que se mantiene sincronizada con `backups/management/commands/create_backup.py`, `scripts/backups.sh.example` y los modelos `Backups` / `BackupAuditLog`. Cualquier cambio al sistema de backups se documenta primero ahí.
 
-```bash
-# Crear script de backup
-sudo nano /usr/local/bin/clinica-backup.sh
-```
+**Resumen ejecutivo:**
 
-```bash
-#!/bin/bash
-set -e
+- El backup se hace con **`python manage.py create_backup`** (management command Django, no `pg_dump` directo).
+- El helper `scripts/backups.sh.example` envuelve el management command con subcomandos `daily`, `weekly`, `status`. Se instala en `/usr/local/bin/clinica-backup.sh` o `/opt/clinica/scripts/backups.sh.example`.
+- Se programa con **systemd timer** (recomendado) o **cron** — la guía canónica tiene los dos.
+- Las variables de entorno que controlan el backup viven en `backend/.env`: `BACKUPS_DIR`, `BACKUP_DAILY_KEEP`, `BACKUP_WEEKLY_KEEP`, `BACKUP_RATE_LIMIT_*`.
+- Los dumps son **custom-format `.dump`** de Postgres (no `pg_dump` plain text). Se restauran con `pg_restore`.
+- **Política de retención por default:** 7 diarios + 4 semanales. Modificable vía env vars.
+- **Backups contienen PHI.** Acceso restringido al service account, cifrado en tránsito y reposo, nunca en soporte técnico, nunca en home compartido.
 
-BACKUP_DIR=/var/backups/clinica
-mkdir -p "$BACKUP_DIR"
-chmod 700 "$BACKUP_DIR"
-
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="$BACKUP_DIR/clinica_${TIMESTAMP}.sql.gz"
-
-# Cargar credenciales desde .env (sin imprimirlas)
-set -a
-source /var/www/clinica/backend/.env
-set +a
-
-pg_dump -U "$DJANGO_DB_USER" -h "$DJANGO_DB_HOST" -d "$DJANGO_DB_NAME" \
-    | gzip > "$BACKUP_FILE"
-
-# Conservar últimos 30 días
-find "$BACKUP_DIR" -name "clinica_*.sql.gz" -mtime +30 -delete
-
-echo "Backup creado: $BACKUP_FILE"
-```
+**Setup mínimo** (el resto está en `docs/backups.md`):
 
 ```bash
-sudo chmod 700 /usr/local/bin/clinica-backup.sh
+# 1. Crear el directorio de backups con ownership correcto
+sudo install -d -o www-data -g www-data -m 0750 /var/lib/clinica/backups
 
-# Probar
-sudo /usr/local/bin/clinica-backup.sh
+# 2. Setear BACKUPS_DIR en backend/.env
+echo 'BACKUPS_DIR=/var/lib/clinica/backups' | sudo tee -a /var/www/clinica/backend/.env
 
-# Programar diario a las 03:00
-sudo crontab -e
-# Agregar:
-0 3 * * * /usr/local/bin/clinica-backup.sh >> /var/log/clinica-backup.log 2>&1
+# 3. Probar un backup
+sudo -u www-data /var/www/clinica/backend/env/bin/python \
+    /var/www/clinica/backend/manage.py create_backup
+
+# 4. Programar via systemd timer o cron (ver docs/backups.md §"Run and schedule backups")
 ```
 
-### 11.3. Subir backups a un lugar fuera del VPS
+> ⚠️ **No usar `pg_dump` directo desde un script bash** como hacía la versión vieja de esta guía. El management command `create_backup` tiene un lock de filesystem, registra cada ejecución en `BackupAuditLog`, y aplica la retención automáticamente. Un `pg_dump` externo no respeta ninguno de esos mecanismos.
 
-El backup local NO es suficiente. Si el VPS se muere, te quedás sin backups. Configurá sincronización periódica a un destino externo:
+### 11.3. Sync externa de backups
+
+**El backup local NO es suficiente.** Si el VPS se muere, te quedás sin backups. Configurá sincronización periódica a un destino externo. Las opciones y comandos exactos están en **`docs/backups.md` §"Security and PHI"** — esa sección se actualiza junto con el helper de backups.
 
 | Opción | Configuración |
 |---|---|
@@ -1189,7 +1242,7 @@ El backup local NO es suficiente. Si el VPS se muere, te quedás sin backups. Co
 | **Storage del proveedor** | DO Spaces, Hetzner Storage Box, etc. |
 | **rsync a otro servidor** | Si tenés otro VPS. |
 
-Sumá una segunda línea al cron o un script separado.
+Sumá una segunda línea al cron o un script separado. **Cifrado obligatorio** — los dumps contienen PHI.
 
 ### 11.4. Configurar alertas mínimas
 
@@ -1197,6 +1250,7 @@ Sin monitoreo, no sabés que algo se rompió hasta que el cliente te llama. Lo m
 
 - **UptimeRobot** (gratis): chequea que `https://tu-dominio.com/` responda 200 cada 5 min. Te avisa por mail/Slack.
 - **Sentry** (free tier): captura excepciones de Django y React. Indispensable para producción.
+- **CloudWatch billing alarm** (si usás `STORAGE_PROVIDER=s3`): umbral de costo en `$30/mes` para detectar uso anómalo del bucket. Configuralo desde la consola AWS — el script `deploy.sh` no lo hace.
 
 ### 11.5. Configurar actualizaciones de seguridad automáticas
 
@@ -1468,6 +1522,174 @@ Después del cutover, prestá atención a:
 - **Costos de AWS** — la métrica `EstimatedCharges` en CloudWatch. Si pasa de $30/mes en el primer mes, algo está mal (muchas requests o mucho egress). Configurá el billing alarm del runbook de AWS.
 - **Errores en `AuditLog`** — el endpoint registra cada emisión. Si ves `action=SIGNED_URL_DENIED` en masa, alguien está intentando acceder a archivos sin permiso. Es expected, pero un pico inusual amerita investigación.
 
+### 11.8. Almacenamiento en digital bucket (AWS S3)
+
+> **Esta sección explica qué es el bucket, por qué se usa y cómo provisionarlo.** El procedimiento operativo del cutover ya está cubierto en §11.7. Acá asumimos que el operador todavía no creó el bucket y necesita entenderlo antes de empezar.
+
+#### ¿Por qué un digital bucket?
+
+Por default, el sistema guarda las fotos, PDFs de historia clínica y comprobantes de pago en el disco local del VPS (`backend/media/`). Eso tiene tres problemas:
+
+1. **Privacidad clínica rota.** Los archivos están en `/var/www/clinica/backend/media/`, accesibles vía `https://tu-dominio.com/media/<archivo>`. Cualquiera con el link (que se filtra en emails, chats, logs) puede ver la ficha clínica de un paciente sin autenticarse. **Viola la Ley 164 de Bolivia** y el sentido común de PHI.
+2. **Disco del VPS se llena.** Una clínica con 200 fotos de operación por mes × 500 KB cada una = ~100 MB/mes solo de fotos. Sumá PDFs de fichas (1-5 MB cada uno) y comprobantes (200 KB promedio) y el VPS se queda sin espacio en 6-12 meses.
+3. **Backups del VPS no incluyen `backend/media/`.** Si el VPS se muere, perdés todos los archivos clínicos aunque tengas backups de la DB. Los backups cubren datos, no media.
+
+**Un digital bucket (AWS S3 en este caso) resuelve los tres:** el bucket es privado (autenticación requerida para cada download via presigned URL), escala sin límite práctico de storage, y los archivos están separados del VPS así un backup del VPS no los afecta.
+
+#### Pre-requisitos antes de provisionar
+
+Antes de tocar la consola de AWS, asegurate de tener:
+
+- **Cuenta AWS** con método de pago cargado. Business support plan es opcional — basic support alcanza para esta operatoria.
+- **Acceso a un 1Password vault** (o gestor de secretos equivalente) — las credenciales IAM nunca se commitean al repo.
+- **Decisión de compliance** tomada (ver §11.6):
+  - Si la clínica maneja PHI y exporta datos a US o trabaja con un covered entity bajo BAA → **firmar AWS BAA antes de subir el primer PDF clínico**.
+  - Si la clínica es Bolivia-only sin exportar a US → BAA no aplica, pero el bucket sigue siendo privado y cifrado.
+- **Bucket name único global.** Los nombres de bucket en S3 son únicos worldwide. Si elegís `clinica-files`, alguien ya lo tiene. Sugerencia: `proyecto-c-clinical-prod-<tu-inicial>` (ej. `proyecto-c-clinical-prod-j`).
+
+#### Provisioning del bucket (paso a paso)
+
+> **Tiempo estimado:** 15-20 minutos si tenés la cuenta lista. Algunos pasos requieren esperar validación de AWS (ej. propagar DNS, ~5 min).
+
+1. **Login en AWS Console** como IAM user `admin` (NO root user). URL: https://console.aws.amazon.com/.
+
+2. **Si aplica, firmar el AWS BAA** antes de subir el primer PDF clínico:
+   - Ir a https://aws.amazon.com/compliance/hipaa-eligible-services/.
+   - Descargar el BAA template.
+   - Firmar online o imprimir/firmar/escanear.
+   - Subir el documento firmado al AWS Artifact portal (https://console.aws.amazon.com/artifact/).
+   - **Anotar el número de referencia del BAA en 1Password** bajo `AWS / BAA`.
+
+3. **Crear el bucket:**
+   - Console → S3 → Buckets → **Create bucket**.
+   - **Bucket name:** `proyecto-c-clinical-prod-<tu-inicial>` (o el nombre que elegiste; recordá que debe ser único global).
+   - **Region:** `sa-east-1` (São Paulo, la más cercana a Bolivia con HIPAA-eligible services) o la región que prefieras. Anotala — la vas a poner en `AWS_S3_REGION_NAME`.
+   - **Object Ownership:** ACLs disabled (recommended).
+   - **Block Public Access settings for this bucket:** **TODAS LAS 4 FLAGS EN TRUE**. Esto es crítico. Si dejás alguna en false, los archivos son accesibles públicamente por URL sin autenticación.
+   - **Bucket Versioning:** **Enable**. Defiende contra borrado accidental de PDFs clínicos (proposal Gate 7).
+   - **Tags (opcional):** `Environment=production`, `Project=clinica`, `CostCenter=clinica-storage`. Útil para billing reports.
+   - **Default encryption:** Server-side encryption with Amazon S3 managed keys (SSE-S3). Free, automático, suficiente para compliance básico.
+   - Click **Create bucket**.
+
+4. **Habilitar Server Access Logs** (auditoría adicional):
+   - Dentro del bucket → tab **Properties** → scroll hasta **Server access logging** → **Edit** → **Enable**.
+   - **Target bucket:** `proyecto-c-clinical-prod-logs` (creá este bucket aparte primero, sin versioning, con lifecycle rule que expire objects a los 90 días).
+   - **Target prefix:** `logs/`
+   - Esto te da un audit trail completo de quién accedió a qué archivo, cuándo, desde qué IP.
+
+5. **Crear el IAM user** (para que el backend acceda al bucket con permisos scoped):
+   - Console → Users → **Create user**.
+   - **User name:** `proyecto-c-clinical-app-prod` (o similar).
+   - **Access type:** **Programmatic access** ONLY (no console password — el backend no necesita login web).
+   - Click **Next: Permissions**.
+
+6. **Attach inline policy** (NO uses managed policies — querés el ARN del bucket explícito):
+   - Click **Create inline policy** → tab **JSON** → pegar:
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "BucketList",
+         "Effect": "Allow",
+         "Action": ["s3:ListBucket"],
+         "Resource": "arn:aws:s3:::proyecto-c-clinical-prod-<tu-inicial>",
+         "Condition": { "StringEquals": { "aws:RequestedRegion": "sa-east-1" } }
+       },
+       {
+         "Sid": "BucketObjectRW",
+         "Effect": "Allow",
+         "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:HeadObject"],
+         "Resource": "arn:aws:s3:::proyecto-c-clinical-prod-<tu-inicial>/*",
+         "Condition": { "StringEquals": { "aws:RequestedRegion": "sa-east-1" } }
+       },
+       {
+         "Sid": "DenyNonSaEast1",
+         "Effect": "Deny",
+         "Action": "s3:*",
+         "Resource": "*",
+         "Condition": { "StringNotEquals": { "aws:RequestedRegion": "sa-east-1" } }
+       }
+     ]
+   }
+   ```
+
+   - **Reemplazá** `proyecto-c-clinical-prod-<tu-inicial>` con tu nombre real del bucket en las 3 referencias ARN.
+   - **Click Review policy** → **Name:** `proyecto-c-clinical-bucket-access` → **Create policy**.
+
+7. **Descargar credenciales:**
+   - Click en el user recién creado.
+   - Tab **Security credentials** → **Create access key** → **Use case:** Local code (no CLI ni SDK de AWS) → Next → Create.
+   - **⚠️ Esta es la ÚNICA vez que ves el secret access key.** Descargá el `.csv` o copialo a 1Password vault `AWS / proyecto-c-clinical-app-prod / prod`.
+   - El **access key ID** empieza con `AKIA...`.
+   - El **secret access key** es una cadena alfanumérica larga (~40 chars).
+
+#### Costo esperado
+
+Los números de storage (que asume 200 GB almacenados, ~50 GB de egress/mes) — estos vienen del change `cloud-storage-migration` que comparó AWS S3, Cloudflare R2 y Supabase Storage:
+
+| Concepto | Costo por mes (USD) |
+|---|---|
+| **Storage** — 200 GB × $0.023/GB (Standard tier, región `sa-east-1`, primeros 50 TB) | **$4.60** |
+| **Egress** — 50 GB × $0.09/GB (internet egress desde `sa-east-1`, después de los primeros 100 GB gratis para cuentas nuevas) | **$4.50** |
+| **Versioning** — 200 GB adicionales × $0.023/GB (defensa contra borrado accidental, propuesta Gate 7) | **$4.60** |
+| **GET requests** — 50,000 × $0.0004/1000 | **$0.02** |
+| **PUT requests** — 5,000 × $0.005/1000 | **$0.025** |
+| **Total estimado** | **~$13.80/mes** |
+
+**Primer año (free tier):** las cuentas nuevas de AWS tienen 12 meses de free tier que cubren 5 GB storage, 15 GB egress, 2,000 PUT, 20,000 GET por mes. Una clínica pequeña no paga nada durante el primer año si se mantiene dentro de esos límites.
+
+**Para escalar:** una clínica con 500 GB almacenados y 200 GB egress/mes pagaría ~$35-50/mes. Configurar el billing alarm (abajo) para que avise antes de pasar de $50/mes.
+
+**Alternativas más baratas** (no implementadas hoy, pero documentadas por si el costo se vuelve problema):
+
+- **Cloudflare R2:** sin costo de egress (10 GB gratis, después $0.015/GB storage). Si tu clínica tiene mucho tráfico de descarga (clientes descargando sus PDFs frecuentemente), R2 puede ser 5-10× más barato.
+- **Backblaze B2:** $0.006/GB storage + $0.01/GB egress. Más barato que S3 pero menos integrado.
+- **Self-hosted MinIO:** gratis pero requiere un VPS adicional grande. No vale la pena para clínicas con <1 TB.
+
+#### Monitoreo post-provisioning
+
+Una vez que el bucket está creado y el IAM user tiene las credenciales en 1Password, configurá el monitoreo antes de empezar el cutover (§11.7):
+
+**1. CloudWatch billing alarm** (alerta si el costo pasa de $30/mes):
+
+```
+1. AWS Console → CloudWatch → Alarms → Create alarm.
+2. Select metric → Billing → Total Estimated Charge.
+3. Currency: USD.
+4. Threshold: Static, $30 (o el monto que prefieras).
+5. Send notification: tu email (o un SNS topic si querés Slack/PagerDuty).
+6. Name: `clinica-s3-storage-cost-alarm`.
+```
+
+**2. Lifecycle rule** (mover archivos viejos a Glacier después de 90 días para ahorrar storage):
+
+```
+1. S3 → tu bucket → Management → Create lifecycle rule.
+2. Name: `archive-old-clinical-files`.
+3. Apply to all objects in the bucket.
+4. Transitions:
+   - Move to Glacier Instant Retrieval after 90 days.
+   - Move to Glacier Deep Archive after 365 days.
+5. Expiration: never (los archivos clínicos se conservan indefinidamente por compliance).
+```
+
+**⚠️ Glacier cambia el costo de storage de $0.023/GB a $0.004/GB** (Glacier Instant) o $0.00099/GB (Glacier Deep Archive). Si tenés 200 GB de archivos con +1 año de antigüedad, ahorrás ~$4/mes. Si los archivos se acceden vía Glacier (no vía S3 Standard), el costo de GET sube — pero los PDFs clínicos viejos rara vez se descargan.
+
+**3. Rotación de credenciales IAM** (cada 90 días):
+
+```
+1. AWS Console → IAM → Users → proyecto-c-clinical-app-prod.
+2. Tab Security credentials → Create access key.
+3. Anotá la nueva key en 1Password (reemplaza la anterior).
+4. Actualizá AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY en backend/.env.
+5. sudo systemctl restart gunicorn.
+6. Eliminá la access key vieja (mismo tab, "Make inactive" después de 24h).
+```
+
+Anotá cada rotación en `1Password → AWS / proyecto-c-clinical-app-prod / rotation-log`.
+
 ---
 
 ## 12. Comandos útiles del día a día
@@ -1490,10 +1712,26 @@ sudo systemctl restart gunicorn postgresql nginx
 sudo du -sh /var/lib/postgresql/
 
 # Backup manual
-sudo /usr/local/bin/clinica-backup.sh
+sudo -u www-data /var/www/clinica/backend/env/bin/python \
+    /var/www/clinica/backend/manage.py create_backup
 
 # Listar backups
-ls -lh /var/backups/clinica/
+ls -lh /var/lib/clinica/backups/
+
+# Estado de la suspensión biométrica
+cd /ruta/al/repo && ./scripts/biometric_suspension.sh status
+
+# Ver últimas entradas del audit log de media
+sudo -u www-data /var/www/clinica/backend/env/bin/python \
+    /var/www/clinica/backend/manage.py shell -c "
+from audit.models import AuditLog
+for log in AuditLog.objects.all()[:10]:
+    print(f'{log.created_at} | {log.user} | {log.action} | {log.resource_path}')
+"
+
+# Estado del backfill (verificar si el sentinel existe)
+aws s3 ls s3://<tu-bucket>/_BACKFILL_COMPLETE --region sa-east-1
+# (sin output = backfill incompleto; el archivo existe = cutover OK)
 ```
 
 ---
@@ -1531,6 +1769,22 @@ Si no está, agregalo y reiniciá:
 sudo systemctl restart gunicorn
 ```
 
+### 403 CSRF verification failed
+
+Tres causas comunes (en orden de frecuencia):
+
+1. **`DJANGO_CSRF_COOKIE_SECURE=1` pero entrás por HTTP** (sin HTTPS). Ver la tabla en la sección 5.1.
+2. **`DJANGO_CSRF_TRUSTED_ORIGINS` no incluye el dominio exacto** que estás usando (sin `https://`, sin trailing slash).
+3. **El dominio del frontend (`VITE_*` build) no coincide** con `DJANGO_CORS_ALLOWED_ORIGINS`.
+
+### 404 en `/api/media/signed-url/`
+
+Tres causas:
+
+1. **`STORAGE_PROVIDER=local` y el archivo no existe en `backend/media/`.** El endpoint solo firma paths que ya están en el storage. Con `local`, el archivo tiene que estar en disco.
+2. **`STORAGE_PROVIDER=s3` y el archivo no se subió al bucket todavía.** Corré `backfill_media` o esperá que la lazy migration en `LazyLocalFallbackStorage` lo suba en el primer read.
+3. **El path no está en el allowlist.** Solo se firman paths que empiezan con: `fichas_clinicas/`, `tickets_adjuntos/`, `citas/`, `fotos_operacion/`, `comprobantes_pagos/`, `comprobantes_citas/`. Paths fuera de esos prefijos devuelven 400 (malformed) o 403 (forbidden) según el caso.
+
 ### Error de migraciones
 
 ```bash
@@ -1555,9 +1809,16 @@ En Ubuntu 24.04, `python3-venv` no trae `ensurepip` por defecto. Instalá:
 sudo apt install -y python3.12-venv
 ```
 
+### Error: `manage.py: No module named 'fcntl'`
+
+Estás corriendo `manage.py` en PowerShell nativo de Windows. El módulo `backups.services` (transitivo vía `INSTALLED_APPS`) importa `fcntl` que es POSIX-only. Soluciones:
+
+- **Para deploys en VPS Linux:** no aplica, fcntl existe.
+- **Para desarrollo local en Windows:** usá WSL bash (`wsl -e bash`), o aplicá el workaround de stub que documenta el apply phase 1.
+
 ### Error: `npm ci` o `npm run build` muestra `Killed` o `JavaScript heap out of memory`
 
-OOM. Ver [sección 6, paso de swap](#%E2%9D%97-si-tu-droplet-tiene-1-gb-de-ram-o-menos-el-build-puede-tirarse-por-oom-out-of-memory-si-npm-ci-o-npm-run-build-muestra-killed-o-javascript-heap-out-of-memory-agreg%C3%A1-swap-de-2-gib) — agregar swap de 2 GiB. Recomendado dejarlo permanente vía `/etc/fstab` ([sección 10.2 paso 1](#paso-1--si-tu-vps-tiene-menos-de-1-gib-de-ram-caso-real-frecuente-crear-swap-de-2-gib)).
+OOM. Ver [sección 6, paso de swap](#6-frontend) — agregar swap de 2 GiB. Recomendado dejarlo permanente vía `/etc/fstab` ([sección 10.2 paso 1](#paso-1--si-tu-vps-tiene-menos-de-1-gib-de-ram-caso-real-frecuente-crear-swap-de-2-gib)).
 
 ### Error: `413 Request Entity Too Large` al subir comprobantes o documentos (Paso 5 de conversión, subir fotos de pacientes, etc.)
 
@@ -1682,6 +1943,15 @@ sudo apt install -y nodejs
 node -v   # tiene que decir v20.x.x
 ```
 
+### Error: `deploy.sh: command not found`
+
+Te saltaste el paso de copiar `deploy.sh.example` a `deploy.sh`. Ver sección 10.1.
+
+```bash
+cp scripts/deploy.sh.example scripts/deploy.sh
+chmod +x scripts/deploy.sh
+```
+
 ### Error: `deploy.sh` aborta con `El campo 'DOMAIN' es obligatorio`
 
 Bug del script: aunque la guía dice que el dominio es opcional, `scripts/deploy.sh` aborta si la respuesta está vacía. Workaround: pasar un dominio placeholder cualquiera (no se usa para nada crítico en deploys sin HTTPS):
@@ -1711,6 +1981,26 @@ VITE_BIOMETRIC_SUSPENDED="false" \
 ```
 
 `BIOMETRIC_SUSPENDED=0` significa "no suspender mutaciones biométricas" (correcto para deploys que no usan biometría).
+
+### Error: `AccessDenied` de AWS S3 al subir archivos
+
+Tres causas comunes:
+
+1. **ARN mal escrito en la IAM policy.** Verificá que `arn:aws:s3:::NOMBRE-EXACTO-DEL-BUCKET` coincida carácter por carácter con el nombre real del bucket (case-sensitive, sin typos, sin mayúsculas/minúsculas mal).
+2. **Bucket en otra región.** Si tu bucket está en `us-east-2` pero `AWS_S3_REGION_NAME=sa-east-1`, los requests fallan con `EndpointConnectionError`. Verificá la región en la consola S3.
+3. **Credenciales mal copiadas del CSV.** Re-descargá el access key desde IAM y verificá que no haya caracteres raros (espacios, saltos de línea).
+
+### Error: 500 con `Boto3Storage.url() is disabled`
+
+Si ves este error en el runserver:
+
+```
+NotImplementedError: Boto3Storage.url() is disabled; mint signed URLs through /api/media/signed-url/ (slice 2).
+```
+
+**Causa:** un endpoint está llamando `.url()` en un `FileField`/`ImageField` con `STORAGE_PROVIDER=s3`. Por diseño del change `cloud-storage-migration` (slice 2), `Boto3Storage.url()` no está implementado — hay que usar `/api/media/signed-url/` en su lugar.
+
+**Fix:** asegurate de estar en una versión con el fix de `cloud-storage-migration-fixes` aplicado (slice 1/3 commiteado en `feature/cloud-storage-migration-fixes`). Si no tenés ese branch, mergéalo antes.
 
 ### `certbot` o `nginx` no encontrados
 
@@ -1754,6 +2044,14 @@ sudo nano /var/www/clinica/backend/.env
 sudo systemctl restart gunicorn
 ```
 
+### El backfill de media no termina / queda colgado
+
+Tres causas comunes:
+
+1. **Credenciales AWS expiraron o el bucket cambió de policy.** Verificá con `python -c "import boto3; s3=boto3.client('s3'); print(s3.list_objects_v2(Bucket='...', MaxKeys=1))"`.
+2. **Archivos muy grandes en `backend/media/`.** Subilos con `aws s3 cp` manual primero, después corré `backfill_media --resume`.
+3. **El proceso se interrumpió.** `backfill_media` es idempotente (usa `head_object` para detectar existentes). Re-ejecutalo sin miedo.
+
 ---
 
 ## 14. Resumen de archivos configurados
@@ -1764,9 +2062,12 @@ sudo systemctl restart gunicorn
 | `.env.example` | `/var/www/clinica/backend/.env.example` | Plantilla del `.env` (sí commitear) |
 | Nginx config | `/etc/nginx/sites-available/clinica` | Reverse proxy + SSL + estáticos |
 | Gunicorn service | `/etc/systemd/system/gunicorn.service` | Daemon auto-inicio |
-| Backup script | `/usr/local/bin/clinica-backup.sh` | Dump diario de PostgreSQL |
-| Cron backups | `crontab -e` | Programa el backup a las 03:00 |
-| `deploy.sh` | `scripts/deploy.sh` (local) | Deploy automático desde máquina local (la primera vez pregunta los datos y los guarda en `scripts/.deploy-config`) |
+| Backup systemd timer | `/etc/systemd/system/clinica-backups.{service,timer}` | Dump diario de PostgreSQL (ver `docs/backups.md`) |
+| Cron backups (alternativa) | `crontab -e` | Programa el backup a las 03:00 (ver `docs/backups.md`) |
+| `deploy.sh` | `scripts/deploy.sh` (local, copy de `.example`) | Deploy automático desde máquina local |
+| `deploy.sh.example` | `scripts/deploy.sh.example` | Plantilla, sí commitear |
+| `biometric_suspension.sh` | `scripts/biometric_suspension.sh` | Helper reversible de forward/rollback biométrico |
+| `backups.sh.example` | `scripts/backups.sh.example` | Helper de backup (daily/weekly/status) |
 
 ---
 
@@ -1779,7 +2080,7 @@ sudo systemctl restart gunicorn
 │   ├── .env                  # Variables de entorno (sensible)
 │   ├── manage.py
 │   ├── staticfiles/          # Estáticos Django (servido por Nginx)
-│   └── media/                # Archivos media (QR, recibos)
+│   └── media/                # Archivos media (legacy + fallback cutover)
 ├── frontend/
 │   └── aesthetic-clinic/
 │       └── dist/             # Build React (servido por Nginx)
@@ -1787,12 +2088,117 @@ sudo systemctl restart gunicorn
 ├── gunicorn-access.log
 └── gunicorn-error.log
 
-/var/backups/clinica/         # Backups PostgreSQL
+/var/lib/clinica/backups/     # Backups PostgreSQL (.dump format)
+/var/log/clinica-backups.log  # Log del cron de backups
 ```
+
+> **Nota sobre `backend/media/`:** con `STORAGE_PROVIDER=s3`, este directorio queda como **fallback residual** durante el cutover. Una vez que `backfill_media` escribe `_BACKFILL_COMPLETE` y ponés `MEDIA_LOCAL_FALLBACK_ENABLED=false`, podés vaciarlo y dejarlo como no-op (los archivos viejos quedan accesibles vía `/api/media/signed-url/` apuntando al bucket).
 
 ---
 
-## Historial de cambios de esta guía
+## Anexo A — Tabla comparativa de cambios desde la versión anterior
+
+Esta tabla documenta los cambios más importantes entre la versión vieja de esta guía (pre-Q4 2026) y la versión actual. Útil si venís de operar con la versión anterior y querés entender qué cambió.
+
+| # | Tema | Versión vieja | Versión actual | Sección actual |
+|---|---|---|---|---|
+| 1 | **Backups** | Script bash con `pg_dump` directo en `/usr/local/bin/clinica-backup.sh`. Configuración inline. | Management command `python manage.py create_backup` + helper `scripts/backups.sh.example` con subcomandos `daily/weekly/status`. Fuente canónica en `docs/backups.md`. | [§11.2](#112-backups-de-la-base-de-datos) |
+| 2 | **Storage** | `MEDIA_ROOT` directo a disco. `STORAGE_PROVIDER` aceptaba `local` o `supabase`. | `Boto3Storage` + `LazyLocalFallbackStorage`. `STORAGE_PROVIDER` solo acepta `local` o `s3`. Endpoint `/api/media/signed-url/` con audit log. | [§5.1](#51-crear-env), [§7](#7-nginx), [§11.6](#116-datos-sensibles-consideraciones-legales), [§11.7](#117-backfill-de-media-al-bucket-solo-si-storage_providers3) |
+| 3 | **Deploy script** | `scripts/deploy.sh` ya activo. | Solo `scripts/deploy.sh.example` (plantilla). El operador debe copiarlo antes del primer deploy. | [§10.1](#101-deploy-normal-pull--restart) |
+| 4 | **Seeds** | 4 commands documentados (`seed_client_baseline`, `seed_production_baseline`, `seed_pdf_baseline`, `seed_branch_test_scenarios`) + 1 reset. | 9 commands del proyecto + 4 utility commands. Tabla compacta con descripción de cada uno. | [§5.2](#52-cómo-poblar-la-base-de-datos), [Anexo C](#anexo-c--management-commands-del-proyecto) |
+| 5 | **Compliance legal** | Referencia a Argentina Ley 25.326. | Actualizado a Bolivia Ley 164 (arts. 73-78) + mención HIPAA si la clínica opera con US. | [§11.6](#116-datos-sensibles-consideraciones-legales) |
+| 6 | **Media en Nginx** | Bloque `location /media/` servía todos los archivos directos. | Bloque se mantiene (para fallback) pero el flujo normal con `STORAGE_PROVIDER=s3` va por presigned URLs. | [§7](#7-nginx) |
+| 7 | **Variables de entorno** | No documentaba `BACKUPS_DIR` ni `BACKUP_DAILY_KEEP` ni storage vars. | Lista completa en el .env.example + resumen en Anexo B. | [Anexo B](#anexo-b--variables-de-entorno-del-backend) |
+| 8 | **Audit log de media** | No existía. | `audit/AuditLog` registra cada presigned URL emitida. Retención 90 días. | [Anexo C](#anexo-c--management-commands-del-proyecto) |
+| 9 | **Troubleshooting** | No incluía errores 403 CSRF ni 404 de signed-URL ni AccessDenied de S3. | Nuevos items: 403 CSRF, 404 signed-URL, AccessDenied S3, command not found de deploy.sh, fcntl en Windows. | [§13](#13-troubleshooting) |
+| 10 | **Backfill de media** | No existía. | `backfill_media` management command con sentinel `_BACKFILL_COMPLETE`. | [§11.7](#117-backfill-de-media-al-bucket-solo-si-storage_providers3) |
+
+---
+
+## Anexo B — Variables de entorno del backend
+
+Lista completa de variables leídas por `backend/config/settings.py` o por el management code. El `.env.example` es la fuente canónica. Esta tabla agrupa por dominio funcional.
+
+### Seguridad y sesión
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `DJANGO_SECRET_KEY` | (vacío, obligatorio) | 50+ chars random. Generar con `python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`. |
+| `DJANGO_DEBUG` | `0` | `1` solo en dev local. NUNCA en producción. |
+| `DJANGO_ALLOWED_HOSTS` | (vacío, obligatorio) | CSV de hosts. |
+| `DJANGO_USE_LOCAL_DB` | `False` | `True` solo en dev local (usa SQLite). |
+| `DJANGO_DB_ENGINE` | `django.db.backends.postgresql` | o `django.db.backends.sqlite3` en dev. |
+| `DJANGO_DB_NAME` | `clinica` | |
+| `DJANGO_DB_USER` | `clinica_app` | |
+| `DJANGO_DB_PASSWORD` | (vacío) | Alfanumérica (Postgres 16 quirks). |
+| `DJANGO_DB_HOST` | `localhost` | |
+| `DJANGO_DB_PORT` | `5432` | |
+| `DJANGO_DB_SSLMODE` | `prefer` | |
+| `DJANGO_CORS_ALLOWED_ORIGINS` | (vacío) | CSV. Matchear con `https://` en prod. |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | (vacío) | CSV. Matchear con `https://` en prod. |
+| `DJANGO_CSRF_COOKIE_SECURE` | `1` | `0` solo si entrás por HTTP sin cert. |
+| `DJANGO_CSRF_COOKIE_HTTPONLY` | `0` | |
+| `DJANGO_SESSION_COOKIE_SECURE` | `1` | `0` solo si entrás por HTTP sin cert. |
+| `DJANGO_BASE_URL` | `http://localhost:8000` | URL del footer de seeds. |
+| `DJANGO_SEED_ADMIN_URL` | (vacío) | Override del footer. |
+| `DJANGO_ENVIRONMENT` | `development` | `production` bloquea `seed_pdf_baseline` y `reset_pdf_baseline`. |
+
+### Storage (cloud-storage-migration)
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `STORAGE_PROVIDER` | `local` | `local` o `s3`. `supabase` ya no se acepta. |
+| `AWS_ACCESS_KEY_ID` | (vacío) | Obligatorio si `STORAGE_PROVIDER=s3`. |
+| `AWS_SECRET_ACCESS_KEY` | (vacío) | Obligatorio si `STORAGE_PROVIDER=s3`. NUNCA en repo. |
+| `AWS_STORAGE_BUCKET_NAME` | (vacío) | Nombre exacto del bucket (case-sensitive). |
+| `AWS_S3_REGION_NAME` | `sa-east-1` | Región del bucket. Verificar en consola S3. |
+| `AWS_S3_ENDPOINT_URL` | (vacío) | Solo para R2/MinIO/B2. AWS nativo queda vacío. |
+| `MEDIA_LOCAL_FALLBACK_ENABLED` | `true` | `false` post-cutover (cuando `_BACKFILL_COMPLETE` existe). |
+| `MEDIA_SIGNED_URL_TTL_SECONDS` | `900` | Cap 604800 (7 días, SigV4 max). |
+
+### Biometría
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `BIOMETRIC_SUSPENDED` | `0` | `1` para suspender mutaciones biométricas. |
+| `DP4500_BASE_URL` | (vacío) | URL del servicio DP4500. En WSL: `http://<gateway-ip>:8001`. |
+
+### Backups (ver `docs/backups.md` para detalles)
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `BACKUPS_DIR` | (vacío) | Directorio de dumps. Default histórico: `/var/lib/clinica/backups`. |
+| `BACKUP_DAILY_KEEP` | `7` | Retención de dumps diarios. |
+| `BACKUP_WEEKLY_KEEP` | `4` | Retención de dumps semanales. |
+| `BACKUP_RATE_LIMIT_TRIGGER_SECONDS` | `60` | Rate limit del trigger. |
+| `BACKUP_RATE_LIMIT_DOWNLOAD_SECONDS` | `0` | Sin rate limit. |
+| `BACKUP_RATE_LIMIT_DELETE_SECONDS` | `30` | Rate limit de delete. |
+
+---
+
+## Anexo C — Management commands del proyecto
+
+Lista de management commands custom del proyecto (los de Django no se listan). Todos viven bajo `backend/*/management/commands/`.
+
+| Comando | Módulo | Para qué sirve |
+|---|---|---|
+| `seed_client_baseline` | `accounts` | Deploy de cliente real: roles + sucursal + admin + kiosk + catálogos. ⭐ Recomendado para producción. |
+| `seed_production_baseline` | `accounts` | Legado. Mínimo absoluto sin catálogos. Reemplazado por `seed_client_baseline`. |
+| `seed_pdf_baseline` | `accounts` | Demo: 3 sucursales + 4 admins + 4 especialistas + 2 prospectos + 2 pacientes demo + catálogos. Rechaza correr con `DJANGO_ENVIRONMENT=production`. |
+| `seed_branch_test_scenarios` | `accounts` | Test multi-sucursal. Requiere `seed_pdf_baseline` previo. |
+| `reset_pdf_baseline` | `accounts` | Wipe + reseed atómico del PDF demo en una sola transacción. |
+| `reset_extended_demo` | `accounts` | Variante extendida de `reset_pdf_baseline` con 5° especialista, agendas rebalanceadas y procedimiento `Depilacion 2 x 1`. |
+| `ensure_main_branch` | `accounts` | Crea o normaliza `Sede Principal` sin tocar datos clínicos. |
+| `purge_data_keep_admin` | `accounts` | Wipe de datos de negocio preservando usuarios admin. |
+| `create_backup` | `backups` | Dump de la DB + retención. **Ver `docs/backups.md`.** |
+| `backfill_media` | `config` | Sube archivos de `MEDIA_ROOT` al bucket S3. Parte de cloud-storage-migration. |
+| `audit_log_retention` | `config` | Borra filas de `AuditLog` con más de `--days` (default 90). |
+| `normalize_draft_templates` | `biometric` | Reescribe valores `bytes`-typed en conversion drafts a base64. |
+| `reconcile_pending_cascades` | `dp4500_integration` | Reconcilia cascadas pendientes entre el sistema y DP4500. |
+
+---
+
+## Historial de cambios
 
 | Commit | Qué cambió |
 |---|---|
@@ -1801,16 +2207,5 @@ sudo systemctl restart gunicorn
 | `33d67c4` | Changelog footer en la guía. |
 | `7f47e40` | Reorganiza la sección 5.2 con una sección dedicada "Cómo poblar la base de datos" con tabla comparativa de los 4 seeds. Corrige gaps del deploy en DO: `sudo` NOPASSWD para `deploy`, `pg_hba.conf` md5, `GRANT ON SCHEMA public`, `python3.12-venv`, swap para Node build, DNS antes de certbot, troubleshooting extendido. |
 | `b4945b3` + cambios posteriores | Sección 10 dividida en 10.1 (deploy normal), 10.2 (suspender biométrica) y 10.3 (rollback). Documenta el flujo `BIOMETRIC_SUSPENDED` + `VITE_BIOMETRIC_SUSPENDED`, el helper `scripts/biometric_suspension.sh`, la validación post-deploy con `curl` + cookie/CSRF, y los comandos systemd de la PC del lector. Menciona las migraciones nuevas que se aplican automáticamente (`biometric/0001-0003`, `customers/0010-0012`, `catalogs/0007`, `operations/0025`). |
-| `en curso` | Sección 10.2 y 10.3 reescritas paso a paso (swap permanente, 6 pasos forward, 4 rollback, tabla de referencia). Bloque `location /api/ {}` de la sección 7 con `client_max_body_size 10m;` documentado. Nuevo ítem en Troubleshooting para `413 Request Entity Too Large` con receta de Nginx vs Django y tamaño recomendado. |
-
-Si la guía quedó desactualizada respecto al código, este es el bloque a actualizar. Buscá la sección correspondiente en la tabla de arriba y en el diff del commit.
-
-## Próximos pasos para producción real
-
-Esta guía deja el sistema funcionando, pero para un cliente final **se recomienda**:
-
-1. **Migrar a un PaaS** (Railway, Render) o usar **DB administrada** (Supabase, RDS) para recibir backups, monitoreo y SSL administrado.
-2. **Mover archivos media** (QR, PDFs) a S3-compatible en lugar de disco local.
-3. **Sumar CDN** (Cloudflare) delante del VPS.
-4. **Sumar rate limiting** en Nginx (`limit_req_zone`) para la API.
-5. **Revisar `docs/verification-contract-v2.md`** y demás specs periódicamente: la guía asume que el código está estable. Cambios grandes requieren actualizar la guía.
+| (revisión Q4 2026) | Reescritura completa. Refleja: (1) cloud-storage-migration slices 1-4 (storage S3 + presigned URLs + audit), (2) backups canónicos via `create_backup` management command (en vez de `pg_dump` script), (3) `scripts/deploy.sh.example` requiere copia explícita, (4) compliance Bolivia Ley 164, (5) tabla comparativa de cambios, (6) anexos B (env vars) y C (management commands), (7) troubleshooting actualizado con 403 CSRF, 404 signed-URL, AccessDenied S3, fcntl en Windows, `command not found` de deploy.sh. |
+| (revisión local, esta sesión) | Actualización del archivo en disco (no en repo, sigue en `.gitignore` línea 94). Agrega la §11.7 cutover a AWS S3 mergeada en slice-5. Mantiene los 3 anexos y la sección de compliance Bolivia Ley 164. |

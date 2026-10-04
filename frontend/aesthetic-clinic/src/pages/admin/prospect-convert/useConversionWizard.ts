@@ -485,7 +485,7 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
     setMedicalDocumentFile(nextFile)
     setFieldErrors((current) => ({
       ...current,
-      documentoFichaPdf: '',
+      documentoFicha: '',
     }))
     setSubmitError(null)
   }
@@ -674,7 +674,7 @@ export function useConversionWizard({ prospectId, clientId, mode }: UseConversio
     resetFeedback()
     if (!medicalDocumentFile) {
       setFieldErrors({
-        documentoFichaPdf: 'Debes adjuntar el PDF escaneado de la ficha medica antes de continuar.',
+        documentoFicha: 'Debes adjuntar el PDF o la imagen escaneada de la ficha medica antes de continuar.',
       })
       return
     }

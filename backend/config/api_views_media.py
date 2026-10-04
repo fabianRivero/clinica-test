@@ -191,7 +191,7 @@ def _resolve_ficha_branch(path: str) -> Optional[int]:
     the path is malformed for the lookup.
     """
     ficha = (
-        FichaClinica.objects.filter(documento_escaneado_pdf=path)
+        FichaClinica.objects.filter(documento_escaneado=path)
         .select_related("operacion__paciente")
         .first()
     )
@@ -205,7 +205,7 @@ def _resolve_ficha_owner_cliente_id(path: str) -> Optional[int]:
     ``Cliente.id`` (used by the cliente-self rule).
     """
     ficha = (
-        FichaClinica.objects.filter(documento_escaneado_pdf=path)
+        FichaClinica.objects.filter(documento_escaneado=path)
         .select_related("operacion__paciente")
         .first()
     )
@@ -479,12 +479,12 @@ def _resolve_authorization_rule(
             and user.cliente is not None
             and user.cliente.id == cliente_id
         ):
-            return True, "cliente_self", "clinical.FichaClinica.documento_escaneado_pdf"
+            return True, "cliente_self", "clinical.FichaClinica.documento_escaneado"
         # admin_sucursal (own branch)
         if _admin_sucursal_of(user, branch_id):
-            return True, "admin_sucursal", "clinical.FichaClinica.documento_escaneado_pdf"
+            return True, "admin_sucursal", "clinical.FichaClinica.documento_escaneado"
         # Stale key (no ficha row owns the path) — non-admin denied.
-        return False, "", "clinical.FichaClinica.documento_escaneado_pdf"
+        return False, "", "clinical.FichaClinica.documento_escaneado"
 
     if prefix == "citas/":
         branch_id = _resolve_cita_branch(path)
@@ -584,7 +584,7 @@ def _resource_type_for(path: str) -> str:
     """
     prefix = path.split("/", 1)[0] + "/"
     if prefix == "fichas_clinicas/":
-        return "clinical.FichaClinica.documento_escaneado_pdf"
+        return "clinical.FichaClinica.documento_escaneado"
     if prefix == "citas/":
         return "operations.CitaMedica.foto_antes"
     if prefix == "fotos_operacion/":
