@@ -1174,7 +1174,7 @@ export function finalizeAdminProspectConversion(
 ) {
   const formData = new FormData()
   if (documentFile) {
-    formData.append('documentoFichaPdf', documentFile)
+    formData.append('documentoFicha', documentFile)
   }
   if (firstPayment) {
     if (firstPayment.paymentMethod) {
@@ -1427,7 +1427,7 @@ export function finalizeAdminDirectClientCreation(
 ) {
   const formData = new FormData()
   if (documentFile) {
-    formData.append('documentoFichaPdf', documentFile)
+    formData.append('documentoFicha', documentFile)
   }
   if (firstPayment) {
     if (firstPayment.paymentMethod) {
@@ -1496,7 +1496,7 @@ export function saveAdminClientReactivationMedicalStep(clientId: string, payload
   const formData = new FormData()
   formData.append('payload', JSON.stringify(payload))
   if (pdfFile) {
-    formData.append('documento_escaneado_pdf', pdfFile)
+    formData.append('documento_escaneado', pdfFile)
   }
 
   return requestFormDataWithBody<ProspectConversionResponse>(`/api/admin/clientes/${clientId}/reactivar/paso-3/`, formData)
@@ -1513,7 +1513,7 @@ export function finalizeAdminClientReactivation(
 ) {
   const formData = new FormData()
   if (pdfFile) {
-    formData.append('documento_escaneado_pdf', pdfFile)
+    formData.append('documento_escaneado', pdfFile)
   }
   if (firstPayment) {
     if (firstPayment.paymentMethod) {

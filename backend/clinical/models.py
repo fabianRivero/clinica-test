@@ -117,11 +117,18 @@ class FichaClinica(TimeStampedModel):
     observaciones = models.TextField(blank=True)
     firma_paciente_ci = models.CharField(max_length=120, blank=True)
     firma_paciente_url = models.CharField(max_length=255, blank=True)
-    documento_escaneado_pdf = models.FileField(
+    # The scanned ficha can be uploaded as a PDF or as an image
+    # (jpg/jpeg/png/webp). The validator accepts either; the wizard UI
+    # is responsible for telling the operator which format the
+    # scanned file is in. Field was renamed from
+    # ``documento_escaneado_pdf`` to ``documento_escaneado`` in
+    # migration 0005 of clinical so the storage layer no longer
+    # assumes PDF.
+    documento_escaneado = models.FileField(
         upload_to="fichas_clinicas/%Y/%m/",
         blank=True,
         null=True,
-        validators=[FileExtensionValidator(["pdf"])],
+        validators=[FileExtensionValidator(["pdf", "jpg", "jpeg", "png", "webp"])],
     )
     consentimiento_aceptado = models.BooleanField(default=False)
 

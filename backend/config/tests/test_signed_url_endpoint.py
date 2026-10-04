@@ -239,11 +239,11 @@ def _seed_graph(testcase: "_SignedUrlEndpointTests"):
     testcase.ficha_b_pdf = "fichas_clinicas/2026/10/b.pdf"
     FichaClinica.objects.create(
         operacion=testcase.operacion_a,
-        documento_escaneado_pdf=testcase.ficha_a_pdf,
+        documento_escaneado=testcase.ficha_a_pdf,
     )
     FichaClinica.objects.create(
         operacion=testcase.operacion_b,
-        documento_escaneado_pdf=testcase.ficha_b_pdf,
+        documento_escaneado=testcase.ficha_b_pdf,
     )
 
     # Seed an operation photo on operacion_a so we have a
@@ -549,7 +549,7 @@ class AuditWriteFailureTranslationTests(TestCase):
                     user_role="",
                     action="SIGNED_URL_ISSUED",
                     resource_path="fichas_clinicas/2026/10/a.pdf",
-                    resource_type="clinical.FichaClinica.documento_escaneado_pdf",
+                    resource_type="clinical.FichaClinica.documento_escaneado",
                     client_ip=None,
                     user_agent="",
                     expires_at=None,
@@ -561,7 +561,7 @@ class AuditWriteFailureTranslationTests(TestCase):
             user_role="CLIENTE",
             action="SIGNED_URL_ISSUED",
             resource_path="fichas_clinicas/2026/10/a.pdf",
-            resource_type="clinical.FichaClinica.documento_escaneado_pdf",
+            resource_type="clinical.FichaClinica.documento_escaneado",
             client_ip="127.0.0.1",
             user_agent="Mozilla/5.0",
             expires_at=None,

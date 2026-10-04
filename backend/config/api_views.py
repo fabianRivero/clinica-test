@@ -435,7 +435,7 @@ def _operation_detail(operacion, request=None):
     ficha = getattr(operacion, "ficha_clinica", None)
     huella = getattr(operacion.paciente, "huella_biometrica", None)
     procedure = operacion.servicio_config.proc_estetico
-    document_field = ficha.documento_escaneado_pdf if ficha else None
+    document_field = ficha.documento_escaneado if ficha else None
     document_url = document_field.url if document_field else ""
     document_name = PurePosixPath(document_field.name).name if document_field else ""
 

@@ -582,13 +582,13 @@ export function ConversionStepMedical({
         <div className="wizard-block__header">
           <div>
             <strong>Documento escaneado de la ficha</strong>
-            <p>Adjunta el PDF final escaneado. Este archivo se guardará junto a la ficha clínica de la operación.</p>
+            <p>Adjunta el PDF final escaneado o una foto legible de la ficha. Este archivo se guardará junto a la ficha clínica de la operación.</p>
           </div>
         </div>
         <label className="field field--full">
-          <span>PDF de la ficha medica</span>
+          <span>PDF o imagen de la ficha medica</span>
           <input
-            accept=".pdf,application/pdf"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
             className="input input--file"
             type="file"
             onChange={onDocumentChange}
@@ -596,10 +596,10 @@ export function ConversionStepMedical({
           <small className="field__hint">
             {medicalDocumentFile
               ? `Archivo seleccionado: ${medicalDocumentFile.name}`
-              : 'Debes subir un archivo PDF antes de pasar a la huella biometrica.'}
+              : 'Debes subir un archivo PDF o imagen (jpg, jpeg, png, webp) antes de pasar a la huella biometrica.'}
           </small>
-          {fieldErrors.documentoFichaPdf ? (
-            <small className="field__error">{fieldErrors.documentoFichaPdf}</small>
+          {fieldErrors.documentoFicha ? (
+            <small className="field__error">{fieldErrors.documentoFicha}</small>
           ) : null}
         </label>
       </div>
