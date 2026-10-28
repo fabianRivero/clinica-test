@@ -1132,3 +1132,206 @@ class RelativePathReadApiTests(_SignedUrlEndpointTests):
         self.assertEqual(len(matching), 1, response.json())
         self._assert_path(matching[0]["fotoAntesUrl"], "citas/")
         self._assert_path(matching[0]["fotoDespuesUrl"], "citas/")
+
+
+# ---------------------------------------------------------------------------
+# Gap 3 — the allowlist covers every prefix the app writes
+# ---------------------------------------------------------------------------
+
+
+class NewPrefixAuthorizationTests(_SignedUrlEndpointTests):
+    """The signed-URL allowlist must cover every prefix the app writes.
+
+    Before the fix ``pagos_qr/``, ``facturas_gastos/`` and
+    ``conversiones/`` were rejected with HTTP 400 ("path is outside the
+    allowed prefixes"), so those files were unreachable once the bucket
+    was live: the payment QR, the supplier invoices and the
+    prospect-conversion draft could not be opened at all.
+
+    Each test below asserts the full happy path: HTTP 200, a presigned
+    URL pointing at the bucket and a persisted ``AuditLog`` row with
+    ``action='SIGNED_URL_ISSUED'``.
+    """
+
+    QR_PATH = "pagos_qr/2026/10/qr-prueba.webp"
+    GASTO_FACTURA_PATH = "facturas_gastos/2026/10/factura-prueba.pdf"
+    CONVERSION_PATH = "conversiones/borradores/borrador-prueba.pdf"
+
+    def setUp(self) -> None:
+        super().setUp()
+        from customers.models import Prospecto, ProspectoConversionBorrador
+
+        # The keys must exist in the bucket, otherwise the endpoint
+        # short-circuits to 404 BEFORE the authorization check.
+        for path in (
+            self.QR_PATH,
+            self.GASTO_FACTURA_PATH,
+            self.CONVERSION_PATH,
+        ):
+            self.fake_client.objects[("test-bucket", path)] = b"fake-bytes"
+
+        # ``pagos_qr/`` — the branch QR config.
+        self.qr_config = ConfiguracionPagoQR.objects.create(
+            sucursal=self.sucursal_a,
+            imagen_qr=self.QR_PATH,
+        )
+        # ``facturas_gastos/`` — a supplier invoice registered by the
+        # branch.
+        self.categoria = CategoriaGasto.objects.create(nombre="Insumos")
+        self.gasto = GastoSucursal.objects.create(
+            sucursal=self.sucursal_a,
+            categoria=self.categoria,
+            fecha=date(2026, 10, 15),
+            concepto="Compra de insumos",
+            unidades=Decimal("1"),
+            costo_unidad=Decimal("100"),
+            gasto_total=Decimal("100"),
+            factura=self.GASTO_FACTURA_PATH,
+        )
+        # ``conversiones/`` — a prospect-conversion draft started by the
+        # branch admin of the prospect's registration branch.
+        self.prospecto = Prospecto.objects.create(
+            primer_nombre="Ana",
+            apellido_paterno="Aguilar",
+            telefono="70000000",
+            sucursal_registro=self.sucursal_a,
+            registrado_por=self.admin_sucursal_a_user,
+        )
+        self.draft = ProspectoConversionBorrador.objects.create(
+            prospecto=self.prospecto,
+            iniciado_por=self.admin_sucursal_a_user,
+            documento_pdf=self.CONVERSION_PATH,
+        )
+
+    def _mint(self, path, user):
+        client = self.client
+        client.force_login(user)
+        return client.get("/api/media/signed-url/", {"path": path})
+
+    def _assert_issued(self, response, path, resource_type):
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertIn("url", body)
+        self.assertIn(
+            "https://test-bucket.s3.sa-east-1.amazonaws.com/", body["url"]
+        )
+        self.assertIn(path, body["url"])
+        self.assertEqual(body["ttl_seconds"], 900)
+        # The audit row is persisted (fail-closed contract).
+        self.assertEqual(len(self._audit_create_calls), 1)
+        audit = self._audit_create_calls[0]
+        self.assertEqual(audit["action"], "SIGNED_URL_ISSUED")
+        self.assertEqual(audit["resource_path"], path)
+        self.assertEqual(audit["resource_type"], resource_type)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="SIGNED_URL_ISSUED",
+                resource_path=path,
+                resource_type=resource_type,
+            ).exists()
+        )
+        self.assertEqual(
+            self.fake_client.presign_calls[0]["Params"]["Key"], path
+        )
+
+    # ---- pagos_qr/ ----
+
+    def test_pagos_qr_path_authorizes_branch_admin(self):
+        """The branch admin of the QR's own branch can mint a signed URL
+        for the payment QR."""
+        response = self._mint(self.QR_PATH, self.admin_sucursal_a_user)
+        self._assert_issued(
+            response, self.QR_PATH, "billing.ConfiguracionPagoQR.imagen_qr"
+        )
+
+    def test_pagos_qr_path_authorizes_branch_client(self):
+        """A client of the QR's branch can mint a signed URL for it (the
+        client portal shows the QR of the client's branch)."""
+        self.cliente_a.usuario.sucursal = self.sucursal_a
+        self.cliente_a.usuario.save(update_fields=["sucursal"])
+        response = self._mint(self.QR_PATH, self.cliente_a.usuario)
+        self._assert_issued(
+            response, self.QR_PATH, "billing.ConfiguracionPagoQR.imagen_qr"
+        )
+
+    def test_pagos_qr_path_denies_other_branch_admin(self):
+        """The admin of another branch cannot mint the QR URL."""
+        response = self._mint(self.QR_PATH, self.admin_sucursal_b_user)
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    def test_pagos_qr_path_denies_other_branch_client(self):
+        """A client of another branch cannot mint the QR URL."""
+        self.cliente_b.usuario.sucursal = self.sucursal_b
+        self.cliente_b.usuario.save(update_fields=["sucursal"])
+        response = self._mint(self.QR_PATH, self.cliente_b.usuario)
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    # ---- facturas_gastos/ ----
+
+    def test_facturas_gastos_path_authorizes_branch_admin(self):
+        """The admin of the branch that registered the expense can mint
+        a signed URL for the supplier invoice."""
+        response = self._mint(
+            self.GASTO_FACTURA_PATH, self.admin_sucursal_a_user
+        )
+        self._assert_issued(
+            response, self.GASTO_FACTURA_PATH, "billing.GastoSucursal.factura"
+        )
+
+    def test_facturas_gastos_path_denies_other_branch_admin(self):
+        """The supplier invoice is internal to its branch."""
+        response = self._mint(
+            self.GASTO_FACTURA_PATH, self.admin_sucursal_b_user
+        )
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    def test_facturas_gastos_path_denies_client(self):
+        """A client can never open a supplier invoice."""
+        self.cliente_a.usuario.sucursal = self.sucursal_a
+        self.cliente_a.usuario.save(update_fields=["sucursal"])
+        response = self._mint(self.GASTO_FACTURA_PATH, self.cliente_a.usuario)
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    # ---- conversiones/ ----
+
+    def test_conversiones_path_authorizes_draft_owner(self):
+        """The admin that started the conversion can mint a signed URL for
+        the draft document."""
+        response = self._mint(
+            self.CONVERSION_PATH, self.admin_sucursal_a_user
+        )
+        self._assert_issued(
+            response,
+            self.CONVERSION_PATH,
+            "customers.ProspectoConversionBorrador.documento_pdf",
+        )
+
+    def test_conversiones_path_denies_other_branch_admin(self):
+        """The admin of another branch cannot mint the draft URL."""
+        response = self._mint(
+            self.CONVERSION_PATH, self.admin_sucursal_b_user
+        )
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    def test_conversiones_path_denies_client(self):
+        """A client can never open the conversion draft document."""
+        self.cliente_a.usuario.sucursal = self.sucursal_a
+        self.cliente_a.usuario.save(update_fields=["sucursal"])
+        response = self._mint(self.CONVERSION_PATH, self.cliente_a.usuario)
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    # ---- the allowlist is still an allowlist ----
+
+    def test_prefix_outside_allowlist_still_returns_400(self):
+        """A prefix the app does NOT write stays rejected with 400."""
+        response = self._mint("documentos_privados/x.pdf", self.admin_principal_user)
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+        self.assertEqual(self.fake_client.presign_calls, [])
+
