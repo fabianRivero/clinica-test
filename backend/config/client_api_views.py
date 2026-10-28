@@ -427,7 +427,9 @@ def _payment_item(payment):
 def _payment_qr_config_item(config):
     return {
         "hasQr": bool(config and config.imagen_qr),
-        "qrImageUrl": config.imagen_qr.url if config and config.imagen_qr else "",
+        # Bucket-relative path (``pagos_qr/...``), never an absolute
+        # URL: the frontend resolves it through ``useSignedUrl``.
+        "qrImageUrl": config.imagen_qr.name if config and config.imagen_qr else "",
         "instructions": (
             config.instrucciones
             if config
@@ -557,9 +559,10 @@ def _appointment_item(cita, appointment_index=None, total_appointments=None, req
                 "maquinaria__marca",
             )
         ),
-        # Photo URLs (absolute path). Empty string when no photo.
-        "fotoAntesUrl": cita.foto_antes.url if cita.foto_antes else "",
-        "fotoDespuesUrl": cita.foto_despues.url if cita.foto_despues else "",
+        # Photo paths (bucket-relative, e.g.
+        # ``citas/2026/10/03/antes/...``). Empty string when no photo.
+        "fotoAntesUrl": cita.foto_antes.name if cita.foto_antes else "",
+        "fotoDespuesUrl": cita.foto_despues.name if cita.foto_despues else "",
     }
     # Pricing + payment breakdown (mirrors ``_free_client_appointment_item`` in
     # the admin viewset so the client portal and the admin detail surface

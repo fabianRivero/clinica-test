@@ -46,11 +46,17 @@ from django.test import SimpleTestCase, TestCase, override_settings  # noqa: E40
 from accounts.models import Rol, Usuario  # noqa: E402
 from customers.models import Cliente  # noqa: E402
 from catalogs.models import ServicioConfig, Sucursal, TipoServicio  # noqa: E402
-from operations.models import Operacion, OperacionFoto  # noqa: E402
+from operations.models import CitaMedica, Operacion, OperacionFoto  # noqa: E402
 from staff.models import Especialista  # noqa: E402
 from clinical.models import FichaClinica  # noqa: E402
 from notifications.models import Ticket, TicketMessage  # noqa: E402
-from billing.models import CuotaPlanPago, PagoRealizado  # noqa: E402
+from billing.models import (  # noqa: E402
+    CategoriaGasto,
+    ConfiguracionPagoQR,
+    CuotaPlanPago,
+    GastoSucursal,
+    PagoRealizado,
+)
 from audit.models import AuditLog  # noqa: E402
 from audit.services import write_audit_log, AuditWriteFailure  # noqa: E402
 
@@ -919,3 +925,210 @@ class PathBasedReadTests(_SignedUrlEndpointTests):
         self._assert_path(
             matching[0]["attachmentUrl"], "tickets_adjuntos/"
         )
+
+# ---------------------------------------------------------------------------
+# Gap 2 — the read APIs expose bucket-relative media paths
+# ---------------------------------------------------------------------------
+
+
+class RelativePathReadApiTests(_SignedUrlEndpointTests):
+    """Every media field the read APIs expose must be a bucket-relative
+    path, never an absolute URL.
+
+    ``Boto3Storage.url()`` raises by design under
+    ``STORAGE_PROVIDER=s3``, so any callsite that still called ``.url()``
+    returned HTTP 500 in the cloud deployment. The contract is: the API
+    returns the RELATIVE bucket path and the frontend resolves it to a
+    presigned URL through the ``useSignedUrl`` hook.
+
+    Each test below pins one callsite shape: the response field MUST be
+    a non-empty relative path under the upload prefix, MUST NOT start
+    with ``http://``/``https://`` and MUST NOT contain ``/media/``.
+    """
+
+    QR_PATH = "pagos_qr/2026/10/qr-prueba.webp"
+    GASTO_FACTURA_PATH = "facturas_gastos/2026/10/factura-prueba.pdf"
+    FOTO_ANTES_PATH = "citas/2026/10/03/antes/foto-antes.webp"
+    FOTO_DESPUES_PATH = "citas/2026/10/03/despues/foto-despues.webp"
+    RECIBO_PATH = "comprobantes_pagos/2026/10/recibo-prueba.pdf"
+
+    def _assert_path(self, value, prefix):
+        """value MUST be a non-empty relative path starting with prefix."""
+        self.assertIsInstance(value, str)
+        self.assertTrue(value, f"expected non-empty path, got {value!r}")
+        self.assertTrue(
+            value.startswith(prefix),
+            f"expected path to start with {prefix!r}, got {value!r}",
+        )
+        self.assertNotIn("/media/", value)
+        self.assertFalse(
+            value.startswith("http://") or value.startswith("https://"),
+        )
+
+    def setUp(self) -> None:
+        super().setUp()
+        # The branch-scoped admin endpoints resolve the branch from the
+        # admin's ``sucursal``; the seeded client user must point at the
+        # SAME branch so the payment / quota / cita fixtures are visible.
+        self.cliente_a.usuario.sucursal = self.sucursal_a
+        self.cliente_a.usuario.save(update_fields=["sucursal"])
+
+        # Branch QR config (``pagos_qr/``).
+        self.qr_config = ConfiguracionPagoQR.objects.create(
+            sucursal=self.sucursal_a,
+            imagen_qr=self.QR_PATH,
+        )
+        # Branch expense with a supplier invoice (``facturas_gastos/``).
+        self.categoria = CategoriaGasto.objects.create(nombre="Insumos")
+        self.gasto = GastoSucursal.objects.create(
+            sucursal=self.sucursal_a,
+            categoria=self.categoria,
+            fecha=date(2026, 10, 15),
+            concepto="Compra de insumos",
+            unidades=Decimal("1"),
+            costo_unidad=Decimal("100"),
+            gasto_total=Decimal("100"),
+            factura=self.GASTO_FACTURA_PATH,
+        )
+        # Quota + payment with a receipt (``comprobantes_pagos/``).
+        self.cuota_a = CuotaPlanPago.objects.create(
+            operacion=self.operacion_a,
+            nro_cuota=1,
+            fecha_vencimiento=date(2026, 10, 15),
+            monto_programado=Decimal("50"),
+        )
+        self.pago_a = PagoRealizado.objects.create(
+            cuota=self.cuota_a,
+            monto_pagado=Decimal("50"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("50"),
+            comprobante_url=self.RECIBO_PATH,
+        )
+        # Appointment photos (``citas/.../antes/`` and ``.../despues/``).
+        self.cita_a = CitaMedica.objects.create(
+            operacion=self.operacion_a,
+            sucursal=self.sucursal_a,
+            fecha_hora=datetime(2026, 10, 3, 9, 0, tzinfo=timezone.utc),
+            foto_antes=self.FOTO_ANTES_PATH,
+            foto_despues=self.FOTO_DESPUES_PATH,
+        )
+
+    # ---- GET /api/admin/operaciones/<id>/ ----
+
+    def test_operation_detail_returns_relative_document_and_photo_paths(self):
+        """``GET /api/admin/operaciones/<id>/`` — the clinical PDF
+        (``documentPdfUrl``) and the appointment photos
+        (``citas[].fotoAntesUrl`` / ``fotoDespuesUrl``) are relative
+        paths. Callsites: ``api_views.py:439`` and ``api_views.py:653-654``.
+        """
+        self.client.force_login(self.admin_principal_user)
+        response = self.client.get(
+            f"/api/admin/operaciones/{self.operacion_a.pk}/"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        operation = response.json()["operation"]
+        self._assert_path(operation["documentPdfUrl"], "fichas_clinicas/")
+        matching = [
+            c for c in operation["appointments"]
+            if c.get("rawId") == self.cita_a.pk
+        ]
+        self.assertEqual(len(matching), 1, operation["appointments"])
+        self._assert_path(matching[0]["fotoAntesUrl"], "citas/")
+        self.assertIn("/antes/", matching[0]["fotoAntesUrl"])
+        self._assert_path(matching[0]["fotoDespuesUrl"], "citas/")
+        self.assertIn("/despues/", matching[0]["fotoDespuesUrl"])
+
+    # ---- GET /api/admin/gastos/ ----
+
+    def test_admin_gastos_returns_relative_invoice_path(self):
+        """``GET /api/admin/gastos/`` — ``expenses[].invoiceUrl`` is a
+        relative path under ``facturas_gastos/``. Callsite:
+        ``api_views.py:1075``."""
+        self.client.force_login(self.admin_sucursal_a_user)
+        response = self.client.get(
+            "/api/admin/gastos/", {"month": 10, "year": 2026}
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        matching = [
+            e for e in response.json()["expenses"] if e["rawId"] == self.gasto.pk
+        ]
+        self.assertEqual(len(matching), 1, response.json())
+        self._assert_path(matching[0]["invoiceUrl"], "facturas_gastos/")
+
+    # ---- GET /api/admin/reportes/ingresos/ ----
+
+    def test_admin_report_income_returns_relative_invoice_path(self):
+        """``GET /api/admin/reportes/ingresos/`` — ``rows[].invoiceUrl``
+        is a relative path under ``comprobantes_pagos/``. Callsite:
+        ``api_views.py:8304``."""
+        self.client.force_login(self.admin_sucursal_a_user)
+        response = self.client.get(
+            "/api/admin/reportes/ingresos/", {"month": 10, "year": 2026}
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        rows = response.json()["rows"]
+        matching = [r for r in rows if r["paymentId"] == self.pago_a.pk]
+        self.assertEqual(len(matching), 1, rows)
+        self._assert_path(matching[0]["invoiceUrl"], "comprobantes_pagos/")
+
+    # ---- GET /api/admin/pagos/ ----
+
+    def test_admin_pagos_returns_relative_qr_path(self):
+        """``GET /api/admin/pagos/`` — ``paymentQrConfig.qrImageUrl`` is a
+        relative path under ``pagos_qr/``. Callsite:
+        ``api/viewsets/payments.py`` (``_payment_qr_config_item``)."""
+        self.client.force_login(self.admin_sucursal_a_user)
+        response = self.client.get("/api/admin/pagos/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertTrue(body["paymentQrConfig"]["hasQr"])
+        self._assert_path(
+            body["paymentQrConfig"]["qrImageUrl"], "pagos_qr/"
+        )
+
+    # ---- GET /api/admin/pagos/configuracion-qr/ ----
+
+    def test_admin_qr_config_returns_relative_qr_path(self):
+        """``GET /api/admin/pagos/configuracion-qr/`` — the branch QR is
+        a relative path under ``pagos_qr/``. Callsite:
+        ``api/viewsets/payments.py`` (``_payment_qr_config_item``)."""
+        self.client.force_login(self.admin_sucursal_a_user)
+        response = self.client.get("/api/admin/pagos/configuracion-qr/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertTrue(body["paymentQrConfig"]["hasQr"])
+        self._assert_path(
+            body["paymentQrConfig"]["qrImageUrl"], "pagos_qr/"
+        )
+
+    # ---- GET /api/client/pagos/ ----
+
+    def test_client_pagos_returns_relative_qr_path(self):
+        """``GET /api/client/pagos/`` — the client portal QR is a
+        relative path under ``pagos_qr/``. Callsite:
+        ``client_api_views.py:430``."""
+        self.client.force_login(self.cliente_a.usuario)
+        response = self.client.get("/api/client/pagos/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertTrue(body["paymentQrConfig"]["hasQr"])
+        self._assert_path(
+            body["paymentQrConfig"]["qrImageUrl"], "pagos_qr/"
+        )
+
+    # ---- GET /api/client/reservas/ ----
+
+    def test_client_reservas_returns_relative_photo_paths(self):
+        """``GET /api/client/reservas/`` — the appointment photos are
+        relative paths under ``citas/``. Callsites:
+        ``client_api_views.py:561-562``."""
+        self.client.force_login(self.cliente_a.usuario)
+        response = self.client.get("/api/client/reservas/")
+        self.assertEqual(response.status_code, 200, response.content)
+        matching = [
+            a for a in response.json()["appointments"]
+            if a.get("rawId") == self.cita_a.pk
+        ]
+        self.assertEqual(len(matching), 1, response.json())
+        self._assert_path(matching[0]["fotoAntesUrl"], "citas/")
+        self._assert_path(matching[0]["fotoDespuesUrl"], "citas/")
