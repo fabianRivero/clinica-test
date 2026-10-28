@@ -95,6 +95,13 @@ BAA reference in 1Password under `AWS / BAA`.
 ## Rollback
 
 Flip `STORAGE_PROVIDER=local` in the production env and redeploy.
-The signed-URL endpoint returns 503 and the frontend falls back to
-local `/media/...` via the `useSignedUrl` helper feature flag
-(`frontend/aesthetic-clinic/src/services/media.tsx`).
+The signed-URL endpoint is bucket-only: it never serves local bytes,
+so files that are not in the bucket keep returning 404 until the
+backfill catches up.
+
+There is **no** frontend feature flag that falls back to the local
+`/media/...` alias, and there must not be one: that alias serves the
+clinical record without authentication. Keep the Nginx `location
+/media/` block restricted (`internal;`, see `docs/vps-setup-from-scratch.md`
+§7 and §11.7) — the rollback restores the backend reads, not a public
+media directory.
