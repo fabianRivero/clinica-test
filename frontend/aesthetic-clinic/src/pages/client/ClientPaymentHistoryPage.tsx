@@ -6,6 +6,7 @@ import { SectionCard } from '../../components/admin/SectionCard'
 import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { getClientPayments } from '../../services/api/client'
+import { SignedLink } from '../../services/media'
 import { monthNames } from '../admin/expenses/expenseUtils'
 
 function parsePaymentDate(value?: string, currentYear?: number): Date | null {
@@ -196,9 +197,9 @@ export function ClientPaymentHistoryPage() {
                       </td>
                       <td>
                         {payment.receiptUrl ? (
-                          <a className="button button--ghost button--compact" href={payment.receiptUrl} target="_blank" rel="noreferrer">
+                          <SignedLink className="button button--ghost button--compact" href={payment.receiptUrl} target="_blank" rel="noreferrer">
                             Ver archivo
-                          </a>
+                          </SignedLink>
                         ) : (
                           <span>Sin archivo</span>
                         )}

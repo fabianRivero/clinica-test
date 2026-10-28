@@ -30,6 +30,7 @@ import {
   updateAdminOperationDetails,
   updateAdminOperationPricePlan,
 } from '../../services/api/admin'
+import { SignedImage, SignedLink } from '../../services/media'
 import type {
   AdminAppointment,
   AdminPaymentQuota,
@@ -1196,21 +1197,21 @@ const handleSaveSessions = async () => {
             {operation.documentPdfUrl ? (
               <div className="document-viewer">
                 <div className="document-viewer__actions">
-                  <a
+                  <SignedLink
                     className="button button--ghost button--compact"
                     href={operation.documentPdfUrl}
                     rel="noreferrer"
                     target="_blank"
                   >
                     Ver PDF
-                  </a>
-                  <a
+                  </SignedLink>
+                  <SignedLink
                     className="button button--compact"
                     download={operation.documentPdfName || undefined}
                     href={operation.documentPdfUrl}
                   >
                     Descargar PDF
-                  </a>
+                  </SignedLink>
                 </div>
               </div>
             ) : (
@@ -2223,7 +2224,7 @@ const handleSaveSessions = async () => {
               className="booking-modal-body"
               style={{ textAlign: 'center' }}
             >
-              <img
+              <SignedImage
                 src={photoPreviewUrl}
                 alt="Foto de la cita"
                 style={{

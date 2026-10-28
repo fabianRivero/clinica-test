@@ -10,6 +10,7 @@ import { useConfirmDialog } from '../../../hooks/useConfirmDialog'
 import { useNotifications } from '../../../providers/NotificationProvider'
 import { useBranchContext } from '../../../providers/BranchProvider'
 import { deleteAdminExpense, getAdminExpenses } from '../../../services/api/admin'
+import { SignedLink } from '../../../services/media'
 import type { ExpenseItem } from '../../../types/admin'
 import { formatMoney, monthNames } from './expenseUtils'
 
@@ -182,7 +183,7 @@ export function AdminExpenseListPage() {
                         <td><strong>{expense.concept}</strong><small>{expense.units} x Bs {expense.unitCost}</small></td>
                         <td>{expense.provider || 'Sin proveedor'}</td>
                         <td>{expense.totalLabel}</td>
-                        <td>{expense.invoiceUrl ? <a href={expense.invoiceUrl} rel="noreferrer" target="_blank">Ver factura</a> : 'Sin factura'}</td>
+                        <td>{expense.invoiceUrl ? <SignedLink href={expense.invoiceUrl} rel="noreferrer" target="_blank">Ver factura</SignedLink> : 'Sin factura'}</td>
                         <td>
                           <div className="table-actions">
                             <button className="button button--ghost button--sm" type="button" onClick={() => navigate('/cms/gastos/crear', { state: { expense } })}>Editar</button>

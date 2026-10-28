@@ -8,6 +8,7 @@ import { StatusBadge } from '../../components/admin/StatusBadge'
 import { useApiResource } from '../../hooks/useApiResource'
 import { useNotifications } from '../../providers/NotificationProvider'
 import { getClientPayments, uploadClientPaymentReceipt } from '../../services/api/client'
+import { SignedImage, SignedLink } from '../../services/media'
 import { formatPaymentBreakdown } from '../../utils/payments'
 
 const PAGE_SIZE = 10
@@ -194,7 +195,7 @@ export function ClientPaymentsPage() {
                       <strong>Disponible para pago</strong>
                     </div>
                   </div>
-                  <img
+                  <SignedImage
                     alt="QR de pago bancario"
                     className="payment-qr-card__image"
                     onClick={() => setQrModalOpen(true)}
@@ -460,9 +461,9 @@ export function ClientPaymentsPage() {
                           </td>
                           <td>
                             {payment.receiptUrl ? (
-                              <a className="button button--ghost button--compact" href={payment.receiptUrl} target="_blank" rel="noreferrer">
+                              <SignedLink className="button button--ghost button--compact" href={payment.receiptUrl} target="_blank" rel="noreferrer">
                                 Ver archivo
-                              </a>
+                              </SignedLink>
                             ) : (
                               <span>Sin archivo</span>
                             )}
@@ -529,7 +530,7 @@ export function ClientPaymentsPage() {
                 Cerrar
               </button>
             </div>
-            <img
+            <SignedImage
               alt="QR de pago bancario ampliado"
               className="qr-modal__image"
               src={pageData.paymentQrConfig.qrImageUrl}
