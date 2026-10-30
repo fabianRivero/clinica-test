@@ -435,7 +435,7 @@ def _operation_detail(operacion, request=None):
     ficha = getattr(operacion, "ficha_clinica", None)
     huella = getattr(operacion.paciente, "huella_biometrica", None)
     procedure = operacion.servicio_config.proc_estetico
-    document_field = ficha.documento_escaneado_pdf if ficha else None
+    document_field = ficha.documento_escaneado if ficha else None
     # Bucket-relative path (``fichas_clinicas/...``), never an absolute
     # URL: the frontend resolves it through ``useSignedUrl``.
     document_url = document_field.name if document_field else ""

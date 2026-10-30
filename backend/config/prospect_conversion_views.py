@@ -91,17 +91,50 @@ def _check_cross_city_procedures(request, prospecto=None, cliente=None):
     return None
 
 
+# Accepted suffixes for the scanned ficha. PDF stays in the list for
+# clinics that have a flatbed scanner; the phone-camera path was added
+# so branches without a scanner can attach a JPG/PNG/WEBP image of
+# the printed ficha instead. Keep this list in sync with
+# ``clinical.models.FichaClinica.documento_escaneado`` validators and
+# with the ``accept`` attribute on the wizard's file input.
+_ALLOWED_DOCUMENT_SUFFIXES = (".pdf", ".jpg", ".jpeg", ".png", ".webp")
+
+
 def _get_required_pdf_file(request, draft=None):
-    document = request.FILES.get("documento_escaneado_pdf") or request.FILES.get("documentoFichaPdf")
+    """Extract the uploaded ficha scan from the request.
+
+    Accepts the new FormData key (``documento_escaneado`` /
+    ``documentoFicha``) and the legacy keys
+    (``documento_escaneado_pdf`` / ``documentoFichaPdf``) so the
+    endpoint stays compatible with old browser tabs and any
+    in-flight uploads from a pre-rename build of the frontend.
+    """
+    document = (
+        request.FILES.get("documento_escaneado")
+        or request.FILES.get("documentoFicha")
+        or request.FILES.get("documento_escaneado_pdf")
+        or request.FILES.get("documentoFichaPdf")
+    )
     if not document and draft and draft.documento_pdf:
         document = draft.documento_pdf
 
     if not document:
-        return None, json_response({"detail": "Debes adjuntar el PDF escaneado de la ficha medica."}, status=400)
+        return None, json_response(
+            {"detail": "Debes adjuntar el PDF o la imagen escaneada de la ficha medica."},
+            status=400,
+        )
 
     filename = (document.name or "").lower()
-    if not filename.endswith(".pdf"):
-        return None, json_response({"detail": "El documento adjunto debe estar en formato PDF."}, status=400)
+    if not filename.endswith(_ALLOWED_DOCUMENT_SUFFIXES):
+        return None, json_response(
+            {
+                "detail": (
+                    "El documento adjunto debe estar en formato PDF o imagen "
+                    "(jpg, jpeg, png, webp)."
+                )
+            },
+            status=400,
+        )
 
     return document, None
 
@@ -1571,8 +1604,14 @@ def admin_prospect_conversion_medical_step(request, prospecto_id=None, cliente_i
         except json.JSONDecodeError:
             return json_response({"detail": "El campo 'payload' no es JSON valido."}, status=400)
         
-        # Guardamos el PDF si viene
-        pdf_file = request.FILES.get("documento_escaneado_pdf")
+        # Guardamos el documento (PDF o imagen) si viene. The draft
+        # stores it in its own ``documento_pdf`` FileField for
+        # re-attachment during finalize; the new wizard sends the
+        # file under the ``documento_escaneado`` key (matching the
+        # renamed FichaClinica column), but we still accept the
+        # legacy ``documento_escaneado_pdf`` key from old browser
+        # tabs in flight.
+        pdf_file = request.FILES.get("documento_escaneado") or request.FILES.get("documento_escaneado_pdf")
         if pdf_file:
             draft.documento_pdf = pdf_file
             draft.save(update_fields=["documento_pdf"])
@@ -2394,7 +2433,7 @@ def admin_prospect_conversion_finalize(request, prospecto_id=None, cliente_id=No
         motivo_consulta=medical_data.get("motivoConsulta", ""),
         observaciones=medical_data.get("observaciones", ""),
         firma_paciente_ci=medical_data.get("firmaPacienteCi") or user_data.get("ci", ""),
-        documento_escaneado_pdf=document_file,
+        documento_escaneado=document_file,
         consentimiento_aceptado=bool(medical_data.get("consentimientoAceptado")),
     )
 

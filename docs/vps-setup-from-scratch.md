@@ -688,26 +688,26 @@ server {
     }
 
     # Media: depende de STORAGE_PROVIDER (ver 5.1).
-      #   - STORAGE_PROVIDER=local: Nginx sirve directamente desde disco.
-      #   - STORAGE_PROVIDER=s3: este location NO se usa; el frontend pide
-      #     /api/media/signed-url/?path=... y el browser descarga directo
-      #     del bucket con la presigned URL. Mantener el location no rompe
-      #     nada (sigue siendo útil para /media/ residual durante el
-      #     cutover), pero el flujo normal NO pasa por acá.
-      #
-      # POR QUÉ no puede ser público: este alias sirve la ficha clínica,
-      # los recibos, las fotos de cita y los QR SIN autenticación y SIN
-      # autorización. Con `access_log off` ni siquiera queda rastro de
-      # quién pidió cada archivo. Con el bucket + URLs firmadas (§11.7) el
-      # navegador NUNCA pide /media/: pide /api/media/signed-url/?path=...
-      # y el backend responde con una URL presignada de 15 minutos. Dejar
-      # este bloque abierto en producción expondría el expediente clínico
-      # de la clínica a cualquiera que tenga la URL del archivo.
-      #
-      # `internal;` impide el acceso externo: cualquier request a
-      # /media/... devuelve 404. Para una instalación que ya terminó el
-      # cutover, borra este bloque entero (no hace falta `internal;` si
-      # no existe el directorio).
+    #   - STORAGE_PROVIDER=local: Nginx sirve directamente desde disco.
+    #   - STORAGE_PROVIDER=s3: este location NO se usa; el frontend pide
+    #     /api/media/signed-url/?path=... y el browser descarga directo
+    #     del bucket con la presigned URL. Mantener el location no rompe
+    #     nada (sigue siendo útil para /media/ residual durante el
+    #     cutover), pero el flujo normal NO pasa por acá.
+    #
+    # POR QUÉ no puede ser público: este alias sirve la ficha clínica,
+    # los recibos, las fotos de cita y los QR SIN autenticación y SIN
+    # autorización. Con `access_log off` ni siquiera queda rastro de
+    # quién pidió cada archivo. Con el bucket + URLs firmadas (§11.7) el
+    # navegador NUNCA pide /media/: pide /api/media/signed-url/?path=...
+    # y el backend responde con una URL presignada de 15 minutos. Dejar
+    # este bloque abierto en producción expondría el expediente clínico
+    # de la clínica a cualquiera que tenga la URL del archivo.
+    #
+    # `internal;` impide el acceso externo: cualquier request a
+    # /media/... devuelve 404. Para una instalación que ya terminó el
+    # cutover, borra este bloque entero (no hace falta `internal;` si
+    # no existe el directorio).
     location /media/ {
         internal;
         alias /var/www/clinica/backend/media/;
