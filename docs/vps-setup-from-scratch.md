@@ -694,7 +694,22 @@ server {
     #     del bucket con la presigned URL. Mantener el location no rompe
     #     nada (sigue siendo útil para /media/ residual durante el
     #     cutover), pero el flujo normal NO pasa por acá.
+    #
+    # POR QUÉ no puede ser público: este alias sirve la ficha clínica,
+    # los recibos, las fotos de cita y los QR SIN autenticación y SIN
+    # autorización. Con `access_log off` ni siquiera queda rastro de
+    # quién pidió cada archivo. Con el bucket + URLs firmadas (§11.7) el
+    # navegador NUNCA pide /media/: pide /api/media/signed-url/?path=...
+    # y el backend responde con una URL presignada de 15 minutos. Dejar
+    # este bloque abierto en producción expondría el expediente clínico
+    # de la clínica a cualquiera que tenga la URL del archivo.
+    #
+    # `internal;` impide el acceso externo: cualquier request a
+    # /media/... devuelve 404. Para una instalación que ya terminó el
+    # cutover, borra este bloque entero (no hace falta `internal;` si
+    # no existe el directorio).
     location /media/ {
+        internal;
         alias /var/www/clinica/backend/media/;
         access_log off;
         expires 30d;
@@ -1415,7 +1430,27 @@ sleep 2
 sudo systemctl status gunicorn
 ```
 
-**No hay downtime.** Mientras `MEDIA_LOCAL_FALLBACK_ENABLED=true`, las requests a archivos que ya están en el bucket van por S3, las que no van al disco local. El usuario no nota nada.
+**No hay downtime.** Mientras `MEDIA_LOCAL_FALLBACK_ENABLED=true`, las lecturas internas de Django (`.path`, `.open()`) que no encuentran la key en el bucket caen al disco local.
+
+> ⚠️ **El fallback local NO sirve archivos al navegador.** El endpoint `/api/media/signed-url/` es **solo-bucket**: nunca devuelve bytes del disco local. El navegador pide `/api/media/signed-url/?path=...` y el backend responde con una URL presignada. Por eso **el backfill tiene que estar COMPLETO (sentinel `_BACKFILL_COMPLETE` presente) antes de activar `STORAGE_PROVIDER=s3`**. Si activás el bucket con el backfill a medias, los archivos que faltan en el bucket devuelven 404 y no se ven ni en la ficha clínica ni en el portal del cliente.
+
+#### Paso 6.1 — Cerrar el alias público `/media/` de Nginx
+
+**Este paso va en el mismo momento que el flip a `STORAGE_PROVIDER=s3`, no después.** Con el bucket activo el navegador nunca pide `/media/`, así que el bloque del vhost (§7) queda sirviendo la ficha clínica, los recibos y las fotos de cita **sin autenticación** a cualquiera que conozca la URL.
+
+```bash
+# Verificá primero que el bucket ya responde
+curl -sS -b /tmp/clinica-test-cookie \
+  "https://tu-dominio.com/api/media/signed-url/?path=fichas_clinicas/2026/10/algo.pdf"
+
+# El bloque de la §7 debe llevar `internal;` (o estar borrado).
+# Verificá que ya NO se sirve por HTTP:
+curl -o /dev/null -w '%{http_code}\n' \
+  "https://tu-dominio.com/media/fichas_clinicas/2026/10/algo.pdf"
+# Esperado: 404 (no 200)
+```
+
+> 🔒 **El rollback NO reabre el alias `/media/`.** Reabrirlo expondría el expediente clínico sin autenticación. Si lo reabrís por una emergencia, cerralo apenas restauro el servicio.
 
 #### Paso 7 — Verificar que el endpoint `/api/media/signed-url/` emite URLs válidas
 
@@ -1445,6 +1480,15 @@ ssh deploy@<VPS_IP> -- '
 **Si da 404:** el archivo no está en el bucket. Revisá con `aws s3 ls s3://proyecto-c-clinical-prod/fichas_clinicas/2026/10/` si el path está.
 
 **Si da 403:** el admin no tiene permiso para acceder al prefijo (ver Anexo C de `openspec/changes/cloud-storage-migration/specs/media-signed-url-endpoint/spec.md` para las reglas de autorización).
+
+**Criterio de cutover completo:** el endpoint firmado responde 200 **Y** el alias público está cerrado:
+
+```bash
+curl -o /dev/null -w '%{http_code}\n' "https://tu-dominio.com/media/cualquier-cosa.pdf"
+# Esperado: 404 (no 200)
+```
+
+> ⚠️ **Cleanup del disco local** (opcional, no urgente): después de 30 días de cutover estable podés vaciar `/var/www/clinica/backend/media/` para liberar espacio en el VPS. **No lo hagas antes** — te queda el rollback más difícil. Mientras el directorio exista, mantené el bloque `location /media/` con `internal;` (Paso 6.1) o borralo junto con el directorio; lo que **no** puede volver es el alias público.
 
 **Si da 503:** falló el audit log write. Mirá `journalctl -u gunicorn -n 50` — el endpoint devuelve 503 fail-closed si no puede escribir en `AuditLog`.
 

@@ -30,6 +30,25 @@ from customers.models import Cliente
 from operations.models import Operacion, OperacionFoto
 
 
+def _assert_relative_media_path(value, prefix="operaciones/"):
+    """Assert ``value`` is a bucket-relative media path.
+
+    The signed-URL contract (cloud-storage-migration) is: the API returns
+    the RELATIVE bucket path (e.g. ``operaciones/2026/10/03/antes/x.webp``)
+    and the frontend resolves it to a presigned URL through the
+    ``useSignedUrl`` hook. An absolute ``http(s)://`` URL or a
+    ``/media/...`` URL is therefore a contract violation.
+    """
+    assert isinstance(value, str), f"expected a string path, got {value!r}"
+    assert value, f"expected a non-empty path, got {value!r}"
+    assert value.startswith(prefix), (
+        f"expected path to start with {prefix!r}, got {value!r}"
+    )
+    assert not value.startswith("http://"), value
+    assert not value.startswith("https://"), value
+    assert "/media/" not in value, value
+
+
 def _make_fixtures(cls):
     """Build an admin user + a cliente + an EN_PROCESO operacion.
 
@@ -226,11 +245,12 @@ class UploadPhotosTests(TestCase):
         self.assertEqual(foto.kind, "antes")
         self.assertEqual(foto.operacion_id, self.operacion.pk)
         self.assertEqual(body["saved"][0]["fileName"], "antes-1.png")
-        # The url MUST be absolute (because ``request`` is threaded in).
-        self.assertTrue(body["saved"][0]["url"].startswith("http"))
+        # The url MUST be a bucket-relative path (the frontend resolves
+        # it through ``useSignedUrl``), never an absolute URL.
+        _assert_relative_media_path(body["saved"][0]["url"])
         # The embedded operation payload carries the new photo.
         self.assertEqual(len(body["operation"]["fotosAntes"]), 1)
-        self.assertTrue(body["operation"]["fotosAntes"][0]["url"].startswith("http"))
+        _assert_relative_media_path(body["operation"]["fotosAntes"][0]["url"])
 
     def test_multi_upload_persists_all(self):
         self.client.force_login(self.admin)
@@ -316,7 +336,7 @@ class UploadPhotosTests(TestCase):
 
     def test_detail_payload_after_upload_includes_new_photo(self):
         """The response ``operation.fotosAntes`` MUST contain the new
-        photo AND its ``url`` MUST be an absolute URL."""
+        photo AND its ``url`` MUST be a bucket-relative path."""
         self.client.force_login(self.admin)
         response = self.client.post(
             self.url_antes,
@@ -325,7 +345,7 @@ class UploadPhotosTests(TestCase):
         self.assertEqual(response.status_code, 201, response.content)
         body = response.json()
         self.assertEqual(len(body["operation"]["fotosAntes"]), 1)
-        self.assertTrue(body["operation"]["fotosAntes"][0]["url"].startswith("http"))
+        _assert_relative_media_path(body["operation"]["fotosAntes"][0]["url"])
 
     def test_operacion_not_found_returns_404(self):
         self.client.force_login(self.admin)
@@ -426,9 +446,10 @@ class OperationDetailGalleryTests(TestCase):
         self.assertEqual(len(antes), 3)
         # Order: uploaded_at ASC, id ASC tiebreak. fileNames confirm.
         self.assertEqual([p["fileName"] for p in antes], ["a.png", "b.png", "c.png"])
-        # URLs are absolute because ``request`` is threaded into _operation_detail.
+        # URLs are bucket-relative paths (the frontend resolves them
+        # through ``useSignedUrl``).
         for entry in antes:
-            self.assertTrue(entry["url"].startswith("http"))
+            _assert_relative_media_path(entry["url"])
 
     def test_detail_payload_includes_fotos_despues(self):
         OperacionFoto.objects.create(

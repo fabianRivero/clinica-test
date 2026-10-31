@@ -46,9 +46,17 @@ from django.test import SimpleTestCase, TestCase, override_settings  # noqa: E40
 from accounts.models import Rol, Usuario  # noqa: E402
 from customers.models import Cliente  # noqa: E402
 from catalogs.models import ServicioConfig, Sucursal, TipoServicio  # noqa: E402
-from operations.models import Operacion, OperacionFoto  # noqa: E402
+from operations.models import CitaMedica, Operacion, OperacionFoto  # noqa: E402
 from staff.models import Especialista  # noqa: E402
 from clinical.models import FichaClinica  # noqa: E402
+from notifications.models import Ticket, TicketMessage  # noqa: E402
+from billing.models import (  # noqa: E402
+    CategoriaGasto,
+    ConfiguracionPagoQR,
+    CuotaPlanPago,
+    GastoSucursal,
+    PagoRealizado,
+)
 from audit.models import AuditLog  # noqa: E402
 from audit.services import write_audit_log, AuditWriteFailure  # noqa: E402
 
@@ -239,11 +247,11 @@ def _seed_graph(testcase: "_SignedUrlEndpointTests"):
     testcase.ficha_b_pdf = "fichas_clinicas/2026/10/b.pdf"
     FichaClinica.objects.create(
         operacion=testcase.operacion_a,
-        documento_escaneado_pdf=testcase.ficha_a_pdf,
+        documento_escaneado=testcase.ficha_a_pdf,
     )
     FichaClinica.objects.create(
         operacion=testcase.operacion_b,
-        documento_escaneado_pdf=testcase.ficha_b_pdf,
+        documento_escaneado=testcase.ficha_b_pdf,
     )
 
     # Seed an operation photo on operacion_a so we have a
@@ -549,7 +557,7 @@ class AuditWriteFailureTranslationTests(TestCase):
                     user_role="",
                     action="SIGNED_URL_ISSUED",
                     resource_path="fichas_clinicas/2026/10/a.pdf",
-                    resource_type="clinical.FichaClinica.documento_escaneado_pdf",
+                    resource_type="clinical.FichaClinica.documento_escaneado",
                     client_ip=None,
                     user_agent="",
                     expires_at=None,
@@ -561,7 +569,7 @@ class AuditWriteFailureTranslationTests(TestCase):
             user_role="CLIENTE",
             action="SIGNED_URL_ISSUED",
             resource_path="fichas_clinicas/2026/10/a.pdf",
-            resource_type="clinical.FichaClinica.documento_escaneado_pdf",
+            resource_type="clinical.FichaClinica.documento_escaneado",
             client_ip="127.0.0.1",
             user_agent="Mozilla/5.0",
             expires_at=None,
@@ -650,3 +658,680 @@ class BackfillMediaVerifyFlagTests(SimpleTestCase):
         keys = {k for (_, k) in self.fake.objects.keys()}
         self.assertIn("a.pdf", keys)
         self.assertIn("b.pdf", keys)
+
+
+# ---------------------------------------------------------------------------
+# Bug 2 — operaciones/ prefix in the allowlist
+# ---------------------------------------------------------------------------
+
+
+class OperacionFotoAuthorizationTests(_SignedUrlEndpointTests):
+    """Regression coverage for Bug 2 (cloud-storage-migration-fixes).
+
+    The runtime upload callable
+    :func:`operations.models._operacion_foto_upload_to` generates
+    ``operaciones/<YYYY>/<MM>/<DD>/<kind>/<12hex>-<file>`` paths for
+    ``OperacionFoto.imagen`` rows. The signed-URL endpoint's
+    :data:`ALLOWED_PATH_PREFIXES` must accept ``operaciones/`` so that
+    authorized admins can mint a presigned URL for a freshly-uploaded
+    operation photo.
+
+    Before the fix the endpoint returned 400 (path outside the
+    allowlist). After the fix the endpoint returns 200 + an
+    :class:`AuditLog` row with ``action='SIGNED_URL_ISSUED'``.
+    """
+
+    OPERACIONES_PATH = "operaciones/2026/10/03/antes/abcd1234abcd-foo.webp"
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Create an OperacionFoto whose ``imagen`` matches the runtime
+        # generator shape so the path-lookup helpers
+        # (``_resolve_foto_operacion_branch`` /
+        # ``_resolve_foto_operacion_especialista_id``) resolve to the
+        # seeded operacion_a / especialista_a.
+        self.operacion_foto = OperacionFoto.objects.create(
+            operacion=self.operacion_a,
+            kind=OperacionFoto.Kind.ANTES,
+            imagen=self.OPERACIONES_PATH,
+        )
+        # Pre-seed the fake S3 client so ``head_object`` returns 200 for
+        # the operaciones/ key — otherwise the endpoint short-circuits
+        # to 404 BEFORE the prefix check we want to assert.
+        self.fake_client.objects[
+            ("test-bucket", self.OPERACIONES_PATH)
+        ] = b"fake-image-bytes"
+
+    def test_signed_url_operaciones_antes_path_authorizes(self):
+        """Admin principal can mint a signed URL for an
+        ``operaciones/.../antes/`` path that the runtime
+        ``_operacion_foto_upload_to`` callable produced.
+        """
+        client = self.client
+        client.force_login(self.admin_principal_user)
+        response = client.get(
+            "/api/media/signed-url/",
+            {"path": self.OPERACIONES_PATH},
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertIn("url", body)
+        # The presigned URL must point at the S3 endpoint (the fake
+        # client returns ``*.s3.sa-east-1.amazonaws.com``).
+        self.assertIn(
+            "https://test-bucket.s3.sa-east-1.amazonaws.com/",
+            body["url"],
+        )
+        self.assertIn(self.OPERACIONES_PATH, body["url"])
+        # TTL clamp uses the default 900 unless caller overrides.
+        self.assertEqual(body["ttl_seconds"], 900)
+        # Audit row recorded (admin_principal wildcard → role label
+        # matches the wildcard-skipping branch).
+        self.assertEqual(len(self._audit_create_calls), 1)
+        audit = self._audit_create_calls[0]
+        self.assertEqual(audit["action"], "SIGNED_URL_ISSUED")
+        self.assertEqual(audit["resource_path"], self.OPERACIONES_PATH)
+        self.assertEqual(
+            audit["resource_type"], "operations.OperacionFoto.imagen"
+        )
+        # boto3 presign called with the right Key.
+        self.assertEqual(len(self.fake_client.presign_calls), 1)
+        self.assertEqual(
+            self.fake_client.presign_calls[0]["Params"]["Key"],
+            self.OPERACIONES_PATH,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug 1 — Read APIs return relative paths (not absolute URLs)
+# ---------------------------------------------------------------------------
+
+
+class PathBasedReadTests(_SignedUrlEndpointTests):
+    """Bug 1 (cloud-storage-migration-fixes) regression coverage.
+
+    The 9 production callsites in design.md §2 used ``FieldFile.url``
+    on a ``FileField``/``ImageField`` — returning ``/media/<path>``
+    under local and HTTP 500 under s3 (Boto3Storage raises
+    NotImplementedError). The fix swaps ``.url`` → ``.name`` so the
+    response carries the bucket-relative path the ``useSignedUrl(path)``
+    frontend hook consumes. Each test below asserts the field is a
+    non-empty path starting with the upload prefix, NOT containing
+    ``/media/`` and NOT starting with ``http://``/``https://``.
+    """
+
+    RECEIPT_PATH = "comprobantes_pagos/2026/10/recibo-prueba.pdf"
+    FOTO_PATH = "operaciones/2026/10/03/antes/abcd1234abcd-foto.webp"
+    ADJUNTO_PATH = "tickets_adjuntos/2026/10/adjunto-prueba.pdf"
+
+    def _assert_path(self, value, prefix):
+        """value MUST be a non-empty relative path starting with prefix."""
+        self.assertIsInstance(value, str)
+        self.assertTrue(value, f"expected non-empty path, got {value!r}")
+        self.assertTrue(
+            value.startswith(prefix),
+            f"expected path to start with {prefix!r}, got {value!r}",
+        )
+        self.assertNotIn("/media/", value)
+        self.assertFalse(
+            value.startswith("http://") or value.startswith("https://"),
+        )
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Migration 0008_data_migrate_sucursales seeds a
+        # ``Sede Principal`` (es_principal=True). For admin_principal
+        # ``get_user_branch`` returns that branch and the payments
+        # viewset filters by ``paciente__usuario__sucursal_id``. The
+        # cliente_a user seeded in ``_seed_graph`` has
+        # ``sucursal=None`` — re-point it so the filter passes.
+        principal_branch = Sucursal.objects.filter(es_principal=True).first()
+        if principal_branch is not None:
+            self.cliente_a.usuario.sucursal = principal_branch
+            self.cliente_a.usuario.save(update_fields=["sucursal"])
+        # Build a CuotaPlanPago + PagoRealizado for operacion_a. Django
+        # accepts a bare string for ``FileField`` when no upload_to
+        # round-trip is needed (matches the slice 1 fixture pattern).
+        self.cuota_a = CuotaPlanPago.objects.create(
+            operacion=self.operacion_a,
+            nro_cuota=1,
+            fecha_vencimiento=date(2026, 10, 15),
+            monto_programado=Decimal("50"),
+        )
+        self.pago_a = PagoRealizado.objects.create(
+            cuota=self.cuota_a,
+            monto_pagado=Decimal("50"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("50"),
+            comprobante_url=self.RECEIPT_PATH,
+        )
+        # Ticket + message with attachment path string.
+        self.ticket_a = Ticket.objects.create(
+            sucursal=self.sucursal_a,
+            creado_por=self.admin_principal_user,
+            asunto="Prueba Bug 1",
+        )
+        self.ticket_message = TicketMessage.objects.create(
+            ticket=self.ticket_a,
+            autor=self.admin_principal_user,
+            contenido="Mensaje con adjunto de prueba",
+            adjunto=self.ADJUNTO_PATH,
+        )
+        # The shared ``_seed_graph`` seeds an ``OperacionFoto`` with
+        # the legacy ``fotos_operacion/`` prefix (predates slice 2's
+        # rename). Mutate to the new prefix so the relative-path
+        # assertion holds.
+        OperacionFoto.objects.filter(
+            operacion=self.operacion_a,
+            imagen="fotos_operacion/2026/10/x.jpg",
+        ).update(imagen=self.FOTO_PATH)
+
+    # ---- Test 1: GET /api/admin/pagos/ (callsite 1) ----
+
+    def test_admin_pagos_returns_relative_receipt_path(self):
+        """``GET /api/admin/pagos/`` (DRF ViewSet) — ``receiptUrl`` is a
+        relative path. Callsite: ``api/viewsets/payments.py:631``."""
+        self.client.force_login(self.admin_principal_user)
+        response = self.client.get("/api/admin/pagos/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        matching = [
+            p for p in body["payments"] if p["rawId"] == self.pago_a.pk
+        ]
+        self.assertEqual(len(matching), 1, body)
+        self._assert_path(matching[0]["receiptUrl"], "comprobantes_pagos/")
+
+    # ---- Test 2: POST /api/client/pagos/cuotas/<id>/comprobante/ (callsite 7) ----
+
+    def test_client_pago_comprobante_returns_relative_receipt_path(self):
+        """``POST /api/client/pagos/cuotas/<id>/comprobante/`` — the
+        embedded ``payment.receiptUrl`` is a relative path. Callsite:
+        ``client_api_views.py:418``. The client serializer requires a
+        ``receiptFile`` upload."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.force_login(self.cliente_a.usuario)
+        receipt = SimpleUploadedFile(
+            "comprobante.pdf", b"%PDF-1.4\n%%EOF",
+            content_type="application/pdf",
+        )
+        response = self.client.post(
+            f"/api/client/pagos/cuotas/{self.cuota_a.pk}/comprobante/",
+            data={"monto_pagado": "50", "receiptFile": receipt},
+        )
+        self.assertIn(response.status_code, (200, 201), response.content)
+        body = response.json()
+        self.assertIn("payment", body)
+        self._assert_path(
+            body["payment"]["receiptUrl"], "comprobantes_pagos/"
+        )
+
+    # ---- Test 3: GET /api/admin/operaciones/<id>/ (callsites 4-5) ----
+
+    def test_admin_operacion_detail_returns_relative_photo_url(self):
+        """``GET /api/admin/operaciones/<id>/`` — each photo's ``url`` is
+        a relative path. Callsites: ``api_views.py:444,446``. Response
+        splits fotos by kind under ``fotosAntes`` / ``fotosDespues``."""
+        self.client.force_login(self.admin_principal_user)
+        response = self.client.get(
+            f"/api/admin/operaciones/{self.operacion_a.pk}/"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        op = response.json()["operation"]
+        all_fotos = list(op.get("fotosAntes", [])) + list(
+            op.get("fotosDespues", [])
+        )
+        self.assertTrue(all_fotos, "expected at least one seeded foto")
+        for foto in all_fotos:
+            self._assert_path(foto["url"], "operaciones/")
+
+    # ---- Test 4: POST /api/admin/operaciones/<id>/fotos/<kind>/ (callsite 6) ----
+
+    def test_admin_upload_operation_photos_response_carries_relative_path(self):
+        """``POST /api/admin/operaciones/<id>/fotos/<kind>/`` — each
+        saved item's ``url`` is a relative path. Callsite:
+        ``api_views.py:5162``. Response uses the ``saved`` key."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.force_login(self.admin_principal_user)
+        upload = SimpleUploadedFile(
+            "foto.webp", b"fake-image-bytes", content_type="image/webp",
+        )
+        response = self.client.post(
+            f"/api/admin/operaciones/{self.operacion_a.pk}/fotos/antes/",
+            data={"archivos": [upload]},
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        body = response.json()
+        self.assertIn("saved", body)
+        self.assertTrue(body["saved"], "expected at least one saved photo")
+        for photo in body["saved"]:
+            self._assert_path(photo["url"], "operaciones/")
+
+    # ---- Test 5: GET /api/tickets/<id>/ (callsite 8) ----
+
+    def test_ticket_message_attachment_returns_relative_path(self):
+        """``GET /api/tickets/<id>/`` — each message's ``attachmentUrl``
+        is a relative path. Callsite: ``ticket_views.py:171``."""
+        self.client.force_login(self.admin_principal_user)
+        response = self.client.get(f"/api/tickets/{self.ticket_a.pk}/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        matching = [
+            m for m in body["messages"]
+            if m["id"] == self.ticket_message.id
+        ]
+        self.assertEqual(len(matching), 1, body)
+        self._assert_path(
+            matching[0]["attachmentUrl"], "tickets_adjuntos/"
+        )
+
+# ---------------------------------------------------------------------------
+# Gap 2 — the read APIs expose bucket-relative media paths
+# ---------------------------------------------------------------------------
+
+
+class RelativePathReadApiTests(_SignedUrlEndpointTests):
+    """Every media field the read APIs expose must be a bucket-relative
+    path, never an absolute URL.
+
+    ``Boto3Storage.url()`` raises by design under
+    ``STORAGE_PROVIDER=s3``, so any callsite that still called ``.url()``
+    returned HTTP 500 in the cloud deployment. The contract is: the API
+    returns the RELATIVE bucket path and the frontend resolves it to a
+    presigned URL through the ``useSignedUrl`` hook.
+
+    Each test below pins one callsite shape: the response field MUST be
+    a non-empty relative path under the upload prefix, MUST NOT start
+    with ``http://``/``https://`` and MUST NOT contain ``/media/``.
+    """
+
+    QR_PATH = "pagos_qr/2026/10/qr-prueba.webp"
+    GASTO_FACTURA_PATH = "facturas_gastos/2026/10/factura-prueba.pdf"
+    FOTO_ANTES_PATH = "citas/2026/10/03/antes/foto-antes.webp"
+    FOTO_DESPUES_PATH = "citas/2026/10/03/despues/foto-despues.webp"
+    RECIBO_PATH = "comprobantes_pagos/2026/10/recibo-prueba.pdf"
+
+    def _assert_path(self, value, prefix):
+        """value MUST be a non-empty relative path starting with prefix."""
+        self.assertIsInstance(value, str)
+        self.assertTrue(value, f"expected non-empty path, got {value!r}")
+        self.assertTrue(
+            value.startswith(prefix),
+            f"expected path to start with {prefix!r}, got {value!r}",
+        )
+        self.assertNotIn("/media/", value)
+        self.assertFalse(
+            value.startswith("http://") or value.startswith("https://"),
+        )
+
+    def setUp(self) -> None:
+        super().setUp()
+        # The branch-scoped admin endpoints resolve the branch from the
+        # admin's ``sucursal``; the seeded client user must point at the
+        # SAME branch so the payment / quota / cita fixtures are visible.
+        self.cliente_a.usuario.sucursal = self.sucursal_a
+        self.cliente_a.usuario.save(update_fields=["sucursal"])
+
+        # Branch QR config (``pagos_qr/``).
+        self.qr_config = ConfiguracionPagoQR.objects.create(
+            sucursal=self.sucursal_a,
+            imagen_qr=self.QR_PATH,
+        )
+        # Branch expense with a supplier invoice (``facturas_gastos/``).
+        self.categoria = CategoriaGasto.objects.create(nombre="Insumos")
+        self.gasto = GastoSucursal.objects.create(
+            sucursal=self.sucursal_a,
+            categoria=self.categoria,
+            fecha=date(2026, 10, 15),
+            concepto="Compra de insumos",
+            unidades=Decimal("1"),
+            costo_unidad=Decimal("100"),
+            gasto_total=Decimal("100"),
+            factura=self.GASTO_FACTURA_PATH,
+        )
+        # Quota + payment with a receipt (``comprobantes_pagos/``).
+        self.cuota_a = CuotaPlanPago.objects.create(
+            operacion=self.operacion_a,
+            nro_cuota=1,
+            fecha_vencimiento=date(2026, 10, 15),
+            monto_programado=Decimal("50"),
+        )
+        self.pago_a = PagoRealizado.objects.create(
+            cuota=self.cuota_a,
+            monto_pagado=Decimal("50"),
+            metodo_pago=PagoRealizado.MetodoPago.VIRTUAL,
+            monto_virtual=Decimal("50"),
+            comprobante_url=self.RECIBO_PATH,
+        )
+        # Appointment photos (``citas/.../antes/`` and ``.../despues/``).
+        self.cita_a = CitaMedica.objects.create(
+            operacion=self.operacion_a,
+            sucursal=self.sucursal_a,
+            fecha_hora=datetime(2026, 10, 3, 9, 0, tzinfo=timezone.utc),
+            foto_antes=self.FOTO_ANTES_PATH,
+            foto_despues=self.FOTO_DESPUES_PATH,
+        )
+
+    # ---- GET /api/admin/operaciones/<id>/ ----
+
+    def test_operation_detail_returns_relative_document_and_photo_paths(self):
+        """``GET /api/admin/operaciones/<id>/`` — the clinical PDF
+        (``documentPdfUrl``) and the appointment photos
+        (``citas[].fotoAntesUrl`` / ``fotoDespuesUrl``) are relative
+        paths. Callsites: ``api_views.py:439`` and ``api_views.py:653-654``.
+        """
+        self.client.force_login(self.admin_principal_user)
+        response = self.client.get(
+            f"/api/admin/operaciones/{self.operacion_a.pk}/"
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        operation = response.json()["operation"]
+        self._assert_path(operation["documentPdfUrl"], "fichas_clinicas/")
+        matching = [
+            c for c in operation["appointments"]
+            if c.get("rawId") == self.cita_a.pk
+        ]
+        self.assertEqual(len(matching), 1, operation["appointments"])
+        self._assert_path(matching[0]["fotoAntesUrl"], "citas/")
+        self.assertIn("/antes/", matching[0]["fotoAntesUrl"])
+        self._assert_path(matching[0]["fotoDespuesUrl"], "citas/")
+        self.assertIn("/despues/", matching[0]["fotoDespuesUrl"])
+
+    # ---- GET /api/admin/gastos/ ----
+
+    def test_admin_gastos_returns_relative_invoice_path(self):
+        """``GET /api/admin/gastos/`` — ``expenses[].invoiceUrl`` is a
+        relative path under ``facturas_gastos/``. Callsite:
+        ``api_views.py:1075``."""
+        self.client.force_login(self.admin_sucursal_a_user)
+        response = self.client.get(
+            "/api/admin/gastos/", {"month": 10, "year": 2026}
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        matching = [
+            e for e in response.json()["expenses"] if e["rawId"] == self.gasto.pk
+        ]
+        self.assertEqual(len(matching), 1, response.json())
+        self._assert_path(matching[0]["invoiceUrl"], "facturas_gastos/")
+
+    # ---- GET /api/admin/reportes/ingresos/ ----
+
+    def test_admin_report_income_returns_relative_invoice_path(self):
+        """``GET /api/admin/reportes/ingresos/`` — ``rows[].invoiceUrl``
+        is a relative path under ``comprobantes_pagos/``. Callsite:
+        ``api_views.py:8304``."""
+        self.client.force_login(self.admin_sucursal_a_user)
+        response = self.client.get(
+            "/api/admin/reportes/ingresos/", {"month": 10, "year": 2026}
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        rows = response.json()["rows"]
+        matching = [r for r in rows if r["paymentId"] == self.pago_a.pk]
+        self.assertEqual(len(matching), 1, rows)
+        self._assert_path(matching[0]["invoiceUrl"], "comprobantes_pagos/")
+
+    # ---- GET /api/admin/pagos/ ----
+
+    def test_admin_pagos_returns_relative_qr_path(self):
+        """``GET /api/admin/pagos/`` — ``paymentQrConfig.qrImageUrl`` is a
+        relative path under ``pagos_qr/``. Callsite:
+        ``api/viewsets/payments.py`` (``_payment_qr_config_item``)."""
+        self.client.force_login(self.admin_sucursal_a_user)
+        response = self.client.get("/api/admin/pagos/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertTrue(body["paymentQrConfig"]["hasQr"])
+        self._assert_path(
+            body["paymentQrConfig"]["qrImageUrl"], "pagos_qr/"
+        )
+
+    # ---- GET /api/admin/pagos/configuracion-qr/ ----
+
+    def test_admin_qr_config_returns_relative_qr_path(self):
+        """``GET /api/admin/pagos/configuracion-qr/`` — the branch QR is
+        a relative path under ``pagos_qr/``. Callsite:
+        ``api/viewsets/payments.py`` (``_payment_qr_config_item``)."""
+        self.client.force_login(self.admin_sucursal_a_user)
+        response = self.client.get("/api/admin/pagos/configuracion-qr/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertTrue(body["paymentQrConfig"]["hasQr"])
+        self._assert_path(
+            body["paymentQrConfig"]["qrImageUrl"], "pagos_qr/"
+        )
+
+    # ---- GET /api/client/pagos/ ----
+
+    def test_client_pagos_returns_relative_qr_path(self):
+        """``GET /api/client/pagos/`` — the client portal QR is a
+        relative path under ``pagos_qr/``. Callsite:
+        ``client_api_views.py:430``."""
+        self.client.force_login(self.cliente_a.usuario)
+        response = self.client.get("/api/client/pagos/")
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertTrue(body["paymentQrConfig"]["hasQr"])
+        self._assert_path(
+            body["paymentQrConfig"]["qrImageUrl"], "pagos_qr/"
+        )
+
+    # ---- GET /api/client/reservas/ ----
+
+    def test_client_reservas_returns_relative_photo_paths(self):
+        """``GET /api/client/reservas/`` — the appointment photos are
+        relative paths under ``citas/``. Callsites:
+        ``client_api_views.py:561-562``."""
+        self.client.force_login(self.cliente_a.usuario)
+        response = self.client.get("/api/client/reservas/")
+        self.assertEqual(response.status_code, 200, response.content)
+        matching = [
+            a for a in response.json()["appointments"]
+            if a.get("rawId") == self.cita_a.pk
+        ]
+        self.assertEqual(len(matching), 1, response.json())
+        self._assert_path(matching[0]["fotoAntesUrl"], "citas/")
+        self._assert_path(matching[0]["fotoDespuesUrl"], "citas/")
+
+
+# ---------------------------------------------------------------------------
+# Gap 3 — the allowlist covers every prefix the app writes
+# ---------------------------------------------------------------------------
+
+
+class NewPrefixAuthorizationTests(_SignedUrlEndpointTests):
+    """The signed-URL allowlist must cover every prefix the app writes.
+
+    Before the fix ``pagos_qr/``, ``facturas_gastos/`` and
+    ``conversiones/`` were rejected with HTTP 400 ("path is outside the
+    allowed prefixes"), so those files were unreachable once the bucket
+    was live: the payment QR, the supplier invoices and the
+    prospect-conversion draft could not be opened at all.
+
+    Each test below asserts the full happy path: HTTP 200, a presigned
+    URL pointing at the bucket and a persisted ``AuditLog`` row with
+    ``action='SIGNED_URL_ISSUED'``.
+    """
+
+    QR_PATH = "pagos_qr/2026/10/qr-prueba.webp"
+    GASTO_FACTURA_PATH = "facturas_gastos/2026/10/factura-prueba.pdf"
+    CONVERSION_PATH = "conversiones/borradores/borrador-prueba.pdf"
+
+    def setUp(self) -> None:
+        super().setUp()
+        from customers.models import Prospecto, ProspectoConversionBorrador
+
+        # The keys must exist in the bucket, otherwise the endpoint
+        # short-circuits to 404 BEFORE the authorization check.
+        for path in (
+            self.QR_PATH,
+            self.GASTO_FACTURA_PATH,
+            self.CONVERSION_PATH,
+        ):
+            self.fake_client.objects[("test-bucket", path)] = b"fake-bytes"
+
+        # ``pagos_qr/`` — the branch QR config.
+        self.qr_config = ConfiguracionPagoQR.objects.create(
+            sucursal=self.sucursal_a,
+            imagen_qr=self.QR_PATH,
+        )
+        # ``facturas_gastos/`` — a supplier invoice registered by the
+        # branch.
+        self.categoria = CategoriaGasto.objects.create(nombre="Insumos")
+        self.gasto = GastoSucursal.objects.create(
+            sucursal=self.sucursal_a,
+            categoria=self.categoria,
+            fecha=date(2026, 10, 15),
+            concepto="Compra de insumos",
+            unidades=Decimal("1"),
+            costo_unidad=Decimal("100"),
+            gasto_total=Decimal("100"),
+            factura=self.GASTO_FACTURA_PATH,
+        )
+        # ``conversiones/`` — a prospect-conversion draft started by the
+        # branch admin of the prospect's registration branch.
+        self.prospecto = Prospecto.objects.create(
+            primer_nombre="Ana",
+            apellido_paterno="Aguilar",
+            telefono="70000000",
+            sucursal_registro=self.sucursal_a,
+            registrado_por=self.admin_sucursal_a_user,
+        )
+        self.draft = ProspectoConversionBorrador.objects.create(
+            prospecto=self.prospecto,
+            iniciado_por=self.admin_sucursal_a_user,
+            documento_pdf=self.CONVERSION_PATH,
+        )
+
+    def _mint(self, path, user):
+        client = self.client
+        client.force_login(user)
+        return client.get("/api/media/signed-url/", {"path": path})
+
+    def _assert_issued(self, response, path, resource_type):
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertIn("url", body)
+        self.assertIn(
+            "https://test-bucket.s3.sa-east-1.amazonaws.com/", body["url"]
+        )
+        self.assertIn(path, body["url"])
+        self.assertEqual(body["ttl_seconds"], 900)
+        # The audit row is persisted (fail-closed contract).
+        self.assertEqual(len(self._audit_create_calls), 1)
+        audit = self._audit_create_calls[0]
+        self.assertEqual(audit["action"], "SIGNED_URL_ISSUED")
+        self.assertEqual(audit["resource_path"], path)
+        self.assertEqual(audit["resource_type"], resource_type)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action="SIGNED_URL_ISSUED",
+                resource_path=path,
+                resource_type=resource_type,
+            ).exists()
+        )
+        self.assertEqual(
+            self.fake_client.presign_calls[0]["Params"]["Key"], path
+        )
+
+    # ---- pagos_qr/ ----
+
+    def test_pagos_qr_path_authorizes_branch_admin(self):
+        """The branch admin of the QR's own branch can mint a signed URL
+        for the payment QR."""
+        response = self._mint(self.QR_PATH, self.admin_sucursal_a_user)
+        self._assert_issued(
+            response, self.QR_PATH, "billing.ConfiguracionPagoQR.imagen_qr"
+        )
+
+    def test_pagos_qr_path_authorizes_branch_client(self):
+        """A client of the QR's branch can mint a signed URL for it (the
+        client portal shows the QR of the client's branch)."""
+        self.cliente_a.usuario.sucursal = self.sucursal_a
+        self.cliente_a.usuario.save(update_fields=["sucursal"])
+        response = self._mint(self.QR_PATH, self.cliente_a.usuario)
+        self._assert_issued(
+            response, self.QR_PATH, "billing.ConfiguracionPagoQR.imagen_qr"
+        )
+
+    def test_pagos_qr_path_denies_other_branch_admin(self):
+        """The admin of another branch cannot mint the QR URL."""
+        response = self._mint(self.QR_PATH, self.admin_sucursal_b_user)
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    def test_pagos_qr_path_denies_other_branch_client(self):
+        """A client of another branch cannot mint the QR URL."""
+        self.cliente_b.usuario.sucursal = self.sucursal_b
+        self.cliente_b.usuario.save(update_fields=["sucursal"])
+        response = self._mint(self.QR_PATH, self.cliente_b.usuario)
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    # ---- facturas_gastos/ ----
+
+    def test_facturas_gastos_path_authorizes_branch_admin(self):
+        """The admin of the branch that registered the expense can mint
+        a signed URL for the supplier invoice."""
+        response = self._mint(
+            self.GASTO_FACTURA_PATH, self.admin_sucursal_a_user
+        )
+        self._assert_issued(
+            response, self.GASTO_FACTURA_PATH, "billing.GastoSucursal.factura"
+        )
+
+    def test_facturas_gastos_path_denies_other_branch_admin(self):
+        """The supplier invoice is internal to its branch."""
+        response = self._mint(
+            self.GASTO_FACTURA_PATH, self.admin_sucursal_b_user
+        )
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    def test_facturas_gastos_path_denies_client(self):
+        """A client can never open a supplier invoice."""
+        self.cliente_a.usuario.sucursal = self.sucursal_a
+        self.cliente_a.usuario.save(update_fields=["sucursal"])
+        response = self._mint(self.GASTO_FACTURA_PATH, self.cliente_a.usuario)
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    # ---- conversiones/ ----
+
+    def test_conversiones_path_authorizes_draft_owner(self):
+        """The admin that started the conversion can mint a signed URL for
+        the draft document."""
+        response = self._mint(
+            self.CONVERSION_PATH, self.admin_sucursal_a_user
+        )
+        self._assert_issued(
+            response,
+            self.CONVERSION_PATH,
+            "customers.ProspectoConversionBorrador.documento_pdf",
+        )
+
+    def test_conversiones_path_denies_other_branch_admin(self):
+        """The admin of another branch cannot mint the draft URL."""
+        response = self._mint(
+            self.CONVERSION_PATH, self.admin_sucursal_b_user
+        )
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    def test_conversiones_path_denies_client(self):
+        """A client can never open the conversion draft document."""
+        self.cliente_a.usuario.sucursal = self.sucursal_a
+        self.cliente_a.usuario.save(update_fields=["sucursal"])
+        response = self._mint(self.CONVERSION_PATH, self.cliente_a.usuario)
+        self.assertEqual(response.status_code, 403, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+
+    # ---- the allowlist is still an allowlist ----
+
+    def test_prefix_outside_allowlist_still_returns_400(self):
+        """A prefix the app does NOT write stays rejected with 400."""
+        response = self._mint("documentos_privados/x.pdf", self.admin_principal_user)
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(self._audit_create_calls, [])
+        self.assertEqual(self.fake_client.presign_calls, [])
+

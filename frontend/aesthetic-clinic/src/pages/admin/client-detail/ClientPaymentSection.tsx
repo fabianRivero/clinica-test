@@ -6,6 +6,7 @@ import { SectionCard } from '../../../components/admin/SectionCard'
 import { AdminRegisterPaymentModal } from '../../../components/admin/AdminRegisterPaymentModal'
 import { useNotifications } from '../../../providers/NotificationProvider'
 import { registerAdminPayment } from '../../../services/api/admin'
+import { SignedLink } from '../../../services/media'
 import type {
   AdminPaymentQuota,
   RegisterAdminPaymentPayload,
@@ -79,7 +80,7 @@ function PaymentRow({
       <td><StatusBadge tone={payment.statusTone}>{payment.status}</StatusBadge></td>
       <td>
         {payment.receiptUrl
-          ? <a className="table-strong-link" href={payment.receiptUrl} target="_blank" rel="noreferrer">Ver</a>
+          ? <SignedLink className="table-strong-link" href={payment.receiptUrl} target="_blank" rel="noreferrer">Ver</SignedLink>
           : 'Sin archivo'}
       </td>
       <td>

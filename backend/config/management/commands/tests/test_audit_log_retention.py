@@ -26,7 +26,7 @@ class AuditLogRetentionTests(TestCase):
             user_role="CLIENTE",
             action=AuditLog.Action.SIGNED_URL_ISSUED,
             resource_path=f"fichas_clinicas/2026/10/old-{days_ago}.pdf",
-            resource_type="clinical.FichaClinica.documento_escaneado_pdf",
+            resource_type="clinical.FichaClinica.documento_escaneado",
             client_ip="127.0.0.1",
             user_agent="test",
             expires_at=None,

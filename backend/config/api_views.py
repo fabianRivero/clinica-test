@@ -435,16 +435,14 @@ def _operation_detail(operacion, request=None):
     ficha = getattr(operacion, "ficha_clinica", None)
     huella = getattr(operacion.paciente, "huella_biometrica", None)
     procedure = operacion.servicio_config.proc_estetico
-    document_field = ficha.documento_escaneado_pdf if ficha else None
-    document_url = document_field.url if document_field else ""
+    document_field = ficha.documento_escaneado if ficha else None
+    # Bucket-relative path (``fichas_clinicas/...``), never an absolute
+    # URL: the frontend resolves it through ``useSignedUrl``.
+    document_url = document_field.name if document_field else ""
     document_name = PurePosixPath(document_field.name).name if document_field else ""
 
     def _photo_to_payload(foto):
-        url = (
-            request.build_absolute_uri(foto.imagen.url)
-            if request is not None
-            else foto.imagen.url
-        )
+        url = foto.imagen.name
         # ``_operacion_foto_upload_to`` writes ``<prefix>-`` on
         # disk. Strip the 13-char prefix (12 hex + "-") so the response
         # carries the original filename the admin picked.
@@ -652,10 +650,11 @@ def _operation_detail(operacion, request=None):
                         "maquinaria__marca",
                     )
                 ),
-                # Photo URLs (absolute path the <img src> can use directly).
-                # Empty string when the photo is missing.
-                "fotoAntesUrl": cita.foto_antes.url if cita.foto_antes else "",
-                "fotoDespuesUrl": cita.foto_despues.url if cita.foto_despues else "",
+                # Photo paths (bucket-relative, e.g.
+                # ``citas/2026/10/03/antes/...``). Empty string when the
+                # photo is missing.
+                "fotoAntesUrl": cita.foto_antes.name if cita.foto_antes else "",
+                "fotoDespuesUrl": cita.foto_despues.name if cita.foto_despues else "",
                 # Pricing + payment breakdown so the operation-detail page
                 # can render the "Cobrar cita" button and the modal with
                 # the same ``precio`` / ``saldoPendiente`` / ``pagos`` shape
@@ -1008,7 +1007,7 @@ def _payment_item(payment):
         "quota": f"Cuota {payment.cuota.nro_cuota}",
         "dueDate": date_label(payment.cuota.fecha_vencimiento),
         "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Sin revisar",
-        "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
+        "receiptUrl": payment.comprobante_url.name if payment.comprobante_url else "",
         "note": payment.observacion_verificacion or payment.detalles_pago or "",
     }
 
@@ -1016,7 +1015,9 @@ def _payment_item(payment):
 def _payment_qr_config_item(config):
     return {
         "hasQr": bool(config and config.imagen_qr),
-        "qrImageUrl": config.imagen_qr.url if config and config.imagen_qr else "",
+        # Bucket-relative path (``pagos_qr/...``), never an absolute
+        # URL: the frontend resolves it through ``useSignedUrl``.
+        "qrImageUrl": config.imagen_qr.name if config and config.imagen_qr else "",
         "instructions": (
             config.instrucciones
             if config
@@ -1076,7 +1077,7 @@ def _expense_item(expense):
         "total": str(expense.gasto_total),
         "totalLabel": currency(expense.gasto_total),
         "provider": expense.proveedor,
-        "invoiceUrl": expense.factura.url if expense.factura else "",
+        "invoiceUrl": expense.factura.name if expense.factura else "",
         "invoiceName": PurePosixPath(expense.factura.name).name if expense.factura else "",
         "details": expense.detalles,
         "branchId": expense.sucursal_id,
@@ -5159,7 +5160,7 @@ def admin_upload_operation_photos(request, operacion_id, kind):
         file_name = basename[13:] if len(basename) > 13 else basename
         saved_payload.append({
             "id": foto.pk,
-            "url": request.build_absolute_uri(foto.imagen.url),
+            "url": foto.imagen.name,
             "uploadedAt": foto.uploaded_at.isoformat(),
             "fileName": file_name,
         })
@@ -8305,7 +8306,7 @@ def _report_income_row(payment, *, cita=None, person_label=None, service_label=N
         "clientName": client_name,
         "serviceName": service_name,
         "status": _payment_status(payment),
-        "invoiceUrl": invoice_field.url if invoice_field else "",
+        "invoiceUrl": invoice_field.name if invoice_field else "",
         "invoiceName": PurePosixPath(invoice_field.name).name if invoice_field else "",
     }
 

@@ -43,6 +43,8 @@ import django  # noqa: E402
 
 django.setup()
 
+from unittest.mock import MagicMock
+
 from botocore.exceptions import ClientError  # noqa: E402
 from django.core.files.base import ContentFile, File  # noqa: E402
 from django.test import SimpleTestCase, override_settings  # noqa: E402
@@ -436,3 +438,77 @@ class StoragesWiringTests(SimpleTestCase):
 
         self.assertIsInstance(settings.STORAGE_PROVIDER, str)
         self.assertIn(settings.STORAGE_PROVIDER, {"local", "s3"})
+
+
+class Boto3StorageSaveFailureLoggingTests(SimpleTestCase):
+    """Bug 3 fix: ``Boto3Storage._save`` SHALL log every failed upload
+    with the full traceback AND re-raise so the view returns HTTP 500.
+
+    Per ``openspec/changes/cloud-storage-migration-fixes/specs/media-storage/spec.md``
+    §"Save failures are logged with traceback" and design §6: wrap
+    ``client.put_object`` in try/except catching ``ClientError``,
+    ``BotoCoreError``, and ``OSError``; call ``logger.exception(...)``
+    with bucket name + object key; re-raise.
+    """
+
+    def setUp(self) -> None:
+        self._bucket_patch = mock.patch.dict(
+            os.environ,
+            {"AWS_STORAGE_BUCKET_NAME": _FAKE_BUCKET},
+        )
+        self._bucket_patch.start()
+        self.addCleanup(self._bucket_patch.stop)
+
+        # Build a mock client whose put_object raises ClientError(403,
+        # AccessDenied). Every other method we don't care about returns
+        # a MagicMock so attribute access does not blow up.
+        self.mock_client = MagicMock()
+        self.mock_client.put_object.side_effect = ClientError(
+            error_response={
+                "Error": {"Code": "AccessDenied", "Message": "Access Denied"},
+                "ResponseMetadata": {"HTTPStatusCode": 403},
+            },
+            operation_name="PutObject",
+        )
+
+        self._client_patch = mock.patch(
+            "config.storage_backends._get_s3_client",
+            return_value=self.mock_client,
+        )
+        self._client_patch.start()
+        self.addCleanup(self._client_patch.stop)
+
+    def test_put_object_client_error_logs_and_propagates(self):
+        """A failed ``put_object`` (HTTP 403 AccessDenied) MUST trigger
+        ``logger.exception`` carrying the bucket name and the object
+        key, AND the original ClientError MUST propagate so the calling
+        view returns HTTP 500 (no silent success).
+        """
+
+        from botocore.exceptions import ClientError as BotocoreClientError
+
+        storage = Boto3Storage()
+        key = "fichas_clinicas/2026/10/foo.pdf"
+        with self.assertLogs(
+            "config.storage_backends", level="ERROR"
+        ) as logs_cm:
+            with self.assertRaises(BotocoreClientError):
+                storage._save(key, ContentFile(b"payload-bytes"))
+
+        # The exception MUST have been logged with bucket + key context.
+        joined = "\n".join(logs_cm.output)
+        self.assertIn(
+            _FAKE_BUCKET,
+            joined,
+            msg=f"Expected bucket name in log output; got {logs_cm.output!r}",
+        )
+        self.assertIn(
+            key,
+            joined,
+            msg=f"Expected object key in log output; got {logs_cm.output!r}",
+        )
+
+        # ``put_object`` was attempted exactly once with the right args.
+        self.mock_client.put_object.assert_called_once_with(
+            Bucket=_FAKE_BUCKET, Key=key, Body=b"payload-bytes"
+        )

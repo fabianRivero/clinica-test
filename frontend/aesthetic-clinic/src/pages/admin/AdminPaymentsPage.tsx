@@ -32,6 +32,7 @@ import {
   type FieldFilters,
 } from '../../utils/matchesFieldFilters'
 import { formatPaymentBreakdown } from '../../utils/payments'
+import { SignedImage, SignedLink } from '../../services/media'
 import { monthNames } from './expenses/expenseUtils'
 import { AdminRegisterPaymentModal } from '../../components/admin/AdminRegisterPaymentModal'
 
@@ -337,7 +338,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                   </div>
                 </div>
                 {data.paymentQrConfig.hasQr ? (
-                  <img
+                  <SignedImage
                     alt="QR de pago activo"
                     className="payment-qr-card__image"
                     src={data.paymentQrConfig.qrImageUrl}
@@ -484,14 +485,14 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                           <td>
                             <div className="table-cell-stack">
                               {payment.receiptUrl ? (
-                                <a
+                                <SignedLink
                                   className="button button--ghost button--compact"
                                   href={payment.receiptUrl}
                                   rel="noreferrer"
                                   target="_blank"
                                 >
                                   Ver comprobante
-                                </a>
+                                </SignedLink>
                             ) : (
                               <span className="table-muted">Sin comprobante</span>
                             )}
@@ -708,7 +709,7 @@ export function AdminPaymentsPage({ view }: { view: 'qr' | 'pendientes' | 'cuota
                   ×
                 </button>
               </header>
-              <img
+              <SignedImage
                 alt="QR de pago activo ampliado"
                 className="qr-modal__image"
                 src={qrModalImageUrl}

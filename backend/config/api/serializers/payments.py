@@ -176,10 +176,10 @@ class ConfiguracionPagoQRSerializer(serializers.ModelSerializer):
 
     def get_imagen_qr_url(self, obj):
         if obj.imagen_qr:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.imagen_qr.url)
-            return obj.imagen_qr.url
+            # Bucket-relative path (``pagos_qr/...``), never an absolute
+            # URL: the frontend resolves it through ``useSignedUrl``.
+            # ``Boto3Storage.url()`` raises by design.
+            return obj.imagen_qr.name
         return None
 
 
@@ -282,7 +282,4 @@ class PagoCitaSerializer(serializers.ModelSerializer):
     def get_comprobante_url(self, obj):
         if not obj.comprobante_url:
             return ""
-        request = self.context.get("request")
-        if request:
-            return request.build_absolute_uri(obj.comprobante_url.url)
-        return obj.comprobante_url.url
+        return obj.comprobante_url.name

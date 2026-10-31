@@ -64,13 +64,21 @@ SIGNED_URL_HARD_MAX_TTL_SECONDS = 604800
 #: ``citas/`` covers both ``citas/.../antes/`` and ``citas/.../despues/``
 #: sub-prefixes via the segment-level check inside
 #: :func:`_resolve_authorization_rule`.
+#: ``pagos_qr/`` covers the per-branch payment QR
+#: (``billing.ConfiguracionPagoQR.imagen_qr``), ``facturas_gastos/`` the
+#: per-branch supplier invoice (``billing.GastoSucursal.factura``) and
+#: ``conversiones/`` the prospect-conversion draft
+#: (``customers.ProspectoConversionBorrador.documento_pdf``).
 ALLOWED_PATH_PREFIXES = (
     "fichas_clinicas/",
     "tickets_adjuntos/",
     "citas/",
-    "fotos_operacion/",
+    "operaciones/",
     "comprobantes_pagos/",
     "comprobantes_citas/",
+    "pagos_qr/",
+    "facturas_gastos/",
+    "conversiones/",
 )
 
 
@@ -191,7 +199,7 @@ def _resolve_ficha_branch(path: str) -> Optional[int]:
     the path is malformed for the lookup.
     """
     ficha = (
-        FichaClinica.objects.filter(documento_escaneado_pdf=path)
+        FichaClinica.objects.filter(documento_escaneado=path)
         .select_related("operacion__paciente")
         .first()
     )
@@ -205,7 +213,7 @@ def _resolve_ficha_owner_cliente_id(path: str) -> Optional[int]:
     ``Cliente.id`` (used by the cliente-self rule).
     """
     ficha = (
-        FichaClinica.objects.filter(documento_escaneado_pdf=path)
+        FichaClinica.objects.filter(documento_escaneado=path)
         .select_related("operacion__paciente")
         .first()
     )
@@ -441,6 +449,70 @@ def _resolve_ticket_owner_ids(path: str) -> tuple[Optional[int], Optional[int]]:
     return creado_por, especialista_usuario_id
 
 
+def _resolve_pagos_qr_branch(path: str) -> Optional[int]:
+    """Resolve a ``pagos_qr/...`` path to its owning branch via
+    ``ConfiguracionPagoQR.sucursal``.
+
+    The payment QR is configured per branch and shown to the clients of
+    that branch (client portal) and to that branch's admins. Returns
+    ``None`` when no row owns the path (stale key) or the config has no
+    branch attached.
+    """
+    from billing.models import ConfiguracionPagoQR
+
+    config = ConfiguracionPagoQR.objects.filter(imagen_qr=path).first()
+    if config is None:
+        return None
+    return config.sucursal_id
+
+
+def _resolve_facturas_gastos_branch(path: str) -> Optional[int]:
+    """Resolve a ``facturas_gastos/...`` path to its owning branch via
+    ``GastoSucursal.sucursal``.
+
+    A supplier invoice is an internal accounting document: only the
+    admins of the branch that registered the expense may open it.
+    """
+    from billing.models import GastoSucursal
+
+    gasto = GastoSucursal.objects.filter(factura=path).first()
+    if gasto is None:
+        return None
+    return gasto.sucursal_id
+
+
+def _resolve_conversion_draft(
+    path: str,
+) -> tuple[Optional[int], Optional[int]]:
+    """Resolve a ``conversiones/...`` path to the draft that owns it.
+
+    Returns ``(branch_id, iniciado_por_id)``:
+
+    * ``branch_id`` — the branch the draft belongs to: the prospect's
+      registration branch for a prospect conversion, the client's branch
+      for a reactivation. ``None`` for a "direct client" draft, which
+      has no branch until it is finalized.
+    * ``iniciado_por_id`` — the admin that started the conversion.
+    """
+    from customers.models import ProspectoConversionBorrador
+
+    draft = (
+        ProspectoConversionBorrador.objects.filter(documento_pdf=path)
+        .select_related("prospecto", "cliente__usuario")
+        .first()
+    )
+    if draft is None:
+        return None, None
+    branch_id = None
+    if draft.prospecto_id and draft.prospecto is not None:
+        branch_id = draft.prospecto.sucursal_registro_id
+    if draft.cliente_id and draft.cliente is not None:
+        # The reactivation draft follows the CLIENTE branch (the same
+        # branch the conversion view scopes against).
+        branch_id = draft.cliente.usuario.sucursal_id
+    return branch_id, draft.iniciado_por_id
+
+
 def _resolve_authorization_rule(
     user: Usuario, path: str
 ) -> tuple[bool, str, Optional[str]]:
@@ -479,12 +551,12 @@ def _resolve_authorization_rule(
             and user.cliente is not None
             and user.cliente.id == cliente_id
         ):
-            return True, "cliente_self", "clinical.FichaClinica.documento_escaneado_pdf"
+            return True, "cliente_self", "clinical.FichaClinica.documento_escaneado"
         # admin_sucursal (own branch)
         if _admin_sucursal_of(user, branch_id):
-            return True, "admin_sucursal", "clinical.FichaClinica.documento_escaneado_pdf"
+            return True, "admin_sucursal", "clinical.FichaClinica.documento_escaneado"
         # Stale key (no ficha row owns the path) — non-admin denied.
-        return False, "", "clinical.FichaClinica.documento_escaneado_pdf"
+        return False, "", "clinical.FichaClinica.documento_escaneado"
 
     if prefix == "citas/":
         branch_id = _resolve_cita_branch(path)
@@ -503,7 +575,7 @@ def _resolve_authorization_rule(
             return True, "admin_sucursal", "operations.CitaMedica.foto_antes"
         return False, "", "operations.CitaMedica.foto_antes"
 
-    if prefix == "fotos_operacion/":
+    if prefix == "operaciones/":
         branch_id = _resolve_foto_operacion_branch(path)
         especialista_id = _resolve_foto_operacion_especialista_id(path)
         if (
@@ -571,6 +643,49 @@ def _resolve_authorization_rule(
                 return True, "admin_sucursal", "notifications.TicketMessage.adjunto"
         return False, "", "notifications.TicketMessage.adjunto"
 
+    if prefix == "pagos_qr/":
+        branch_id = _resolve_pagos_qr_branch(path)
+        # cliente_branch — the QR is a per-branch artifact shown to the
+        # clients of the branch that owns it (client portal). It is NOT
+        # tied to a single client, so the rule is the branch match.
+        if (
+            branch_id is not None
+            and hasattr(user, "cliente")
+            and user.cliente is not None
+            and user.sucursal_id == branch_id
+        ):
+            return True, "cliente_branch", "billing.ConfiguracionPagoQR.imagen_qr"
+        # admin_sucursal (own branch)
+        if _admin_sucursal_of(user, branch_id):
+            return True, "admin_sucursal", "billing.ConfiguracionPagoQR.imagen_qr"
+        return False, "", "billing.ConfiguracionPagoQR.imagen_qr"
+
+    if prefix == "facturas_gastos/":
+        branch_id = _resolve_facturas_gastos_branch(path)
+        # The supplier invoice is internal to the branch: only its
+        # admins may open it (no client rule).
+        if _admin_sucursal_of(user, branch_id):
+            return True, "admin_sucursal", "billing.GastoSucursal.factura"
+        return False, "", "billing.GastoSucursal.factura"
+
+    if prefix == "conversiones/":
+        branch_id, iniciado_por_id = _resolve_conversion_draft(path)
+        # draft_owner — the admin that started the conversion (the only
+        # actor allowed to open a "direct client" draft, which has no
+        # branch until it is finalized).
+        if iniciado_por_id is not None and iniciado_por_id == user.id:
+            return True, "draft_owner", (
+                "customers.ProspectoConversionBorrador.documento_pdf"
+            )
+        # admin_sucursal (own branch)
+        if _admin_sucursal_of(user, branch_id):
+            return True, "admin_sucursal", (
+                "customers.ProspectoConversionBorrador.documento_pdf"
+            )
+        return False, "", (
+            "customers.ProspectoConversionBorrador.documento_pdf"
+        )
+
     # Should be unreachable because the sanitizer restricts the prefix,
     # but defensively deny.
     return False, "", ""
@@ -584,10 +699,10 @@ def _resource_type_for(path: str) -> str:
     """
     prefix = path.split("/", 1)[0] + "/"
     if prefix == "fichas_clinicas/":
-        return "clinical.FichaClinica.documento_escaneado_pdf"
+        return "clinical.FichaClinica.documento_escaneado"
     if prefix == "citas/":
         return "operations.CitaMedica.foto_antes"
-    if prefix == "fotos_operacion/":
+    if prefix == "operaciones/":
         return "operations.OperacionFoto.imagen"
     if prefix == "comprobantes_pagos/":
         return "billing.PagoRealizado.comprobante_url"
@@ -595,6 +710,12 @@ def _resource_type_for(path: str) -> str:
         return "billing.PagoCita.comprobante_url"
     if prefix == "tickets_adjuntos/":
         return "notifications.TicketMessage.adjunto"
+    if prefix == "pagos_qr/":
+        return "billing.ConfiguracionPagoQR.imagen_qr"
+    if prefix == "facturas_gastos/":
+        return "billing.GastoSucursal.factura"
+    if prefix == "conversiones/":
+        return "customers.ProspectoConversionBorrador.documento_pdf"
     return ""
 
 

@@ -16,6 +16,7 @@ import {
   updateAdminExpense,
 } from '../../../services/api/admin'
 import type { ExpenseItem, UpsertAdminExpensePayload } from '../../../types/admin'
+import { SignedLink } from '../../../services/media'
 import { decimalProduct, emptyForm, expenseToForm, formatMoney, monthNames } from './expenseUtils'
 import type { ExpenseTab } from './expenseUtils'
 
@@ -312,7 +313,7 @@ export function AdminExpensesPage() {
                             <td><strong>{expense.concept}</strong><small>{expense.units} x Bs {expense.unitCost}</small></td>
                             <td>{expense.provider || 'Sin proveedor'}</td>
                             <td>{expense.totalLabel}</td>
-                            <td>{expense.invoiceUrl ? <a href={expense.invoiceUrl} rel="noreferrer" target="_blank">Ver factura</a> : 'Sin factura'}</td>
+                            <td>{expense.invoiceUrl ? <SignedLink href={expense.invoiceUrl} rel="noreferrer" target="_blank">Ver factura</SignedLink> : 'Sin factura'}</td>
                             <td>
                               <div className="table-actions">
                                 <button className="button button--ghost button--sm" type="button" onClick={() => handleEdit(expense)}>Editar</button>

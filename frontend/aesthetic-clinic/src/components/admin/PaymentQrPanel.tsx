@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { getAdminPaymentQrConfig } from '../../services/api/admin'
+import { SignedImage } from '../../services/media'
 
 /**
  * QR thumbnail + lightbox shared by every admin cobro modal.
@@ -67,7 +68,7 @@ export function PaymentQrPanel({ paymentMethod, isOpen }: PaymentQrPanelProps) {
         aria-label="Ampliar QR"
         onClick={() => setQrExpanded(true)}
       >
-        <img
+        <SignedImage
           src={qrImageUrl}
           alt="QR configurado para la sucursal"
           style={{
@@ -101,7 +102,7 @@ export function PaymentQrPanel({ paymentMethod, isOpen }: PaymentQrPanelProps) {
           >
             ×
           </button>
-          <img
+          <SignedImage
             src={qrImageUrl}
             alt="QR configurado para la sucursal (ampliado)"
             onClick={(event) => event.stopPropagation()}

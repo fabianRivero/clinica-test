@@ -8,6 +8,7 @@ import { StatusBadge } from '../../../components/admin/StatusBadge'
 import { DataState } from '../../../components/admin/DataState'
 import { useNotifications } from '../../../providers/NotificationProvider'
 import { useBranchContext } from '../../../providers/BranchProvider'
+import { SignedImage } from '../../../services/media'
 import { useClientDetail } from './useClientDetail'
 import { ClientReservationSection } from './ClientReservationSection'
 import { ClientFreeMedicalAppointmentSection } from './ClientFreeMedicalAppointmentSection'
@@ -886,7 +887,7 @@ export function AdminClientDetailPage() {
               className="booking-modal-body"
               style={{ textAlign: 'center' }}
             >
-              <img
+              <SignedImage
                 src={photoPreviewUrl}
                 alt="Foto de la cita"
                 style={{

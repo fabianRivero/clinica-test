@@ -158,7 +158,7 @@ class PagosViewSet(viewsets.ViewSet):
                     "tone": "primary",
                 },
             ],
-            "paymentQrConfig": self._payment_qr_config_item(config, os.getenv("STORAGE_PROVIDER", "local")),
+            "paymentQrConfig": self._payment_qr_config_item(config),
             "payments": [self._payment_item(p) for p in pagos_qs],
             "quotas": [self._admin_quota_item(c) for c in cuotas_qs],
         })
@@ -185,11 +185,8 @@ class PagosViewSet(viewsets.ViewSet):
         if request.method == "GET":
             branch = get_user_branch(request)
             config = ConfiguracionPagoQR.objects.filter(sucursal=branch).first()
-            storage_provider = os.getenv("STORAGE_PROVIDER", "local")
             return Response({
-                "paymentQrConfig": self._payment_qr_config_item(
-                    config, storage_provider
-                ),
+                "paymentQrConfig": self._payment_qr_config_item(config),
             })
         # POST — fall through to the original update logic.
         return self._update_qr_config(request)
@@ -207,7 +204,6 @@ class PagosViewSet(viewsets.ViewSet):
             config = ConfiguracionPagoQR(sucursal=branch)
 
         storage_provider = os.getenv("STORAGE_PROVIDER", "local")
-        public_url = None
 
         try:
             if qr_file:
@@ -242,7 +238,6 @@ class PagosViewSet(viewsets.ViewSet):
                         if response.status_code not in (200, 201):
                             logger.error(f"[QR-UPDATE] Supabase error: {response.status_code} {response.text}")
                             raise Exception(f"Supabase upload failed: {response.status_code}")
-                        public_url = f"{supabase_url}/storage/v1/object/public/{bucket}/{supabase_path}"
                     else:  # s3
                         import boto3
                         from botocore.config import Config
@@ -260,9 +255,6 @@ class PagosViewSet(viewsets.ViewSet):
                             Body=qr_file.read(),
                             ContentType=qr_file.content_type,
                         )
-                        endpoint = os.getenv("AWS_S3_ENDPOINT_URL", "")
-                        bucket_name = os.getenv("AWS_STORAGE_BUCKET_NAME")
-                        public_url = f"{endpoint.replace('/storage/v1', '')}/{bucket_name}/{supabase_path}" if endpoint else f"https://{bucket_name}.s3.amazonaws.com/{supabase_path}"
 
                     # For cloud storage: save only the filename to DB (Django adds upload_to prefix)
                     # This avoids double-prefix duplication
@@ -276,15 +268,13 @@ class PagosViewSet(viewsets.ViewSet):
 
             config.save()
 
-            # Determine qr_url based on storage provider
-            if storage_provider in ("supabase", "s3") and public_url:
-                qr_url = public_url
-            elif config.imagen_qr:
-                qr_url = config.imagen_qr.url
-                if not qr_url.startswith("http"):
-                    qr_url = request.build_absolute_uri(qr_url)
-            else:
-                qr_url = ""
+            # The API exposes the bucket-relative path (``pagos_qr/...``)
+            # for every storage provider; the frontend resolves it to a
+            # presigned URL through ``useSignedUrl``. Never call
+            # ``.url()`` here: ``Boto3Storage.url()`` raises by design and
+            # the legacy ``/media/`` URL is no longer what the SPA
+            # consumes.
+            qr_url = config.imagen_qr.name if config.imagen_qr else ""
 
             return Response({
                 "detail": f"QR actualizado. Branch_id usado: {branch.id if branch else 'None'}",
@@ -572,32 +562,18 @@ class PagosViewSet(viewsets.ViewSet):
         last_day = calendar.monthrange(year, month)[1]
         return timezone.datetime(year, month, 1).date(), timezone.datetime(year, month, last_day).date()
 
-    def _payment_qr_config_item(self, config, storage_provider=None):
+    def _payment_qr_config_item(self, config):
         if not config:
             return {"hasQr": False, "qrImageUrl": "", "instructions": ""}
         qr_url = ""
         if config.imagen_qr:
-            if storage_provider in ("supabase", "s3"):
-                # For cloud storage, rebuild public URL from filename stored in DB
-                # config.imagen_qr.name already includes the full path (e.g. "pagos_qr/2026/06/file.webp")
-                name = config.imagen_qr.name
-                if storage_provider == "supabase":
-                    supabase_url = os.getenv("SUPABASE_URL")
-                    bucket = os.getenv("SUPABASE_BUCKET")
-                    if supabase_url and bucket:
-                        qr_url = f"{supabase_url}/storage/v1/object/public/{bucket}/{name}"
-                elif storage_provider == "s3":
-                    endpoint = os.getenv("AWS_S3_ENDPOINT_URL", "")
-                    bucket_name = os.getenv("AWS_STORAGE_BUCKET_NAME")
-                    if bucket_name:
-                        if endpoint:
-                            qr_url = f"{endpoint.replace('/storage/v1', '')}/{bucket_name}/{name}"
-                        else:
-                            qr_url = f"https://{bucket_name}.s3.amazonaws.com/{name}"
-            else:
-                qr_url = config.imagen_qr.url
-            if not qr_url.startswith("http"):
-                qr_url = self.request.build_absolute_uri(qr_url)
+            # Bucket-relative path (``pagos_qr/2026/06/qr.webp``) for
+            # EVERY storage provider: the frontend resolves it to a
+            # presigned URL through ``useSignedUrl``
+            # (GET /api/media/signed-url/). The legacy public URL and
+            # the ``/media/`` URL are gone — ``Boto3Storage.url()``
+            # raises by design and the bucket is private.
+            qr_url = config.imagen_qr.name
         return {
             "id": config.pk,
             "hasQr": bool(config.imagen_qr),
@@ -628,7 +604,7 @@ class PagosViewSet(viewsets.ViewSet):
             "quota": f"Cuota {payment.cuota.nro_cuota}",
             "dueDate": date_label(payment.cuota.fecha_vencimiento),
             "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Sin revisar",
-            "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
+            "receiptUrl": payment.comprobante_url.name if payment.comprobante_url else "",
             "note": payment.observacion_verificacion or payment.detalles_pago or "",
             "paymentMethod": payment.metodo_pago,
             "physicalAmount": currency(payment.monto_fisico),

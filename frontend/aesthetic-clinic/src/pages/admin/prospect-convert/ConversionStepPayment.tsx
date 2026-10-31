@@ -1,5 +1,6 @@
 import { type ChangeEvent, type FormEvent } from 'react'
 
+import { SignedImage } from '../../../services/media'
 import type { FieldErrors } from './conversionHelpers'
 
 type PaymentMethod = 'VIRTUAL' | 'FISICO' | 'MIXTO'
@@ -83,7 +84,7 @@ export function ConversionStepPayment({
           ) : null}
           {paymentQrImageUrl ? (
             <>
-              <img
+              <SignedImage
                 src={paymentQrImageUrl}
                 alt="QR de pago"
                 className="_cursor-zoom-in"

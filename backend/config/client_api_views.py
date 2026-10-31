@@ -415,7 +415,7 @@ def _payment_item(payment):
         "status": payment.get_estado_verificacion_display(),
         "statusTone": _payment_tone(payment),
         "dueDate": date_label(payment.cuota.fecha_vencimiento),
-        "receiptUrl": payment.comprobante_url.url if payment.comprobante_url else "",
+        "receiptUrl": payment.comprobante_url.name if payment.comprobante_url else "",
         "verifier": full_name(payment.verificado_por) if payment.verificado_por else "Pendiente de revisión",
         "note": payment.observacion_verificacion or payment.detalles_pago or "Sin observaciones.",
         "paymentMethod": payment.metodo_pago,
@@ -427,7 +427,9 @@ def _payment_item(payment):
 def _payment_qr_config_item(config):
     return {
         "hasQr": bool(config and config.imagen_qr),
-        "qrImageUrl": config.imagen_qr.url if config and config.imagen_qr else "",
+        # Bucket-relative path (``pagos_qr/...``), never an absolute
+        # URL: the frontend resolves it through ``useSignedUrl``.
+        "qrImageUrl": config.imagen_qr.name if config and config.imagen_qr else "",
         "instructions": (
             config.instrucciones
             if config
@@ -557,9 +559,10 @@ def _appointment_item(cita, appointment_index=None, total_appointments=None, req
                 "maquinaria__marca",
             )
         ),
-        # Photo URLs (absolute path). Empty string when no photo.
-        "fotoAntesUrl": cita.foto_antes.url if cita.foto_antes else "",
-        "fotoDespuesUrl": cita.foto_despues.url if cita.foto_despues else "",
+        # Photo paths (bucket-relative, e.g.
+        # ``citas/2026/10/03/antes/...``). Empty string when no photo.
+        "fotoAntesUrl": cita.foto_antes.name if cita.foto_antes else "",
+        "fotoDespuesUrl": cita.foto_despues.name if cita.foto_despues else "",
     }
     # Pricing + payment breakdown (mirrors ``_free_client_appointment_item`` in
     # the admin viewset so the client portal and the admin detail surface

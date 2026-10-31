@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { DataState } from '../../../components/admin/DataState'
 import { PageHeader } from '../../../components/admin/PageHeader'
 import { SectionCard } from '../../../components/admin/SectionCard'
+import { SignedImage } from '../../../services/media'
 
 import { stepLabels } from './conversionHelpers'
 import { ConversionStepBiometric } from './ConversionStepBiometric'
@@ -404,7 +405,7 @@ export function AdminProspectConvertPage() {
                 Cerrar
               </button>
             </div>
-            <img
+            <SignedImage
               alt="QR de pago bancario ampliado"
               className="qr-modal__image"
               src={paymentQrImageUrl}

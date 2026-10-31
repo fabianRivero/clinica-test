@@ -1,6 +1,6 @@
 /** `useSignedUrl` hook + `<SignedImage>`/`<SignedLink>` (slice 3b). */
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type MouseEventHandler, type ReactNode } from 'react'
 
 import { API_BASE_URL } from './api/apiClient'
 
@@ -102,9 +102,11 @@ function normalizePath(raw: string | null | undefined): string | null {
 
 interface SignedImageProps {
   src: string | null | undefined; alt: string; className?: string; style?: CSSProperties
+  /** Optional click handler (e.g. open a lightbox). */
+  onClick?: MouseEventHandler<HTMLElement>
 }
 
-export function SignedImage({ src, alt, className, style }: SignedImageProps) {
+export function SignedImage({ src, alt, className, style, onClick }: SignedImageProps) {
   const { url, loading, error } = useSignedUrl(normalizePath(src))
   if (loading || !url) {
     return (
@@ -114,14 +116,23 @@ export function SignedImage({ src, alt, className, style }: SignedImageProps) {
         aria-busy={loading ? true : undefined}
         role={error ? 'img' : undefined}
         aria-label={error ? `${alt} (no disponible)` : alt}
+        onClick={onClick}
       />
     )
   }
-  return <img src={url} alt={alt} className={className} style={style} />
+  return (
+    <img
+      src={url}
+      alt={alt}
+      className={className}
+      style={style}
+      onClick={onClick}
+    />
+  )
 }
 
 interface SignedLinkProps {
-  href: string | null | undefined; download?: boolean; target?: string
+  href: string | null | undefined; download?: boolean | string; target?: string
   rel?: string; className?: string; children: ReactNode
 }
 
